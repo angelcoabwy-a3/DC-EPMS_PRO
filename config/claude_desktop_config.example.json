@@ -1,0 +1,20 @@
+{
+  "_comment_1": "DC-EPMS PRO - Claude Desktop MCP integration config",
+  "_comment_2": "Place at: %APPDATA%\\Claude\\claude_desktop_config.json on Windows",
+  "_comment_3": "After editing, RESTART Claude Desktop fully (Quit from system tray, then reopen).",
+  "_comment_4": "IMPORTANT: 'command' must point to the venv's python.exe so all deps are available.",
+  "_comment_5": "Use forward slashes (/) in paths, NOT backslashes.",
+
+  "mcpServers": {
+    "dc-epms-pro": {
+      "command": "C:/dev/DC-EPMS_PRO/.venv/Scripts/python.exe",
+      "args": [
+        "C:/dev/DC-EPMS_PRO/backend/mcp_server.py"
+      ],
+      "env": {
+        "PG_DSN": "postgresql://postgres:epms2026@localhost:5432/epms",
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}

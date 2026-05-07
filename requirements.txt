@@ -1,0 +1,49 @@
+# ══════════════════════════════════════════════════════════════
+#  DC-EPMS PRO — Python Dependencies (production-pinned)
+#  Python 3.12 required. Install with: pip install -r requirements.txt
+#
+#  NeMo Guardrails 0.10.1 requires langchain-core >=0.2.14,<0.3.0
+#  so we pin langgraph to a version compatible with langchain-core 0.2.x
+# ══════════════════════════════════════════════════════════════
+
+# ── Web framework ────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.2
+httpx==0.27.2
+python-multipart==0.0.12
+
+# ── Database ─────────────────────────────────────────────────
+asyncpg==0.30.0
+psycopg2-binary==2.9.9
+
+# ── RAG / Embeddings ─────────────────────────────────────────
+chromadb==0.5.18
+sentence-transformers==3.2.1
+
+# ── NVIDIA NeMo Guardrails (optional but recommended) ────────
+nemoguardrails==0.10.1
+# NeMo's LangChain wrapper needs openai package even when pointing to LM Studio
+openai>=1.0.0,<2.0.0
+
+# ── LangGraph (agentic workflows) — pinned for NeMo compat ───
+# langchain-core 0.2.x is required by nemoguardrails 0.10.1
+langchain-core>=0.2.14,<0.3.0
+langgraph>=0.2.0,<0.3.0
+
+# ── GPU monitoring ───────────────────────────────────────────
+nvidia-ml-py==12.560.30
+
+# ── Utilities ────────────────────────────────────────────────
+python-dotenv==1.0.1
+pyyaml==6.0.2
+reportlab==4.2.2
+
+# ── Observability ────────────────────────────────────────────
+prometheus-client==0.21.0
+
+# ── Fase 4a: Physics Engine ────────────────────────────────────
+# scipy.integrate.solve_ivp for ODE integration in scenario simulations
+# numpy required by scipy
+numpy>=1.26,<3.0
+scipy>=1.11,<2.0

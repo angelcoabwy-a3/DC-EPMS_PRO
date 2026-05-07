@@ -1,0 +1,309 @@
+# =============================================================
+#  DC-EPMS PRO - Physics Engine: Scenario Catalog
+# =============================================================
+#  10 critical failure scenarios for A3-Alpha Toronto Area.
+#  Each scenario is parameterised for the physics engine and can
+#  be executed via the PhysicsEngine.simulate_scenario() facade.
+#
+#  Categories covered (per Uptime Institute FMEA taxonomy):
+#    - Mechanical plant failures          (pump, CDU, leak)
+#    - Heat rejection failures             (chiller surge, heat wave)
+#    - Electrical failures                 (UPS battery, transformer)
+#    - Safety-critical events              (generator fail, OT partition)
+#    - Cross-module cascades               (condensation)
+# =============================================================
+
+scenarios:
+
+  # ─────────────────────────────────────────────────────────
+  #  1. Pump Cavitation - primary mechanical loop pump
+  # ─────────────────────────────────────────────────────────
+  - id: SCN-01-PUMP-CAVITATION
+    name: "Primary pump cavitation"
+    description: >
+      Suction-side pressure drops below NPSH required. Pump efficiency
+      collapses, DLC flow falls progressively over 3-5 minutes. Air in
+      the impeller causes vibration and accelerates bearing wear.
+    primary_module: mechanical
+    severity_if_uncorrected: critical
+    expected_ttr_minutes: 10
+    initial_state:
+      loop_return_c: 40.0
+      loop_supply_c: 18.0
+      rack_count: 40
+      rack_tdp_kw: 142.0
+      loop_flow_m3_s: 0.066
+    perturbation:
+      flow_factor: 0.4          # flow degrades to 40% of nominal
+      start_s: 30
+      duration_s: 900
+    expected_outcomes:
+      - "Secondary loop return temperature rises above 45 C"
+      - "DLC delta_T climbs past 30 K on affected racks"
+      - "Event: secondary_loop_overtemp fires"
+    mitigation_doc: T4-MOP-CHI-001
+    standard_refs: [NFPA 70B, a3semi OPS-FRM-023]
+
+  # ─────────────────────────────────────────────────────────
+  #  2. Chiller Surge - outdoor heat wave, wet-bulb rises
+  # ─────────────────────────────────────────────────────────
+  - id: SCN-02-CHILLER-SURGE
+    name: "Chiller capacity loss due to heat wave"
+    description: >
+      Outdoor dry-bulb rises to 36 C with 65% RH (wet-bulb ~29 C). Cooling
+      tower cannot deliver ECWT below 33 C. Chiller COP drops ~20%, and
+      condenser high-pressure trip becomes imminent.
+    primary_module: heat_rejection
+    severity_if_uncorrected: critical
+    expected_ttr_minutes: 30
+    initial_state:
+      outdoor_t_db_c: 25.0
+      outdoor_rh_percent: 50.0
+      it_load_kw: 16756.0
+    perturbation:
+      t_db_ramp: true
+      rh_ramp: true
+      t_db_final_c: 36.0
+      rh_final: 65.0
+      ramp_s: 600
+      start_s: 0
+      duration_s: 3600
+    expected_outcomes:
+      - "Event: chiller_high_pressure_trip_imminent"
+      - "Event: n_plus_1_redundancy_lost if chiller 2 also overloaded"
+      - "Chiller COP drops below 5.5"
+    mitigation_doc: T4-EOP-COOL-003
+    standard_refs: [ASHRAE TC 9.9, AHRI 550/590]
+
+  # ─────────────────────────────────────────────────────────
+  #  3. UPS Battery Discharge during utility outage
+  # ─────────────────────────────────────────────────────────
+  - id: SCN-03-UTILITY-FAIL-GEN-SLOW
+    name: "Utility outage, generator start delayed"
+    description: >
+      Utility power lost; primary generator fails to start on first
+      attempt. Second generator starts after 60 s, but battery depletes
+      ~8% before backup is online. NFPA 110 Type 10 requires generator
+      within 10 s - this breach triggers P1 event.
+    primary_module: electrical
+    severity_if_uncorrected: critical
+    expected_ttr_minutes: 15
+    initial_state:
+      battery_soc: 1.0
+      ups_load_kw: 600.0
+    perturbation:
+      utility_fail: true
+      generator_start_s: 60.0   # 60 s delay instead of 10 s
+      start_s: 0
+      duration_s: 900
+      load_kw: 600.0
+    expected_outcomes:
+      - "Event: battery_low_warning at SOC 30%"
+      - "Battery SOC drops ~8% in first minute"
+      - "Event: generator_online at t=60s"
+    mitigation_doc: T1-SAF-EPO-005
+    standard_refs: [NFPA 110 Type 10, ISO 22301 P1]
+
+  # ─────────────────────────────────────────────────────────
+  #  4. DLC Leak at rack manifold
+  # ─────────────────────────────────────────────────────────
+  - id: SCN-04-DLC-LEAK
+    name: "DLC manifold leak at rack level"
+    description: >
+      Quick-disconnect coupler partially fails. Coolant drips to drip
+      tray (leak detection triggers). Affected rack loses 40% DLC flow
+      over 2 minutes. GPU junction temperature rises toward throttle.
+    primary_module: it_thermal
+    severity_if_uncorrected: critical
+    expected_ttr_minutes: 5
+    initial_state:
+      hall_return_c: 22.0
+      rack_count: 118
+      rack_tdp_kw: 142.0
+      dlc_supply_c: 18.0
+      dlc_flow_l_min: 100.0
+    perturbation:
+      cooling_factor: 0.85          # air side mostly intact
+      dlc_flow_factor: 0.6           # 60% of nominal on affected racks
+      start_s: 0
+      duration_s: 900
+    expected_outcomes:
+      - "Event: gpu_thermal_throttle_initiated within 60s"
+      - "GPU Tj projection exceeds 90 C on affected racks"
+      - "Hall return temperature begins rising"
+    mitigation_doc: T2-VEN-NV-GB200
+    standard_refs: [T4-EOP-COOL-003]
+
+  # ─────────────────────────────────────────────────────────
+  #  5. Transformer Overtemperature
+  # ─────────────────────────────────────────────────────────
+  - id: SCN-05-XFMR-OVERTEMP
+    name: "Main transformer winding overtemperature"
+    description: >
+      Cooling-fan failure on main utility transformer. Winding
+      temperature rises past IEEE C57.12 hottest-spot limit (130 C).
+      Insulation aging rate doubles every 6-8 K above design.
+    primary_module: electrical
+    severity_if_uncorrected: critical
+    expected_ttr_minutes: 20
+    initial_state:
+      battery_soc: 1.0
+      ups_load_kw: 600.0
+    perturbation:
+      utility_fail: false
+      start_s: 0
+      duration_s: 900
+    expected_outcomes:
+      - "Transformer validator flags winding > 130 C"
+      - "Physical justification references IEEE C57.12"
+      - "Suggested action: verify fan operation, check harmonics"
+    mitigation_doc: T4-MOP-UPS-001
+    standard_refs: [IEEE C57.12, ANSI C57.12]
+
+  # ─────────────────────────────────────────────────────────
+  #  6. CRAH Fan Failure
+  # ─────────────────────────────────────────────────────────
+  - id: SCN-06-CRAH-FAN-FAIL
+    name: "Single CRAH unit fan failure"
+    description: >
+      One of 6 CRAH fans per hall stops, reducing hall airflow 17%.
+      Cold aisle containment helps but hot spots form in rack 10-20
+      (highest density zone). Increased hall return temperature
+      reduces CRAH effectiveness in a feedback loop.
+    primary_module: it_thermal
+    severity_if_uncorrected: warning
+    expected_ttr_minutes: 30
+    initial_state:
+      hall_return_c: 22.0
+      rack_count: 118
+      rack_tdp_kw: 142.0
+      dlc_supply_c: 18.0
+      dlc_flow_l_min: 100.0
+    perturbation:
+      cooling_factor: 0.83           # 17% airflow loss
+      dlc_flow_factor: 1.0
+      start_s: 0
+      duration_s: 900
+    expected_outcomes:
+      - "Hall return temperature rises to 25-27 C"
+      - "Inlet temperature exits a3semi operational band"
+      - "No throttling if DLC loop intact"
+    mitigation_doc: T4-MOP-CHI-001
+    standard_refs: [ASHRAE TC 9.9]
+
+  # ─────────────────────────────────────────────────────────
+  #  7. Generator Start Failure
+  # ─────────────────────────────────────────────────────────
+  - id: SCN-07-GEN-START-FAIL
+    name: "Primary generator fails to start, backup required"
+    description: >
+      Utility lost. Primary generator fails start sequence (cold oil,
+      battery low). Backup generator starts at t=20 s but carries
+      full facility load. Battery takes more discharge than planned.
+    primary_module: electrical
+    severity_if_uncorrected: critical
+    expected_ttr_minutes: 45
+    initial_state:
+      battery_soc: 1.0
+      ups_load_kw: 600.0
+    perturbation:
+      utility_fail: true
+      generator_start_s: 20.0
+      start_s: 0
+      duration_s: 900
+      load_kw: 600.0
+    expected_outcomes:
+      - "Event: generator_online at t=20s (instead of 10s)"
+      - "Battery SOC drops ~3% before backup online"
+      - "No battery_low_warning (SOC stays well above 30%)"
+    mitigation_doc: T4-MOP-GEN-001
+    standard_refs: [NFPA 110 Level 1]
+
+  # ─────────────────────────────────────────────────────────
+  #  8. DLC Supply Over-temperature
+  # ─────────────────────────────────────────────────────────
+  - id: SCN-08-DLC-SUPPLY-HIGH
+    name: "DLC supply temperature drift above 22 C"
+    description: >
+      Chiller LCHWT setpoint gradually rises due to plate HX fouling.
+      DLC supply temperature exceeds target band. GPU junction
+      temperatures rise proportionally; margin to throttle shrinks.
+    primary_module: it_thermal
+    severity_if_uncorrected: warning
+    expected_ttr_minutes: 60
+    initial_state:
+      hall_return_c: 22.0
+      rack_count: 118
+      rack_tdp_kw: 142.0
+      dlc_supply_c: 22.0       # drifted above 18 C target
+      dlc_flow_l_min: 100.0
+    perturbation:
+      cooling_factor: 1.0
+      dlc_flow_factor: 1.0
+      start_s: 0
+      duration_s: 900
+    expected_outcomes:
+      - "GPU Tj estimate rises by ~4 K"
+      - "Warning if any rack approaches 85 C junction temp"
+      - "First-law balance still holds, but less margin"
+    mitigation_doc: T4-MOP-CHI-001
+    standard_refs: [T2-VEN-NV-GB200]
+
+  # ─────────────────────────────────────────────────────────
+  #  9. Condensation Event on DLC manifolds
+  # ─────────────────────────────────────────────────────────
+  - id: SCN-09-CONDENSATION-EVENT
+    name: "Hall dew point approaches DLC manifold temperature"
+    description: >
+      Humidity control system malfunctions. Hall RH climbs to 75%,
+      raising dew point above DLC supply temperature (18 C). Water
+      droplets form on manifold surfaces - shock and corrosion risk
+      per T1-SAF-CSE-003.
+    primary_module: heat_rejection
+    severity_if_uncorrected: critical
+    expected_ttr_minutes: 15
+    initial_state:
+      outdoor_t_db_c: 20.0
+      outdoor_rh_percent: 50.0
+      it_load_kw: 16756.0
+    perturbation:
+      t_db_ramp: false
+      rh_ramp: true
+      t_db_final_c: 20.0
+      rh_final: 85.0           # dew point ~18 C = DLC supply
+      ramp_s: 600
+      start_s: 0
+      duration_s: 1800
+    expected_outcomes:
+      - "Event: condensation_risk_threshold_crossed"
+      - "Dew point exceeds (DLC_supply - margin)"
+      - "Validator flags condensation_margin_dlc_manifold"
+    mitigation_doc: T1-SAF-CSE-003
+    standard_refs: [ASHRAE TC 9.9, T4-EOP-COOL-003]
+
+  # ─────────────────────────────────────────────────────────
+  #  10. OT Network Partition (Morpheus isolation)
+  # ─────────────────────────────────────────────────────────
+  - id: SCN-10-OT-NET-PARTITION
+    name: "Morpheus isolates OT zone SL-2"
+    description: >
+      NVIDIA Morpheus Sentinel detects anomalous Modbus traffic on
+      SL-2 zone (chiller controllers). SOAR auto-isolates the zone
+      per IEC 62443 SR 5.2. Chillers continue running on local
+      control loops but EPMS loses visibility for ~5 minutes.
+    primary_module: electrical
+    severity_if_uncorrected: warning
+    expected_ttr_minutes: 5
+    initial_state:
+      battery_soc: 1.0
+      ups_load_kw: 600.0
+    perturbation:
+      utility_fail: false
+      start_s: 0
+      duration_s: 300
+    expected_outcomes:
+      - "Chillers maintain steady operation (local control)"
+      - "EPMS telemetry shows stale values during partition"
+      - "No physical thermal impact"
+    mitigation_doc: T3-STD-IEC-62443
+    standard_refs: [IEC 62443-3-3, NIST SP 800-82]

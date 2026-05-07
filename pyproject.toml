@@ -1,0 +1,412 @@
+###############################################################################
+# DC-EPMS PRO — pyproject.toml v2 (PEP 621)
+#
+# Aligned to field reality (audit 2026-05-04 against installed venv).
+# Replaces v1 which forced unintended downgrades of pytest, scipy, chromadb.
+#
+# Strategy mirrors the project's existing 3-tier requirements layout:
+#   base deps        = requirements-minimal.txt + numpy + scipy
+#   [db,rag,obs]     = requirements-full.txt
+#   [ai]             = adds NeMo Guardrails + LangGraph + LangChain (full reqs)
+#   [phys]           = numba (S5 Kalman integration — Decision 1)
+#   [dpo]            = torch + LoRA stack (S6 — Decision 1)
+#   [mcp]            = mcp package (when Claude Desktop wired)
+#   [dev]            = test + lint + format + types
+#   [full]           = meta = [db,rag,obs,phys]   (≡ requirements-full.txt + phys)
+#   [all]            = meta = everything except dpo
+#
+# Phase V9 baseline post-audit 2026-05-03.
+# Decisions RESOLVED: 1, 2 (Path C2 — 67 MW), 3, 4 (Option 4-B).
+###############################################################################
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# ── Project metadata (PEP 621) ────────────────────────────────────────────────
+[project]
+name = "dc-epms-pro"
+version = "0.4.0"
+description = "AI-native edge operations platform for Tier IV AI factories — A3-Alpha Toronto Area simulator"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Proprietary — a3semi internal" }
+authors = [
+  { name = "Wilmer Y. Angel Beltran", email = "wilmer@a3semi.com" }
+]
+keywords = [
+  "data-center", "tier-iv", "ai-factory", "epms", "bms", "graphrag", "iec-62443",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Manufacturing",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+  "Topic :: System :: Hardware",
+]
+
+# ── Base dependencies (≡ requirements-minimal.txt + numpy/scipy transitives) ──
+# All pins exact-match the installed venv (audit 2026-05-04).
+dependencies = [
+  # Web framework
+  "fastapi==0.115.0",
+  "uvicorn[standard]==0.32.0",
+  "pydantic==2.9.2",
+  "httpx==0.27.2",
+  "python-multipart==0.0.12",
+
+  # Utilities
+  "python-dotenv==1.0.1",
+  "pyyaml==6.0.2",
+  "reportlab==4.2.2",
+
+  # GPU monitoring (always available — used by main.py /api/health)
+  "nvidia-ml-py==12.560.30",
+
+  # Scientific stack — already transitives of [rag], listed explicitly
+  # because backend/physics_engine.py uses them in base config too (SHI calc).
+  "numpy>=1.26,<3.0",
+  "scipy>=1.13,<2.0",
+]
+
+# ── Optional dependency extras ────────────────────────────────────────────────
+[project.optional-dependencies]
+
+# Database persistence (TimescaleDB driver + sync fallback)
+db = [
+  "asyncpg==0.30.0",
+  "psycopg2-binary==2.9.9",
+]
+
+# Dual-RAG knowledge stack
+rag = [
+  "chromadb==0.5.18",                # PIN EXACT — protects existing chroma_db/ corpus
+  "sentence-transformers==3.2.1",    # PIN EXACT — protects embedding cache
+  "faiss-cpu==1.13.2",               # PIN EXACT — GraphRAG IndexFlatIP
+  "networkx==3.6.1",                 # PIN EXACT — GraphRAG MultiDiGraph
+]
+
+# Observability
+obs = [
+  "prometheus-fastapi-instrumentator>=7.0.0,<8.0.0",
+  "prometheus-client==0.21.0",
+]
+
+# Dual-AI orchestration (Decision 3 RESOLVED — agent_engine.py preserved)
+# Versions reflect the inline note from original requirements.txt:
+#   "NeMo Guardrails 0.10.1 requires langchain-core >=0.2.14,<0.3.0
+#    so we pin langgraph to a version compatible with langchain-core 0.2.x"
+ai = [
+  "nemoguardrails==0.10.1",
+  "openai>=1.0.0,<2.0.0",
+  "langchain-core>=0.2.14,<0.3.0",
+  "langgraph>=0.2.0,<0.3.0",
+]
+
+# Physics engine extras (Decision 1 — S5 Kalman integration)
+# numpy + scipy already in base; numba added here because it's not currently
+# installed and only S5 cyber_physical_tools.py needs it (@njit).
+# Cross-platform note: numba on Windows requires Visual C++ Build Tools.
+phys = [
+  "numba>=0.60,<0.62",
+]
+
+# DPO edge healing (Decision 1 — S6 capture-only + manual recompile)
+# Heavy install (~2 GB). Only install when running S6 sprint locally.
+dpo = [
+  "torch>=2.5,<2.7",
+  "transformers>=4.46,<4.50",
+  "peft>=0.13,<0.16",
+  "bitsandbytes>=0.44,<0.46",
+  "datasets>=3.1,<4.0",
+  "accelerate>=1.1,<2.0",
+]
+
+# MCP server (subprocess for Claude Desktop)
+# Optional today — claude_desktop_config.json is not yet wired (per audit).
+mcp = [
+  "mcp>=1.0,<2.0",
+]
+
+# Development tooling — V1=A includes pytest-mock
+dev = [
+  # Test runner — versions match installed venv (no downgrades)
+  "pytest>=9.0,<10.0",
+  "pytest-asyncio>=1.3,<2.0",
+  "pytest-cov>=6.0,<7.0",
+  "pytest-mock>=3.14,<4.0",
+  "pytest-timeout>=2.3,<3.0",
+
+  # Code quality
+  "ruff>=0.7.4,<0.10",
+  "black>=24.10,<26.0",
+  "mypy>=1.13,<1.16",
+
+  # Type stubs (mypy soft mode)
+  "types-PyYAML>=6.0",
+  "types-requests>=2.32",
+
+  # Pre-commit
+  "pre-commit>=4.0,<5.0",
+]
+
+# Convenience meta-extras
+full = ["dc-epms-pro[db,rag,obs,phys]"]
+all = ["dc-epms-pro[db,rag,obs,ai,phys,mcp,dev]"]
+
+# ── Setuptools package discovery ──────────────────────────────────────────────
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["backend*"]
+exclude = ["tests*", "_legacy_backup*", "scripts*", "frontend*", "data*"]
+
+###############################################################################
+# Tooling configuration
+###############################################################################
+
+# ── Ruff (lint + format) ──────────────────────────────────────────────────────
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [
+  # Standard exclusions
+  "_legacy_backup",
+  "data",
+  "chroma_db",
+  "frontend/node_modules",
+  ".venv",
+  ".pytest_cache",
+  "__pycache__",
+  "logs",
+
+  # Physics duplicates (MD5-identical, deletion pending)
+  "backend/physics/physics_it_thermal.py",
+  "backend/physics/physics_heat_rejection.py",
+  "backend/physics/physics_electrical.py",
+  "backend/physics/physics__init__.py",
+  "backend/physics__init__.py",
+
+  # Decision 3-A: migration/iteration scripts at root.
+  # To be moved to scripts/_archive/ in Batch 3 cleanup.
+  "add_bom.py",
+  "apply_lucide.py",
+  "check_b3_syntax.py",
+  "check_s2_syntax.py",
+  "edit4_apply_binary.py",
+  "fix_entrypoint.py",
+  "fix_graphrag_routes.py",
+  "fix_knowledge_graph.py",
+  "fix_test_fixture.py",
+  "inspect_sm.py",
+  "inspect_sm2.py",
+  "patch_main_s2_v2.py",
+  "setup_graphrag_backend.py",
+  "setup_graphrag_integration.py",
+  "setup_knowledge_corpus.py",
+  "sprint1_e2e_test.py",
+  "sprint2_e2e_test.py",
+  "sprint_s1a_smoke.py",
+  "sprint_s1b_smoke_cmms.py",
+]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",     # pycodestyle
+  "F",          # pyflakes
+  "I",          # isort
+  "B",          # flake8-bugbear
+  "C4",         # flake8-comprehensions
+  "UP",         # pyupgrade
+  "SIM",        # flake8-simplify
+  "N",          # pep8-naming
+  "RUF",        # ruff-specific
+  "PT",         # pytest-style
+  "PIE",        # flake8-pie
+]
+ignore = [
+  "E501",       # line length handled by formatter
+  "B008",       # FastAPI Depends() pattern
+  "N806",       # var should be lowercase (physics: T_in, P_drop, ΔP)
+  "N803",       # arg should be lowercase (same)
+  "SIM108",     # ternary vs if-else (style preference)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "PLR2004", "ARG001"]
+"backend/migrations/**/*.py" = ["E", "F", "N"]
+"conftest.py" = ["F401", "F403"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["backend"]
+combine-as-imports = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+# ── Black (formatter — kept as backup; ruff format is primary) ────────────────
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+extend-exclude = '''
+/(
+    \.venv
+  | _legacy_backup
+  | data
+  | chroma_db
+  | frontend/node_modules
+  | \.pytest_cache
+  | __pycache__
+  | logs
+  | backend/physics/physics_it_thermal\.py
+  | backend/physics/physics_heat_rejection\.py
+  | backend/physics/physics_electrical\.py
+  | backend/physics/physics__init__\.py
+  | backend/physics__init__\.py
+  | add_bom\.py
+  | apply_lucide\.py
+  | check_b3_syntax\.py
+  | check_s2_syntax\.py
+  | edit4_apply_binary\.py
+  | fix_entrypoint\.py
+  | fix_graphrag_routes\.py
+  | fix_knowledge_graph\.py
+  | fix_test_fixture\.py
+  | inspect_sm\.py
+  | inspect_sm2\.py
+  | patch_main_s2_v2\.py
+  | setup_graphrag_backend\.py
+  | setup_graphrag_integration\.py
+  | setup_knowledge_corpus\.py
+  | sprint1_e2e_test\.py
+  | sprint2_e2e_test\.py
+  | sprint_s1a_smoke\.py
+  | sprint_s1b_smoke_cmms\.py
+)
+'''
+
+# ── Mypy (SOFT mode for V9 baseline) ──────────────────────────────────────────
+[tool.mypy]
+python_version = "3.12"
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+no_implicit_optional = true
+check_untyped_defs = true
+follow_imports = "silent"
+exclude = [
+  "_legacy_backup/",
+  "data/",
+  "chroma_db/",
+  "tests/",
+  "logs/",
+  "frontend/",
+  ".venv/",
+  "backend/physics/physics_.*\\.py",
+  "backend/physics__init__\\.py",
+  "^(add_bom|apply_lucide|check_b3_syntax|check_s2_syntax|edit4_apply_binary|fix_entrypoint|fix_graphrag_routes|fix_knowledge_graph|fix_test_fixture|inspect_sm|inspect_sm2|patch_main_s2_v2|setup_graphrag_backend|setup_graphrag_integration|setup_knowledge_corpus|sprint1_e2e_test|sprint2_e2e_test|sprint_s1a_smoke|sprint_s1b_smoke_cmms)\\.py$",
+]
+
+# Mature modules can be strict-typed individually
+[[tool.mypy.overrides]]
+module = "backend.site_model"
+disallow_untyped_defs = true
+disallow_any_generics = true
+
+[[tool.mypy.overrides]]
+module = "backend.procedure_engine"
+disallow_untyped_defs = true
+disallow_any_generics = true
+
+# Third-party packages without stubs
+[[tool.mypy.overrides]]
+module = [
+  "chromadb.*",
+  "faiss.*",
+  "networkx.*",
+  "sentence_transformers.*",
+  "numba.*",
+  "nemoguardrails.*",
+  "langgraph.*",
+  "langchain_core.*",
+  "reportlab.*",
+  "asyncpg.*",
+  "mcp.*",
+]
+ignore_missing_imports = true
+
+# ── Pytest configuration ──────────────────────────────────────────────────────
+# Critical: this fixes the "pytest aggregate hangs" bug from audit 2026-05-03.
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+  "--strict-markers",
+  "--strict-config",
+  "--tb=short",
+  "-ra",
+  "--timeout=30",
+  "--timeout-method=thread",
+  "-m", "not slow",
+]
+markers = [
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+  "integration: requires database/external services",
+  "smoke: lightweight end-to-end smoke tests",
+  "physics: physics_engine module tests",
+  "graphrag: GraphRAG NetworkX/FAISS tests",
+  "rag: ChromaDB tier-aware RAG tests",
+  "agent: agent_copilot or MCP server tests",
+  "loto: LOTO-related procedure tests",
+]
+asyncio_mode = "auto"
+filterwarnings = [
+  "error",
+  "ignore::DeprecationWarning:faiss.*",
+  "ignore::PendingDeprecationWarning",
+  "ignore::UserWarning:chromadb.*",
+  "ignore::UserWarning:sentence_transformers.*",
+  "ignore::DeprecationWarning:langchain.*",
+  "ignore::DeprecationWarning:langgraph.*",
+  "ignore::DeprecationWarning:nemoguardrails.*",
+  "ignore::DeprecationWarning:pydantic.*",
+]
+
+# ── Coverage (pytest-cov) ─────────────────────────────────────────────────────
+[tool.coverage.run]
+source = ["backend"]
+branch = true
+omit = [
+  "*/tests/*",
+  "*/_legacy_backup/*",
+  "backend/physics/physics_it_thermal.py",
+  "backend/physics/physics_heat_rejection.py",
+  "backend/physics/physics_electrical.py",
+  "backend/physics/physics__init__.py",
+  "backend/physics__init__.py",
+  "backend/migrations/*",
+]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+skip_covered = false
+exclude_lines = [
+  "pragma: no cover",
+  "raise NotImplementedError",
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "@(abc\\.)?abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

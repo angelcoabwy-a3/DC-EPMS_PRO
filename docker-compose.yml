@@ -1,0 +1,143 @@
+# =============================================================================
+# DC-EPMS PRO — docker-compose.yml (Batch 2)
+#
+# Resolves bugs from audit 2026-05-03:
+#   - epms-backend auto-restart loop stealing port 8080 (was: restart: always)
+#   - Missing healthcheck (was: implicit "running" only)
+#   - No graceful shutdown timeout (was: SIGKILL after 10s default)
+#
+# Architecture preserved (per status doc):
+#   - epms-db = TimescaleDB hypertable for telemetry + incidents
+#   - epms-backend = FastAPI on 8080
+#   - Network isolation: backend → db on internal bridge, NOT exposed
+#
+# Run:
+#   docker compose up -d
+#   docker compose logs -f epms-backend
+#   docker compose down
+# =============================================================================
+
+services:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # TimescaleDB — telemetry and incidents persistence
+  # ─────────────────────────────────────────────────────────────────────────
+  epms-db:
+    image: timescale/timescaledb:latest-pg16
+    container_name: epms-db
+    restart: unless-stopped              # ← FIX: was 'always' causing restart storms
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dcepms}
+      POSTGRES_USER: ${POSTGRES_USER:-epms}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-epms_dev_only_change_me}
+      # TimescaleDB tuning for hypertables
+      TIMESCALEDB_TELEMETRY: "off"
+
+    ports:
+      - "5432:5432"                      # Expose for local dev (psql, pgAdmin)
+
+    volumes:
+      - epms-db-data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-epms} -d ${POSTGRES_DB:-dcepms}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    stop_grace_period: 30s               # ← FIX: was 10s (Postgres needs time to fsync)
+
+    networks:
+      - epms-internal
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # FastAPI backend — DC-EPMS PRO application
+  # ─────────────────────────────────────────────────────────────────────────
+  epms-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        EXTRAS: "db,rag,obs"             # Decision B2-1 = B (full minus ai/phys/dpo/mcp)
+      cache_from:
+        - dc-epms-pro:latest
+
+    image: dc-epms-pro:latest
+    container_name: epms-backend
+    restart: unless-stopped              # ← FIX: was 'always' causing port-8080 storms
+
+    depends_on:
+      epms-db:
+        condition: service_healthy       # ← Wait for DB before starting
+
+    environment:
+      # Database connection (resolved via Docker DNS to epms-db service)
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-epms}:${POSTGRES_PASSWORD:-epms_dev_only_change_me}@epms-db:5432/${POSTGRES_DB:-dcepms}"
+
+      # Application config
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+      # LM Studio endpoint — defaults to host.docker.internal so container can
+      # reach the host machine's gemma-4-e2b-it server. Override in .env if needed.
+      LM_STUDIO_BASE_URL: ${LM_STUDIO_BASE_URL:-http://host.docker.internal:1234}
+
+      # FAISS bug DC-EPMS-001 — also export inside container for safety
+      # (Linux runtime is not affected by AVX2 access violation, but explicit
+      # is better than implicit per V9 discipline)
+      FAISS_NO_AVX2: "1"
+
+      # Prometheus instrumentation (Decision B2-3 = B = curated subset)
+      ENABLE_METRICS: "true"
+
+    ports:
+      - "8080:8080"
+
+    volumes:
+      # ChromaDB corpus (Tier 1-4, 20 docs, ~2.4 MB) persists across restarts
+      - epms-chroma-data:/app/data/chroma_db
+      # Logs accessible from host
+      - ./logs:/app/logs
+      # Config bind-mount so SiteModel YAML edits don't require image rebuild
+      - ./config:/app/config:ro
+
+    extra_hosts:
+      # Allows container to reach LM Studio on Windows host
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "4", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s                  # FastAPI lifespan loads ChromaDB lazy ~2-5s
+
+    stop_grace_period: 20s               # Allow uvicorn lifespan shutdown hook
+
+    networks:
+      - epms-internal
+      - epms-egress                      # External access for LM Studio, web search
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  epms-internal:
+    name: epms-internal
+    driver: bridge
+    internal: false                      # Must allow DB egress for migrations
+  epms-egress:
+    name: epms-egress
+    driver: bridge
+
+# =============================================================================
+# Volumes — named, persistent across container recreate
+# =============================================================================
+volumes:
+  epms-db-data:
+    name: epms-db-data
+  epms-chroma-data:
+    name: epms-chroma-data

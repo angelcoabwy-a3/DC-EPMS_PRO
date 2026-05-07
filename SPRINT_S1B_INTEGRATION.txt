@@ -1,0 +1,164 @@
+═══════════════════════════════════════════════════════════════════════
+  Sprint S1b — main.py integration notes
+═══════════════════════════════════════════════════════════════════════
+
+Three small edits to backend/main.py to wire S1b into the app.
+
+─────────────────────────────────────────────────────────────────────
+1. IMPORT (near other router imports, ~top of main.py)
+─────────────────────────────────────────────────────────────────────
+
+  # Sprint S1b: site model HTTP endpoints
+  try:
+      import site_routes
+      _SITE_ROUTES_AVAILABLE = True
+  except Exception as _site_err:
+      logging.getLogger(__name__).warning(
+          "[main] site_routes unavailable: %s", _site_err
+      )
+      _SITE_ROUTES_AVAILABLE = False
+
+
+─────────────────────────────────────────────────────────────────────
+2. STARTUP HOOK (where the FastAPI app object is configured,
+   typically right after `app = FastAPI(...)` and before
+   the existing router mounts)
+─────────────────────────────────────────────────────────────────────
+
+  if _SITE_ROUTES_AVAILABLE:
+      try:
+          from pathlib import Path as _Path
+          _project_root = _Path(__file__).resolve().parent.parent
+          site_routes.configure(_project_root)
+          app.include_router(site_routes.router)
+          # Eager-load the singleton so first request is fast and any
+          # YAML errors surface at boot, not at first user action
+          from site_model import get_site_model
+          _site_model = get_site_model(_project_root)
+          logging.getLogger(__name__).info(
+              "[main] site_model loaded: %d components, %d locations",
+              len(_site_model.list_components()),
+              len(_site_model._location_by_id),
+          )
+      except Exception as _e:
+          logging.getLogger(__name__).exception(
+              "[main] site_routes mount failed: %s", _e
+          )
+
+
+─────────────────────────────────────────────────────────────────────
+3. CMMS WO INJECTION (in cmms_mcp.py — modify tool_draft_cmms_work_order)
+─────────────────────────────────────────────────────────────────────
+
+  Current signature (v8.1):
+      def tool_draft_cmms_work_order(
+          title: str,
+          description: str,
+          priority: str = "medium",
+          asset_id: Optional[str] = None,
+          ...
+      ) -> dict:
+          draft = {
+              "title": title,
+              "description": description,
+              "priority": priority,
+              "asset_id": asset_id,
+              ...
+          }
+          return draft
+
+  Add at the end, just before `return draft`:
+
+      # Sprint S1b: inject site_model location if asset_id matches a
+      # known component. Backward compatible — fails soft if site_model
+      # not loaded or asset_id not found.
+      if asset_id:
+          try:
+              from cmms_site_enrichment import enrich_wo_with_location
+              draft = enrich_wo_with_location(draft, asset_id)
+          except Exception as e:
+              logging.getLogger(__name__).warning(
+                  "[cmms_mcp] site_model enrichment skipped: %s", e
+              )
+      return draft
+
+  Note: if cmms_mcp.py uses `target_component_id` instead of `asset_id`
+  for the canonical id parameter, adapt accordingly. The enrichment
+  function takes the canonical_id as positional arg and is name-agnostic.
+
+
+─────────────────────────────────────────────────────────────────────
+4. AGENT TOOL REGISTRATION (in agent_copilot.py)
+─────────────────────────────────────────────────────────────────────
+
+  Where the existing tools are declared (probably a TOOLS list or dict),
+  add the new tool:
+
+      from agent_site_tool import (
+          tool_query_site_model,
+          TOOL_DEFINITION as SITE_TOOL_DEFINITION,
+      )
+
+      TOOLS = [
+          ...existing v8.0/v8.1 tools...,
+          SITE_TOOL_DEFINITION,
+      ]
+
+  In the dispatch function (where tool_use blocks are routed):
+
+      def dispatch(tool_name, args):
+          ...
+          elif tool_name == "query_site_model":
+              return tool_query_site_model(**args)
+          ...
+
+  Update the agent SYSTEM_PROMPT to mention the new tool. Suggested
+  addition (append to the existing prompt):
+
+      "You have access to a query_site_model tool to answer location
+       and topology questions about A3-Alpha. Use it when the user asks:
+         - WHERE a component is physically located
+         - WHAT FEEDS a component (power chain, redundancy)
+         - WHAT IS AFFECTED if a component is taken offline (LOTO impact)
+       Read the tool's response and explain it in operational terms.
+       The tool returns FACTS only — do not invent or extrapolate."
+
+
+─────────────────────────────────────────────────────────────────────
+5. FRONTEND integration (in frontend/index.html)
+─────────────────────────────────────────────────────────────────────
+
+  See the comment block at the top of frontend/site_topology_view.html
+  for step-by-step instructions. In summary:
+
+  a) Add nav item to sidebar menu
+  b) Paste the <section id="view-site-topology"> panel into <main>
+  c) Append the <style> block to assets/app.css (or keep inline)
+  d) Append the <script> block to assets/app.js (or keep inline)
+  e) Make sure your existing view-router (the code that swaps which
+     <section id="view-..."> is visible based on sidebar clicks) calls
+     SiteTopology.init() when site-topology becomes the active view.
+     The fallback DOMContentLoaded listener at the end of the JS will
+     handle this automatically if your nav uses [data-view] attributes.
+
+
+─────────────────────────────────────────────────────────────────────
+6. SMOKE VERIFICATION (after deploy)
+─────────────────────────────────────────────────────────────────────
+
+  Start the backend:
+      uvicorn main:app --reload --port 8080
+
+  Test endpoints (PowerShell or curl):
+      Invoke-RestMethod http://localhost:8080/api/site/metadata
+      Invoke-RestMethod http://localhost:8080/api/site/buildings
+      Invoke-RestMethod http://localhost:8080/api/site/locate/chiller_1
+      Invoke-RestMethod http://localhost:8080/api/site/loto-impact/rpp_a_01
+
+  Visit http://localhost:8080 and click the new "Site Topology" sidebar
+  item. Expand Building A → Data Hall A → Row A-01 → click rack_a_01_05.
+  The right panel should show: location breadcrumb, then click
+  "Power Chain" tab → 2N proof with Path A and Path B. Click "LOTO
+  Impact" tab → safe/unsafe banner.
+
+═══════════════════════════════════════════════════════════════════════

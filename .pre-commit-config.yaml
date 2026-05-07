@@ -1,0 +1,177 @@
+# =============================================================================
+# DC-EPMS PRO - pre-commit hooks v2
+# Aligned with pyproject.toml v2 (post-audit 2026-05-04 field reconciliation).
+#
+# Install once:    pre-commit install
+# Run all files:   pre-commit run --all-files
+# Update versions: pre-commit autoupdate
+#
+# Vote 3-A applied: 23 root iteration scripts excluded from ALL hooks
+# (cleanup to scripts/_archive/ scheduled for Batch 3).
+# =============================================================================
+
+default_language_version:
+  python: python3.12
+
+default_stages: [pre-commit]
+
+fail_fast: false
+
+# Files excluded from ALL hooks - includes Vote 3-A scripts
+exclude: |
+  (?x)^(
+    _legacy_backup/.*|
+    data/.*|
+    chroma_db/.*|
+    logs/.*|
+    htmlcov/.*|
+    \.venv/.*|
+    \.pytest_cache/.*|
+    __pycache__/.*|
+    frontend/node_modules/.*|
+    .*\.bak_pre_.*|
+    .*\.bak$|
+    requirements.*\.txt|
+    backend/physics/physics_it_thermal\.py|
+    backend/physics/physics_heat_rejection\.py|
+    backend/physics/physics_electrical\.py|
+    backend/physics/physics__init__\.py|
+    backend/physics__init__\.py|
+    add_bom\.ps1|
+    apply_lucide\.py|
+    check_b3_syntax\.py|
+    check_backup\.ps1|
+    check_bom\.ps1|
+    check_s2_syntax\.py|
+    edit3_apply\.ps1|
+    edit3_partB_fix\.ps1|
+    edit4_apply\.ps1|
+    edit4_apply_binary\.py|
+    edit4_apply_v2\.ps1|
+    edit4_fix_location\.ps1|
+    edit4_fix_v3\.ps1|
+    fix_entrypoint\.py|
+    fix_graphrag_routes\.py|
+    fix_knowledge_graph\.py|
+    fix_test_fixture\.py|
+    inspect_sm\.py|
+    inspect_sm2\.py|
+    patch_main_s2_v2\.py|
+    setup_graphrag_backend\.py|
+    setup_graphrag_integration\.py|
+    setup_knowledge_corpus\.py|
+    sprint1_e2e_test\.py|
+    sprint2_e2e_test\.py|
+    sprint3_demo\.ps1|
+    sprint_s1a_smoke\.py|
+    sprint_s1b_smoke_cmms\.py
+  )$
+
+repos:
+  # === Standard hygiene hooks ================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+        args: [--unsafe]
+        exclude: |
+          (?x)^(
+            \.github/.*|
+            docker-compose\.ya?ml
+          )$
+      - id: check-yaml
+        name: check-yaml (strict for github/docker)
+        files: ^(\.github/|docker-compose\.ya?ml$)
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-case-conflict
+      - id: check-symlinks
+      - id: debug-statements
+
+  # === Ruff: lint + format (replaces isort + flake8 + parts of black) ========
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.4
+    hooks:
+      - id: ruff
+        name: ruff (lint + autofix)
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        types_or: [python, pyi]
+
+  # === Mypy: type checking (SOFT mode per pyproject.toml v2) =================
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        name: mypy (soft mode)
+        args:
+          - --config-file=pyproject.toml
+        additional_dependencies:
+          - pydantic>=2.9
+          - types-PyYAML
+          - types-requests
+          - sqlalchemy>=2.0
+        files: ^backend/
+        exclude: |
+          (?x)^(
+            backend/physics/physics_.*\.py|
+            backend/physics__init__\.py|
+            backend/migrations/.*
+          )$
+
+  # === YAML schema lint for procedures (config/ only) ========================
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        name: yamllint (config/)
+        args: [--strict, -d, "{extends: relaxed, rules: {line-length: {max: 200}}}"]
+        files: ^config/.*\.ya?ml$
+
+  # === Markdown lint (docs/adr/ only, low-noise) =============================
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.42.0
+    hooks:
+      - id: markdownlint
+        name: markdownlint (docs/ ADRs)
+        args: [--disable=MD013, --disable=MD033, --disable=MD041]
+        files: ^docs/adr/.*\.md$
+
+# =============================================================================
+# Notes for first run (Wilmer):
+#
+# 1. After `pre-commit install`, the FIRST `pre-commit run --all-files`
+#    will likely modify many files (ruff format + end-of-file fixes on
+#    backend/ and tests/). COMMIT THAT SEPARATELY with message:
+#      "chore: apply pre-commit baseline formatting (no logic changes)"
+#    so the audit trail stays clean.
+#
+# 2. The 23 root iteration scripts (vote 3-A) are EXCLUDED from all hooks.
+#    They will be moved to scripts/_archive/ in Batch 3.
+#
+# 3. requirements*.txt files are excluded because they will be deprecated
+#    by pyproject.toml v2 (and they have BOM/encoding issues that we don't
+#    want to "fix" in place since they're going away anyway).
+#
+# 4. mypy SOFT mode means many missing-type warnings will NOT block commits.
+#    These can be tightened module-by-module via [[tool.mypy.overrides]]
+#    in pyproject.toml as the codebase matures (Batch 4 candidate).
+#
+# 5. yamllint hook only fires on config/*.yaml - this is intentional.
+#    The huge site_model.yml is checked by `check-yaml --unsafe` only.
+#
+# 6. Hook for `markdownlint` only runs on docs/adr/ to keep noise down
+#    while keeping ADR quality high. docs/adr/ does not exist yet -
+#    will be created in Batch 3.
+# =============================================================================

@@ -1,0 +1,159 @@
+# =============================================================================
+# DC-EPMS PRO — .dockerignore (Batch 2)
+#
+# Aggressive exclusion to keep build context lean (<50 MB).
+# Without this, .venv alone would balloon the context to >2 GB.
+#
+# Rule of thumb: only include what the runtime needs to RUN, not to DEVELOP.
+# =============================================================================
+
+# ─── Python virtual env (NEVER copy — image rebuilds its own) ────────────────
+.venv/
+venv/
+env/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+
+# ─── Git / VCS / CI metadata ─────────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+.github/
+.gitlab/
+
+# ─── IDE / editor artifacts ──────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── Docker meta (don't recursively copy) ────────────────────────────────────
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+
+# ─── Documentation (not needed at runtime) ───────────────────────────────────
+README.md
+CHANGELOG.md
+*.md
+docs/
+DEMO_SCRIPT.md
+FASE3_DEPLOY.md
+SPRINT_S1B_INTEGRATION.txt
+01_INSTRUCTIONS.md
+02_STATUS_SUMMARY.md
+02_STATUS_SUMMARY_REAL.md
+03_TECHNICAL_SPECS_800VDC.md
+S5_5_BRIEFING_SPEC.md
+COMANDOS_BATCH_1.md
+a3semi_CET_Training_Manual.pdf
+
+# ─── Tests (not in production runtime) ───────────────────────────────────────
+tests/
+conftest.py
+pytest_*.log
+*.bak
+*.bak_pre_*
+
+# ─── Backups and forensics ───────────────────────────────────────────────────
+_legacy_backup/
+*.bak_pre_pep621_*
+*.bak_pre_pyproject_*
+*.bak_pre_slow_default_*
+*.bak_pre_faiss_*
+*.bak_pre_slow_markers_*
+*.bak_pre_batch1_close_*
+
+# ─── Build artifacts (generated inside container) ────────────────────────────
+build/
+dist/
+*.whl
+
+# ─── Database persistent data (mounted as volume, not baked) ─────────────────
+data/
+chroma_db/
+data/chroma_db/
+
+# ─── Logs (mounted at runtime, not baked) ────────────────────────────────────
+logs/
+*.log
+
+# ─── Frontend build artifacts (assumes pre-built static assets) ──────────────
+frontend/node_modules/
+frontend/.next/
+frontend/.cache/
+
+# ─── Iteration scripts at root (DC-EPMS-005, archive pending Batch 3) ────────
+add_bom.ps1
+add_bom.py
+apply_lucide.py
+check_b3_syntax.py
+check_backup.ps1
+check_bom.ps1
+check_s2_syntax.py
+edit3_apply.ps1
+edit3_partB_fix.ps1
+edit4_apply.ps1
+edit4_apply_binary.py
+edit4_apply_v2.ps1
+edit4_fix_location.ps1
+edit4_fix_v3.ps1
+fix_entrypoint.py
+fix_graphrag_routes.py
+fix_knowledge_graph.py
+fix_test_fixture.py
+inspect_sm.py
+inspect_sm2.py
+patch_main_s2_v2.py
+patch_pyproject_skip_slow.py
+patch_graphrag_slow_markers.py
+setup_graphrag_backend.py
+setup_graphrag_integration.py
+setup_knowledge_corpus.py
+sprint1_e2e_test.py
+sprint2_e2e_test.py
+sprint3_demo.ps1
+sprint_s1a_smoke.py
+sprint_s1b_smoke_cmms.py
+validate_environment.ps1
+apply_batch2.ps1
+validate_batch2.ps1
+
+# ─── Legacy requirements (replaced by pyproject.toml) ────────────────────────
+requirements.txt
+requirements-full.txt
+requirements-minimal.txt
+pytest.ini
+
+# ─── Duplicate physics modules (DC-EPMS-004, deletion pending Batch 3) ───────
+backend/physics/physics_it_thermal.py
+backend/physics/physics_heat_rejection.py
+backend/physics/physics_electrical.py
+backend/physics/physics__init__.py
+backend/physics__init__.py
+
+# ─── Local environment files (NEVER copy secrets into image) ─────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ─── OS / temp ───────────────────────────────────────────────────────────────
+*.tmp
+*.temp
+nul

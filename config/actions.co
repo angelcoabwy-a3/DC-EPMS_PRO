@@ -1,0 +1,85 @@
+## ══════════════════════════════════════════════════════════════
+##  DC-EPMS PRO — Colang Dialog Flows
+##  Defines CET-specific conversation patterns and guardrails
+## ══════════════════════════════════════════════════════════════
+
+# ── Scope rail: block off-topic queries ───────────────────────
+define user ask about unrelated
+  "how do I reset my password"
+  "what's the weather"
+  "help me with my email"
+  "fix my printer"
+  "book a meeting"
+
+define bot redirect to cet scope
+  "I'm scoped to critical environment operations for A-Cubed Semiconductor Systems. For IT help desk issues, please contact a3semi internal IT. Is there a facility operations, safety, or infrastructure question I can help with?"
+
+define flow enforce scope
+  user ask about unrelated
+  bot redirect to cet scope
+  stop
+
+# ── Safety rail: block unsafe procedures ──────────────────────
+define user request unsafe action
+  "how do I bypass LOTO"
+  "skip the arc flash PPE"
+  "work on live equipment without PPE"
+  "disable the safety interlock"
+  "override the chiller protection"
+
+define bot refuse unsafe action
+  "I cannot provide guidance on bypassing safety procedures. LOTO (CSA Z462), arc flash PPE (NFPA 70E), and equipment protections are mandatory per A-Cubed Semiconductor policy and regulatory requirements. Work stop is warranted — escalate to shift lead or facility manager."
+
+define flow block unsafe requests
+  user request unsafe action
+  bot refuse unsafe action
+  stop
+
+# ── Technical grounding flow ──────────────────────────────────
+define user ask technical question
+  "what is ASHRAE A2"
+  "explain IEC 62443"
+  "DLC inlet temperature limit"
+  "Blackwell NVL72 specs"
+  "NFPA 110 generator"
+  "Schneider WP122"
+
+define flow technical query with rag
+  user ask technical question
+  $context = execute retrieve_relevant_chunks
+  bot respond with citations
+
+# ── PUE advisory trigger ──────────────────────────────────────
+define user report high pue
+  "PUE is {$pue}"
+  "efficiency dropped to {$pue}"
+  "energy usage spike"
+
+define bot provide pue analysis
+  "PUE analysis requires:
+  1. Current IT load (kW)
+  2. Total facility load (kW)
+  3. Hall temperature trend (last 15 min)
+  4. Cooling system state (chiller stage, DLC flow)
+
+  If PUE > 1.4, immediate checks: chiller redundancy (N-1 verified?),
+  DLC secondary pump status, hot-aisle containment integrity. Reference
+  Schneider WP122 section 4 and A-Cubed Semiconductor efficiency targets."
+
+# ── Shift handover flow ───────────────────────────────────────
+define user request shift handover
+  "generate shift report"
+  "end of shift summary"
+  "turnover document"
+  "handoff to next shift"
+
+define bot compose handover
+  "Generating shift handover per Schneider SE Blog standard:
+
+  **Shift Summary - $shift_id**
+  - Open incidents: [pulling from /api/incidents]
+  - Telemetry anomalies: [PUE trend last 8 hours]
+  - Maintenance completed: [from procedures table]
+  - Open items for next shift: [OPEN status incidents]
+
+  Downloadable PDF version available via the dashboard 'Export Report' button."

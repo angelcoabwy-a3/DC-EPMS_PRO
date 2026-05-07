@@ -1,0 +1,176 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  paperclip_org.yml — DC-EPMS PRO v8 Tri-Brain Hierarchy
+# ═══════════════════════════════════════════════════════════════════════
+#
+# NOTE: "Paperclip" here is an internal orchestrator pattern, NOT an
+# external library. The semantics are: declarative role hierarchy +
+# capability-scoped tool access + mandatory approval routing for any
+# write-intent action. The Python module that consumes this YAML is
+# `cmms_mcp.py`.
+# ═══════════════════════════════════════════════════════════════════════
+
+orchestrator: paperclip
+version: 8.0.0
+facility: a3-alpha-toronto
+
+# ── Role hierarchy ─────────────────────────────────────────────────────
+# Three brains. Each has explicit capabilities and EXPLICIT prohibitions.
+# Prohibitions are enforced by the dispatcher in cmms_mcp.py — they are
+# not advisory.
+roles:
+
+  dc_ops_manager:
+    identity: claude_opus_4
+    runtime: anthropic_api
+    role_class: orchestrator
+    capabilities:
+      - read.unified_graph
+      - read.physics_engine
+      - read.cmms_history
+      - dispatch.thermal_specialist
+      - dispatch.board_approval
+      - generate.cmms_work_order_draft
+      - self_heal.code_synthesis     # for v8.1+ AST-level fix proposals
+    prohibitions:
+      - execute.bms_write             # NEVER — drafts only
+      - execute.cmms_dispatch         # NEVER — drafts only
+      - bypass.board_approval         # NEVER — IEC 62443 SR 6.1
+    routing_priority:
+      - cost_estimate_usd: ascending
+      - lor_level: ascending          # prefer low-risk routes first
+
+  thermal_specialist:
+    identity: hermes_3_8b_q4_k_m      # llama.cpp gguf @ 6GB VRAM ceiling
+    runtime: llama_cpp_local
+    role_class: domain_expert
+    capabilities:
+      - read.unified_graph
+      - read.physics_engine.thermal_modules_only
+      - compute.kalman_innovation
+      - compute.send_on_delta_filter
+      - emit.thermal_advisory          # text advisory, NOT a draft
+    prohibitions:
+      - execute.bms_write              # NEVER, period
+      - execute.physical_actuation     # NEVER — IEC 62443 hard line
+      - generate.cmms_work_order_draft # delegated to dc_ops_manager
+      - dispatch.board_approval        # cannot escalate directly
+      - read.electrical_modules        # scope-limited to thermal
+    must_route_to: dc_ops_manager
+    rationale: |
+      Hermes is a domain-specialist inference oracle. It runs locally
+      on the edge to keep thermal-loop latency below 500 ms (the ODE
+      forecast cadence). It does NOT have OT write capability — not by
+      configuration, by topology. The model runs in an isolated process
+      that has no socket access to the BMS connector. Even a successful
+      prompt injection cannot escalate.
+
+  the_board:
+    identity: human_operator
+    runtime: hmi_browser
+    role_class: approval_authority
+    capabilities:
+      - approve.cmms_work_order_draft
+      - reject.cmms_work_order_draft   # rejection feeds DPO loop
+      - modify.lor_level
+      - modify.procedure_class         # SOP→MOP→DMOP→EOP escalation
+      - approve.bms_write_via_draft
+      - approve.contractor_dispatch_msow
+    prohibitions:
+      - bypass.draft_review            # cannot skip the 2-eye review
+      - delegate.approval_to_agent     # IEC 62443 SR 6.1 — human must act
+    iec_62443_role: SR_6_1_approver
+
+# ── Routing rules ──────────────────────────────────────────────────────
+# Every action that mutates OT state MUST traverse this DAG:
+#
+#   thermal_specialist  ──advisory──►  dc_ops_manager
+#                                            │
+#                                       drafts CMMS WO
+#                                            │
+#                                            ▼
+#                                       the_board
+#                                            │
+#                                       approve / reject / modify
+#                                            │
+#                                            ▼
+#                                  hal.execute (audited)
+#
+routing:
+  thermal_event_to_action:
+    - source: thermal_specialist
+      via: dc_ops_manager
+      gate: the_board
+      audit_chain: nist_sp_800_82
+
+  cost_threshold_usd: 5000             # > $5k auto-attaches MSOW + EMPS
+  loto_required_threshold_lor: 3        # LOR ≥ 3 → DMOP mandatory
+  emergency_threshold_thermal_dt:        # |dT/dt| at rack inlet
+    critical: 0.5                       # K/s — EOP, immediate
+    warning:  0.1                       # K/s — MOP, scheduled
+    nominal:  0.0                       # K/s — SOP, routine PM
+
+# ── CMMS taxonomy (Microsoft CO+I aligned) ─────────────────────────────
+# These class names match Microsoft's published critical-environments
+# taxonomy. The dispatcher selects exactly one work_class per draft.
+cmms_taxonomy:
+  work_class:
+    PM:                                 # Preventive Maintenance
+      description: "Scheduled, time/usage-based, no functional impairment"
+      default_procedure: SOP
+      requires_loto: false
+      board_review_sla_hours: 72
+    CM:                                 # Corrective Maintenance
+      description: "Restorative, impairment present, ASHRAE/SLA at risk"
+      default_procedure: MOP
+      requires_loto: conditional
+      board_review_sla_hours: 24
+    EM:                                 # Emergency Maintenance
+      description: "Imminent failure, redundancy compromised, EOP active"
+      default_procedure: EOP
+      requires_loto: true               # always for EM
+      board_review_sla_hours: 1
+
+  procedure_class:
+    SOP:                                # Standard Operating Procedure
+      scope: routine_repeatable
+      drift_tolerance_k: 0.5
+    MOP:                                # Method of Procedure
+      scope: state_changing_planned
+      drift_tolerance_k: 0.2
+      requires_pre_brief: true
+    DMOP:                               # De-energized Method of Procedure
+      scope: loto_required
+      drift_tolerance_k: 0.0
+      requires_loto_isolation_verification: true
+      requires_pre_brief: true
+      requires_two_person_rule: true    # NFPA 70E
+    EOP:                                # Emergency Operating Procedure
+      scope: time_critical_response
+      drift_tolerance_k: 0.0
+      requires_pre_brief: false         # speed > brief
+      requires_post_event_review: true
+
+  contractor_attachments:
+    MSOW: "Master Statement of Work — contract framework"
+    EMPS: "Electrical/Mechanical Procedure Statement — task-specific"
+    cost_threshold_usd_for_emps: 5000
+
+# ── LOR (Level of Risk) matrix ────────────────────────────────────────
+# Composite score from likelihood × consequence × redundancy_state.
+# Score ∈ [1, 5]. ≥3 triggers DMOP and two-person rule.
+lor_matrix:
+  axes:
+    likelihood: [rare, unlikely, possible, likely, almost_certain]
+    consequence:
+      - cosmetic
+      - operational_inconvenience
+      - sla_breach_minor
+      - sla_breach_major
+      - safety_or_facility_loss
+  redundancy_modifier:
+    "2N":  -1                           # active 2N reduces effective LOR
+    "N+1": 0
+    "N":   +1                           # already degraded → escalate
+  computation: |
+    raw = likelihood_idx * consequence_idx
+    lor = clamp(raw / 5 + redundancy_modifier, 1, 5)

@@ -1,0 +1,158 @@
+# ════════════════════════════════════════════════════════════════════
+#  MOP-ATS-MONTHLY-001 — ATS Monthly Transfer Test (Path A → B → A)
+# ════════════════════════════════════════════════════════════════════
+# Reference: NFPA 110 Type 10 (annual at full load), monthly no-load.
+# Reference: NETA MTS-2019, Section 7.22.3 (ATS testing requirements)
+# This procedure exercises Genset_A and verifies ATS transfer logic
+# without taking the facility off the public grid permanently.
+#
+# Tier IV facilities run this monthly. Microsoft CO+I taxonomy: PM/MOP.
+# ════════════════════════════════════════════════════════════════════
+
+procedure_id: MOP-ATS-MONTHLY-001
+title: "ATS Monthly Transfer Test - Path A"
+work_class: PM
+procedure_class: MOP
+default_lor: 3              # high — datacenter at risk during transfer
+estimated_duration_min: 35
+applicable_standards:
+  - NFPA_110_Type_10
+  - NETA_MTS_2019_7_22_3
+  - NFPA_70E_arc_flash
+
+pre_conditions:
+  - id: redundancy_2N_required
+    description: "Site must be in 2N redundancy mode"
+    check: site_redundancy_mode == "2N"
+    failure_action: ABORT
+
+  - id: no_open_critical_incidents
+    description: "No CRITICAL severity unacknowledged incidents"
+    check: severity_max < CRITICAL
+    failure_action: ABORT
+
+  # The next two are Sprint 5 (full pre-condition evaluator):
+  - id: weather_acceptable
+    description: "Outdoor temp < 35°C and wind < 40 km/h"
+    check: outdoor_temp_c < 35 AND wind_kmh < 40
+    failure_action: WARN
+    _sprint_5_TODO: "wire to weather API (OpenWeather or NWS)"
+
+  - id: time_window_business_hours
+    description: "Operator on-shift, 09:00–16:00 local"
+    check: hour_of_day BETWEEN 9 AND 16
+    failure_action: WARN
+    _sprint_5_TODO: "wire to TZ-aware clock provider"
+
+steps:
+  - id: step_01_notify_tenants
+    title: "Send 30-min notice to tenants"
+    type: notification
+    payload:
+      template: ats_monthly_test
+      lead_time_min: 30
+    timeout_s: 60
+    requires_witness: false
+    abort_on_failure: true
+
+  - id: step_02_verify_genset_ready
+    title: "Verify Genset_A is in AUTO with fuel >= 80%"
+    type: read_verify
+    adapter: cummins
+    target: genset_a
+    expected:
+      mode: AUTO
+      fuel_pct: { min: 80 }
+      battery_voltage_v: { min: 24.0 }
+    timeout_s: 30
+    requires_witness: false
+    abort_on_failure: true
+
+  - id: step_03_arm_ats
+    title: "Arm ATS for transfer (no actual transfer yet)"
+    type: write_verify
+    adapter: asco
+    target: ats_a
+    command: ARM
+    payload:
+      test_mode: true
+    verify_after:
+      ats_armed: true
+    timeout_s: 30
+    requires_witness: true            # LOR3 + state-changing
+    abort_on_failure: true
+
+  - id: step_04_initiate_transfer
+    title: "Initiate transfer Path A → emergency (genset)"
+    type: write_verify
+    adapter: asco
+    target: ats_a
+    command: TRANSFER_TO_EMERGENCY
+    timeout_s: 15                     # ATS must complete in < 15s per NETA
+    verify_after:
+      ats_position: EMERGENCY
+      ats_in_transit: false
+    requires_witness: true
+    abort_on_failure: true
+    abort_sequence: [emergency_retransfer]
+
+  - id: step_05_verify_load_on_genset
+    title: "Verify facility load is on Genset_A"
+    type: read_verify
+    adapter: cummins
+    target: genset_a
+    expected:
+      kw_output: { min: 1000 }        # at least 1 MW expected
+      hertz: { min: 59.5, max: 60.5 }
+      voltage_l_l: { min: 470, max: 490 }
+    timeout_s: 60
+    requires_witness: false
+    abort_on_failure: true
+  - id: step_06_dwell_on_emergency
+    title: "Dwell on emergency power for 10 min (verifies stability)"
+    type: dwell
+    duration_s: 600
+    monitor:
+      thermal_dt_max_k_per_s: 0.1     # abort if cooling fails
+      voltage_unbalance_max_pct: 5    # abort if generator unstable
+    abort_on_failure: true
+
+  - id: step_07_retransfer_to_normal
+    title: "Re-transfer Path A back to utility"
+    type: write_verify
+    adapter: asco
+    target: ats_a
+    command: TRANSFER_TO_NORMAL
+    timeout_s: 15
+    verify_after:
+      ats_position: NORMAL
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_08_verify_genset_cooldown
+    title: "Genset cooldown sequence (10 min unloaded)"
+    type: read_dwell
+    adapter: cummins
+    target: genset_a
+    duration_s: 600
+    expected_at_end:
+      mode: AUTO
+      coolant_temp_c: { max: 95 }
+    abort_on_failure: false           # warn but don't abort
+
+  - id: step_09_finalize
+    title: "Log test completion to CMMS + audit"
+    type: cmms_finalize
+    target_procedure: MOP-ATS-MONTHLY-001
+
+# Abort sequence runs in reverse if any step with abort_on_failure=true fails.
+# Emergency retransfer is the highest-priority abort step.
+abort_sequence:
+  - emergency_retransfer:
+      title: "Emergency retransfer to utility"
+      type: write_verify
+      adapter: asco
+      target: ats_a
+      command: TRANSFER_TO_NORMAL_FORCED
+      timeout_s: 5
+      audit_severity: CRITICAL

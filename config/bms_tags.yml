@@ -1,0 +1,456 @@
+# =============================================================
+#  DC-EPMS PRO - BMS Tag Catalog
+# =============================================================
+#  Tag definitions following industry conventions from:
+#    - Niagara N4 (Tridium)
+#    - Honeywell EBI
+#    - Schneider EcoStruxure Building Operation
+#
+#  Tag schema follows ISA-95 / ISA-S88 nomenclature:
+#    OBJECT.SUBSYSTEM.POINT.PROPERTY
+#
+#  Each tag declares:
+#    - protocol (BACnet | Modbus | OPC-UA)
+#    - object_type (Analog Input/Output, Binary, Multi-state)
+#    - units (engineering units per BACnet rev 22)
+#    - source: where the value comes from (telemetry key, physics
+#      module metric, or a static value)
+#    - writable: whether the BMS can issue a write command
+#    - alarm_band: optional [low, high] for alarming
+# =============================================================
+
+tags:
+
+  # ──────────── HVAC / Cooling subsystem ────────────
+  - id: HVAC.CHWP1.STATUS
+    protocol: BACnet
+    object_type: BO       # Binary Output
+    units: enum
+    enum_values: [Off, On]
+    source: { type: static, value: "On" }
+    writable: true
+    description: "Primary chilled water pump 1 - run command"
+    location: "Mech Room A"
+
+  - id: HVAC.CHWP1.SPEED
+    protocol: BACnet
+    object_type: AO       # Analog Output
+    units: percent
+    source: { type: physics, module: mechanical, metric: pump_speed_hz, transform: "x/60*100" }
+    writable: true
+    alarm_band: [20, 100]
+    description: "Primary CHWP1 speed setpoint via VFD"
+
+  - id: HVAC.CHWP1.RUN_HOURS
+    protocol: BACnet
+    object_type: AI
+    units: hours
+    source: { type: static, value: 12_847.5 }
+    writable: false
+    description: "Cumulative pump run time"
+
+  - id: HVAC.CDU_A.SUPPLY_TEMP
+    protocol: BACnet
+    object_type: AI
+    units: degrees-celsius
+    source: { type: telemetry, key: dlc_supply_c }
+    writable: false
+    alarm_band: [16.0, 22.0]
+    description: "CDU A secondary loop supply temperature"
+
+  - id: HVAC.CDU_A.RETURN_TEMP
+    protocol: BACnet
+    object_type: AI
+    units: degrees-celsius
+    source: { type: telemetry, key: dlc_return_c }
+    writable: false
+    alarm_band: [35.0, 45.0]
+    description: "CDU A secondary loop return temperature"
+
+  - id: HVAC.CDU_A.FLOW_RATE
+    protocol: BACnet
+    object_type: AI
+    units: liters-per-second
+    source: { type: physics, module: mechanical, metric: loop_flow_m3_s, transform: "x*1000" }
+    writable: false
+    description: "CDU A secondary loop volumetric flow"
+
+  - id: HVAC.CHILLER1.STATUS
+    protocol: BACnet
+    object_type: MV       # Multi-state Variable
+    units: enum
+    enum_values: [Stopped, Starting, Running, Alarm, Maintenance]
+    source: { type: static, value: "Running" }
+    writable: false
+    description: "York YZ Chiller 1 operational status"
+
+  - id: HVAC.CHILLER1.LOAD_PCT
+    protocol: BACnet
+    object_type: AI
+    units: percent
+    source: { type: physics, module: heat_rejection, metric: total_heat_rejection_kw, transform: "x/5275/2*100" }
+    writable: false
+    alarm_band: [10, 95]
+    description: "Chiller 1 part-load ratio"
+
+  - id: HVAC.CHILLER1.COP
+    protocol: BACnet
+    object_type: AI
+    units: dimensionless
+    source: { type: physics, module: heat_rejection, metric: chiller_1_cop_measured }
+    writable: false
+    description: "Chiller 1 measured coefficient of performance"
+
+  - id: HVAC.CHILLER1.CW_SETPOINT
+    protocol: BACnet
+    object_type: AO
+    units: degrees-celsius
+    source: { type: static, value: 6.7 }
+    writable: true
+    alarm_band: [4.0, 9.0]
+    description: "Chilled water leaving setpoint"
+
+  # ─── Chiller 2 (N+1 redundant unit) — added v8 to support agent draft pattern ───
+  - id: HVAC.CHILLER2.STATUS
+    protocol: BACnet
+    object_type: BI
+    units: state
+    source: { type: physics, module: heat_rejection, metric: chiller_2_active }
+    writable: false
+    description: "Chiller 2 running state"
+
+  - id: HVAC.CHILLER2.LOAD_PCT
+    protocol: BACnet
+    object_type: AI
+    units: percent
+    source: { type: physics, module: heat_rejection, metric: chiller_2_load_pct }
+    writable: false
+    alarm_band: [0, 95]
+    description: "Chiller 2 thermal load"
+
+  - id: HVAC.CHILLER2.COP
+    protocol: BACnet
+    object_type: AI
+    units: ratio
+    source: { type: physics, module: heat_rejection, metric: chiller_2_cop_measured }
+    writable: false
+    alarm_band: [3.5, 12.0]
+    description: "Chiller 2 coefficient of performance"
+
+  - id: HVAC.CHILLER2.CW_SETPOINT
+    protocol: BACnet
+    object_type: AO
+    units: degrees-celsius
+    source: { type: static, value: 6.7 }
+    writable: true
+    alarm_band: [4.0, 9.0]
+    description: "Chilled water leaving setpoint (Chiller 2)"
+
+  - id: HVAC.CT.WET_BULB
+    protocol: BACnet
+    object_type: AI
+    units: degrees-celsius
+    source: { type: physics, module: heat_rejection, metric: outdoor_wet_bulb_c }
+    writable: false
+    description: "Cooling tower outdoor wet bulb temperature"
+
+  - id: HVAC.CT.ECWT
+    protocol: BACnet
+    object_type: AI
+    units: degrees-celsius
+    source: { type: telemetry, key: outdoor_t_db_c, transform: "x+4" }
+    writable: false
+    alarm_band: [10.0, 38.0]
+    description: "Entering condenser water temperature"
+
+  - id: HVAC.HALL1.INLET_TEMP
+    protocol: BACnet
+    object_type: AI
+    units: degrees-celsius
+    source: { type: telemetry, key: hall_temp_c }
+    writable: false
+    alarm_band: [18.0, 24.0]
+    description: "Hall 1 cold aisle inlet temperature"
+
+  - id: HVAC.HALL1.RH
+    protocol: BACnet
+    object_type: AI
+    units: percent
+    source: { type: telemetry, key: outdoor_rh_percent }
+    writable: false
+    alarm_band: [30.0, 60.0]
+    description: "Hall 1 relative humidity"
+
+  - id: HVAC.HALL1.DP
+    protocol: BACnet
+    object_type: AI
+    units: degrees-celsius
+    source: { type: physics, module: heat_rejection, metric: hall_dew_point_c }
+    writable: false
+    description: "Hall 1 dew point"
+
+  # ──────────── Electrical Power ────────────
+  - id: PWR.MAIN.UTIL_KW
+    protocol: Modbus
+    object_type: HR       # Holding Register (read-as-float)
+    units: kilowatts
+    source: { type: physics, module: electrical, metric: utility_kw }
+    writable: false
+    description: "Main utility incoming power"
+
+  - id: PWR.MAIN.VOLTAGE
+    protocol: Modbus
+    object_type: HR
+    units: volts
+    source: { type: static, value: 27_500 }
+    writable: false
+    description: "Utility incoming voltage (27.5kV nominal)"
+
+  - id: PWR.XFMR_A.WINDING_TEMP
+    protocol: BACnet
+    object_type: AI
+    units: degrees-celsius
+    source: { type: physics, module: electrical, metric: xfmr_winding_c }
+    writable: false
+    alarm_band: [25.0, 130.0]
+    description: "Transformer A hottest-spot winding temperature (IEEE C57.12)"
+
+  - id: PWR.XFMR_A.LOAD_KVA
+    protocol: BACnet
+    object_type: AI
+    units: kVA
+    source: { type: physics, module: electrical, metric: xfmr_load_kva }
+    writable: false
+    alarm_band: [0, 2500]
+    description: "Transformer A apparent load"
+
+  - id: PWR.XFMR_A.OIL_TEMP
+    protocol: BACnet
+    object_type: AI
+    units: degrees-celsius
+    source: { type: telemetry, key: xfmr_top_oil_c }
+    writable: false
+    alarm_band: [25.0, 95.0]
+    description: "Transformer A top-oil temperature"
+
+  - id: PWR.UPS_A.MODE
+    protocol: BACnet
+    object_type: MV
+    units: enum
+    enum_values: [Online, Eco-conversion, Bypass, Battery, Maintenance]
+    source: { type: static, value: "Online" }
+    writable: true
+    description: "UPS A operating mode"
+
+  - id: PWR.UPS_A.LOAD_KW
+    protocol: BACnet
+    object_type: AI
+    units: kilowatts
+    source: { type: physics, module: electrical, metric: ups_load_kw }
+    writable: false
+    alarm_band: [0, 600]
+    description: "UPS A output load"
+
+  - id: PWR.UPS_A.EFFICIENCY
+    protocol: BACnet
+    object_type: AI
+    units: percent
+    source: { type: physics, module: electrical, metric: ups_efficiency_measured, transform: "x*100" }
+    writable: false
+    alarm_band: [88, 98]
+    description: "UPS A measured efficiency"
+
+  - id: PWR.UPS_A.BATTERY_SOC
+    protocol: BACnet
+    object_type: AI
+    units: percent
+    source: { type: physics, module: electrical, metric: battery_soc, transform: "x*100" }
+    writable: false
+    alarm_band: [80, 100]
+    description: "UPS A battery state of charge"
+
+  - id: PWR.UPS_A.BATTERY_VDC
+    protocol: BACnet
+    object_type: AI
+    units: volts
+    source: { type: physics, module: electrical, metric: battery_vdc }
+    writable: false
+    alarm_band: [510, 555]
+    description: "UPS A battery DC bus voltage"
+
+  - id: PWR.GEN1.STATUS
+    protocol: BACnet
+    object_type: MV
+    units: enum
+    enum_values: [Standby, Cranking, Running, Failed, Maintenance]
+    source: { type: static, value: "Standby" }
+    writable: false
+    description: "Generator 1 status (NFPA 110 Type 10)"
+
+  - id: PWR.GEN1.FUEL_LEVEL
+    protocol: BACnet
+    object_type: AI
+    units: percent
+    source: { type: static, value: 87.3 }
+    writable: false
+    alarm_band: [25, 100]
+    description: "Generator 1 diesel fuel tank level"
+
+  - id: PWR.RPP_A1.LOAD_KW
+    protocol: Modbus
+    object_type: HR
+    units: kilowatts
+    source: { type: telemetry, key: it_load_kw, transform: "x/3" }
+    writable: false
+    description: "RPP A1 load (1/3 of facility IT)"
+
+  # ──────────── IT / White Space ────────────
+  - id: IT.HALL1.IT_LOAD_KW
+    protocol: Modbus
+    object_type: HR
+    units: kilowatts
+    source: { type: telemetry, key: it_load_kw, transform: "x/3" }
+    writable: false
+    description: "Hall 1 IT load (1/3 of facility)"
+
+  - id: IT.HALL1.RACK_COUNT
+    protocol: Modbus
+    object_type: HR
+    units: count
+    source: { type: static, value: 40 }
+    writable: false
+    description: "Hall 1 active rack count"
+
+  - id: IT.HALL1.GPU_TJ_MAX
+    protocol: Modbus
+    object_type: HR
+    units: degrees-celsius
+    source: { type: physics, module: it_thermal, metric: gpu_tj_max_c }
+    writable: false
+    alarm_band: [40, 85]
+    description: "Hall 1 hottest GPU junction temperature"
+
+  - id: IT.HALL1.PUE
+    protocol: Modbus
+    object_type: HR
+    units: dimensionless
+    source: { type: telemetry, key: pue }
+    writable: false
+    alarm_band: [1.10, 1.40]
+    description: "Hall 1 instantaneous PUE"
+
+  # ──────────── Fire / Life Safety ────────────
+  - id: FIRE.VESDA1.STATUS
+    protocol: BACnet
+    object_type: MV
+    units: enum
+    enum_values: [Normal, Alert, Action, Fire1, Fire2, Trouble]
+    source: { type: static, value: "Normal" }
+    writable: false
+    description: "VESDA aspirating smoke detector 1 status"
+
+  - id: FIRE.VESDA1.OBSCURATION
+    protocol: BACnet
+    object_type: AI
+    units: percent-per-meter
+    source: { type: static, value: 0.012 }
+    writable: false
+    alarm_band: [0, 0.05]
+    description: "VESDA1 smoke obscuration"
+
+  - id: FIRE.PANEL.STATUS
+    protocol: BACnet
+    object_type: MV
+    units: enum
+    enum_values: [Normal, Supervisory, Alarm, Trouble]
+    source: { type: static, value: "Normal" }
+    writable: false
+    description: "Main fire alarm panel status (NFPA 72)"
+
+  - id: FIRE.SUPPRESSION.READY
+    protocol: BACnet
+    object_type: BI
+    units: enum
+    enum_values: [Not Ready, Ready]
+    source: { type: static, value: "Ready" }
+    writable: false
+    description: "Novec 1230 suppression system armed status"
+
+  # ──────────── Security / Access ────────────
+  - id: SEC.PERIMETER.INTRUSION
+    protocol: BACnet
+    object_type: BI
+    units: enum
+    enum_values: [Clear, Intrusion]
+    source: { type: static, value: "Clear" }
+    writable: false
+    description: "Perimeter intrusion detection state"
+
+  - id: SEC.HALL1.DOOR_STATE
+    protocol: BACnet
+    object_type: BI
+    units: enum
+    enum_values: [Locked, Unlocked]
+    source: { type: static, value: "Locked" }
+    writable: false
+    description: "Hall 1 entry door state"
+
+  - id: SEC.HALL1.BIO_LAST
+    protocol: BACnet
+    object_type: AV       # Analog Value (string-able)
+    units: timestamp
+    source: { type: static, value: "2026-04-25T08:14:33Z" }
+    writable: false
+    description: "Hall 1 last biometric authentication"
+
+  # ──────────── Environmental ────────────
+  - id: ENV.OUTDOOR.DRY_BULB
+    protocol: BACnet
+    object_type: AI
+    units: degrees-celsius
+    source: { type: telemetry, key: outdoor_t_db_c }
+    writable: false
+    description: "Outdoor dry bulb temperature"
+
+  - id: ENV.OUTDOOR.RH
+    protocol: BACnet
+    object_type: AI
+    units: percent
+    source: { type: telemetry, key: outdoor_rh_percent }
+    writable: false
+    description: "Outdoor relative humidity"
+
+  - id: ENV.OUTDOOR.WIND_SPEED
+    protocol: BACnet
+    object_type: AI
+    units: meters-per-second
+    source: { type: static, value: 4.2 }
+    writable: false
+    description: "Outdoor wind speed"
+
+# Categorisation for UI grouping
+categories:
+  HVAC:
+    name: "HVAC / Cooling"
+    icon: "❄"
+    color: "#00B8D4"
+  PWR:
+    name: "Electrical Power"
+    icon: "⚡"
+    color: "#FB8C00"
+  IT:
+    name: "IT / White Space"
+    icon: "🖥"
+    color: "#4CAF50"
+  FIRE:
+    name: "Fire / Life Safety"
+    icon: "🔥"
+    color: "#E53935"
+  SEC:
+    name: "Security / Access"
+    icon: "🔒"
+    color: "#9C27B0"
+  ENV:
+    name: "Environmental"
+    icon: "🌤"
+    color: "#26A69A"

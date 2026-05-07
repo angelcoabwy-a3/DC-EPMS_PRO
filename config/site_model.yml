@@ -1,0 +1,560 @@
+# ════════════════════════════════════════════════════════════════════════
+#  A3-Alpha Toronto Area — Tier IV Site Model
+#  
+#  Hypothetical facility designed to Uptime Institute Tier IV standards.
+#  NO real-world facility is mapped here. This is a portfolio reference
+#  model demonstrating site-aware operations:
+#    - LOTO impact analysis (which racks lose redundancy)
+#    - CMMS work order location injection
+#    - procedure_engine zone-aware MOPs
+#
+#  Topology summary:
+#    - 40 MW IT design load (118 GB200 NVL72 racks @ 142 kW)
+#    - 2 Data Halls (DH-A, DH-B) on independent 2N power paths
+#    - 3 chillers in N+1 configuration (2 active, 1 spare)
+#    - 2 Electrical Rooms walled apart (Tier IV compartmentalization)
+#    - 1 Yard with gensets, utility intake, fuel storage, cooling towers
+#    - 1 Building C (NOC, non-critical)
+#
+#  Three relationship layers:
+#    1. containment    physical hierarchy (tree)
+#    2. power_chains   electrical dependency (DAG, 2N redundancy)
+#    3. cooling_chains thermal dependency (DAG, N+1 redundancy)
+#
+#  Standards:
+#    Uptime Institute Tier IV (fault tolerant, 2N power, N+1 cooling)
+#    NFPA 75/76 (fire protection IT areas)
+#    NFPA 110 (emergency power systems)
+#    ASHRAE TC 9.9 Class A1/A2 (thermal envelope 18-27 C recommended)
+# ════════════════════════════════════════════════════════════════════════
+
+site:
+  id: a3-alpha-toronto
+  name: "A3-Alpha Toronto Area"
+  display_path: "A3-Alpha"
+  classification: tier_iv_uptime
+  it_capacity_mw: 40.0
+  total_capacity_mw: 56.0
+  redundancy:
+    electrical: 2N
+    cooling: N+1
+    network: 2N
+
+# ────────────────────────────────────────────────────────────────────────
+#  Buildings — top-level containment under site
+# ────────────────────────────────────────────────────────────────────────
+buildings:
+
+  - id: building-a
+    display: "Building A"
+    type: production_hall
+    description: "Production data hall — Path A primary"
+    rooms:
+      - id: dh-a
+        type: data_hall
+        display: "Data Hall A"
+        area_m2: 2400
+        design_load_kw: 8400
+        ashrae_class: A2
+        # Busways run overhead in the data hall. For 2N cross-feed,
+        # path-B busways physically enter DH-A from ER-B via a feeder
+        # tray. Each rack has 2 PDUs (one per busway) for true 2N.
+        components:
+          - busway_a_01
+          - busway_a_02
+          - busway_b_01
+          - busway_b_02
+        rows:
+          - id: row-a-01
+            display: "Row A-01"
+            rack_count: 10
+            racks:
+              - rack_a_01_01
+              - rack_a_01_02
+              - rack_a_01_03
+              - rack_a_01_04
+              - rack_a_01_05
+              - rack_a_01_06
+              - rack_a_01_07
+              - rack_a_01_08
+              - rack_a_01_09
+              - rack_a_01_10
+          - id: row-a-02
+            display: "Row A-02"
+            rack_count: 10
+            racks:
+              - rack_a_02_01
+              - rack_a_02_02
+              - rack_a_02_03
+              - rack_a_02_04
+              - rack_a_02_05
+              - rack_a_02_06
+              - rack_a_02_07
+              - rack_a_02_08
+              - rack_a_02_09
+              - rack_a_02_10
+          - id: row-a-03
+            display: "Row A-03"
+            rack_count: 10
+            racks:
+              - rack_a_03_01
+              - rack_a_03_02
+              - rack_a_03_03
+              - rack_a_03_04
+              - rack_a_03_05
+              - rack_a_03_06
+              - rack_a_03_07
+              - rack_a_03_08
+              - rack_a_03_09
+              - rack_a_03_10
+
+      - id: er-a
+        type: electrical_room
+        display: "Electrical Room A"
+        description: "Path A: UPS, RPPs, switchgear. Walled compartment per Tier IV."
+        area_m2: 280
+        fire_suppression: clean_agent_fm200
+        components:
+          - ups_a
+          - rpp_a_01
+          - rpp_a_02
+          - switchgear_a
+          - xfmr_a
+
+      - id: mr-a
+        type: mechanical_room
+        display: "Mechanical Room A"
+        description: "CDUs, pumps, controls for DH-A"
+        area_m2: 180
+        components:
+          - cdu_a_01
+          - cdu_a_02
+          - cdu_a_03
+          - bms_panel_a
+
+  - id: building-b
+    display: "Building B"
+    type: production_hall
+    description: "Production data hall — Path B primary (mirror of A)"
+    rooms:
+      - id: dh-b
+        type: data_hall
+        display: "Data Hall B"
+        area_m2: 2400
+        design_load_kw: 8400
+        ashrae_class: A2
+        # ───────────────────────────────────────────────────────────────
+        # SCOPE NOTE (S1a): Data Hall B is a hierarchical stub for now.
+        # Rack containment is defined (so locate(rack_b_*) works), but
+        # power_chain edges for DH-B racks are deferred to S1b alongside
+        # the frontend tree explorer. The 2N + LOTO impact analysis logic
+        # is fully validated against DH-A; DH-B will be a structural
+        # mirror once busway nomenclature is finalized.
+        # ───────────────────────────────────────────────────────────────
+        rows:
+          - id: row-b-01
+            display: "Row B-01"
+            rack_count: 10
+            racks:
+              - rack_b_01_01
+              - rack_b_01_02
+              - rack_b_01_03
+              - rack_b_01_04
+              - rack_b_01_05
+              - rack_b_01_06
+              - rack_b_01_07
+              - rack_b_01_08
+              - rack_b_01_09
+              - rack_b_01_10
+          - id: row-b-02
+            display: "Row B-02"
+            rack_count: 10
+            racks:
+              - rack_b_02_01
+              - rack_b_02_02
+              - rack_b_02_03
+              - rack_b_02_04
+              - rack_b_02_05
+              - rack_b_02_06
+              - rack_b_02_07
+              - rack_b_02_08
+              - rack_b_02_09
+              - rack_b_02_10
+
+      - id: er-b
+        type: electrical_room
+        display: "Electrical Room B"
+        description: "Path B equivalent. Walled apart from ER-A by code."
+        area_m2: 280
+        fire_suppression: clean_agent_fm200
+        components:
+          - ups_b
+          - rpp_b_01
+          - rpp_b_02
+          - switchgear_b
+          - xfmr_b
+
+      - id: mr-b
+        type: mechanical_room
+        display: "Mechanical Room B"
+        area_m2: 180
+        components:
+          - cdu_b_01
+          - cdu_b_02
+          - cdu_b_03
+          - bms_panel_b
+
+  - id: yard
+    display: "Yard"
+    type: utility_yard
+    description: "Outdoor compound: gensets, chiller plants, utility, fuel"
+    rooms:
+      - id: mech-plant-north
+        type: mechanical_plant
+        display: "Mechanical Plant North"
+        description: "Primary chiller plant — feeds DH-A and DH-B"
+        components:
+          - chiller_1
+          - chiller_2
+          - cooling_tower_field_n
+          - chw_pump_n_01
+          - chw_pump_n_02
+
+      - id: mech-plant-south
+        type: mechanical_plant
+        display: "Mechanical Plant South"
+        description: "Spare chiller plant for N+1 — auto-engages on failure"
+        components:
+          - chiller_3
+          - cooling_tower_field_s
+          - chw_pump_s_01
+
+      - id: genset-bay
+        type: emergency_power
+        display: "Genset Bay"
+        description: "4 x Cummins QSK95 (2.75 MW each), Path A and B"
+        fire_suppression: clean_agent_fk5
+        components:
+          - genset_a_01
+          - genset_a_02
+          - genset_b_01
+          - genset_b_02
+          - ats_a
+          - ats_b
+
+      - id: utility-substation
+        type: utility_intake
+        display: "Utility Substation"
+        description: "27.5 kV utility intake, dual feed from Toronto Hydro"
+        components:
+          - utility_feed_a
+          - utility_feed_b
+
+      - id: fuel-storage
+        type: fuel_depot
+        display: "Fuel Storage"
+        description: "Diesel, 8000 gal total per NFPA 110"
+        components:
+          - fuel_tank_a
+          - fuel_tank_b
+
+  - id: building-c
+    display: "Building C — NOC"
+    type: office
+    description: "NOC, security, offices. Non-critical UPS feed."
+    rooms:
+      - id: noc
+        type: control_room
+        display: "Network Operations Center"
+        components:
+          - bms_master_workstation
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  Power chains — DAG of "what feeds what"
+#
+#  Each rack receives feeds from BOTH Path A and Path B busways (2N).
+#  Querying upstream(rack) returns all ancestors; downstream(node) returns
+#  everything that loses power if node opens.
+# ════════════════════════════════════════════════════════════════════════
+power_chains:
+  # ── Path A: utility/genset → ATS → xfmr → switchgear → UPS → RPP → busway → rack
+  - {from: utility_feed_a,  to: ats_a}
+  - {from: genset_a_01,     to: ats_a}
+  - {from: genset_a_02,     to: ats_a}
+  - {from: ats_a,           to: xfmr_a}
+  - {from: xfmr_a,          to: switchgear_a}
+  - {from: switchgear_a,    to: ups_a}
+  - {from: ups_a,           to: rpp_a_01}
+  - {from: ups_a,           to: rpp_a_02}
+  - {from: rpp_a_01,        to: busway_a_01}
+  - {from: rpp_a_02,        to: busway_a_02}
+  - {from: busway_a_01,     to: rack_a_01_01}
+  - {from: busway_a_01,     to: rack_a_01_02}
+  - {from: busway_a_01,     to: rack_a_01_03}
+  - {from: busway_a_01,     to: rack_a_01_04}
+  - {from: busway_a_01,     to: rack_a_01_05}
+  - {from: busway_a_01,     to: rack_a_01_06}
+  - {from: busway_a_01,     to: rack_a_01_07}
+  - {from: busway_a_01,     to: rack_a_01_08}
+  - {from: busway_a_01,     to: rack_a_01_09}
+  - {from: busway_a_01,     to: rack_a_01_10}
+
+  # ── Path B mirror: each rack ALSO receives a feed from Path B
+  - {from: utility_feed_b,  to: ats_b}
+  - {from: genset_b_01,     to: ats_b}
+  - {from: genset_b_02,     to: ats_b}
+  - {from: ats_b,           to: xfmr_b}
+  - {from: xfmr_b,          to: switchgear_b}
+  - {from: switchgear_b,    to: ups_b}
+  - {from: ups_b,           to: rpp_b_01}
+  - {from: ups_b,           to: rpp_b_02}
+  - {from: rpp_b_01,        to: busway_b_01}
+  - {from: rpp_b_02,        to: busway_b_02}
+
+  # The CRITICAL 2N feature: same rack_a_01_01 receives from BOTH
+  # busway_a_01 (Path A) AND busway_b_01 (Path B). If A is opened
+  # for LOTO, the rack stays up on Path B with zero IT outage.
+  - {from: busway_b_01,     to: rack_a_01_01}
+  - {from: busway_b_01,     to: rack_a_01_02}
+  - {from: busway_b_01,     to: rack_a_01_03}
+  - {from: busway_b_01,     to: rack_a_01_04}
+  - {from: busway_b_01,     to: rack_a_01_05}
+  - {from: busway_b_01,     to: rack_a_01_06}
+  - {from: busway_b_01,     to: rack_a_01_07}
+  - {from: busway_b_01,     to: rack_a_01_08}
+  - {from: busway_b_01,     to: rack_a_01_09}
+  - {from: busway_b_01,     to: rack_a_01_10}
+
+  # ── Fuel chain (separate but supports power continuity)
+  - {from: fuel_tank_a, to: genset_a_01}
+  - {from: fuel_tank_a, to: genset_a_02}
+  - {from: fuel_tank_b, to: genset_b_01}
+  - {from: fuel_tank_b, to: genset_b_02}
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  Cooling chains — DAG of "what cools what"
+#
+#  N+1 chiller redundancy:
+#    Mech-Plant-North (chiller_1, chiller_2) covers full load.
+#    Mech-Plant-South (chiller_3) is the +1 spare.
+# ════════════════════════════════════════════════════════════════════════
+cooling_chains:
+  - {from: cooling_tower_field_n, to: chiller_1}
+  - {from: cooling_tower_field_n, to: chiller_2}
+  - {from: cooling_tower_field_s, to: chiller_3}
+
+  - {from: chiller_1, to: chw_pump_n_01}
+  - {from: chiller_2, to: chw_pump_n_02}
+  - {from: chiller_3, to: chw_pump_s_01}
+
+  - {from: chw_pump_n_01, to: cdu_a_01}
+  - {from: chw_pump_n_01, to: cdu_a_02}
+  - {from: chw_pump_n_01, to: cdu_b_01}
+  - {from: chw_pump_n_02, to: cdu_a_03}
+  - {from: chw_pump_n_02, to: cdu_b_02}
+  - {from: chw_pump_n_02, to: cdu_b_03}
+
+  # Spare paths from chiller_3 — only active when N+1 engages
+  - {from: chw_pump_s_01, to: cdu_a_01}
+  - {from: chw_pump_s_01, to: cdu_b_01}
+
+  # CDUs to racks (representative — Row A-01 fully wired)
+  - {from: cdu_a_01, to: rack_a_01_01}
+  - {from: cdu_a_01, to: rack_a_01_02}
+  - {from: cdu_a_01, to: rack_a_01_03}
+  - {from: cdu_a_01, to: rack_a_01_04}
+  - {from: cdu_a_01, to: rack_a_01_05}
+  - {from: cdu_a_02, to: rack_a_01_06}
+  - {from: cdu_a_02, to: rack_a_01_07}
+  - {from: cdu_a_02, to: rack_a_01_08}
+  - {from: cdu_a_02, to: rack_a_01_09}
+  - {from: cdu_a_02, to: rack_a_01_10}
+
+
+# ════════════════════════════════════════════════════════════════════════
+#  Component metadata — extra info per canonical_id
+#
+#  Maps existing flat IDs (used by bms_connector, agent tools, MOPs) to
+#  the hierarchical site model. Adding entries here is non-breaking —
+#  existing code that references chiller_1 by string keeps working.
+# ════════════════════════════════════════════════════════════════════════
+components:
+  # ── Power Path A
+  utility_feed_a:
+    display: "Utility Feed A"
+    type: utility_intake
+    voltage_kv: 27.5
+    rated_capacity_mw: 30.0
+
+  ats_a:
+    display: "ATS-A (Path A Automatic Transfer Switch)"
+    type: ats
+    vendor: asco
+    model: "7000 Series Group G"
+    rated_amps: 4000
+    voltage_v: 480
+
+  genset_a_01:
+    display: "Genset A1 (Cummins QSK95)"
+    type: genset
+    vendor: cummins
+    model: "QSK95"
+    rated_kw: 2750
+
+  genset_a_02:
+    display: "Genset A2 (Cummins QSK95)"
+    type: genset
+    vendor: cummins
+    model: "QSK95"
+    rated_kw: 2750
+
+  xfmr_a:
+    display: "Transformer A (27.5kV to 480V)"
+    type: transformer
+    rated_kva: 30000
+
+  switchgear_a:
+    display: "Switchgear A"
+    type: switchgear
+    voltage_v: 480
+    rated_amps: 4000
+
+  ups_a:
+    display: "UPS A (2.5 MW double-conversion)"
+    type: ups
+    rated_kw: 2500
+    runtime_full_load_min: 7
+
+  rpp_a_01:
+    display: "RPP-A1 (feeds rows A-01, A-02, A-03)"
+    type: rpp
+    rated_kw: 1200
+
+  rpp_a_02:
+    display: "RPP-A2 (feeds rows A-04, A-05, A-06)"
+    type: rpp
+    rated_kw: 1200
+
+  busway_a_01:
+    display: "Busway A-01 (overhead, Row A-01)"
+    type: busway
+    rated_amps: 1600
+    voltage_v: 480
+
+  busway_a_02:
+    display: "Busway A-02 (overhead, Row A-02)"
+    type: busway
+    rated_amps: 1600
+    voltage_v: 480
+
+  # ── Power Path B (mirror)
+  utility_feed_b: {display: "Utility Feed B", type: utility_intake, voltage_kv: 27.5, rated_capacity_mw: 30.0}
+  ats_b:          {display: "ATS-B", type: ats, vendor: asco, model: "7000 Series Group G", rated_amps: 4000, voltage_v: 480}
+  genset_b_01:    {display: "Genset B1 (Cummins QSK95)", type: genset, vendor: cummins, model: "QSK95", rated_kw: 2750}
+  genset_b_02:    {display: "Genset B2 (Cummins QSK95)", type: genset, vendor: cummins, model: "QSK95", rated_kw: 2750}
+  xfmr_b:         {display: "Transformer B", type: transformer, rated_kva: 30000}
+  switchgear_b:   {display: "Switchgear B", type: switchgear, voltage_v: 480, rated_amps: 4000}
+  ups_b:          {display: "UPS B", type: ups, rated_kw: 2500, runtime_full_load_min: 7}
+  rpp_b_01:       {display: "RPP-B1", type: rpp, rated_kw: 1200}
+  rpp_b_02:       {display: "RPP-B2", type: rpp, rated_kw: 1200}
+  busway_b_01:    {display: "Busway B-01", type: busway, rated_amps: 1600, voltage_v: 480}
+  busway_b_02:    {display: "Busway B-02", type: busway, rated_amps: 1600, voltage_v: 480}
+
+  # ── Cooling
+  chiller_1:
+    display: "Chiller 1 (1500 ton water-cooled)"
+    type: chiller
+    rated_tons: 1500
+    rated_kw_thermal: 5275
+    refrigerant: r-1233zd
+
+  chiller_2:
+    display: "Chiller 2 (1500 ton water-cooled)"
+    type: chiller
+    rated_tons: 1500
+    rated_kw_thermal: 5275
+    refrigerant: r-1233zd
+
+  chiller_3:
+    display: "Chiller 3 (1500 ton, +1 spare)"
+    type: chiller
+    rated_tons: 1500
+    rated_kw_thermal: 5275
+    refrigerant: r-1233zd
+    role: spare
+
+  cooling_tower_field_n: {display: "Cooling Tower Field North", type: cooling_tower_field, cell_count: 4}
+  cooling_tower_field_s: {display: "Cooling Tower Field South", type: cooling_tower_field, cell_count: 2}
+  chw_pump_n_01: {display: "CHW Pump N-1", type: pump, rated_gpm: 4500}
+  chw_pump_n_02: {display: "CHW Pump N-2", type: pump, rated_gpm: 4500}
+  chw_pump_s_01: {display: "CHW Pump S-1", type: pump, rated_gpm: 4500}
+  cdu_a_01: {display: "CDU A-1", type: cdu, rated_kw_thermal: 1500}
+  cdu_a_02: {display: "CDU A-2", type: cdu, rated_kw_thermal: 1500}
+  cdu_a_03: {display: "CDU A-3 (+1)", type: cdu, rated_kw_thermal: 1500}
+  cdu_b_01: {display: "CDU B-1", type: cdu, rated_kw_thermal: 1500}
+  cdu_b_02: {display: "CDU B-2", type: cdu, rated_kw_thermal: 1500}
+  cdu_b_03: {display: "CDU B-3 (+1)", type: cdu, rated_kw_thermal: 1500}
+
+  # ── Fuel
+  fuel_tank_a: {display: "Fuel Tank A (4000 gal diesel)", type: fuel_tank, capacity_gal: 4000}
+  fuel_tank_b: {display: "Fuel Tank B (4000 gal diesel)", type: fuel_tank, capacity_gal: 4000}
+
+  # ── BMS / NOC
+  bms_panel_a: {display: "BMS Panel A", type: bms_panel}
+  bms_panel_b: {display: "BMS Panel B", type: bms_panel}
+  bms_master_workstation: {display: "BMS Master Workstation (NOC)", type: workstation}
+
+  # ── Racks (representative subset for Sprint S1a)
+  # 30 of 60 racks per hall populated. Sprint S1b expands to full 120.
+  rack_a_01_01: {display: "Rack A-01-01 (GB200 NVL72)", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_01_02: {display: "Rack A-01-02 (GB200 NVL72)", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_01_03: {display: "Rack A-01-03 (GB200 NVL72)", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_01_04: {display: "Rack A-01-04 (GB200 NVL72)", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_01_05: {display: "Rack A-01-05 (GB200 NVL72)", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_01_06: {display: "Rack A-01-06 (GB200 NVL72)", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_01_07: {display: "Rack A-01-07 (GB200 NVL72)", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_01_08: {display: "Rack A-01-08 (GB200 NVL72)", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_01_09: {display: "Rack A-01-09 (GB200 NVL72)", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_01_10: {display: "Rack A-01-10 (GB200 NVL72)", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_02_01: {display: "Rack A-02-01", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_02_02: {display: "Rack A-02-02", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_02_03: {display: "Rack A-02-03", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_02_04: {display: "Rack A-02-04", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_02_05: {display: "Rack A-02-05", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_02_06: {display: "Rack A-02-06", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_02_07: {display: "Rack A-02-07", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_02_08: {display: "Rack A-02-08", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_02_09: {display: "Rack A-02-09", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_02_10: {display: "Rack A-02-10", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_03_01: {display: "Rack A-03-01", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_03_02: {display: "Rack A-03-02", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_03_03: {display: "Rack A-03-03", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_03_04: {display: "Rack A-03-04", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_03_05: {display: "Rack A-03-05", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_03_06: {display: "Rack A-03-06", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_03_07: {display: "Rack A-03-07", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_03_08: {display: "Rack A-03-08", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_03_09: {display: "Rack A-03-09", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_a_03_10: {display: "Rack A-03-10", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_01_01: {display: "Rack B-01-01", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_01_02: {display: "Rack B-01-02", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_01_03: {display: "Rack B-01-03", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_01_04: {display: "Rack B-01-04", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_01_05: {display: "Rack B-01-05", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_01_06: {display: "Rack B-01-06", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_01_07: {display: "Rack B-01-07", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_01_08: {display: "Rack B-01-08", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_01_09: {display: "Rack B-01-09", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_01_10: {display: "Rack B-01-10", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_02_01: {display: "Rack B-02-01", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_02_02: {display: "Rack B-02-02", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_02_03: {display: "Rack B-02-03", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_02_04: {display: "Rack B-02-04", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_02_05: {display: "Rack B-02-05", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_02_06: {display: "Rack B-02-06", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_02_07: {display: "Rack B-02-07", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_02_08: {display: "Rack B-02-08", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_02_09: {display: "Rack B-02-09", type: it_rack, rated_kw: 142, gpu_count: 72}
+  rack_b_02_10: {display: "Rack B-02-10", type: it_rack, rated_kw: 142, gpu_count: 72}
