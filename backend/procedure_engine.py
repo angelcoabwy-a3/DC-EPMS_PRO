@@ -28,17 +28,17 @@ Honest scope notes embedded in code with `_sprint_2_TODO`,
 `_sprint_3_TODO`, etc. so a reviewer sees exactly what is done vs
 deferred.
 """
+
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -50,27 +50,28 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────
 class ProcedureState(str, Enum):
     """Valid states. Transitions enforced by ProcedureExecution.transition_to()."""
-    CREATED               = "CREATED"
-    PRE_CONDITION_CHECK   = "PRE_CONDITION_CHECK"
-    ARMED                 = "ARMED"
-    IN_PROGRESS           = "IN_PROGRESS"
-    VERIFYING             = "VERIFYING"
-    COMPLETED             = "COMPLETED"
-    ABORTING              = "ABORTING"
-    ABORTED               = "ABORTED"
+
+    CREATED = "CREATED"
+    PRE_CONDITION_CHECK = "PRE_CONDITION_CHECK"
+    ARMED = "ARMED"
+    IN_PROGRESS = "IN_PROGRESS"
+    VERIFYING = "VERIFYING"
+    COMPLETED = "COMPLETED"
+    ABORTING = "ABORTING"
+    ABORTED = "ABORTED"
 
 
 # Valid transition graph. Any other transition is a bug.
 _VALID_TRANSITIONS: dict[ProcedureState, set[ProcedureState]] = {
-    ProcedureState.CREATED:             {ProcedureState.PRE_CONDITION_CHECK},
+    ProcedureState.CREATED: {ProcedureState.PRE_CONDITION_CHECK},
     ProcedureState.PRE_CONDITION_CHECK: {ProcedureState.ARMED, ProcedureState.ABORTED},
-    ProcedureState.ARMED:               {ProcedureState.IN_PROGRESS, ProcedureState.ABORTED},
-    ProcedureState.IN_PROGRESS:         {ProcedureState.VERIFYING, ProcedureState.ABORTING},
-    ProcedureState.VERIFYING:           {ProcedureState.COMPLETED, ProcedureState.ABORTING},
-    ProcedureState.ABORTING:            {ProcedureState.ABORTED},
+    ProcedureState.ARMED: {ProcedureState.IN_PROGRESS, ProcedureState.ABORTED},
+    ProcedureState.IN_PROGRESS: {ProcedureState.VERIFYING, ProcedureState.ABORTING},
+    ProcedureState.VERIFYING: {ProcedureState.COMPLETED, ProcedureState.ABORTING},
+    ProcedureState.ABORTING: {ProcedureState.ABORTED},
     # Terminal states
-    ProcedureState.COMPLETED:           set(),
-    ProcedureState.ABORTED:             set(),
+    ProcedureState.COMPLETED: set(),
+    ProcedureState.ABORTED: set(),
 }
 
 
@@ -80,18 +81,19 @@ _VALID_TRANSITIONS: dict[ProcedureState, set[ProcedureState]] = {
 @dataclass
 class StepResult:
     """One step's execution outcome. Appended to execution_log."""
+
     step_id: str
     title: str
     started_at_unix: float
-    finished_at_unix: Optional[float] = None
-    status: str = "PENDING"   # PENDING | RUNNING | OK | FAILED | ABORTED
-    operator_acknowledged_by: Optional[str] = None
-    witness_acknowledged_by: Optional[str] = None
-    adapter_response: Optional[dict] = None
-    error: Optional[str] = None
+    finished_at_unix: float | None = None
+    status: str = "PENDING"  # PENDING | RUNNING | OK | FAILED | ABORTED
+    operator_acknowledged_by: str | None = None
+    witness_acknowledged_by: str | None = None
+    adapter_response: dict | None = None
+    error: str | None = None
 
     @property
-    def duration_s(self) -> Optional[float]:
+    def duration_s(self) -> float | None:
         if self.finished_at_unix is None:
             return None
         return self.finished_at_unix - self.started_at_unix
@@ -100,15 +102,16 @@ class StepResult:
 @dataclass
 class ProcedureExecution:
     """Runtime execution of a procedure. One per operator-initiated run."""
+
     execution_id: str
     procedure_id: str
     procedure_title: str
     operator: str
     state: ProcedureState
     created_at_unix: float
-    started_at_unix: Optional[float] = None
-    completed_at_unix: Optional[float] = None
-    abort_reason: Optional[str] = None
+    started_at_unix: float | None = None
+    completed_at_unix: float | None = None
+    abort_reason: str | None = None
     pre_condition_results: list[dict] = field(default_factory=list)
     execution_log: list[StepResult] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
@@ -123,7 +126,9 @@ class ProcedureExecution:
             )
         log.info(
             "[procedure_engine] %s: %s -> %s",
-            self.execution_id[:8], self.state.value, new_state.value
+            self.execution_id[:8],
+            self.state.value,
+            new_state.value,
         )
         self.state = new_state
 
@@ -173,10 +178,7 @@ class ProcedureRegistry:
                 self._procedures[pid] = data
                 log.info("[procedure_engine] loaded %s from %s", pid, yml_path.name)
             except yaml.YAMLError as e:
-                log.error(
-                    "[procedure_engine] YAML parse error in %s: %s",
-                    yml_path, e
-                )
+                log.error("[procedure_engine] YAML parse error in %s: %s", yml_path, e)
 
     def get(self, procedure_id: str) -> dict:
         if procedure_id not in self._procedures:
@@ -213,7 +215,7 @@ class PreConditionEvaluator:
     pulled from bms_connector + topology endpoint.
     """
 
-    def __init__(self, state_provider: "StateProvider"):
+    def __init__(self, state_provider: StateProvider):
         self.state = state_provider
 
     async def evaluate(self, pre_conditions: list[dict]) -> list[dict]:
@@ -226,29 +228,33 @@ class PreConditionEvaluator:
 
             try:
                 passed, observed = await self._eval_check(check_expr)
-                results.append({
-                    "id": cond_id,
-                    "check": check_expr,
-                    "passed": passed,
-                    "observed": observed,
-                    "failure_action": failure_action,
-                    "_evaluator_status": "ok",
-                })
+                results.append(
+                    {
+                        "id": cond_id,
+                        "check": check_expr,
+                        "passed": passed,
+                        "observed": observed,
+                        "failure_action": failure_action,
+                        "_evaluator_status": "ok",
+                    }
+                )
             except Exception as e:
                 # Conservative default: unknown check fails closed.
-                results.append({
-                    "id": cond_id,
-                    "check": check_expr,
-                    "passed": False,
-                    "observed": None,
-                    "failure_action": failure_action,
-                    "_evaluator_status": f"error: {type(e).__name__}: {e}",
-                    "_sprint_5_TODO": (
-                        "Full expression evaluator for weather, time-windows, "
-                        "and complex predicates is Sprint 5. Today only "
-                        "exact-match checks against current state are supported."
-                    ),
-                })
+                results.append(
+                    {
+                        "id": cond_id,
+                        "check": check_expr,
+                        "passed": False,
+                        "observed": None,
+                        "failure_action": failure_action,
+                        "_evaluator_status": f"error: {type(e).__name__}: {e}",
+                        "_sprint_5_TODO": (
+                            "Full expression evaluator for weather, time-windows, "
+                            "and complex predicates is Sprint 5. Today only "
+                            "exact-match checks against current state are supported."
+                        ),
+                    }
+                )
         return results
 
     async def _eval_check(self, expr: str) -> tuple[bool, Any]:
@@ -286,11 +292,11 @@ class StateProvider:
     async def get_redundancy_mode(self) -> str:
         """Read site redundancy mode. Stub returns 2N until topology
         endpoint integration is wired in Sprint 1.5 follow-up."""
-        return "2N"   # _sprint_1_TODO: read from topology/state endpoint
+        return "2N"  # _sprint_1_TODO: read from topology/state endpoint
 
     async def get_max_severity(self) -> str:
         """Stub returns OK. Sprint 1.5 wires this to incidents table."""
-        return "OK"   # _sprint_1_TODO: query incidents WHERE acked = false
+        return "OK"  # _sprint_1_TODO: query incidents WHERE acked = false
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -302,12 +308,12 @@ class AdapterRegistry:
     interface."""
 
     def __init__(self):
-        self._adapters: dict[str, "BaseAdapter"] = {}
+        self._adapters: dict[str, BaseAdapter] = {}
 
-    def register(self, name: str, adapter: "BaseAdapter") -> None:
+    def register(self, name: str, adapter: BaseAdapter) -> None:
         self._adapters[name] = adapter
 
-    def get(self, name: str) -> "BaseAdapter":
+    def get(self, name: str) -> BaseAdapter:
         if name not in self._adapters:
             # Fall-through to simulated. Logs warning for visibility.
             log.warning(
@@ -326,7 +332,7 @@ class BaseAdapter:
     async def read(self, target: str, fields: list[str]) -> dict:
         raise NotImplementedError
 
-    async def write(self, target: str, command: str, payload: Optional[dict] = None) -> dict:
+    async def write(self, target: str, command: str, payload: dict | None = None) -> dict:
         raise NotImplementedError
 
     async def verify_state(self, target: str, expected: dict) -> tuple[bool, dict]:
@@ -342,10 +348,12 @@ class SimulatedAdapter(BaseAdapter):
     async def read(self, target: str, fields: list[str]) -> dict:
         return {f: f"<simulated-{target}-{f}>" for f in fields}
 
-    async def write(self, target: str, command: str, payload: Optional[dict] = None) -> dict:
+    async def write(self, target: str, command: str, payload: dict | None = None) -> dict:
         log.info(
             "[SimulatedAdapter] WRITE %s.%s payload=%s (NO ACTUAL WRITE)",
-            target, command, payload,
+            target,
+            command,
+            payload,
         )
         return {
             "status": "SIMULATED_OK",
@@ -387,17 +395,19 @@ class StepExecutor:
         step_id = step.get("id", "unnamed_step")
         title = step.get("title", "(no title)")
         result = StepResult(
-            step_id=step_id, title=title,
-            started_at_unix=time.time(), status="RUNNING",
+            step_id=step_id,
+            title=title,
+            started_at_unix=time.time(),
+            status="RUNNING",
         )
         try:
             step_type = step.get("type", "unknown")
             handler = {
-                "notification":  self._exec_notification,
-                "read_verify":   self._exec_read_verify,
-                "write_verify":  self._exec_write_verify,
-                "dwell":         self._exec_dwell,
-                "read_dwell":    self._exec_read_dwell,
+                "notification": self._exec_notification,
+                "read_verify": self._exec_read_verify,
+                "write_verify": self._exec_write_verify,
+                "dwell": self._exec_dwell,
+                "read_dwell": self._exec_read_dwell,
                 "cmms_finalize": self._exec_cmms_finalize,
             }.get(step_type)
             if handler is None:
@@ -411,7 +421,8 @@ class StepExecutor:
             result.error = f"{type(e).__name__}: {e}"
             log.error(
                 "[procedure_engine] step %s FAILED: %s",
-                step_id, result.error,
+                step_id,
+                result.error,
             )
         finally:
             result.finished_at_unix = time.time()
@@ -433,8 +444,7 @@ class StepExecutor:
         ok, observed = await adapter.verify_state(target, expected)
         if not ok:
             raise RuntimeError(
-                f"verify_state failed for {target}: observed={observed}, "
-                f"expected={expected}"
+                f"verify_state failed for {target}: observed={observed}, " f"expected={expected}"
             )
         return {"verify": "OK", "observed": observed}
 
@@ -512,7 +522,7 @@ class ProcedureOrchestrator:
         registry: ProcedureRegistry,
         evaluator: PreConditionEvaluator,
         executor: StepExecutor,
-        witness_gate: Optional[Any] = None,    # WitnessGate, kept Any to avoid circular import
+        witness_gate: Any | None = None,  # WitnessGate, kept Any to avoid circular import
     ):
         self.registry = registry
         self.evaluator = evaluator
@@ -547,8 +557,7 @@ class ProcedureOrchestrator:
         execution.pre_condition_results = results
 
         any_hard_failure = any(
-            (not r["passed"]) and r["failure_action"] == "ABORT"
-            for r in results
+            (not r["passed"]) and r["failure_action"] == "ABORT" for r in results
         )
         if any_hard_failure:
             execution.transition_to(ProcedureState.ABORTED)
@@ -582,7 +591,6 @@ class ProcedureOrchestrator:
 
         On any step failure with abort_on_failure=True, transition to ABORTING."""
         for step in proc.get("steps", []):
-
             # ── Witness gate (Sprint 3) ───────────────────────────────
             # If the step requires a witness AND the gate is configured,
             # block here until signed/rejected/expired. The gate creates
@@ -616,7 +624,8 @@ class ProcedureOrchestrator:
                     )
                     execution.execution_log.append(fake_result)
                     await self._abort_execution(
-                        execution, proc,
+                        execution,
+                        proc,
                         reason=(
                             f"step {step.get('id')} not authorised: "
                             f"witness {witness_req.status.value}"
@@ -624,11 +633,13 @@ class ProcedureOrchestrator:
                     )
                     return
                 # Signature OK — record the witness identity in execution metadata
-                execution.metadata.setdefault("witness_signatures", []).append({
-                    "step_id": step.get("id"),
-                    "witness": witness_req.witness,
-                    "signed_at_unix": witness_req.signed_at_unix,
-                })
+                execution.metadata.setdefault("witness_signatures", []).append(
+                    {
+                        "step_id": step.get("id"),
+                        "witness": witness_req.witness,
+                        "signed_at_unix": witness_req.signed_at_unix,
+                    }
+                )
 
             # ── Execute the step (with or without witness above) ──────
             result = await self.executor.execute_step(step, execution)
@@ -647,7 +658,8 @@ class ProcedureOrchestrator:
 
             if result.status == "FAILED" and step.get("abort_on_failure", True):
                 await self._abort_execution(
-                    execution, proc,
+                    execution,
+                    proc,
                     reason=f"step {result.step_id} failed: {result.error}",
                 )
                 return
@@ -674,7 +686,8 @@ class ProcedureOrchestrator:
             execution.completed_at_unix = time.time()
             log.warning(
                 "[procedure_engine] %s ABORTED from ARMED: %s",
-                execution.execution_id[:8], reason,
+                execution.execution_id[:8],
+                reason,
             )
             return
 
@@ -682,7 +695,8 @@ class ProcedureOrchestrator:
         execution.abort_reason = reason
         log.warning(
             "[procedure_engine] %s ABORTING: %s",
-            execution.execution_id[:8], reason,
+            execution.execution_id[:8],
+            reason,
         )
 
         # Run abort_sequence if defined. _sprint_4_TODO: tighter timing
@@ -701,9 +715,11 @@ class ProcedureOrchestrator:
         """Operator-triggered emergency abort. Works from ARMED, IN_PROGRESS, VERIFYING."""
         execution = self.get_execution(exec_id)
         if execution.state in (
-            ProcedureState.COMPLETED, ProcedureState.ABORTED, ProcedureState.ABORTING,
+            ProcedureState.COMPLETED,
+            ProcedureState.ABORTED,
+            ProcedureState.ABORTING,
         ):
-            return execution    # idempotent
+            return execution  # idempotent
 
         # Sprint 3: supersede any pending witness requests for this execution
         # so a stale witness signature can't unblock a now-dead procedure.
@@ -715,7 +731,8 @@ class ProcedureOrchestrator:
 
         proc = self.registry.get(execution.procedure_id)
         await self._abort_execution(
-            execution, proc,
+            execution,
+            proc,
             reason=f"operator_abort:{operator}:{reason}",
         )
         return execution
@@ -744,6 +761,7 @@ def build_default_orchestrator(project_root: Path) -> ProcedureOrchestrator:
     # Sprint 3: wire the witness gate. Lazy import to avoid circular dep.
     try:
         from witness_engine import WitnessGate, get_witness_store
+
         witness_gate = WitnessGate(store=get_witness_store())
         log.info("[procedure_engine] WitnessGate wired (Sprint 3)")
     except ImportError as e:

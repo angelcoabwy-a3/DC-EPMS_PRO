@@ -22,13 +22,13 @@ binaryInput that the controller asserts after contacts close.
   point list before commissioning.
 ═══════════════════════════════════════════════════════════════════════
 """
+
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any
 
-from . import HardwareAdapter, FailureMode, BACnetBackend
+from . import BACnetBackend, FailureMode, HardwareAdapter
 
 log = logging.getLogger(__name__)
 
@@ -46,26 +46,24 @@ log = logging.getLogger(__name__)
 # Reference: ASCO 381333-330 BACnet Communication Protocol Manual
 _OBJECT_MAP: dict[str, tuple[str, int, str, str]] = {
     # ── Status (binaryInput / multiStateInput / analogInput) ─────────
-    "ats_position":           ("multiStateInput", 1,  "presentValue", "ats_position"),
-    "ats_in_transit":         ("binaryInput",     1,  "presentValue", "bool"),
-    "ats_armed":              ("binaryInput",     2,  "presentValue", "bool"),
-    "source_normal_avail":    ("binaryInput",     3,  "presentValue", "bool"),
-    "source_emergency_avail": ("binaryInput",     4,  "presentValue", "bool"),
-
-    "voltage_normal_l_l":     ("analogInput",     1,  "presentValue", "raw"),
-    "voltage_emergency_l_l":  ("analogInput",     2,  "presentValue", "raw"),
-    "frequency_normal_hz":    ("analogInput",     3,  "presentValue", "raw"),
-    "frequency_emergency_hz": ("analogInput",     4,  "presentValue", "raw"),
-    "load_kw":                ("analogInput",     5,  "presentValue", "raw"),
-    "transfer_count":         ("analogInput",     10, "presentValue", "raw"),
-
+    "ats_position": ("multiStateInput", 1, "presentValue", "ats_position"),
+    "ats_in_transit": ("binaryInput", 1, "presentValue", "bool"),
+    "ats_armed": ("binaryInput", 2, "presentValue", "bool"),
+    "source_normal_avail": ("binaryInput", 3, "presentValue", "bool"),
+    "source_emergency_avail": ("binaryInput", 4, "presentValue", "bool"),
+    "voltage_normal_l_l": ("analogInput", 1, "presentValue", "raw"),
+    "voltage_emergency_l_l": ("analogInput", 2, "presentValue", "raw"),
+    "frequency_normal_hz": ("analogInput", 3, "presentValue", "raw"),
+    "frequency_emergency_hz": ("analogInput", 4, "presentValue", "raw"),
+    "load_kw": ("analogInput", 5, "presentValue", "raw"),
+    "transfer_count": ("analogInput", 10, "presentValue", "raw"),
     # ── Commands (binaryOutput) ──────────────────────────────────────
-    "cmd_arm":                ("binaryOutput",    1,  "presentValue", "raw"),
-    "cmd_transfer_to_norm":   ("binaryOutput",    2,  "presentValue", "raw"),
-    "cmd_transfer_to_emerg":  ("binaryOutput",    3,  "presentValue", "raw"),
-    "cmd_force_to_norm":      ("binaryOutput",    4,  "presentValue", "raw"),
-    "cmd_disarm":             ("binaryOutput",    5,  "presentValue", "raw"),
-    "cmd_test_transfer":      ("binaryOutput",    6,  "presentValue", "raw"),
+    "cmd_arm": ("binaryOutput", 1, "presentValue", "raw"),
+    "cmd_transfer_to_norm": ("binaryOutput", 2, "presentValue", "raw"),
+    "cmd_transfer_to_emerg": ("binaryOutput", 3, "presentValue", "raw"),
+    "cmd_force_to_norm": ("binaryOutput", 4, "presentValue", "raw"),
+    "cmd_disarm": ("binaryOutput", 5, "presentValue", "raw"),
+    "cmd_test_transfer": ("binaryOutput", 6, "presentValue", "raw"),
 }
 
 _ATS_POSITION_ENUM = {0: "NORMAL", 1: "EMERGENCY", 2: "OFF"}
@@ -150,9 +148,7 @@ class AscoAdapter(HardwareAdapter):
         self._cache[target] = result
         return result
 
-    async def write(
-        self, target: str, command: str, payload: Optional[dict] = None
-    ) -> dict:
+    async def write(self, target: str, command: str, payload: dict | None = None) -> dict:
         """Translate canonical command to BACnet WriteProperty.
 
         Supported canonical commands:
@@ -169,12 +165,12 @@ class AscoAdapter(HardwareAdapter):
         payload = payload or {}
 
         cmd_field_map = {
-            "ARM":                       ("cmd_arm", 2 if payload.get("test_mode") else 1),
-            "DISARM":                    ("cmd_disarm", 1),
-            "TRANSFER_TO_EMERGENCY":     ("cmd_transfer_to_emerg", 1),
-            "TRANSFER_TO_NORMAL":        ("cmd_transfer_to_norm", 1),
+            "ARM": ("cmd_arm", 2 if payload.get("test_mode") else 1),
+            "DISARM": ("cmd_disarm", 1),
+            "TRANSFER_TO_EMERGENCY": ("cmd_transfer_to_emerg", 1),
+            "TRANSFER_TO_NORMAL": ("cmd_transfer_to_norm", 1),
             "TRANSFER_TO_NORMAL_FORCED": ("cmd_force_to_norm", 1),
-            "TEST_TRANSFER":             ("cmd_test_transfer", 1),
+            "TEST_TRANSFER": ("cmd_test_transfer", 1),
         }
 
         if command not in cmd_field_map:

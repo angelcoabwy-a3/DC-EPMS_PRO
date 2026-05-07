@@ -45,15 +45,16 @@ References
   - IEEE 1184 / 1188           (UPS battery practices)
   - ANSI C57.12                (Transformer loss standard)
 """
+
 from __future__ import annotations
 
 import logging
-import math
 from typing import Any
 
 try:
     import numpy as np
     from scipy.integrate import solve_ivp
+
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
@@ -77,26 +78,26 @@ log = logging.getLogger("dc-epms.physics.electrical")
 
 # --- Utility main transformer (27 kV / 480 V, per-side) ---
 # Two transformers in 2N (one per utility side)
-XFMR_RATED_KVA = 2_500.0        # 2.5 MVA per transformer
-XFMR_NO_LOAD_LOSS_KW = 3.5      # iron losses (present always)
-XFMR_FULL_LOAD_LOSS_KW = 22.0   # copper losses at 100% load
+XFMR_RATED_KVA = 2_500.0  # 2.5 MVA per transformer
+XFMR_NO_LOAD_LOSS_KW = 3.5  # iron losses (present always)
+XFMR_FULL_LOAD_LOSS_KW = 22.0  # copper losses at 100% load
 XFMR_AMBIENT_NOMINAL_C = 25.0
-XFMR_WINDING_MAX_C = 130.0      # IEEE C57.12 hottest-spot limit for 65C rise
+XFMR_WINDING_MAX_C = 130.0  # IEEE C57.12 hottest-spot limit for 65C rise
 XFMR_TOP_OIL_MAX_C = 95.0
 
 # --- UPS Galaxy VX 750 kVA ---
 UPS_RATED_KVA = 750.0
 UPS_RATED_KW = 600.0  # at PF=0.8 per legacy, Galaxy VX supports unity PF
-UPS_ETA_MAX = 0.97    # eConversion mode peak
+UPS_ETA_MAX = 0.97  # eConversion mode peak
 UPS_ETA_DOUBLE_CONV_MAX = 0.96
 UPS_LOW_LOAD_ETA_FLOOR = 0.88  # at ~5% load
 
 # --- Battery string (VRLA, 240 cells, 480 VDC) ---
-BATT_NOMINAL_VDC = 540.0        # float voltage
+BATT_NOMINAL_VDC = 540.0  # float voltage
 BATT_CELLS = 240
 BATT_CELL_FLOAT_V = 2.25
 BATT_CELL_DISCHARGE_END_V = 1.75  # cutoff
-BATT_CAPACITY_AH = 250.0        # 60-cell jar, rated 10-hr
+BATT_CAPACITY_AH = 250.0  # 60-cell jar, rated 10-hr
 BATT_RUNTIME_NOMINAL_MIN = 15.0  # a3semi spec at full load
 BATT_RUNTIME_FULL_LOAD_MIN = 12.0  # realistic VRLA end-of-life
 
@@ -104,6 +105,7 @@ BATT_RUNTIME_FULL_LOAD_MIN = 12.0  # realistic VRLA end-of-life
 # ---------------------------------------------------------------------------
 #  Helper functions
 # ---------------------------------------------------------------------------
+
 
 def _ups_efficiency(load_fraction: float, mode: str = "online") -> float:
     """Compute UPS efficiency for a given load fraction.
@@ -130,9 +132,7 @@ def _ups_efficiency(load_fraction: float, mode: str = "online") -> float:
 
     if lf < 0.3:
         # Linear ramp from floor to peak between 5% and 30%
-        return UPS_LOW_LOAD_ETA_FLOOR + (eta_peak - UPS_LOW_LOAD_ETA_FLOOR) * (
-            (lf - 0.05) / 0.25
-        )
+        return UPS_LOW_LOAD_ETA_FLOOR + (eta_peak - UPS_LOW_LOAD_ETA_FLOOR) * ((lf - 0.05) / 0.25)
 
     if lf < 0.9:
         # Flat near peak
@@ -148,7 +148,7 @@ def _transformer_losses_kw(load_kva: float) -> float:
     P_loss(t) = P_no_load + P_full_load * (S/S_rated)^2
     """
     loading = load_kva / max(XFMR_RATED_KVA, 0.001)
-    return XFMR_NO_LOAD_LOSS_KW + XFMR_FULL_LOAD_LOSS_KW * (loading ** 2)
+    return XFMR_NO_LOAD_LOSS_KW + XFMR_FULL_LOAD_LOSS_KW * (loading**2)
 
 
 def _battery_voltage_from_soc(soc: float) -> float:
@@ -159,7 +159,7 @@ def _battery_voltage_from_soc(soc: float) -> float:
     """
     soc = max(0.0, min(1.0, soc))
     if soc > 0.15:
-        return BATT_NOMINAL_VDC * (soc ** 0.10)
+        return BATT_NOMINAL_VDC * (soc**0.10)
     else:
         # Collapse toward cutoff
         return BATT_CELLS * BATT_CELL_DISCHARGE_END_V * (soc / 0.15)
@@ -172,6 +172,7 @@ def _clamp01(x: float) -> float:
 # ---------------------------------------------------------------------------
 #  ElectricalModule
 # ---------------------------------------------------------------------------
+
 
 class ElectricalModule(PhysicsModule):
     """Validator + simulator for the electrical plant.
@@ -259,21 +260,23 @@ class ElectricalModule(PhysicsModule):
                 "bus'."
             )
             r.escalate(Severity.INFO)
-            r.add_justification(PhysicalJustification(
-                law="ups_efficiency_curve",
-                measured={
-                    "ups_load_kw": ups_load_kw,
-                    "ups_input_kw": ups_input_kw,
-                    "eta_measured": eta_measured,
-                    "load_fraction": load_fraction,
-                    "ups_mode": ups_mode,
-                },
-                expected={"eta_expected": eta_expected},
-                residual={"residual_fraction": eff_residual},
-                threshold={"threshold_fraction": eff_threshold},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            r.add_justification(
+                PhysicalJustification(
+                    law="ups_efficiency_curve",
+                    measured={
+                        "ups_load_kw": ups_load_kw,
+                        "ups_input_kw": ups_input_kw,
+                        "eta_measured": eta_measured,
+                        "load_fraction": load_fraction,
+                        "ups_mode": ups_mode,
+                    },
+                    expected={"eta_expected": eta_expected},
+                    residual={"residual_fraction": eff_residual},
+                    threshold={"threshold_fraction": eff_threshold},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
 
         # ============ Check 2: Transformer losses (Joule + iron) ========
         xfmr_loss_expected = _transformer_losses_kw(xfmr_load_kva)
@@ -284,7 +287,7 @@ class ElectricalModule(PhysicsModule):
         # Simplified thermal model: steady-state winding rise scales with loss
         # Expected temp = ambient + (no_load_rise) + (full_load_rise) * (load_frac)^2
         ambient = XFMR_AMBIENT_NOMINAL_C
-        expected_winding = ambient + 40.0 + 65.0 * (xfmr_load_frac ** 2)
+        expected_winding = ambient + 40.0 + 65.0 * (xfmr_load_frac**2)
         winding_residual = xfmr_winding - expected_winding
         winding_threshold = 12.0  # K
         winding_ok = abs(winding_residual) <= winding_threshold
@@ -304,35 +307,41 @@ class ElectricalModule(PhysicsModule):
             )
             if xfmr_winding >= XFMR_WINDING_MAX_C:
                 r.escalate(Severity.CRITICAL)
-                interp = "CRITICAL: " + interp + (
-                    f" Winding at or above {XFMR_WINDING_MAX_C:.0f} C IEEE "
-                    f"C57.12 hottest-spot limit; insulation aging "
-                    f"accelerates 2x per 6-8 K above design."
+                interp = (
+                    "CRITICAL: "
+                    + interp
+                    + (
+                        f" Winding at or above {XFMR_WINDING_MAX_C:.0f} C IEEE "
+                        f"C57.12 hottest-spot limit; insulation aging "
+                        f"accelerates 2x per 6-8 K above design."
+                    )
                 )
             else:
                 r.escalate(Severity.WARNING)
-            r.add_justification(PhysicalJustification(
-                law="transformer_thermal_ieee_c57_12",
-                measured={
-                    "xfmr_winding_c": xfmr_winding,
-                    "xfmr_top_oil_c": xfmr_top_oil,
-                    "xfmr_load_kva": xfmr_load_kva,
-                    "xfmr_load_fraction": xfmr_load_frac,
-                },
-                expected={
-                    "winding_expected_c": expected_winding,
-                    "winding_max_c": XFMR_WINDING_MAX_C,
-                    "losses_kw": xfmr_loss_expected,
-                },
-                residual={"residual_c": winding_residual},
-                threshold={"threshold_c": winding_threshold},
-                interpretation=interp,
-                suggested_action=(
-                    "Verify transformer cooling fans operational. Check "
-                    "harmonic content with power-quality analyzer. Review "
-                    "load balance across phases."
-                ),
-            ))
+            r.add_justification(
+                PhysicalJustification(
+                    law="transformer_thermal_ieee_c57_12",
+                    measured={
+                        "xfmr_winding_c": xfmr_winding,
+                        "xfmr_top_oil_c": xfmr_top_oil,
+                        "xfmr_load_kva": xfmr_load_kva,
+                        "xfmr_load_fraction": xfmr_load_frac,
+                    },
+                    expected={
+                        "winding_expected_c": expected_winding,
+                        "winding_max_c": XFMR_WINDING_MAX_C,
+                        "losses_kw": xfmr_loss_expected,
+                    },
+                    residual={"residual_c": winding_residual},
+                    threshold={"threshold_c": winding_threshold},
+                    interpretation=interp,
+                    suggested_action=(
+                        "Verify transformer cooling fans operational. Check "
+                        "harmonic content with power-quality analyzer. Review "
+                        "load balance across phases."
+                    ),
+                )
+            )
 
         # ============ Check 3: Battery voltage vs SOC curve =============
         batt_vdc_expected = _battery_voltage_from_soc(batt_soc)
@@ -359,18 +368,20 @@ class ElectricalModule(PhysicsModule):
                 "float voltage per cell: 2.25 V +/- 0.03 V."
             )
             r.escalate(Severity.WARNING)
-            r.add_justification(PhysicalJustification(
-                law="battery_voltage_soc",
-                measured={
-                    "battery_vdc": batt_vdc_meas,
-                    "battery_soc": batt_soc,
-                },
-                expected={"battery_vdc_expected": batt_vdc_expected},
-                residual={"residual_v": batt_v_residual},
-                threshold={"threshold_v": batt_v_threshold},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            r.add_justification(
+                PhysicalJustification(
+                    law="battery_voltage_soc",
+                    measured={
+                        "battery_vdc": batt_vdc_meas,
+                        "battery_soc": batt_soc,
+                    },
+                    expected={"battery_vdc_expected": batt_vdc_expected},
+                    residual={"residual_v": batt_v_residual},
+                    threshold={"threshold_v": batt_v_threshold},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
 
         # ============ Check 4: On-battery urgency =======================
         if on_batt:
@@ -386,41 +397,38 @@ class ElectricalModule(PhysicsModule):
             )
             if runtime_est_min < 5.0:
                 r.escalate(Severity.CRITICAL)
-                r.add_justification(PhysicalJustification(
-                    law="battery_runtime_remaining",
-                    measured={
-                        "battery_soc": batt_soc,
-                        "runtime_est_min": runtime_est_min,
-                    },
-                    expected={"minimum_safe_min": 5.0},
-                    residual={"deficit_min": 5.0 - runtime_est_min},
-                    threshold={"threshold_min": 5.0},
-                    interpretation=(
-                        f"On battery with only {runtime_est_min:.1f} min "
-                        f"of runtime remaining. Utility or generator "
-                        f"restoration required in under 5 min or initiate "
-                        f"orderly IT shutdown."
-                    ),
-                    suggested_action=(
-                        "Verify generator start status. If generator not "
-                        "yet online, activate EOP per T1-SAF-EPO-005. "
-                        "Begin IT workload migration sequence."
-                    ),
-                ))
+                r.add_justification(
+                    PhysicalJustification(
+                        law="battery_runtime_remaining",
+                        measured={
+                            "battery_soc": batt_soc,
+                            "runtime_est_min": runtime_est_min,
+                        },
+                        expected={"minimum_safe_min": 5.0},
+                        residual={"deficit_min": 5.0 - runtime_est_min},
+                        threshold={"threshold_min": 5.0},
+                        interpretation=(
+                            f"On battery with only {runtime_est_min:.1f} min "
+                            f"of runtime remaining. Utility or generator "
+                            f"restoration required in under 5 min or initiate "
+                            f"orderly IT shutdown."
+                        ),
+                        suggested_action=(
+                            "Verify generator start status. If generator not "
+                            "yet online, activate EOP per T1-SAF-EPO-005. "
+                            "Begin IT workload migration sequence."
+                        ),
+                    )
+                )
             elif runtime_est_min < 10.0:
                 r.escalate(Severity.WARNING)
 
         # --- Health score ---
         penalty = max(
             0.0 if eff_ok else 0.10,
-            0.0 if winding_ok else (
-                0.6 if xfmr_winding >= XFMR_WINDING_MAX_C else 0.25
-            ),
+            0.0 if winding_ok else (0.6 if xfmr_winding >= XFMR_WINDING_MAX_C else 0.25),
             0.0 if batt_v_ok else 0.20,
-            (
-                0.0 if (not on_batt or batt_soc > 0.5)
-                else (0.7 if batt_soc < 0.2 else 0.3)
-            ),
+            (0.0 if (not on_batt or batt_soc > 0.5) else (0.7 if batt_soc < 0.2 else 0.3)),
         )
         r.health = _clamp01(1.0 - penalty)
 
@@ -472,12 +480,10 @@ class ElectricalModule(PhysicsModule):
             }
         """
         soc0 = float(initial_state.get("battery_soc", 1.0))
-        load_kw = float(perturbation.get(
-            "load_kw", initial_state.get("ups_load_kw", 16_756.0)
-        ))
+        load_kw = float(perturbation.get("load_kw", initial_state.get("ups_load_kw", 16_756.0)))
         utility_fail = bool(perturbation.get("utility_fail", True))
         start_s = float(perturbation.get("start_s", 0.0))
-        gen_start_s = perturbation.get("generator_start_s", None)
+        gen_start_s = perturbation.get("generator_start_s")
 
         # Battery capacity in ampere-seconds at nominal voltage:
         # Q_as = C_Ah * 3600
@@ -514,7 +520,8 @@ class ElectricalModule(PhysicsModule):
                 y0=np.array([soc0]),
                 t_eval=t_eval,
                 method="RK45",
-                rtol=1e-5, atol=1e-5,
+                rtol=1e-5,
+                atol=1e-5,
             )
             if not sol.success:
                 log.error("electrical ODE failed: %s", sol.message)
@@ -542,8 +549,9 @@ class ElectricalModule(PhysicsModule):
             soc = float(socs[i])
             t_s = float(t)
             on_batt = (
-                utility_fail and t_s >= start_s and
-                (gen_start_s is None or t_s < float(gen_start_s))
+                utility_fail
+                and t_s >= start_s
+                and (gen_start_s is None or t_s < float(gen_start_s))
             )
             vdc = _battery_voltage_from_soc(soc)
 
@@ -554,26 +562,28 @@ class ElectricalModule(PhysicsModule):
             if soc < 0.15 and not depletion_event:
                 events.append("battery_depletion_imminent")
                 depletion_event = True
-            if (gen_start_s is not None
-                    and abs(t_s - float(gen_start_s)) < dt_s / 2):
+            if gen_start_s is not None and abs(t_s - float(gen_start_s)) < dt_s / 2:
                 events.append("generator_online")
 
-            trajectory.append(StateSnapshot(
-                t=t_s,
-                state={
-                    "battery_soc": soc,
-                    "battery_vdc": vdc,
-                    "on_battery": on_batt,
-                    # Use -1.0 as sentinel for "not applicable" (battery not
-                    # discharging). JSON does not permit Infinity per RFC 8259,
-                    # so we cannot return float('inf') here.
-                    "runtime_remaining_min": (
-                        soc / base_drain_per_s / 60.0 / load_ratio
-                        if (on_batt and load_ratio > 0) else -1.0
-                    ),
-                    "load_kw": load_kw,
-                },
-                events=events,
-            ))
+            trajectory.append(
+                StateSnapshot(
+                    t=t_s,
+                    state={
+                        "battery_soc": soc,
+                        "battery_vdc": vdc,
+                        "on_battery": on_batt,
+                        # Use -1.0 as sentinel for "not applicable" (battery not
+                        # discharging). JSON does not permit Infinity per RFC 8259,
+                        # so we cannot return float('inf') here.
+                        "runtime_remaining_min": (
+                            soc / base_drain_per_s / 60.0 / load_ratio
+                            if (on_batt and load_ratio > 0)
+                            else -1.0
+                        ),
+                        "load_kw": load_kw,
+                    },
+                    events=events,
+                )
+            )
 
         return trajectory

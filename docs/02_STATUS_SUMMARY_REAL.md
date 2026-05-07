@@ -549,30 +549,30 @@ Reemplazar la Versión B actual con:
 DC-EPMS PRO — AI-Native Operations Platform for Tier IV AI Factories
 Python · FastAPI · DSPy · NetworkX · FAISS · ChromaDB · TimescaleDB · Numba · Docker
 
-• Architected an edge AI orchestration platform for a 40MW Tier IV data center 
-  simulation (NVIDIA GB200 NVL72 hyperscale topology, dual 2N power paths, 
-  N+1 cooling), with declarative YAML site model spanning 80+ components 
-  validated by 44 site_model unit tests and topology-aware LOTO impact 
+• Architected an edge AI orchestration platform for a 40MW Tier IV data center
+  simulation (NVIDIA GB200 NVL72 hyperscale topology, dual 2N power paths,
+  N+1 cooling), with declarative YAML site model spanning 80+ components
+  validated by 44 site_model unit tests and topology-aware LOTO impact
   analysis preserving 2N redundancy verification.
 
-• Engineered a first-principles physics engine across 4 sub-systems 
-  (IT thermal, mechanical CDU, electrical UPS, heat rejection chillers) 
-  applying Darcy-Weisbach pressure drop, Magnus-Tetens psychrometrics, 
-  Joule's law per ANSI C57.12, and ODE transient integration via 
-  scipy.solve_ivp; Site Health Index synthesizes module health with 
+• Engineered a first-principles physics engine across 4 sub-systems
+  (IT thermal, mechanical CDU, electrical UPS, heat rejection chillers)
+  applying Darcy-Weisbach pressure drop, Magnus-Tetens psychrometrics,
+  Joule's law per ANSI C57.12, and ODE transient integration via
+  scipy.solve_ivp; Site Health Index synthesizes module health with
   redundancy-state severity modifiers.
 
-• Built dual-mode RAG subsystem: ChromaDB tier-aware retrieval over 
-  20-document operational corpus (Safety/Vendor/Standards/a3semi MOPs 
-  spanning CSA Z462, NFPA 70E, IEC 62443, ASHRAE A2, NVIDIA GB200 DLC, 
-  Schneider WP122) plus a NetworkX+FAISS GraphRAG layer linking physical 
-  components to vendor whitepapers via declarative applies_to edges, 
+• Built dual-mode RAG subsystem: ChromaDB tier-aware retrieval over
+  20-document operational corpus (Safety/Vendor/Standards/a3semi MOPs
+  spanning CSA Z462, NFPA 70E, IEC 62443, ASHRAE A2, NVIDIA GB200 DLC,
+  Schneider WP122) plus a NetworkX+FAISS GraphRAG layer linking physical
+  components to vendor whitepapers via declarative applies_to edges,
   enabling jurisdiction-filtered topological recall.
 
-• Designed a 6-tool LLM Copilot (FastAPI streaming) plus a parallel 
-  MCP-protocol server (3 tools + 4 resources, spec 2024-11-05) exposing 
-  facility state to Claude Desktop, both following IEC 62443 zone-and-conduit 
-  segregation: read-only AI authority with mandatory Human-in-the-Loop 
+• Designed a 6-tool LLM Copilot (FastAPI streaming) plus a parallel
+  MCP-protocol server (3 tools + 4 resources, spec 2024-11-05) exposing
+  facility state to Claude Desktop, both following IEC 62443 zone-and-conduit
+  segregation: read-only AI authority with mandatory Human-in-the-Loop
   approval gates on every CMMS draft, validated by 345+ pytest cases.
 ```
 
@@ -802,7 +802,7 @@ pue_targets:
     deviation_max: 1.45    # Amarillo entre 1.30-1.45; Rojo >= 1.45
     rationale: "Tier IV 480VAC trifásico 2N, York YZ chillers, DLC parcial"
     references: ["Uptime Institute Tier IV", "ASHRAE TC 9.9 A2"]
-  
+
   building_d_800vdc_phase2:
     optimal_max: 1.15      # Verde
     deviation_max: 1.25    # Amarillo entre 1.15-1.25; Rojo >= 1.25

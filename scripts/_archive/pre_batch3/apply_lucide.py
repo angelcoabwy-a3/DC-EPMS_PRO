@@ -105,27 +105,27 @@ for route, icon_name in NAV_ICON_MAP.items():
     # Find the nav-item with this route. Pattern is approximately:
     # <div class="nav-item ...?" data-route="ROUTE">...<span class="icon">EMOJI_OR_ENTITY</span>LABEL</div>
     # We replace the inner of <span class="icon">...</span>
-    
+
     route_marker = f'data-route="{route}"'.encode('utf-8')
     pos = index_data.find(route_marker)
     if pos < 0:
         print(f"  [skip] route {route!r} not found")
         continue
-    
+
     # Find the next <span class="icon"> after this position
     span_open = b'<span class="icon">'
     span_pos = index_data.find(span_open, pos)
     if span_pos < 0 or span_pos > pos + 200:  # within reasonable distance
         print(f"  [skip] icon span not found near route {route!r}")
         continue
-    
+
     # Find the closing </span>
     content_start = span_pos + len(span_open)
     span_close = index_data.find(b'</span>', content_start)
     if span_close < 0 or span_close > content_start + 50:
         print(f"  [skip] closing </span> not found for route {route!r}")
         continue
-    
+
     new_inner = make_svg(icon_name).encode('utf-8')
     index_data = index_data[:content_start] + new_inner + index_data[span_close:]
     replaced_count += 1

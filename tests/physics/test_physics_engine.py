@@ -8,6 +8,7 @@ Coverage:
   - Cascade detection for known patterns
   - simulate_scenario dispatches to correct module
 """
+
 from __future__ import annotations
 
 import pytest
@@ -15,13 +16,11 @@ import pytest
 from backend.physics.base import Severity
 from backend.physics_engine import (
     PhysicsEngine,
-    SiteValidationResult,
     get_engine,
 )
 
 
 class TestValidateSite:
-
     def _nominal_site(self) -> dict:
         """Combined telemetry that keeps all 4 modules happy."""
         return {
@@ -77,7 +76,10 @@ class TestValidateSite:
         assert result.overall_severity in (Severity.OK, Severity.INFO)
         assert len(result.modules) == 4
         assert set(result.modules.keys()) == {
-            "it_thermal", "mechanical", "electrical", "heat_rejection"
+            "it_thermal",
+            "mechanical",
+            "electrical",
+            "heat_rejection",
         }
 
     def test_all_modules_healths_reported(self):
@@ -110,7 +112,6 @@ class TestValidateSite:
 
 
 class TestFirstLawCrossCheck:
-
     def test_residuals_computed(self):
         engine = PhysicsEngine()
         m = TestValidateSite()._nominal_site()
@@ -121,15 +122,14 @@ class TestFirstLawCrossCheck:
 
 
 class TestCascadeDetection:
-
     def test_pump_cavitation_with_it_stress(self):
         """Pump cavitation + IT energy residual -> cascade event."""
         engine = PhysicsEngine()
         m = TestValidateSite()._nominal_site()
         # Force both patterns
-        m["pump_suction_bar"] = 0.3          # cavitation
-        m["dlc_flow_l_min"] = 40.0           # DLC flow anomaly
-        m["dlc_return_c"] = 60.0             # breaks energy balance
+        m["pump_suction_bar"] = 0.3  # cavitation
+        m["dlc_flow_l_min"] = 40.0  # DLC flow anomaly
+        m["dlc_return_c"] = 60.0  # breaks energy balance
         result = engine.validate_site(m)
         cascade_names = [c["pattern"] for c in result.cascade_events]
         assert "pump_cavitation_to_it_thermal_stress" in cascade_names
@@ -155,7 +155,6 @@ class TestCascadeDetection:
 
 
 class TestSimulateScenario:
-
     def test_scenario_dispatches_to_module(self):
         engine = PhysicsEngine()
         scenario = {
@@ -185,13 +184,10 @@ class TestSimulateScenario:
     def test_unknown_module_raises(self):
         engine = PhysicsEngine()
         with pytest.raises(ValueError):
-            engine.simulate_scenario(
-                {"id": "SCN-X", "primary_module": "nonexistent"}
-            )
+            engine.simulate_scenario({"id": "SCN-X", "primary_module": "nonexistent"})
 
 
 class TestSingleton:
-
     def test_get_engine_returns_same_instance(self):
         e1 = get_engine()
         e2 = get_engine()
@@ -199,7 +195,6 @@ class TestSingleton:
 
 
 class TestSiteValidationResultSerialization:
-
     def test_to_dict_round_trip(self):
         engine = PhysicsEngine()
         result = engine.validate_site(TestValidateSite()._nominal_site())

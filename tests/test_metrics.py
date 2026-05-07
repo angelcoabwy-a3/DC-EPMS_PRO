@@ -31,7 +31,6 @@ from backend.metrics_router import (
     setup_metrics,
 )
 
-
 # ─── Fixtures ───────────────────────────────────────────────────────────────
 
 
@@ -55,7 +54,7 @@ def clear_prometheus_registry():
         except KeyError:
             # Collector already gone — skip
             pass
-    yield
+    return
     # Post-test cleanup is optional; next test's autouse handles it
 
 
@@ -123,9 +122,7 @@ class TestMetricsEndpoint:
         response = instrumented_client.get("/metrics")
         assert response.status_code == 200
 
-    def test_metrics_endpoint_returns_prometheus_format(
-        self, instrumented_client: TestClient
-    ):
+    def test_metrics_endpoint_returns_prometheus_format(self, instrumented_client: TestClient):
         """Response should match Prometheus text exposition format."""
         # Generate a sample by hitting an instrumented endpoint
         instrumented_client.get("/api/health")
@@ -157,9 +154,9 @@ class TestInstrumentation:
 
         metrics = instrumented_client.get("/metrics").text
         # Look for the API path in metric output
-        assert "/api/health" in metrics or "api_health" in metrics, (
-            "API path should be captured by histogram labels"
-        )
+        assert (
+            "/api/health" in metrics or "api_health" in metrics
+        ), "API path should be captured by histogram labels"
 
     def test_static_paths_excluded(self, instrumented_client: TestClient):
         """Static paths must NOT pollute the metric series."""

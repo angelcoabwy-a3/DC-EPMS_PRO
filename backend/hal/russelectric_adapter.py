@@ -24,13 +24,14 @@ latches its position via internal mechanism.
   match what the panel builder actually wired.
 ═══════════════════════════════════════════════════════════════════════
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
-from . import HardwareAdapter, FailureMode
+from . import FailureMode, HardwareAdapter
 
 log = logging.getLogger(__name__)
 
@@ -111,9 +112,9 @@ class RusselectricAdapter(HardwareAdapter):
 
     async def read(self, target: str, fields: list[str]) -> dict:
         """Supported fields:
-          - position             : current bypass position (NORMAL/TEST/BYPASS)
-          - interlock_ok         : True if all interlocks satisfied
-          - last_change_ts       : timestamp of last position change (if BMS tracks it)
+        - position             : current bypass position (NORMAL/TEST/BYPASS)
+        - interlock_ok         : True if all interlocks satisfied
+        - last_change_ts       : timestamp of last position change (if BMS tracks it)
         """
         if target not in self.targets:
             raise ValueError(f"unknown target '{target}'. known: {list(self.targets.keys())}")
@@ -137,13 +138,11 @@ class RusselectricAdapter(HardwareAdapter):
         self._cache[target] = result
         return result
 
-    async def write(
-        self, target: str, command: str, payload: Optional[dict] = None
-    ) -> dict:
+    async def write(self, target: str, command: str, payload: dict | None = None) -> dict:
         """Canonical commands:
-          - GO_TO_NORMAL    → pulse cmd_to_normal_point
-          - GO_TO_TEST      → pulse cmd_to_test_point
-          - GO_TO_BYPASS    → pulse cmd_to_bypass_point
+        - GO_TO_NORMAL    → pulse cmd_to_normal_point
+        - GO_TO_TEST      → pulse cmd_to_test_point
+        - GO_TO_BYPASS    → pulse cmd_to_bypass_point
         """
         if target not in self.targets:
             raise ValueError(f"unknown target '{target}'")
@@ -152,7 +151,7 @@ class RusselectricAdapter(HardwareAdapter):
 
         cmd_to_point_map = {
             "GO_TO_NORMAL": cfg.get("cmd_to_normal_point"),
-            "GO_TO_TEST":   cfg.get("cmd_to_test_point"),
+            "GO_TO_TEST": cfg.get("cmd_to_test_point"),
             "GO_TO_BYPASS": cfg.get("cmd_to_bypass_point"),
         }
         if command not in cmd_to_point_map:
@@ -163,9 +162,7 @@ class RusselectricAdapter(HardwareAdapter):
 
         point = cmd_to_point_map[command]
         if not point:
-            raise ValueError(
-                f"target '{target}' has no point configured for command '{command}'"
-            )
+            raise ValueError(f"target '{target}' has no point configured for command '{command}'")
 
         # Pre-flight interlock check — refuse to issue command if interlocks not OK.
         # This is a software guard ON TOP of the hardware interlocks; both must agree.
@@ -222,7 +219,7 @@ class RusselectricAdapter(HardwareAdapter):
 class MockBypassBackend:
     """Mock BMS connector for Russelectric tests."""
 
-    def __init__(self, initial_state: Optional[dict[str, Any]] = None):
+    def __init__(self, initial_state: dict[str, Any] | None = None):
         self._state: dict[str, Any] = dict(initial_state or {})
         self.write_log: list[tuple[str, Any]] = []
 

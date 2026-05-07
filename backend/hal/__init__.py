@@ -58,6 +58,7 @@ This is the Universal HAL described in the v7.1 whitepaper, made real.
     succeeds on a dead network is worse than one that explicitly fails.
 ═══════════════════════════════════════════════════════════════════════
 """
+
 from __future__ import annotations
 
 import logging
@@ -72,9 +73,10 @@ log = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────
 class FailureMode(str, Enum):
     """How an adapter should behave when its backend is unavailable."""
-    FAIL_OPEN   = "fail_open"      # raise — operator must respond
-    FAIL_SAFE   = "fail_safe"      # writes raise, reads return cache
-    FAIL_SILENT = "fail_silent"    # only for testing / offline demo
+
+    FAIL_OPEN = "fail_open"  # raise — operator must respond
+    FAIL_SAFE = "fail_safe"  # writes raise, reads return cache
+    FAIL_SILENT = "fail_silent"  # only for testing / offline demo
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -96,7 +98,9 @@ class BACnetBackend(Protocol):
     """Subset of BAC0 client we use. Mock implements same interface."""
 
     async def read(self, address: str, object_type: str, object_id: int, prop: str) -> Any: ...
-    async def write(self, address: str, object_type: str, object_id: int, prop: str, value: Any) -> Any: ...
+    async def write(
+        self, address: str, object_type: str, object_id: int, prop: str, value: Any
+    ) -> Any: ...
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -119,14 +123,10 @@ class HardwareAdapter:
     async def read(self, target: str, fields: list[str]) -> dict:
         raise NotImplementedError
 
-    async def write(
-        self, target: str, command: str, payload: Optional[dict] = None
-    ) -> dict:
+    async def write(self, target: str, command: str, payload: dict | None = None) -> dict:
         raise NotImplementedError
 
-    async def verify_state(
-        self, target: str, expected: dict
-    ) -> tuple[bool, dict]:
+    async def verify_state(self, target: str, expected: dict) -> tuple[bool, dict]:
         """Generic verify: read all expected fields, compare with tolerances.
 
         Tolerances support 3 forms:
@@ -166,7 +166,7 @@ class HardwareAdapter:
         log.error("[hal] %s", msg)
 
         if self.failure_mode == FailureMode.FAIL_OPEN:
-            raise error    # let caller deal with it
+            raise error  # let caller deal with it
 
         if self.failure_mode == FailureMode.FAIL_SAFE:
             cached = self._cache.get(target)
@@ -179,23 +179,25 @@ class HardwareAdapter:
             log.warning("[hal] FAIL_SILENT: returning synthetic for %s", target)
             return {"_synthetic": True, "_op": op, "_error": msg}
 
-        raise error    # unknown failure_mode
+        raise error  # unknown failure_mode
 
 
 # ─────────────────────────────────────────────────────────────────────────
 #  Re-export concrete adapters
 # ─────────────────────────────────────────────────────────────────────────
-from .cummins_adapter import CumminsAdapter, MockModbusBackend
 from .asco_adapter import AscoAdapter, MockBACnetBackend
-from .russelectric_adapter import RusselectricAdapter, MockBypassBackend
-
+from .cummins_adapter import CumminsAdapter, MockModbusBackend
+from .russelectric_adapter import MockBypassBackend, RusselectricAdapter
 
 __all__ = [
     "FailureMode",
     "HardwareAdapter",
     "ModbusBackend",
     "BACnetBackend",
-    "CumminsAdapter", "MockModbusBackend",
-    "AscoAdapter", "MockBACnetBackend",
-    "RusselectricAdapter", "MockBypassBackend",
+    "CumminsAdapter",
+    "MockModbusBackend",
+    "AscoAdapter",
+    "MockBACnetBackend",
+    "RusselectricAdapter",
+    "MockBypassBackend",
 ]

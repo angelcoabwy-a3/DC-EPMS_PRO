@@ -1,4 +1,4 @@
-﻿"""
+"""
 DC-EPMS PRO - FastAPI Orchestrator (a3semi proprietary)
 =========================================================
 Central production server for A-Cubed Semiconductor Systems Inc.
@@ -12,23 +12,26 @@ Fixes in this revision:
   [5] New endpoint: GET /api/telemetry/latest (single record, for UI cards)
   [6] PUE > 1.4 triggers async RAG-grounded Schneider WP122 advisory
 """
+
 from __future__ import annotations
 
-import os
-import sys
-import json
-import time
 import asyncio
+import json
 import logging
+import os
 import pathlib
-from typing import AsyncIterator, Optional
+import sys
+import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC
 
-from fastapi import FastAPI, Request, HTTPException, Body
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse, Response
-from fastapi.staticfiles import StaticFiles
+from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, ConfigDict
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field
+
 from backend.metrics_router import setup_metrics
 
 # ==============================================================
@@ -82,6 +85,8 @@ def _load_env():
             v = v.strip().strip('"').strip("'")
             if k and k not in os.environ:
                 os.environ[k] = v
+
+
 _load_env()
 
 # --------------------------------------------------------------
@@ -90,20 +95,20 @@ _load_env()
 # --------------------------------------------------------------
 _PG_HOST = os.environ.get("PG_HOST", "localhost")
 _PG_PORT = os.environ.get("PG_PORT", "5432")
-_PG_DB   = os.environ.get("PG_DB",   "epms")      # <-- explicit
+_PG_DB = os.environ.get("PG_DB", "epms")  # <-- explicit
 _PG_USER = os.environ.get("PG_USER", "postgres")
-_PG_PWD  = os.environ.get("PG_PASSWORD", "epms2026")
-PG_DSN   = f"postgresql://{_PG_USER}:{_PG_PWD}@{_PG_HOST}:{_PG_PORT}/{_PG_DB}"
+_PG_PWD = os.environ.get("PG_PASSWORD", "epms2026")
+PG_DSN = f"postgresql://{_PG_USER}:{_PG_PWD}@{_PG_HOST}:{_PG_PORT}/{_PG_DB}"
 
-LM_STUDIO_URL     = os.environ.get("LM_STUDIO_URL", "http://127.0.0.1:1234")
+LM_STUDIO_URL = os.environ.get("LM_STUDIO_URL", "http://127.0.0.1:1234")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-CHROMA_PATH       = str(PROJECT_ROOT / os.environ.get("CHROMA_PATH", "data/chroma_db"))
-FRONTEND_DIR      = PROJECT_ROOT / "frontend"
-LOG_DIR           = PROJECT_ROOT / "logs"
+CHROMA_PATH = str(PROJECT_ROOT / os.environ.get("CHROMA_PATH", "data/chroma_db"))
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
+LOG_DIR = PROJECT_ROOT / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 PUE_ALERT_THRESHOLD = float(os.environ.get("PUE_ALERT_THRESHOLD", "1.4"))
-OPERATOR_ORG        = os.environ.get("OPERATOR_ORG", "a3semi")
-FACILITY_NAME       = os.environ.get("FACILITY_NAME", "A3-Alpha Toronto Area")
+OPERATOR_ORG = os.environ.get("OPERATOR_ORG", "a3semi")
+FACILITY_NAME = os.environ.get("FACILITY_NAME", "A3-Alpha Toronto Area")
 
 
 # ==============================================================
@@ -123,32 +128,32 @@ log = logging.getLogger("dc-epms-pro")
 # ==============================================================
 #  Service singletons (initialized in lifespan)
 # ==============================================================
-db_manager:  Optional["DBManager"]   = None
-rag_service: Optional["RAGService"]  = None
-agent:       Optional["AgentEngine"] = None
+db_manager: DBManager | None = None
+rag_service: RAGService | None = None
+agent: AgentEngine | None = None
 
 
 # ==============================================================
 #  Pydantic payloads
 # ==============================================================
 class TelemetryPoint(BaseModel):
-    it_load_kw:   float = Field(..., description="IT load in kW")
-    pue:          float = Field(..., ge=1.0, le=3.0)
-    hall_temp_c:  float = Field(...)
-    delta_t_c:    float = Field(default=0.0)
-    ttc_seconds:  Optional[float] = None
-    scenario:     str = Field(default="NORMAL")
-    rack_count:   int = Field(default=118, description="Blackwell NVL72 racks")
-    rack_tdp_kw:  int = Field(default=142, description="GB200 NVL72 TDP")
+    it_load_kw: float = Field(..., description="IT load in kW")
+    pue: float = Field(..., ge=1.0, le=3.0)
+    hall_temp_c: float = Field(...)
+    delta_t_c: float = Field(default=0.0)
+    ttc_seconds: float | None = None
+    scenario: str = Field(default="NORMAL")
+    rack_count: int = Field(default=118, description="Blackwell NVL72 racks")
+    rack_tdp_kw: int = Field(default=142, description="GB200 NVL72 TDP")
 
 
 class IncidentPayload(BaseModel):
-    incident_id:  str
-    source:       str
-    title:        str
-    detail:       str = ""
-    severity:     str = Field(default="info", pattern="^(info|warning|warn|critical|crit)$")
-    status:       str = Field(default="OPEN")
+    incident_id: str
+    source: str
+    title: str
+    detail: str = ""
+    severity: str = Field(default="info", pattern="^(info|warning|warn|critical|crit)$")
+    status: str = Field(default="OPEN")
     physics_json: str = Field(default="{}")
 
 
@@ -157,22 +162,22 @@ class AgentQuery(BaseModel):
     #          Disable it so model_hint does not raise a warning/error.
     model_config = ConfigDict(protected_namespaces=())
 
-    query:      str = Field(..., min_length=1, max_length=4000)
-    context:    Optional[dict] = None
+    query: str = Field(..., min_length=1, max_length=4000)
+    context: dict | None = None
     max_tokens: int = Field(default=500, ge=1, le=4000)
     model_hint: str = Field(default="auto", pattern="^(auto|gemma|claude)$")
 
 
 class RAGQuery(BaseModel):
-    question:     str = Field(..., min_length=1, max_length=2000)
-    n_results:    int = Field(default=4, ge=1, le=10)
+    question: str = Field(..., min_length=1, max_length=2000)
+    n_results: int = Field(default=4, ge=1, le=10)
     min_relevance: float = Field(default=0.30, ge=0.0, le=1.0)
 
 
 class ShiftReportRequest(BaseModel):
-    operator:           str = Field(default="W. Angel")
-    shift_id:           Optional[str] = None
-    hours_back:         int = Field(default=8, ge=1, le=24)
+    operator: str = Field(default="W. Angel")
+    shift_id: str | None = None
+    hours_back: int = Field(default=8, ge=1, le=24)
     include_procedures: bool = Field(default=True)
 
 
@@ -263,22 +268,23 @@ def _read_gpu_stats() -> dict:
     """NVML GPU stats - non-blocking."""
     try:
         import pynvml
+
         pynvml.nvmlInit()
         h = pynvml.nvmlDeviceGetHandleByIndex(0)
         util = pynvml.nvmlDeviceGetUtilizationRates(h)
-        mem  = pynvml.nvmlDeviceGetMemoryInfo(h)
+        mem = pynvml.nvmlDeviceGetMemoryInfo(h)
         temp = pynvml.nvmlDeviceGetTemperature(h, 0)
         name = pynvml.nvmlDeviceGetName(h)
         if isinstance(name, bytes):
             name = name.decode()
         return {
-            "source":        "nvml",
-            "gpu":           name,
-            "sm_pct":        int(util.gpu),
-            "vram_used_mb":  mem.used // (1024 * 1024),
+            "source": "nvml",
+            "gpu": name,
+            "sm_pct": int(util.gpu),
+            "vram_used_mb": mem.used // (1024 * 1024),
             "vram_total_mb": mem.total // (1024 * 1024),
-            "temp_c":        int(temp),
-            "status":        "GPU_ACTIVE" if util.gpu > 10 else "IDLE",
+            "temp_c": int(temp),
+            "status": "GPU_ACTIVE" if util.gpu > 10 else "IDLE",
         }
     except Exception:
         return {"source": "unavailable"}
@@ -291,10 +297,10 @@ def _read_gpu_stats() -> dict:
 async def health():
     """Unified health check."""
     checks = {
-        "service":   "dc-epms-pro",
-        "version":   "4.1.0-pro",
-        "operator":  OPERATOR_ORG,
-        "facility":  FACILITY_NAME,
+        "service": "dc-epms-pro",
+        "version": "4.1.0-pro",
+        "operator": OPERATOR_ORG,
+        "facility": FACILITY_NAME,
         "timestamp": time.time(),
     }
 
@@ -304,8 +310,8 @@ async def health():
         try:
             ok = await db_manager.ping()
             checks["postgres"] = {
-                "status":     "up" if ok else "down",
-                "database":   _PG_DB,
+                "status": "up" if ok else "down",
+                "database": _PG_DB,
                 "latency_ms": round((time.time() - t0) * 1000, 2),
             }
         except Exception as e:
@@ -331,14 +337,14 @@ async def health():
 
 
 # ==============================================================
-#  PUE Advisory (Fase 2 â€” autonomous, RAG-grounded)
+#  PUE Advisory (Fase 2  -  autonomous, RAG-grounded)
 # ==============================================================
 async def _pue_advisory_task(point: dict) -> None:
     """Async advisory: query RAG for Schneider WP122 thermal mitigation."""
     if not rag_service:
         log.warning("PUE advisory: RAG unavailable")
         return
-    pue  = point.get("pue", 0)
+    pue = point.get("pue", 0)
     hall = point.get("hall_temp_c", 0)
     scenario = point.get("scenario", "NORMAL")
     question = (
@@ -355,25 +361,30 @@ async def _pue_advisory_task(point: dict) -> None:
         top = results[0]
         log.warning(
             "PUE ADVISORY [pue=%.3f] :: top_doc_relevance=%.2f :: mitigation=%s",
-            pue, top["relevance"], top["content"][:200],
+            pue,
+            top["relevance"],
+            top["content"][:200],
         )
         # Persist advisory as incident
         if db_manager:
             try:
                 import uuid
+
                 advisory = {
                     "incident_id": f"ADV-{int(time.time())}-{uuid.uuid4().hex[:4]}",
-                    "source":      "PUE_ADVISORY",
-                    "title":       f"PUE threshold exceeded: {pue:.3f}",
-                    "detail":      top["content"][:500],
-                    "severity":    "warning",
-                    "status":      "OPEN",
-                    "physics_json": json.dumps({
-                        "pue":            pue,
-                        "hall_temp_c":    hall,
-                        "scenario":       scenario,
-                        "rag_relevance":  top["relevance"],
-                    }),
+                    "source": "PUE_ADVISORY",
+                    "title": f"PUE threshold exceeded: {pue:.3f}",
+                    "detail": top["content"][:500],
+                    "severity": "warning",
+                    "status": "OPEN",
+                    "physics_json": json.dumps(
+                        {
+                            "pue": pue,
+                            "hall_temp_c": hall,
+                            "scenario": scenario,
+                            "rag_relevance": top["relevance"],
+                        }
+                    ),
                 }
                 await db_manager.insert_incident(advisory)
                 log.info("PUE advisory persisted as %s", advisory["incident_id"])
@@ -396,11 +407,13 @@ async def write_telemetry(point: TelemetryPoint):
         # Fase 2: autonomous RAG advisory
         if pue_breach:
             asyncio.create_task(_pue_advisory_task(point.model_dump()))
-        return JSONResponse({
-            "written":      True,
-            "rows":         rows,
-            "pue_advisory": pue_breach,
-        })
+        return JSONResponse(
+            {
+                "written": True,
+                "rows": rows,
+                "pue_advisory": pue_breach,
+            }
+        )
     except Exception as e:
         log.error("telemetry write failed: %s", e)
         return JSONResponse({"written": False, "error": str(e)[:200]})
@@ -418,7 +431,7 @@ async def get_telemetry(limit: int = 60):
 
 
 # --------------------------------------------------------------
-# [FIX 5] /api/telemetry/latest â€” single object for UI cards.
+# [FIX 5] /api/telemetry/latest  -  single object for UI cards.
 # --------------------------------------------------------------
 @app.get("/api/telemetry/latest")
 async def get_telemetry_latest():
@@ -431,11 +444,13 @@ async def get_telemetry_latest():
     try:
         rows = await db_manager.fetch_telemetry(limit=1)
         latest = rows[0] if rows else None
-        return JSONResponse({
-            "latest": latest,
-            "ts":     time.time(),
-            "source": "timescaledb",
-        })
+        return JSONResponse(
+            {
+                "latest": latest,
+                "ts": time.time(),
+                "source": "timescaledb",
+            }
+        )
     except Exception as e:
         log.warning("telemetry/latest failed: %s", e)
         return JSONResponse({"latest": None, "error": str(e)[:200]})
@@ -444,6 +459,7 @@ async def get_telemetry_latest():
 @app.get("/api/telemetry/stream")
 async def telemetry_stream(request: Request):
     """SSE: push latest telemetry every 5 seconds."""
+
     async def gen() -> AsyncIterator[str]:
         while True:
             if await request.is_disconnected():
@@ -468,9 +484,9 @@ async def telemetry_stream(request: Request):
         gen(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control":     "no-cache",
+            "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
-            "Connection":        "keep-alive",
+            "Connection": "keep-alive",
         },
     )
 
@@ -514,12 +530,14 @@ async def rag_query(query: RAGQuery):
             n=query.n_results,
             min_relevance=query.min_relevance,
         )
-        return JSONResponse({
-            "question":      query.question,
-            "docs_searched": rag_service.count(),
-            "results":       results,
-            "top_relevance": results[0]["relevance"] if results else 0.0,
-        })
+        return JSONResponse(
+            {
+                "question": query.question,
+                "docs_searched": rag_service.count(),
+                "results": results,
+                "top_relevance": results[0]["relevance"] if results else 0.0,
+            }
+        )
     except Exception as e:
         return JSONResponse({"results": [], "error": str(e)[:200]})
 
@@ -537,9 +555,11 @@ async def rag_docs():
 @app.post("/agent/stream")
 async def agent_stream(query: AgentQuery, request: Request):
     if not agent:
+
         async def err_gen():
             yield f"data: {json.dumps({'error': 'agent unavailable'})}\n\n"
             yield "data: [DONE]\n\n"
+
         return StreamingResponse(
             err_gen(),
             media_type="text/event-stream",
@@ -548,7 +568,7 @@ async def agent_stream(query: AgentQuery, request: Request):
 
     async def gen() -> AsyncIterator[str]:
         try:
-            # â”€â”€ Emit RAG sources first (for UI citation chips) â”€â”€â”€â”€â”€â”€â”€â”€
+            # â"€â"€ Emit RAG sources first (for UI citation chips) â"€â"€â"€â"€â"€â"€â"€â"€
             try:
                 sources = agent.get_rag_sources(query.query, n_results=3)
                 if sources:
@@ -578,9 +598,9 @@ async def agent_stream(query: AgentQuery, request: Request):
         gen(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control":     "no-cache",
+            "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",
-            "Connection":        "keep-alive",
+            "Connection": "keep-alive",
         },
     )
 
@@ -591,6 +611,7 @@ async def agent_stream(query: AgentQuery, request: Request):
 @app.post("/lm/{path:path}")
 async def lm_proxy_post(path: str, request: Request):
     import httpx
+
     body = await request.body()
     url = f"{LM_STUDIO_URL}/{path}"
     try:
@@ -611,6 +632,7 @@ async def lm_proxy_post(path: str, request: Request):
 @app.get("/lm/{path:path}")
 async def lm_proxy_get(path: str):
     import httpx
+
     url = f"{LM_STUDIO_URL}/{path}"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -625,11 +647,13 @@ async def lm_proxy_get(path: str):
 # ==============================================================
 @app.post("/api/voice/transcribe")
 async def voice_transcribe(request: Request):
-    return JSONResponse({
-        "status":  "not_implemented",
-        "message": "Riva ASR integration pending - configure RIVA_GRPC_URL in .env",
-        "audio_received_bytes": int(request.headers.get("Content-Length", 0)),
-    })
+    return JSONResponse(
+        {
+            "status": "not_implemented",
+            "message": "Riva ASR integration pending - configure RIVA_GRPC_URL in .env",
+            "audio_received_bytes": int(request.headers.get("Content-Length", 0)),
+        }
+    )
 
 
 # ==============================================================
@@ -640,10 +664,11 @@ async def generate_shift_report(req: ShiftReportRequest):
     if not ShiftReportGenerator:
         raise HTTPException(status_code=503, detail="Shift report module unavailable")
 
-    from datetime import datetime, timezone, timedelta
-    shift_end   = datetime.now(timezone.utc)
+    from datetime import datetime, timedelta
+
+    shift_end = datetime.now(UTC)
     shift_start = shift_end - timedelta(hours=req.hours_back)
-    shift_id    = req.shift_id or f"SH-{shift_end.strftime('%Y%m%d-%H%M')}"
+    shift_id = req.shift_id or f"SH-{shift_end.strftime('%Y%m%d-%H%M')}"
 
     telemetry, incidents = [], []
     if db_manager:
@@ -681,7 +706,7 @@ async def generate_shift_report(req: ShiftReportRequest):
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
-            "Content-Length":      str(len(pdf_bytes)),
+            "Content-Length": str(len(pdf_bytes)),
         },
     )
 
@@ -691,10 +716,12 @@ async def generate_shift_report(req: ShiftReportRequest):
 # ==============================================================
 try:
     from physics_engine import get_engine as get_physics_engine
+
     PHYSICS_AVAILABLE = True
     print("[OK] physics_engine loaded successfully")
 except Exception as e:
     import traceback
+
     print(f"[ERROR] physics_engine import failed: {type(e).__name__}: {e}")
     print(traceback.format_exc())
     PHYSICS_AVAILABLE = False
@@ -702,7 +729,7 @@ except Exception as e:
 
 # Load scenarios catalog
 SCENARIOS_PATH = PROJECT_ROOT / "config" / "scenarios.yml"
-_SCENARIOS_CACHE: Optional[dict] = None
+_SCENARIOS_CACHE: dict | None = None
 
 
 def _load_scenarios() -> dict:
@@ -716,6 +743,7 @@ def _load_scenarios() -> dict:
         return _SCENARIOS_CACHE
     try:
         import yaml
+
         _SCENARIOS_CACHE = yaml.safe_load(SCENARIOS_PATH.read_text(encoding="utf-8"))
         return _SCENARIOS_CACHE
     except Exception as e:
@@ -798,7 +826,8 @@ async def get_site_health():
     if not PHYSICS_AVAILABLE:
         raise HTTPException(503, "Physics engine unavailable")
 
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     telemetry = await _get_latest_telemetry()
     full_dict = _build_telemetry_dict_from_latest(telemetry)
     engine = get_physics_engine()
@@ -808,16 +837,10 @@ async def get_site_health():
         "site_health": round(result.site_health, 3),
         "weakest_module": result.weakest_module,
         "overall_severity": result.overall_severity.value,
-        "module_healths": {
-            name: round(r.health, 3)
-            for name, r in result.modules.items()
-        },
-        "module_severities": {
-            name: r.severity.value
-            for name, r in result.modules.items()
-        },
+        "module_healths": {name: round(r.health, 3) for name, r in result.modules.items()},
+        "module_severities": {name: r.severity.value for name, r in result.modules.items()},
         "cascade_count": len(result.cascade_events),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "has_telemetry": bool(telemetry),
     }
 
@@ -909,8 +932,9 @@ def _parse_mop_frontmatter(text: str) -> tuple[dict, str]:
         if end < 0:
             return {}, text
         import yaml
+
         meta = yaml.safe_load(text[3:end]) or {}
-        body = text[end + 4:].lstrip("\n")
+        body = text[end + 4 :].lstrip("\n")
         return meta, body
     except Exception as e:
         log.debug("frontmatter parse failed: %s", e)
@@ -932,19 +956,21 @@ def _list_mops() -> list[dict]:
                 if line.startswith("# "):
                     title = line[2:].strip()
                     break
-            out.append({
-                "doc_id": meta.get("doc_id", f.stem),
-                "filename": f.name,
-                "title": title or f.stem.replace("_", " "),
-                "doc_type": meta.get("doc_type", "MOP"),
-                "domain": meta.get("domain", ""),
-                "equipment": meta.get("equipment", ""),
-                "duration": meta.get("duration", ""),
-                "personnel_required": meta.get("personnel_required", ""),
-                "standard_refs": meta.get("standard_refs", []),
-                "tier": meta.get("tier", 4),
-                "priority": meta.get("priority", "medium"),
-            })
+            out.append(
+                {
+                    "doc_id": meta.get("doc_id", f.stem),
+                    "filename": f.name,
+                    "title": title or f.stem.replace("_", " "),
+                    "doc_type": meta.get("doc_type", "MOP"),
+                    "domain": meta.get("domain", ""),
+                    "equipment": meta.get("equipment", ""),
+                    "duration": meta.get("duration", ""),
+                    "personnel_required": meta.get("personnel_required", ""),
+                    "standard_refs": meta.get("standard_refs", []),
+                    "tier": meta.get("tier", 4),
+                    "priority": meta.get("priority", "medium"),
+                }
+            )
         except Exception as e:
             log.warning("Failed to parse %s: %s", f.name, e)
     return out
@@ -959,6 +985,7 @@ def _extract_mop_steps(body: str) -> list[dict]:
     section is identified.
     """
     import re
+
     steps = []
     lines = body.split("\n")
 
@@ -974,7 +1001,7 @@ def _extract_mop_steps(body: str) -> list[dict]:
         r"Process|"
         r"Sequence"
         r")"
-        r"(\s+[â€”\-â€“]\s+.+)?"   # optional " â€” per generator" suffix
+        r"(\s+[ - \- - ]\s+.+)?"  # optional "  -  per generator" suffix
         r"\s*(\(.*\))?\s*$",
         re.IGNORECASE,
     )
@@ -1003,7 +1030,7 @@ def _extract_mop_steps(body: str) -> list[dict]:
     current_step = None
     current_content = []
     step_pattern = re.compile(
-        r"^###\s+(?:Phase|Step|Stage|Test|Section|Part)?\s*(\d+)?\s*[â€”\-:.]?\s*(.*)$",
+        r"^###\s+(?:Phase|Step|Stage|Test|Section|Part)?\s*(\d+)?\s*[ - \-:.]?\s*(.*)$",
         re.IGNORECASE,
     )
 
@@ -1023,7 +1050,7 @@ def _extract_mop_steps(body: str) -> list[dict]:
                 if not title:
                     title = f"Step {step_num_counter}"
                 # Strip any leading colon or dash
-                title = title.lstrip(":â€“â€”-").strip()
+                title = title.lstrip(": -  - -").strip()
                 current_step = {
                     "step_num": int(num_from_header) if num_from_header else step_num_counter,
                     "title": title,
@@ -1048,9 +1075,10 @@ async def list_mops_endpoint():
         "mops": mops,
         "count": len(mops),
         "by_type": {
-            t: sum(1 for m in mops if m["doc_type"] == t)
-            for t in set(m["doc_type"] for m in mops)
-        } if mops else {},
+            t: sum(1 for m in mops if m["doc_type"] == t) for t in set(m["doc_type"] for m in mops)
+        }
+        if mops
+        else {},
     }
 
 
@@ -1245,7 +1273,7 @@ async def get_topology_state():
             "label": label,
         }
 
-    # â”€â”€â”€ Dual utility feeds (2N) â”€â”€â”€
+    # â"€â"€â"€ Dual utility feeds (2N) â"€â"€â"€
     # Total facility load split 50/50 between Feed A (North) and Feed B (South)
     util_total_kw = elec.metrics.get("utility_kw", 17_400.0) if elec else 17_400.0
     feed_a_kw = util_total_kw / 2.0
@@ -1255,7 +1283,7 @@ async def get_topology_state():
     util_severity = elec.severity if elec else "ok"
     util_health = elec.health if elec else 1.0
 
-    # â”€â”€â”€ Power balance: distribute UPS load across RPPs and busways (v5.2) â”€â”€â”€
+    # â"€â"€â"€ Power balance: distribute UPS load across RPPs and busways (v5.2) â"€â"€â"€
     #
     # Conservation law (sum-of-power, single-time-instant balance):
     #     P_UPS_A = P_RPP_A1 + P_RPP_A2
@@ -1274,7 +1302,6 @@ async def get_topology_state():
     # representing realistic asymmetric loading observed in production
     # data centers (panelboard imbalance, rack-by-rack provisioning).
     import random as _rng
-    import math as _math
 
     def _split_fraction(seed_hint: float, sigma: float = 0.03) -> float:
         """Truncated gaussian split fraction near 0.5 with deterministic seed.
@@ -1283,7 +1310,7 @@ async def get_topology_state():
         across rapid refresh cycles (avoids visual jitter > 1 kW/s in the
         SLD), while still producing realistic per-instance asymmetry.
         """
-        # Stable seed from load value: same load â†’ same alpha until load shifts
+        # Stable seed from load value: same load â†' same alpha until load shifts
         seeded = _rng.Random(int(seed_hint * 100) & 0xFFFF)
         # Box-Muller-ish via normalvariate, then truncate
         alpha = seeded.normalvariate(0.5, sigma)
@@ -1293,9 +1320,9 @@ async def get_topology_state():
     ups_a_load_kw = elec.metrics.get("ups_load_kw", 16_756.0) / 2.0 if elec else 8_378.0
     ups_b_load_kw = elec.metrics.get("ups_load_kw", 16_756.0) / 2.0 if elec else 8_378.0
     # Note: physics engine reports a single ups_load_kw (aggregate). For 2N
-    # display we split equally â€” when one UPS goes on battery, the surviving
-    # one carries 100% of facility IT load (ups_b_load_kw â†’ 0, ups_a_load_kw
-    # â†’ full). This is handled below in the failure-aware adjustment.
+    # display we split equally  -  when one UPS goes on battery, the surviving
+    # one carries 100% of facility IT load (ups_b_load_kw â†' 0, ups_a_load_kw
+    # â†' full). This is handled below in the failure-aware adjustment.
 
     # If a UPS is on battery and we have asymmetric mode info, reflect it
     if elec and elec.metrics.get("battery_on_load"):
@@ -1325,129 +1352,229 @@ async def get_topology_state():
 
     # HLD nodes (high-level facility view)
     hld_nodes = {
-        "utility_north": _node(util_severity, util_health,
-                              {"kw": round(feed_a_kw, 0), "kv": 27.5, "feed": "A"},
-                              "Utility North (Feed A)"),
-        "utility_south": _node(util_severity, util_health,
-                              {"kw": round(feed_b_kw, 0), "kv": 27.5, "feed": "B"},
-                              "Utility South (Feed B)"),
-        "xfmr_a":       _node(elec.severity if elec else "ok", elec.health if elec else 1.0,
-                              {"winding_c": elec.metrics.get("xfmr_winding_c", 0) if elec else 0,
-                               "load_kva": elec.metrics.get("xfmr_load_kva", 0) if elec else 0,
-                               "active": True},
-                              "Transformer A"),
-        "xfmr_b":       _node(elec.severity if elec else "ok", elec.health if elec else 1.0,
-                              {"winding_c": elec.metrics.get("xfmr_winding_c", 0) if elec else 0,
-                               "load_kva": elec.metrics.get("xfmr_load_kva", 0) if elec else 0,
-                               "active": True},
-                              "Transformer B"),
-        "ups_a":        _node(elec.severity if elec else "ok", elec.health if elec else 1.0,
-                              {"load_kw": elec.metrics.get("ups_load_kw", 0) if elec else 0,
-                               "soc": elec.metrics.get("battery_soc", 1.0) if elec else 1.0,
-                               "eff": elec.metrics.get("ups_efficiency_measured", 0.96) if elec else 0.96,
-                               "active": True},
-                              "UPS Galaxy A"),
-        "ups_b":        _node(elec.severity if elec else "ok", elec.health if elec else 1.0,
-                              {"load_kw": elec.metrics.get("ups_load_kw", 0) if elec else 0,
-                               "soc": elec.metrics.get("battery_soc", 1.0) if elec else 1.0,
-                               "eff": elec.metrics.get("ups_efficiency_measured", 0.96) if elec else 0.96,
-                               "active": True},
-                              "UPS Galaxy B"),
-        "hall_1":       _node(it.severity if it else "ok", it.health if it else 1.0,
-                              {"inlet_c": it.metrics.get("hall_inlet_c", 20) if it else 20,
-                               "load_kw": (it.metrics.get("Q_it_total_kw", 16756) if it else 16756) / 3,
-                               "physics_verified": True},
-                              "Hall 1"),
-        "hall_2":       _node(it.severity if it else "ok", it.health if it else 1.0,
-                              {"inlet_c": it.metrics.get("hall_inlet_c", 20) if it else 20,
-                               "load_kw": (it.metrics.get("Q_it_total_kw", 16756) if it else 16756) / 3,
-                               "physics_verified": True},
-                              "Hall 2"),
-        "hall_3":       _node(it.severity if it else "ok", it.health if it else 1.0,
-                              {"inlet_c": it.metrics.get("hall_inlet_c", 20) if it else 20,
-                               "load_kw": (it.metrics.get("Q_it_total_kw", 16756) if it else 16756) / 3,
-                               "physics_verified": True},
-                              "Hall 3"),
-        "cdu_a":        _node(mech.severity if mech else "ok", mech.health if mech else 1.0,
-                              {"q_kw": mech.metrics.get("q_secondary_kw", 0) if mech else 0,
-                               "flow_lpm": mech.metrics.get("loop_flow_l_min", 3960) if mech else 3960,
-                               "active": True},
-                              "CDU A"),
-        "cdu_b":        _node(mech.severity if mech else "ok", mech.health if mech else 1.0,
-                              {"q_kw": mech.metrics.get("q_secondary_kw", 0) if mech else 0,
-                               "flow_lpm": mech.metrics.get("loop_flow_l_min", 3960) if mech else 3960,
-                               "active": True},
-                              "CDU B"),
-        "chiller_1":    _node(hr.severity if hr else "ok", hr.health if hr else 1.0,
-                              {"cop": hr.metrics.get("chiller_1_cop_measured", 7.1) if hr else 7.1,
-                               "load_kw": 2500,
-                               "physics_verified": True},
-                              "Chiller 1"),
-        "chiller_2":    _node(hr.severity if hr else "ok", hr.health if hr else 1.0,
-                              {"cop": hr.metrics.get("chiller_2_cop_measured", 7.1) if hr else 7.1,
-                               "load_kw": 2500,
-                               "physics_verified": True},
-                              "Chiller 2"),
-        "cooling_tower":_node(hr.severity if hr else "ok", hr.health if hr else 1.0,
-                              {"wb_c": hr.metrics.get("outdoor_wet_bulb_c", 18) if hr else 18,
-                               "ecwt_c": (hr.metrics.get("outdoor_wet_bulb_c", 18) + 4) if hr else 22,
-                               "delta_t_risk": (hr.metrics.get("outdoor_wet_bulb_c", 18) > 25) if hr else False},
-                              "Cooling tower"),
-        # â”€â”€â”€ v5.2: RPP & Starline busway nodes (power balance derived) â”€â”€â”€
-        "rpp_a1":       _node(elec.severity if elec else "ok", elec.health if elec else 1.0,
-                              {"load_kw": round(rpp_a1_kw, 1),
-                               "split_fraction": round(alpha_a, 3),
-                               "voltage_v": 600,
-                               "active": True,
-                               "physics_verified": True},
-                              "RPP-A1"),
-        "rpp_a2":       _node(elec.severity if elec else "ok", elec.health if elec else 1.0,
-                              {"load_kw": round(rpp_a2_kw, 1),
-                               "split_fraction": round(1.0 - alpha_a, 3),
-                               "voltage_v": 600,
-                               "active": True,
-                               "physics_verified": True},
-                              "RPP-A2"),
-        "rpp_b1":       _node(elec.severity if elec else "ok", elec.health if elec else 1.0,
-                              {"load_kw": round(rpp_b1_kw, 1),
-                               "split_fraction": round(alpha_b, 3),
-                               "voltage_v": 600,
-                               "active": True,
-                               "physics_verified": True},
-                              "RPP-B1"),
-        "rpp_b2":       _node(elec.severity if elec else "ok", elec.health if elec else 1.0,
-                              {"load_kw": round(rpp_b2_kw, 1),
-                               "split_fraction": round(1.0 - alpha_b, 3),
-                               "voltage_v": 600,
-                               "active": True,
-                               "physics_verified": True},
-                              "RPP-B2"),
-        "busway_a":     _node(
-                              # Severity escalates if busway exceeds rated current
-                              ("critical" if (busway_a_kw * 1000.0 / (1.732 * 480 * 0.95)) > 800
-                               else "warning" if (busway_a_kw * 1000.0 / (1.732 * 480 * 0.95)) > 700
-                               else (elec.severity if elec else "ok")),
-                              elec.health if elec else 1.0,
-                              {"load_kw": round(busway_a_kw, 1),
-                               "rated_a": 800,
-                               # 3-phase: I = P / (sqrt(3) * V_LL * PF), V_LL=480V, PF=0.95
-                               "current_a": round(busway_a_kw * 1000.0 / (1.732 * 480 * 0.95), 0),
-                               "overload": (busway_a_kw * 1000.0 / (1.732 * 480 * 0.95)) > 800,
-                               "physics_verified": True,
-                               "balance_residual_kw": round(balance_residual_a, 3)},
-                              "Starline busway A"),
-        "busway_b":     _node(
-                              ("critical" if (busway_b_kw * 1000.0 / (1.732 * 480 * 0.95)) > 800
-                               else "warning" if (busway_b_kw * 1000.0 / (1.732 * 480 * 0.95)) > 700
-                               else (elec.severity if elec else "ok")),
-                              elec.health if elec else 1.0,
-                              {"load_kw": round(busway_b_kw, 1),
-                               "rated_a": 800,
-                               "current_a": round(busway_b_kw * 1000.0 / (1.732 * 480 * 0.95), 0),
-                               "overload": (busway_b_kw * 1000.0 / (1.732 * 480 * 0.95)) > 800,
-                               "physics_verified": True,
-                               "balance_residual_kw": round(balance_residual_b, 3)},
-                              "Starline busway B"),
+        "utility_north": _node(
+            util_severity,
+            util_health,
+            {"kw": round(feed_a_kw, 0), "kv": 27.5, "feed": "A"},
+            "Utility North (Feed A)",
+        ),
+        "utility_south": _node(
+            util_severity,
+            util_health,
+            {"kw": round(feed_b_kw, 0), "kv": 27.5, "feed": "B"},
+            "Utility South (Feed B)",
+        ),
+        "xfmr_a": _node(
+            elec.severity if elec else "ok",
+            elec.health if elec else 1.0,
+            {
+                "winding_c": elec.metrics.get("xfmr_winding_c", 0) if elec else 0,
+                "load_kva": elec.metrics.get("xfmr_load_kva", 0) if elec else 0,
+                "active": True,
+            },
+            "Transformer A",
+        ),
+        "xfmr_b": _node(
+            elec.severity if elec else "ok",
+            elec.health if elec else 1.0,
+            {
+                "winding_c": elec.metrics.get("xfmr_winding_c", 0) if elec else 0,
+                "load_kva": elec.metrics.get("xfmr_load_kva", 0) if elec else 0,
+                "active": True,
+            },
+            "Transformer B",
+        ),
+        "ups_a": _node(
+            elec.severity if elec else "ok",
+            elec.health if elec else 1.0,
+            {
+                "load_kw": elec.metrics.get("ups_load_kw", 0) if elec else 0,
+                "soc": elec.metrics.get("battery_soc", 1.0) if elec else 1.0,
+                "eff": elec.metrics.get("ups_efficiency_measured", 0.96) if elec else 0.96,
+                "active": True,
+            },
+            "UPS Galaxy A",
+        ),
+        "ups_b": _node(
+            elec.severity if elec else "ok",
+            elec.health if elec else 1.0,
+            {
+                "load_kw": elec.metrics.get("ups_load_kw", 0) if elec else 0,
+                "soc": elec.metrics.get("battery_soc", 1.0) if elec else 1.0,
+                "eff": elec.metrics.get("ups_efficiency_measured", 0.96) if elec else 0.96,
+                "active": True,
+            },
+            "UPS Galaxy B",
+        ),
+        "hall_1": _node(
+            it.severity if it else "ok",
+            it.health if it else 1.0,
+            {
+                "inlet_c": it.metrics.get("hall_inlet_c", 20) if it else 20,
+                "load_kw": (it.metrics.get("Q_it_total_kw", 16756) if it else 16756) / 3,
+                "physics_verified": True,
+            },
+            "Hall 1",
+        ),
+        "hall_2": _node(
+            it.severity if it else "ok",
+            it.health if it else 1.0,
+            {
+                "inlet_c": it.metrics.get("hall_inlet_c", 20) if it else 20,
+                "load_kw": (it.metrics.get("Q_it_total_kw", 16756) if it else 16756) / 3,
+                "physics_verified": True,
+            },
+            "Hall 2",
+        ),
+        "hall_3": _node(
+            it.severity if it else "ok",
+            it.health if it else 1.0,
+            {
+                "inlet_c": it.metrics.get("hall_inlet_c", 20) if it else 20,
+                "load_kw": (it.metrics.get("Q_it_total_kw", 16756) if it else 16756) / 3,
+                "physics_verified": True,
+            },
+            "Hall 3",
+        ),
+        "cdu_a": _node(
+            mech.severity if mech else "ok",
+            mech.health if mech else 1.0,
+            {
+                "q_kw": mech.metrics.get("q_secondary_kw", 0) if mech else 0,
+                "flow_lpm": mech.metrics.get("loop_flow_l_min", 3960) if mech else 3960,
+                "active": True,
+            },
+            "CDU A",
+        ),
+        "cdu_b": _node(
+            mech.severity if mech else "ok",
+            mech.health if mech else 1.0,
+            {
+                "q_kw": mech.metrics.get("q_secondary_kw", 0) if mech else 0,
+                "flow_lpm": mech.metrics.get("loop_flow_l_min", 3960) if mech else 3960,
+                "active": True,
+            },
+            "CDU B",
+        ),
+        "chiller_1": _node(
+            hr.severity if hr else "ok",
+            hr.health if hr else 1.0,
+            {
+                "cop": hr.metrics.get("chiller_1_cop_measured", 7.1) if hr else 7.1,
+                "load_kw": 2500,
+                "physics_verified": True,
+            },
+            "Chiller 1",
+        ),
+        "chiller_2": _node(
+            hr.severity if hr else "ok",
+            hr.health if hr else 1.0,
+            {
+                "cop": hr.metrics.get("chiller_2_cop_measured", 7.1) if hr else 7.1,
+                "load_kw": 2500,
+                "physics_verified": True,
+            },
+            "Chiller 2",
+        ),
+        "cooling_tower": _node(
+            hr.severity if hr else "ok",
+            hr.health if hr else 1.0,
+            {
+                "wb_c": hr.metrics.get("outdoor_wet_bulb_c", 18) if hr else 18,
+                "ecwt_c": (hr.metrics.get("outdoor_wet_bulb_c", 18) + 4) if hr else 22,
+                "delta_t_risk": (hr.metrics.get("outdoor_wet_bulb_c", 18) > 25) if hr else False,
+            },
+            "Cooling tower",
+        ),
+        # â"€â"€â"€ v5.2: RPP & Starline busway nodes (power balance derived) â"€â"€â"€
+        "rpp_a1": _node(
+            elec.severity if elec else "ok",
+            elec.health if elec else 1.0,
+            {
+                "load_kw": round(rpp_a1_kw, 1),
+                "split_fraction": round(alpha_a, 3),
+                "voltage_v": 600,
+                "active": True,
+                "physics_verified": True,
+            },
+            "RPP-A1",
+        ),
+        "rpp_a2": _node(
+            elec.severity if elec else "ok",
+            elec.health if elec else 1.0,
+            {
+                "load_kw": round(rpp_a2_kw, 1),
+                "split_fraction": round(1.0 - alpha_a, 3),
+                "voltage_v": 600,
+                "active": True,
+                "physics_verified": True,
+            },
+            "RPP-A2",
+        ),
+        "rpp_b1": _node(
+            elec.severity if elec else "ok",
+            elec.health if elec else 1.0,
+            {
+                "load_kw": round(rpp_b1_kw, 1),
+                "split_fraction": round(alpha_b, 3),
+                "voltage_v": 600,
+                "active": True,
+                "physics_verified": True,
+            },
+            "RPP-B1",
+        ),
+        "rpp_b2": _node(
+            elec.severity if elec else "ok",
+            elec.health if elec else 1.0,
+            {
+                "load_kw": round(rpp_b2_kw, 1),
+                "split_fraction": round(1.0 - alpha_b, 3),
+                "voltage_v": 600,
+                "active": True,
+                "physics_verified": True,
+            },
+            "RPP-B2",
+        ),
+        "busway_a": _node(
+            # Severity escalates if busway exceeds rated current
+            (
+                "critical"
+                if (busway_a_kw * 1000.0 / (1.732 * 480 * 0.95)) > 800
+                else "warning"
+                if (busway_a_kw * 1000.0 / (1.732 * 480 * 0.95)) > 700
+                else (elec.severity if elec else "ok")
+            ),
+            elec.health if elec else 1.0,
+            {
+                "load_kw": round(busway_a_kw, 1),
+                "rated_a": 800,
+                # 3-phase: I = P / (sqrt(3) * V_LL * PF), V_LL=480V, PF=0.95
+                "current_a": round(busway_a_kw * 1000.0 / (1.732 * 480 * 0.95), 0),
+                "overload": (busway_a_kw * 1000.0 / (1.732 * 480 * 0.95)) > 800,
+                "physics_verified": True,
+                "balance_residual_kw": round(balance_residual_a, 3),
+            },
+            "Starline busway A",
+        ),
+        "busway_b": _node(
+            (
+                "critical"
+                if (busway_b_kw * 1000.0 / (1.732 * 480 * 0.95)) > 800
+                else "warning"
+                if (busway_b_kw * 1000.0 / (1.732 * 480 * 0.95)) > 700
+                else (elec.severity if elec else "ok")
+            ),
+            elec.health if elec else 1.0,
+            {
+                "load_kw": round(busway_b_kw, 1),
+                "rated_a": 800,
+                "current_a": round(busway_b_kw * 1000.0 / (1.732 * 480 * 0.95), 0),
+                "overload": (busway_b_kw * 1000.0 / (1.732 * 480 * 0.95)) > 800,
+                "physics_verified": True,
+                "balance_residual_kw": round(balance_residual_b, 3),
+            },
+            "Starline busway B",
+        ),
     }
 
     # Determine overall redundancy mode based on what's "active"
@@ -1469,17 +1596,20 @@ async def get_topology_state():
     lld_racks = []
     # Generate 12 representative racks with slight variation
     import random
+
     random.seed(42)  # deterministic for tests
     for i in range(1, 13):
         rack_tj = gpu_tj + random.uniform(-3, 3)
         rack_dt = dlc_dt + random.uniform(-1.5, 1.5)
-        lld_racks.append({
-            "id": f"R{i:02d}",
-            "severity": rack_severity,
-            "health": round(rack_health, 2),
-            "gpu_tj_c": round(rack_tj, 1),
-            "dlc_dt_k": round(rack_dt, 1),
-        })
+        lld_racks.append(
+            {
+                "id": f"R{i:02d}",
+                "severity": rack_severity,
+                "health": round(rack_health, 2),
+                "gpu_tj_c": round(rack_tj, 1),
+                "dlc_dt_k": round(rack_dt, 1),
+            }
+        )
 
     return {
         "hld_nodes": hld_nodes,
@@ -1500,7 +1630,7 @@ async def get_topology_state():
             "modules": list(result.modules.keys()),
             "validation_method": "First law + ODE",
         },
-        # v5.2 â€” power-balance verification (sum of RPP loads vs UPS output)
+        # v5.2  -  power-balance verification (sum of RPP loads vs UPS output)
         "power_balance": {
             "ok": power_balance_ok,
             "path_a_residual_kw": round(balance_residual_a, 3),
@@ -1607,18 +1737,17 @@ async def topology_whatif(payload: dict = Body(...)):
             "severity": degraded_result.overall_severity.value,
             "weakest": degraded_result.weakest_module,
             "module_healths": {
-                name: round(r.health, 3)
-                for name, r in degraded_result.modules.items()
+                name: round(r.health, 3) for name, r in degraded_result.modules.items()
             },
             "cascade_count": len(degraded_result.cascade_events),
             "cascade_events": degraded_result.cascade_events,
         },
-        "shi_delta": round(
-            degraded_result.site_health - baseline_result.site_health, 3
-        ),
+        "shi_delta": round(degraded_result.site_health - baseline_result.site_health, 3),
         "redundancy_after_failure": (
-            "N (NON-REDUNDANT)" if degraded_result.overall_severity.value == "critical"
-            else "N+1 (DEGRADED)" if degraded_result.overall_severity.value == "warning"
+            "N (NON-REDUNDANT)"
+            if degraded_result.overall_severity.value == "critical"
+            else "N+1 (DEGRADED)"
+            if degraded_result.overall_severity.value == "warning"
             else "2N (RESILIENT)"
         ),
         "physics_assessment": (
@@ -1636,10 +1765,12 @@ async def topology_whatif(payload: dict = Body(...)):
 # ==============================================================
 try:
     from bms_connector import get_bms
+
     BMS_AVAILABLE = True
     print("[OK] bms_connector loaded successfully")
 except Exception as e:
     import traceback
+
     print(f"[ERROR] bms_connector import failed: {type(e).__name__}: {e}")
     print(traceback.format_exc())
     BMS_AVAILABLE = False
@@ -1657,14 +1788,12 @@ async def _refresh_bms_tags():
         full_dict = _build_telemetry_dict_from_latest(telemetry)
         engine = get_physics_engine()
         result = engine.validate_site(full_dict)
-        physics_metrics = {
-            name: r.metrics for name, r in result.modules.items()
-        }
+        physics_metrics = {name: r.metrics for name, r in result.modules.items()}
     bms.refresh(telemetry, physics_metrics)
 
 
 @app.get("/api/bms/tags")
-async def list_bms_tags(category: Optional[str] = None):
+async def list_bms_tags(category: str | None = None):
     """List BMS tags, optionally filtered by category (HVAC, PWR, IT, etc.)."""
     if not BMS_AVAILABLE:
         raise HTTPException(503, "BMS connector unavailable")
@@ -1761,13 +1890,14 @@ if FRONTEND_DIR.exists():
 
 
 # ==============================================================
-#  v8 â€” Agentic Copilot (tool-using LLM + HITL draft pattern)
+#  v8  -  Agentic Copilot (tool-using LLM + HITL draft pattern)
 # ==============================================================
 #
 # The copilot lives in backend/agent_copilot.py. It exposes 3 tools to a
 # local LM-Studio-served Gemma model and emits write-intent operations as
 # Drafts that operators must approve via the HMI. The execution hook below
 # is what bridges an approved Draft to the actual side-effecting code path.
+
 
 async def _execute_drafted_command(
     command: dict,
@@ -1789,11 +1919,11 @@ async def _execute_drafted_command(
     device_id = command.get("device_id", "")
     payload = command.get("payload") or {}
 
-    # â”€â”€ set_chilled_water_setpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â"€â"€ set_chilled_water_setpoint â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
     # Maps to BMS tag HVAC.CHILLER1.CW_SETPOINT or HVAC.CHILLER2.CW_SETPOINT
     if cmd_id == "set_chilled_water_setpoint":
         target_c = float(payload.get("target_c"))
-        # Map device_id â†’ BMS tag
+        # Map device_id â†' BMS tag
         tag_map = {
             "chiller_1": "HVAC.CHILLER1.CW_SETPOINT",
             "chiller_2": "HVAC.CHILLER2.CW_SETPOINT",
@@ -1802,10 +1932,11 @@ async def _execute_drafted_command(
         if not tag_id:
             return {"status": "FAILED", "error": f"no BMS tag mapped for {device_id}"}
 
-        # Use the existing BMS write infrastructure â€” same code path as
+        # Use the existing BMS write infrastructure  -  same code path as
         # operator clicks in the HMI. Audit log entry is created automatically.
         try:
             from bms_connector import get_bms
+
             bms_local = get_bms(PROJECT_ROOT)
         except Exception as e:
             return {"status": "FAILED", "error": f"BMS connector unavailable: {e}"}
@@ -1826,8 +1957,8 @@ async def _execute_drafted_command(
         except Exception as e:
             return {"status": "FAILED", "error": f"{type(e).__name__}: {e}"}
 
-    # â”€â”€ Future command types land here â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    # set_pump_speed, transfer_to_bypass, etc. â€” each new draftable
+    # â"€â"€ Future command types land here â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+    # set_pump_speed, transfer_to_bypass, etc.  -  each new draftable
     # command type registers its dispatch here, never bypassing audit.
 
     return {
@@ -1840,6 +1971,7 @@ async def _execute_drafted_command(
 # even if the copilot module has a load-time issue.
 try:
     from agent_copilot import router as _agent_router
+
     app.include_router(_agent_router)
     log.info("[v8] Agent Copilot mounted at /api/agent")
 except ImportError as e:
@@ -1849,7 +1981,7 @@ except Exception as e:
 
 
 # ==============================================================
-#  Sprint 1+2+3 â€” Procedure orchestrator + Witness workflow
+#  Sprint 1+2+3  -  Procedure orchestrator + Witness workflow
 # ==============================================================
 # Mount the procedures and witness HTTP API so the HMI can drive
 # Tier IV procedures (ATS transfer, UPS bypass, gen test) with the
@@ -1861,15 +1993,15 @@ except Exception as e:
 try:
     from fastapi import APIRouter, HTTPException
     from procedure_engine import (
-        build_default_orchestrator,
-        ProcedureNotFoundError,
         InvalidTransitionError,
+        ProcedureNotFoundError,
+        build_default_orchestrator,
     )
     from witness_engine import (
-        get_witness_store,
         IdentityCollisionError,
         WitnessRequestNotFoundError,
         WitnessRequestNotPendingError,
+        get_witness_store,
         serialize_request as _serialize_witness,
     )
 
@@ -1879,20 +2011,19 @@ try:
     _proc_router = APIRouter(prefix="/api/procedures", tags=["procedures"])
     _witness_router = APIRouter(prefix="/api/witness", tags=["witness"])
 
-    # â”€â”€ Procedure endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â"€â"€ Procedure endpoints â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
     @_proc_router.get("")
     async def list_procedures():
         """List all procedures available in config/procedures/*.yml."""
         return {
             "procedures": [
-                _proc_orch.registry.get_summary(pid)
-                for pid in _proc_orch.registry.list_ids()
+                _proc_orch.registry.get_summary(pid) for pid in _proc_orch.registry.list_ids()
             ]
         }
 
     @_proc_router.get("/{procedure_id}")
     async def get_procedure_detail(procedure_id: str):
-        """Full procedure YAML contents â€” for HMI display before start."""
+        """Full procedure YAML contents  -  for HMI display before start."""
         try:
             return _proc_orch.registry.get(procedure_id)
         except ProcedureNotFoundError:
@@ -1907,6 +2038,7 @@ try:
     async def get_execution(exec_id: str):
         try:
             from dataclasses import asdict
+
             ex = _proc_orch.get_execution(exec_id)
             d = asdict(ex)
             d["state"] = ex.state.value
@@ -1917,12 +2049,13 @@ try:
     @_proc_router.post("/{procedure_id}/start")
     async def start_procedure(procedure_id: str, body: dict):
         """Operator initiates a procedure. Returns the execution with
-        pre_condition_results â€” operator clicks 'Advance' to proceed
+        pre_condition_results  -  operator clicks 'Advance' to proceed
         if all pre-conditions are OK."""
         operator = body.get("operator", "anonymous")
         try:
             ex = await _proc_orch.start_procedure(procedure_id, operator)
             from dataclasses import asdict
+
             d = asdict(ex)
             d["state"] = ex.state.value
             return d
@@ -1938,6 +2071,7 @@ try:
         try:
             ex = await _proc_orch.advance_to_in_progress(exec_id, operator)
             from dataclasses import asdict
+
             d = asdict(ex)
             d["state"] = ex.state.value
             return d
@@ -1954,13 +2088,14 @@ try:
         try:
             ex = await _proc_orch.abort_now(exec_id, operator, reason)
             from dataclasses import asdict
+
             d = asdict(ex)
             d["state"] = ex.state.value
             return d
         except KeyError:
             raise HTTPException(status_code=404, detail=f"execution {exec_id} not found")
 
-    # â”€â”€ Witness endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # â"€â"€ Witness endpoints â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
     @_witness_router.get("/pending")
     async def list_pending_witness():
         """All currently PENDING witness requests across all executions.
@@ -2021,10 +2156,12 @@ except Exception as e:
 # ==============================================================
 try:
     import site_routes
+
     site_routes.configure(PROJECT_ROOT)
     app.include_router(site_routes.router)
 
     from site_model import get_site_model
+
     _site_model = get_site_model(PROJECT_ROOT)
     log.info(
         f"[Sprint S1b] Site routes mounted at /api/site "
@@ -2041,24 +2178,25 @@ except Exception as e:
 #  Sprint S2: GraphRAG service + router
 # ==============================================================
 try:
-    from graphrag_service import GraphRAGService
-    from graphrag_routes import make_graphrag_router
     from agent_graph_tool import set_graphrag_service
+    from graphrag_routes import make_graphrag_router
+    from graphrag_service import GraphRAGService
     from site_model import get_site_model as _s2_get_site_model
-    _s2_corpus_dir = PROJECT_ROOT / 'config' / 'knowledge'
+
+    _s2_corpus_dir = PROJECT_ROOT / "config" / "knowledge"
     _s2_site_model = _s2_get_site_model(PROJECT_ROOT)
     _s2_service = GraphRAGService(_s2_site_model, _s2_corpus_dir)
     set_graphrag_service(_s2_service)
     app.include_router(make_graphrag_router(_s2_service))
-    _s2_doc_count = len([p for p in _s2_corpus_dir.glob('*.md') if p.name.lower() != 'readme.md'])
+    _s2_doc_count = len([p for p in _s2_corpus_dir.glob("*.md") if p.name.lower() != "readme.md"])
     log.info(
-        f'[Sprint S2] GraphRAG service mounted at /api/graph '
-        f'(lazy index, {_s2_doc_count} knowledge docs available)'
+        f"[Sprint S2] GraphRAG service mounted at /api/graph "
+        f"(lazy index, {_s2_doc_count} knowledge docs available)"
     )
 except ImportError as _s2_e:
-    log.warning(f'[Sprint S2] GraphRAG NOT loaded (ImportError): {_s2_e}')
+    log.warning(f"[Sprint S2] GraphRAG NOT loaded (ImportError): {_s2_e}")
 except Exception as _s2_e:
-    log.warning(f'[Sprint S2] GraphRAG NOT mounted: {_s2_e}')
+    log.warning(f"[Sprint S2] GraphRAG NOT mounted: {_s2_e}")
 
 
 # ==============================================================
@@ -2066,6 +2204,7 @@ except Exception as _s2_e:
 # ==============================================================
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.environ.get("EPMS_PORT", "8080"))
     host = os.environ.get("EPMS_HOST", "0.0.0.0")
     log.info("Launching uvicorn on %s:%d", host, port)

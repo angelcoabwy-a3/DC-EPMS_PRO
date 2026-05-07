@@ -12,31 +12,31 @@ Tests cover:
 
 Heavy: this triggers the model download on first run if not cached.
 """
+
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+
 import pytest
 
 ROOT = Path(__file__).parent.parent
 BACKEND = ROOT / "backend"
 sys.path.insert(0, str(BACKEND))
 
-from site_model import SiteModel  # noqa: E402
-from knowledge_graph import (  # noqa: E402
-    build_knowledge_graph,
-    get_upstream_chain,
-    get_applicable_knowledge,
-    filter_by_jurisdiction,
-    KnowledgeNode,
-)
 from graphrag_index import (  # noqa: E402
-    load_knowledge_corpus,
-    GraphRAGIndex,
-    _split_frontmatter,
     _chunk_text,
+    _split_frontmatter,
+    load_knowledge_corpus,
 )
 from graphrag_service import GraphRAGService  # noqa: E402
-
+from knowledge_graph import (  # noqa: E402
+    build_knowledge_graph,
+    filter_by_jurisdiction,
+    get_applicable_knowledge,
+    get_upstream_chain,
+)
+from site_model import SiteModel  # noqa: E402
 
 CORPUS_DIR = ROOT / "config" / "knowledge"
 SITE_MODEL_PATH = ROOT / "config" / "site_model.yml"

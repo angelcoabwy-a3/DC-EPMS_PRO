@@ -38,6 +38,7 @@ Spec version: 2024-11-05 (latest stable as of project start)
 Transport: stdio (most compatible with Claude Desktop)
 Capabilities advertised: resources + tools (not prompts/sampling for v1)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -46,7 +47,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Optional
 
 # Configure logging to stderr so it doesn't interfere with stdio transport
 logging.basicConfig(
@@ -74,6 +74,7 @@ def _get_physics():
     if _physics_engine is None:
         try:
             from physics_engine import get_engine
+
             _physics_engine = get_engine()
         except Exception as e:
             log.error("Physics engine unavailable: %s", e)
@@ -85,6 +86,7 @@ def _get_bms():
     if _bms is None:
         try:
             from bms_connector import get_bms
+
             _bms = get_bms(PROJECT_ROOT)
         except Exception as e:
             log.error("BMS connector unavailable: %s", e)
@@ -199,14 +201,8 @@ async def read_resource(uri: str) -> dict:
             "site_health": round(result.site_health, 3),
             "weakest_module": result.weakest_module,
             "overall_severity": result.overall_severity.value,
-            "module_healths": {
-                name: round(r.health, 3)
-                for name, r in result.modules.items()
-            },
-            "module_severities": {
-                name: r.severity.value
-                for name, r in result.modules.items()
-            },
+            "module_healths": {name: round(r.health, 3) for name, r in result.modules.items()},
+            "module_severities": {name: r.severity.value for name, r in result.modules.items()},
             "cascade_count": len(result.cascade_events),
             "validation_method": "First law + ODE integration (scipy.solve_ivp)",
         }
@@ -214,6 +210,7 @@ async def read_resource(uri: str) -> dict:
     if uri == "a3semi://scenarios/list":
         try:
             import yaml
+
             scenarios_path = PROJECT_ROOT / "config" / "scenarios.yml"
             if not scenarios_path.exists():
                 return {"error": "scenarios.yml not found"}
@@ -240,6 +237,7 @@ async def read_resource(uri: str) -> dict:
         # Try DB; if unavailable, return empty
         try:
             from database import DBManager
+
             pg_dsn = os.environ.get(
                 "PG_DSN",
                 "postgresql://postgres:epms2026@localhost:5432/epms",
@@ -343,6 +341,7 @@ async def call_tool(name: str, arguments: dict) -> dict:
 
         try:
             import yaml
+
             data = yaml.safe_load(
                 (PROJECT_ROOT / "config" / "scenarios.yml").read_text(encoding="utf-8")
             )
@@ -362,8 +361,12 @@ async def call_tool(name: str, arguments: dict) -> dict:
                 "summary": result.get("summary", {}),
                 "events": result.get("events", []),
                 "snapshot_count": len(result.get("trajectory", [])),
-                "first_snapshot": result.get("trajectory", [{}])[0] if result.get("trajectory") else None,
-                "last_snapshot": result.get("trajectory", [{}])[-1] if result.get("trajectory") else None,
+                "first_snapshot": result.get("trajectory", [{}])[0]
+                if result.get("trajectory")
+                else None,
+                "last_snapshot": result.get("trajectory", [{}])[-1]
+                if result.get("trajectory")
+                else None,
             }
         except Exception as e:
             log.error("simulate_failure error: %s", e)
@@ -381,9 +384,7 @@ async def call_tool(name: str, arguments: dict) -> dict:
         if engine:
             full = _build_default_telemetry()
             result = engine.validate_site(full)
-            physics_metrics = {
-                name: r.metrics for name, r in result.modules.items()
-            }
+            physics_metrics = {name: r.metrics for name, r in result.modules.items()}
             bms.refresh(full, physics_metrics)
         tag = bms.read(tag_id)
         if not tag:
@@ -417,7 +418,7 @@ async def call_tool(name: str, arguments: dict) -> dict:
 # ---------------------------------------------------------------------------
 # JSON-RPC 2.0 dispatcher
 # ---------------------------------------------------------------------------
-async def handle_request(request: dict) -> Optional[dict]:
+async def handle_request(request: dict) -> dict | None:
     """Handle a single JSON-RPC 2.0 request and return the response."""
     method = request.get("method", "")
     params = request.get("params", {}) or {}

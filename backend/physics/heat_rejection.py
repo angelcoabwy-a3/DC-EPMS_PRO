@@ -59,6 +59,7 @@ References
   - T4-MOP-CHI-001          (chiller quarterly PM)
   - AHRI 550/590            (chiller performance rating standard)
 """
+
 from __future__ import annotations
 
 import logging
@@ -68,6 +69,7 @@ from typing import Any
 try:
     import numpy as np
     from scipy.integrate import solve_ivp
+
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
@@ -89,8 +91,8 @@ log = logging.getLogger("dc-epms.physics.heat_rejection")
 #  Atmospheric constants
 # ---------------------------------------------------------------------------
 
-P_ATM_PA = 101_325.0            # standard atmospheric pressure
-R_DA = 287.055                  # J/(kg*K), dry-air gas constant
+P_ATM_PA = 101_325.0  # standard atmospheric pressure
+R_DA = 287.055  # J/(kg*K), dry-air gas constant
 
 
 # ---------------------------------------------------------------------------
@@ -99,20 +101,21 @@ R_DA = 287.055                  # J/(kg*K), dry-air gas constant
 
 CHILLER_COUNT = 2
 CHILLER_RATED_CAPACITY_KW = 5_275.0  # 1500 TR = 5275 kW per unit
-CHILLER_RATED_COP = 7.2              # AHRI conditions
-CHILLER_RATED_ECWT_C = 29.4          # AHRI entering condenser water
-CHILLER_RATED_LCHWT_C = 6.7          # AHRI leaving chilled water
-CHILLER_MIN_ECWT_C = 10.0            # operational minimum
-CHILLER_MAX_ECWT_C = 40.0            # operational maximum, >40 trips
+CHILLER_RATED_COP = 7.2  # AHRI conditions
+CHILLER_RATED_ECWT_C = 29.4  # AHRI entering condenser water
+CHILLER_RATED_LCHWT_C = 6.7  # AHRI leaving chilled water
+CHILLER_MIN_ECWT_C = 10.0  # operational minimum
+CHILLER_MAX_ECWT_C = 40.0  # operational maximum, >40 trips
 
 # --- a3semi operational targets ---
 DLC_SUPPLY_TARGET_C = 18.0
-CONDENSATION_MARGIN_C = 2.0          # keep dew point >=2 C below DLC supply
+CONDENSATION_MARGIN_C = 2.0  # keep dew point >=2 C below DLC supply
 
 
 # ---------------------------------------------------------------------------
 #  Psychrometric functions (ASHRAE / Magnus)
 # ---------------------------------------------------------------------------
+
 
 def saturation_vapor_pressure_pa(t_db_c: float) -> float:
     """Saturation vapor pressure of water at dry-bulb temperature T_db.
@@ -214,6 +217,7 @@ def wet_bulb_c(
 #  Chiller performance model
 # ---------------------------------------------------------------------------
 
+
 def chiller_cop(
     plr: float,
     ecwt_c: float,
@@ -240,19 +244,19 @@ def chiller_cop(
     # PLR curve: simple quadratic peaking at PLR=0.5
     # f_plr(0.25)=0.85, f_plr(0.5)=1.10, f_plr(1.0)=1.00, f_plr(1.2)=0.85
     if plr < 0.15:
-        f_plr = 0.70 + (plr / 0.15) * 0.15   # 0.70 -> 0.85
+        f_plr = 0.70 + (plr / 0.15) * 0.15  # 0.70 -> 0.85
     elif plr < 0.5:
         f_plr = 0.85 + (plr - 0.15) / 0.35 * 0.25  # 0.85 -> 1.10
     elif plr < 1.0:
-        f_plr = 1.10 - (plr - 0.5) / 0.5 * 0.10    # 1.10 -> 1.00
+        f_plr = 1.10 - (plr - 0.5) / 0.5 * 0.10  # 1.10 -> 1.00
     else:
-        f_plr = 1.00 - (plr - 1.0) / 0.2 * 0.15    # 1.00 -> 0.85
+        f_plr = 1.00 - (plr - 1.0) / 0.2 * 0.15  # 1.00 -> 0.85
 
-    # ECWT curve: +1 C ECWT ≈ -3% COP
+    # ECWT curve: +1 C ECWT ~ -3% COP
     f_ecwt = 1.0 - 0.03 * (ecwt_c - CHILLER_RATED_ECWT_C)
     f_ecwt = max(0.4, min(1.25, f_ecwt))
 
-    # LCHWT correction: +1 C LCHWT ≈ +1.8% COP
+    # LCHWT correction: +1 C LCHWT ~ +1.8% COP
     f_lchwt = 1.0 + 0.018 * (lchwt_c - CHILLER_RATED_LCHWT_C)
     f_lchwt = max(0.85, min(1.20, f_lchwt))
 
@@ -266,6 +270,7 @@ def _clamp01(x: float) -> float:
 # ---------------------------------------------------------------------------
 #  HeatRejectionModule
 # ---------------------------------------------------------------------------
+
 
 class HeatRejectionModule(PhysicsModule):
     """Validator + simulator for exterior heat-rejection subsystem.
@@ -349,27 +354,27 @@ class HeatRejectionModule(PhysicsModule):
                 r.escalate(Severity.CRITICAL)
             else:
                 r.escalate(Severity.WARNING)
-            r.add_justification(PhysicalJustification(
-                law="psychrometric_wet_bulb_capacity",
-                measured={
-                    "outdoor_t_db_c": t_db,
-                    "outdoor_rh_percent": rh,
-                    "wet_bulb_c": twb_out,
-                },
-                expected={"wb_threshold_c": 27.0},
-                residual={"excess_c": twb_out - 27.0},
-                threshold={"wb_threshold_c": 27.0},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            r.add_justification(
+                PhysicalJustification(
+                    law="psychrometric_wet_bulb_capacity",
+                    measured={
+                        "outdoor_t_db_c": t_db,
+                        "outdoor_rh_percent": rh,
+                        "wet_bulb_c": twb_out,
+                    },
+                    expected={"wb_threshold_c": 27.0},
+                    residual={"excess_c": twb_out - 27.0},
+                    threshold={"wb_threshold_c": 27.0},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
 
         # ============ Check 2: Condensation risk on DLC manifolds ==========
         # Hall dew point must stay below (dlc_supply - margin).
         # Use measured hall DP if available, otherwise fall back to outdoor DP
-        # (implies complete HVAC failure — conservative bound).
-        hall_dp = (
-            float(hall_dp_measured) if hall_dp_measured is not None else dp_out
-        )
+        # (implies complete HVAC failure  -  conservative bound).
+        hall_dp = float(hall_dp_measured) if hall_dp_measured is not None else dp_out
         condensation_margin = dlc_supply - hall_dp
         cond_ok = condensation_margin >= CONDENSATION_MARGIN_C
         r.add_check(
@@ -395,33 +400,43 @@ class HeatRejectionModule(PhysicsModule):
                 r.escalate(Severity.CRITICAL)
             else:
                 r.escalate(Severity.WARNING)
-            r.add_justification(PhysicalJustification(
-                law="condensation_risk_dew_point",
-                measured={
-                    "hall_dew_point_c": hall_dp,
-                    "dlc_supply_c": dlc_supply,
-                    "outdoor_dew_point_c": dp_out,
-                },
-                expected={
-                    "min_margin_c": CONDENSATION_MARGIN_C,
-                    "safe_dew_point_max_c": dlc_supply - CONDENSATION_MARGIN_C,
-                },
-                residual={"margin_c": condensation_margin},
-                threshold={"min_margin_c": CONDENSATION_MARGIN_C},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            r.add_justification(
+                PhysicalJustification(
+                    law="condensation_risk_dew_point",
+                    measured={
+                        "hall_dew_point_c": hall_dp,
+                        "dlc_supply_c": dlc_supply,
+                        "outdoor_dew_point_c": dp_out,
+                    },
+                    expected={
+                        "min_margin_c": CONDENSATION_MARGIN_C,
+                        "safe_dew_point_max_c": dlc_supply - CONDENSATION_MARGIN_C,
+                    },
+                    residual={"margin_c": condensation_margin},
+                    threshold={"min_margin_c": CONDENSATION_MARGIN_C},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
 
         # ============ Check 3: Chiller 1 COP vs performance curve =========
         cop1_result = self._check_chiller_cop(
-            r, chiller_num=1, load_kw=ch1_load, power_kw=ch1_power,
-            ecwt_c=ch1_ecwt, lchwt_c=ch1_lchwt,
+            r,
+            chiller_num=1,
+            load_kw=ch1_load,
+            power_kw=ch1_power,
+            ecwt_c=ch1_ecwt,
+            lchwt_c=ch1_lchwt,
         )
 
         # ============ Check 4: Chiller 2 COP vs performance curve =========
         cop2_result = self._check_chiller_cop(
-            r, chiller_num=2, load_kw=ch2_load, power_kw=ch2_power,
-            ecwt_c=ch2_ecwt, lchwt_c=ch2_lchwt,
+            r,
+            chiller_num=2,
+            load_kw=ch2_load,
+            power_kw=ch2_power,
+            ecwt_c=ch2_ecwt,
+            lchwt_c=ch2_lchwt,
         )
 
         # ============ Check 5: Overall N+1 redundancy ======================
@@ -450,18 +465,20 @@ class HeatRejectionModule(PhysicsModule):
                 "commission additional cooling capacity."
             )
             r.escalate(Severity.WARNING)
-            r.add_justification(PhysicalJustification(
-                law="n_plus_1_redundancy",
-                measured={
-                    "total_heat_rejection_kw": total_rejection_kw,
-                    "single_chiller_capacity_kw": CHILLER_RATED_CAPACITY_KW,
-                },
-                expected={"max_safe_total_kw": CHILLER_RATED_CAPACITY_KW},
-                residual={"excess_kw": total_rejection_kw - CHILLER_RATED_CAPACITY_KW},
-                threshold={"redundancy_ratio_max": 1.0},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            r.add_justification(
+                PhysicalJustification(
+                    law="n_plus_1_redundancy",
+                    measured={
+                        "total_heat_rejection_kw": total_rejection_kw,
+                        "single_chiller_capacity_kw": CHILLER_RATED_CAPACITY_KW,
+                    },
+                    expected={"max_safe_total_kw": CHILLER_RATED_CAPACITY_KW},
+                    residual={"excess_kw": total_rejection_kw - CHILLER_RATED_CAPACITY_KW},
+                    threshold={"redundancy_ratio_max": 1.0},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
 
         # --- Module health ---
         penalty = 0.0
@@ -549,22 +566,24 @@ class HeatRejectionModule(PhysicsModule):
                 "Check condenser water chemistry and approach temperature."
             )
             r.escalate(Severity.INFO)
-            r.add_justification(PhysicalJustification(
-                law=f"chiller_{chiller_num}_cop_curve",
-                measured={
-                    "load_kw": load_kw,
-                    "power_kw": power_kw,
-                    "cop_measured": cop_measured,
-                    "plr": plr,
-                    "ecwt_c": ecwt_c,
-                    "lchwt_c": lchwt_c,
-                },
-                expected={"cop_expected": cop_expected},
-                residual={"residual_cop": residual},
-                threshold={"threshold_cop": threshold},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            r.add_justification(
+                PhysicalJustification(
+                    law=f"chiller_{chiller_num}_cop_curve",
+                    measured={
+                        "load_kw": load_kw,
+                        "power_kw": power_kw,
+                        "cop_measured": cop_measured,
+                        "plr": plr,
+                        "ecwt_c": ecwt_c,
+                        "lchwt_c": lchwt_c,
+                    },
+                    expected={"cop_expected": cop_expected},
+                    residual={"residual_cop": residual},
+                    threshold={"threshold_cop": threshold},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
         return {"ok": ok, "cop_measured": cop_measured, "cop_expected": cop_expected}
 
     # ------------------------------------------------------------------ #
@@ -640,7 +659,7 @@ class HeatRejectionModule(PhysicsModule):
             ecwt = twb + 4.0
 
             # Per-chiller load: split evenly between 2 units
-            per_chiller = load_kw * 0.95 / 2.0   # 95% to DLC side
+            per_chiller = load_kw * 0.95 / 2.0  # 95% to DLC side
             plr = per_chiller / CHILLER_RATED_CAPACITY_KW
             cop = chiller_cop(plr, ecwt, CHILLER_RATED_LCHWT_C)
             compressor_power_per_unit = per_chiller / cop if cop > 0 else 0.0
@@ -653,26 +672,27 @@ class HeatRejectionModule(PhysicsModule):
             if plr > 1.0 and not n_plus_1_lost:
                 events.append("n_plus_1_redundancy_lost")
                 n_plus_1_lost = True
-            if dp > (DLC_SUPPLY_TARGET_C - CONDENSATION_MARGIN_C) \
-               and not condensation_triggered:
+            if dp > (DLC_SUPPLY_TARGET_C - CONDENSATION_MARGIN_C) and not condensation_triggered:
                 events.append("condensation_risk_threshold_crossed")
                 condensation_triggered = True
 
-            trajectory.append(StateSnapshot(
-                t=t,
-                state={
-                    "outdoor_t_db_c": t_db_now,
-                    "outdoor_rh_percent": rh_now,
-                    "outdoor_wet_bulb_c": twb,
-                    "outdoor_dew_point_c": dp,
-                    "ecwt_c": ecwt,
-                    "chiller_plr": plr,
-                    "chiller_cop": cop,
-                    "compressor_power_per_unit_kw": compressor_power_per_unit,
-                    "total_compressor_power_kw": compressor_power_per_unit * 2.0,
-                },
-                events=events,
-            ))
+            trajectory.append(
+                StateSnapshot(
+                    t=t,
+                    state={
+                        "outdoor_t_db_c": t_db_now,
+                        "outdoor_rh_percent": rh_now,
+                        "outdoor_wet_bulb_c": twb,
+                        "outdoor_dew_point_c": dp,
+                        "ecwt_c": ecwt,
+                        "chiller_plr": plr,
+                        "chiller_cop": cop,
+                        "compressor_power_per_unit_kw": compressor_power_per_unit,
+                        "total_compressor_power_kw": compressor_power_per_unit * 2.0,
+                    },
+                    events=events,
+                )
+            )
             t += dt_s
 
         return trajectory

@@ -44,13 +44,13 @@ Integration points (Sprint S1b):
     valving and isolation that this model doesn't represent.
 ═══════════════════════════════════════════════════════════════════════
 """
+
 from __future__ import annotations
 
 import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -81,15 +81,16 @@ class Location:
 
     Path example: "A3-Alpha / Building A / Data Hall A / Row A-01"
     """
+
     site_id: str
     site_display: str
-    building_id: Optional[str] = None
-    building_display: Optional[str] = None
-    room_id: Optional[str] = None
-    room_display: Optional[str] = None
-    room_type: Optional[str] = None
-    row_id: Optional[str] = None
-    row_display: Optional[str] = None
+    building_id: str | None = None
+    building_display: str | None = None
+    room_id: str | None = None
+    room_display: str | None = None
+    room_type: str | None = None
+    row_id: str | None = None
+    row_display: str | None = None
 
     @property
     def path(self) -> str:
@@ -106,11 +107,18 @@ class Location:
     def path_components(self) -> list[dict]:
         out = [{"id": self.site_id, "display": self.site_display, "level": "site"}]
         if self.building_id:
-            out.append({"id": self.building_id, "display": self.building_display,
-                        "level": "building"})
+            out.append(
+                {"id": self.building_id, "display": self.building_display, "level": "building"}
+            )
         if self.room_id:
-            out.append({"id": self.room_id, "display": self.room_display,
-                        "level": "room", "type": self.room_type})
+            out.append(
+                {
+                    "id": self.room_id,
+                    "display": self.room_display,
+                    "level": "room",
+                    "type": self.room_type,
+                }
+            )
         if self.row_id:
             out.append({"id": self.row_id, "display": self.row_display, "level": "row"})
         return out
@@ -130,6 +138,7 @@ class Location:
 @dataclass
 class ComponentInfo:
     """Metadata about a single component (chiller_1, ups_a, etc.)."""
+
     canonical_id: str
     display: str
     type: str
@@ -149,6 +158,7 @@ class ComponentInfo:
 @dataclass
 class ImpactSet:
     """Result of impact_set() query."""
+
     failed_node: str
     chain_type: str
     immediate: list[str]
@@ -215,9 +225,9 @@ class SiteModel:
         self._build_cooling_chains()
 
         log.info(
-            "[site_model] loaded: %d components, %d locations, "
-            "%d power edges, %d cooling edges",
-            len(self._component_by_id), len(self._location_by_id),
+            "[site_model] loaded: %d components, %d locations, " "%d power edges, %d cooling edges",
+            len(self._component_by_id),
+            len(self._location_by_id),
             sum(len(v) for v in self._power_downstream.values()),
             sum(len(v) for v in self._cooling_downstream.values()),
         )
@@ -240,9 +250,13 @@ class SiteModel:
                 # Components directly in the room
                 for comp_id in room.get("components", []) or []:
                     self._location_by_id[comp_id] = Location(
-                        site_id=self._site_id, site_display=self._site_display,
-                        building_id=b_id, building_display=b_display,
-                        room_id=r_id, room_display=r_display, room_type=r_type,
+                        site_id=self._site_id,
+                        site_display=self._site_display,
+                        building_id=b_id,
+                        building_display=b_display,
+                        room_id=r_id,
+                        room_display=r_display,
+                        room_type=r_type,
                     )
 
                 # Rows (data halls)
@@ -251,10 +265,15 @@ class SiteModel:
                     rw_display = row.get("display", rw_id)
                     for rack_id in row.get("racks", []) or []:
                         self._location_by_id[rack_id] = Location(
-                            site_id=self._site_id, site_display=self._site_display,
-                            building_id=b_id, building_display=b_display,
-                            room_id=r_id, room_display=r_display, room_type=r_type,
-                            row_id=rw_id, row_display=rw_display,
+                            site_id=self._site_id,
+                            site_display=self._site_display,
+                            building_id=b_id,
+                            building_display=b_display,
+                            room_id=r_id,
+                            room_display=r_display,
+                            room_type=r_type,
+                            row_id=rw_id,
+                            row_display=rw_display,
                         )
 
     def _build_component_index(self) -> None:
@@ -263,8 +282,7 @@ class SiteModel:
 
         for comp_id, meta in components.items():
             if not isinstance(meta, dict):
-                log.warning("[site_model] component %s has non-dict metadata, skipping",
-                            comp_id)
+                log.warning("[site_model] component %s has non-dict metadata, skipping", comp_id)
                 continue
             location = self._location_by_id.get(comp_id)
             if location is None:
@@ -320,7 +338,7 @@ class SiteModel:
             for b in self._raw.get("buildings", []) or []
         ]
 
-    def list_components(self, type_filter: Optional[str] = None) -> list[ComponentInfo]:
+    def list_components(self, type_filter: str | None = None) -> list[ComponentInfo]:
         result = list(self._component_by_id.values())
         if type_filter:
             result = [c for c in result if c.type == type_filter]
@@ -360,13 +378,15 @@ class SiteModel:
             ]
         }
         """
-        if canonical_id not in self._component_by_id and \
-           canonical_id not in self._power_upstream:
+        if canonical_id not in self._component_by_id and canonical_id not in self._power_upstream:
             raise ComponentNotFoundError(canonical_id)
 
         paths_to_roots: list[list[str]] = []
         self._collect_paths_to_roots(
-            canonical_id, self._power_upstream, [canonical_id], paths_to_roots,
+            canonical_id,
+            self._power_upstream,
+            [canonical_id],
+            paths_to_roots,
         )
 
         # Group by feed_group: a path belongs to "path_a" if it contains ats_a,
@@ -394,10 +414,12 @@ class SiteModel:
         feeds = list(groups.values())
 
         # Sort: path_a first, path_b second, others after
-        feeds.sort(key=lambda f: (
-            0 if f["group"] == "path_a" else 1 if f["group"] == "path_b" else 2,
-            f["group"],
-        ))
+        feeds.sort(
+            key=lambda f: (
+                0 if f["group"] == "path_a" else 1 if f["group"] == "path_b" else 2,
+                f["group"],
+            )
+        )
 
         return {
             "component": canonical_id,
@@ -406,8 +428,11 @@ class SiteModel:
         }
 
     def _collect_paths_to_roots(
-        self, node: str, edges: dict[str, list[str]],
-        current_path: list[str], all_paths: list[list[str]],
+        self,
+        node: str,
+        edges: dict[str, list[str]],
+        current_path: list[str],
+        all_paths: list[list[str]],
         max_depth: int = 50,
     ) -> None:
         if len(current_path) > max_depth:
@@ -420,8 +445,7 @@ class SiteModel:
             if parent in current_path:
                 continue
             current_path.append(parent)
-            self._collect_paths_to_roots(parent, edges, current_path,
-                                         all_paths, max_depth)
+            self._collect_paths_to_roots(parent, edges, current_path, all_paths, max_depth)
             current_path.pop()
 
     def impact_set(self, canonical_id: str, chain: str = "power") -> ImpactSet:
@@ -491,19 +515,21 @@ class SiteModel:
             chain_info = self.power_chain_for(rack_id)
             feeds = chain_info["feeds"]
             still_redundant_feeds = [
-                f for f in feeds
-                if canonical_id not in f["representative_path"]
+                f for f in feeds if canonical_id not in f["representative_path"]
             ]
-            rack_redundancy.append({
-                "rack": rack_id,
-                "rack_display": (
-                    self._component_by_id[rack_id].display
-                    if rack_id in self._component_by_id else rack_id
-                ),
-                "total_paths": len(feeds),
-                "remaining_paths": len(still_redundant_feeds),
-                "still_has_redundancy": len(still_redundant_feeds) >= 1,
-            })
+            rack_redundancy.append(
+                {
+                    "rack": rack_id,
+                    "rack_display": (
+                        self._component_by_id[rack_id].display
+                        if rack_id in self._component_by_id
+                        else rack_id
+                    ),
+                    "total_paths": len(feeds),
+                    "remaining_paths": len(still_redundant_feeds),
+                    "still_has_redundancy": len(still_redundant_feeds) >= 1,
+                }
+            )
 
         return {
             "loto_target": canonical_id,
@@ -527,17 +553,15 @@ class SiteModel:
 # ─────────────────────────────────────────────────────────────────────────
 #  Module-level singleton + factory
 # ─────────────────────────────────────────────────────────────────────────
-_global_model: Optional[SiteModel] = None
+_global_model: SiteModel | None = None
 
 
-def get_site_model(project_root: Optional[Path] = None) -> SiteModel:
+def get_site_model(project_root: Path | None = None) -> SiteModel:
     """Lazy-loaded singleton."""
     global _global_model
     if _global_model is None:
         if project_root is None:
-            raise RuntimeError(
-                "site model not initialized; first call must pass project_root"
-            )
+            raise RuntimeError("site model not initialized; first call must pass project_root")
         yaml_path = project_root / "config" / "site_model.yml"
         _global_model = SiteModel(yaml_path)
         _global_model.load()

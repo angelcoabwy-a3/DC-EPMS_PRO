@@ -40,14 +40,16 @@ Values are taken from the corpus documents:
 References to these doc_ids appear inside Physical Justification blocks
 so every detection is traceable to its grounding procedure.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 try:
     import numpy as np
     from scipy.integrate import solve_ivp
+
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
@@ -71,29 +73,29 @@ log = logging.getLogger("dc-epms.physics.it_thermal")
 
 # --- Propylene glycol 50/50 coolant properties at 30 C ---
 # Reference: T2-VEN-NV-GB200 section "Coolant specifications"
-CP_PGW = 3_650.0           # J/(kg*K)  specific heat
-RHO_PGW = 1_040.0          # kg/m^3    density
+CP_PGW = 3_650.0  # J/(kg*K)  specific heat
+RHO_PGW = 1_040.0  # kg/m^3    density
 
 # --- Air properties at 20 C, 101.3 kPa ---
 # Reference: ASHRAE Handbook of Fundamentals, Chapter 1
-CP_AIR = 1_005.0           # J/(kg*K)
-RHO_AIR = 1.20             # kg/m^3
+CP_AIR = 1_005.0  # J/(kg*K)
+RHO_AIR = 1.20  # kg/m^3
 
 # --- A3-Alpha hall parameters ---
 # Reference: T3-STD-THERMAL-MODEL section "A3-Alpha hall parameters"
-HALL_VOLUME_M3 = 800.0              # 40 x 20 x 10
+HALL_VOLUME_M3 = 800.0  # 40 x 20 x 10
 HALL_AIR_MASS_KG = HALL_VOLUME_M3 * RHO_AIR  # ~960 kg
-THERMAL_TIME_CONSTANT_S = 53.3      # empirically measured
-SS_TEMP_NO_COOLING_C = 45.0         # asymptote if cooling is lost entirely
+THERMAL_TIME_CONSTANT_S = 53.3  # empirically measured
+SS_TEMP_NO_COOLING_C = 45.0  # asymptote if cooling is lost entirely
 
 # --- NVIDIA GB200 NVL72 rack thermal split ---
-DLC_FRACTION = 0.95         # 95% of rack power removed by DLC liquid
-AIR_FRACTION = 0.05         # 5% to hall air (DIMMs, NIC, chassis)
+DLC_FRACTION = 0.95  # 95% of rack power removed by DLC liquid
+AIR_FRACTION = 0.05  # 5% to hall air (DIMMs, NIC, chassis)
 
 # --- Rack population (A3-Alpha current deployment) ---
-RACK_COUNT = 118            # across 3 halls
-RACK_TDP_KW_NOMINAL = 142.0 # GB200 NVL72 typical training load
-RACK_PEAK_KW = 180.0        # checkpoint save bursts
+RACK_COUNT = 118  # across 3 halls
+RACK_TDP_KW_NOMINAL = 142.0  # GB200 NVL72 typical training load
+RACK_PEAK_KW = 180.0  # checkpoint save bursts
 
 # --- ASHRAE A2 thermal envelope (hard limits) ---
 # Reference: T3-STD-ASHRAE-A2 table "ASHRAE envelopes (summary)"
@@ -115,7 +117,7 @@ OPS_INLET_ALARM_HIGH_C = 24.0
 # with 20-22 K delta_T. We model 100 L/min nominal / 150 L/min peak.
 DLC_SUPPLY_TARGET_C = 18.0
 DLC_RETURN_MAX_C = 45.0
-DLC_FLOW_NOMINAL_L_MIN = 100.0   # per rack, physically consistent
+DLC_FLOW_NOMINAL_L_MIN = 100.0  # per rack, physically consistent
 DLC_FLOW_PEAK_L_MIN = 150.0
 
 # --- GPU junction thresholds (Blackwell B200) ---
@@ -130,6 +132,7 @@ GPU_TJ_TRIP_C = 95.0
 #  Helpers
 # ---------------------------------------------------------------------------
 
+
 def _flow_l_min_to_kg_s(flow_l_min: float) -> float:
     """Convert volumetric flow (L/min) to mass flow (kg/s) for PG/W 50/50."""
     m3_s = flow_l_min / 1000.0 / 60.0
@@ -143,6 +146,7 @@ def _clamp01(x: float) -> float:
 # ---------------------------------------------------------------------------
 #  ITThermalModule - the main class
 # ---------------------------------------------------------------------------
+
 
 class ITThermalModule(PhysicsModule):
     """Validator + simulator for White Space heat dissipation.
@@ -187,15 +191,9 @@ class ITThermalModule(PhysicsModule):
 
         # --- Parse measurements with safe defaults ---
         rack_count = int(measurements.get("rack_count", RACK_COUNT))
-        rack_kw = float(
-            measurements.get("rack_tdp_kw", RACK_TDP_KW_NOMINAL)
-        )
-        dlc_supply = float(
-            measurements.get("dlc_supply_c", DLC_SUPPLY_TARGET_C)
-        )
-        dlc_flow = float(
-            measurements.get("dlc_flow_l_min", DLC_FLOW_NOMINAL_L_MIN)
-        )
+        rack_kw = float(measurements.get("rack_tdp_kw", RACK_TDP_KW_NOMINAL))
+        dlc_supply = float(measurements.get("dlc_supply_c", DLC_SUPPLY_TARGET_C))
+        dlc_flow = float(measurements.get("dlc_flow_l_min", DLC_FLOW_NOMINAL_L_MIN))
         # Default return temperature is the value that would physically
         # balance the nominal load - ensures empty-dict case = OK.
         # dT = Q / (m_dot * cp) = (rack_kw * 1000 * 0.95) / (m_dot * 3650)
@@ -262,25 +260,27 @@ class ITThermalModule(PhysicsModule):
                 )
                 result.escalate(Severity.INFO)
 
-            result.add_justification(PhysicalJustification(
-                law="first_law_energy_balance_dlc",
-                measured={
-                    "Q_removed_by_dlc_kw": Q_removed_total_kw,
-                    "m_dot_kg_s_per_rack": m_dot,
-                    "delta_T_K": delta_T,
-                    "dlc_supply_c": dlc_supply,
-                    "dlc_return_c": dlc_return,
-                    "dlc_flow_l_min": dlc_flow,
-                },
-                expected={
-                    "Q_it_total_kw": Q_it_total_kw,
-                    "Q_expected_dlc_kw": Q_expected_dlc_kw,
-                },
-                residual={"residual_kw": residual_kw},
-                threshold={"threshold_kw": threshold_kw},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            result.add_justification(
+                PhysicalJustification(
+                    law="first_law_energy_balance_dlc",
+                    measured={
+                        "Q_removed_by_dlc_kw": Q_removed_total_kw,
+                        "m_dot_kg_s_per_rack": m_dot,
+                        "delta_T_K": delta_T,
+                        "dlc_supply_c": dlc_supply,
+                        "dlc_return_c": dlc_return,
+                        "dlc_flow_l_min": dlc_flow,
+                    },
+                    expected={
+                        "Q_it_total_kw": Q_it_total_kw,
+                        "Q_expected_dlc_kw": Q_expected_dlc_kw,
+                    },
+                    residual={"residual_kw": residual_kw},
+                    threshold={"threshold_kw": threshold_kw},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
 
         # ============ Check 2: ASHRAE A2 inlet envelope ====================
         inlet_in_envelope = A2_INLET_MIN_C <= hall_inlet <= A2_INLET_MAX_C
@@ -300,10 +300,7 @@ class ITThermalModule(PhysicsModule):
                     f"automatic throttling. Immediate cooling capacity "
                     f"review required."
                 )
-                action = (
-                    "Activate EOP-003 (emergency cooling reduction). "
-                    "See T4-EOP-COOL-003."
-                )
+                action = "Activate EOP-003 (emergency cooling reduction). " "See T4-EOP-COOL-003."
                 result.escalate(Severity.CRITICAL)
             else:
                 interp = (
@@ -311,24 +308,23 @@ class ITThermalModule(PhysicsModule):
                     f"limit ({A2_INLET_MIN_C:.0f} C). Condensation risk on "
                     f"any surface cooler than dew point."
                 )
-                action = (
-                    "Increase chilled water setpoint. Verify dehumidification "
-                    "status."
-                )
+                action = "Increase chilled water setpoint. Verify dehumidification " "status."
                 result.escalate(Severity.WARNING)
 
-            result.add_justification(PhysicalJustification(
-                law="ashrae_a2_envelope",
-                measured={"hall_inlet_c": hall_inlet},
-                expected={"a2_min_c": A2_INLET_MIN_C, "a2_max_c": A2_INLET_MAX_C},
-                residual={
-                    "excess_above_max": max(0.0, hall_inlet - A2_INLET_MAX_C),
-                    "deficit_below_min": max(0.0, A2_INLET_MIN_C - hall_inlet),
-                },
-                threshold={"band_width_c": A2_INLET_MAX_C - A2_INLET_MIN_C},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            result.add_justification(
+                PhysicalJustification(
+                    law="ashrae_a2_envelope",
+                    measured={"hall_inlet_c": hall_inlet},
+                    expected={"a2_min_c": A2_INLET_MIN_C, "a2_max_c": A2_INLET_MAX_C},
+                    residual={
+                        "excess_above_max": max(0.0, hall_inlet - A2_INLET_MAX_C),
+                        "deficit_below_min": max(0.0, A2_INLET_MIN_C - hall_inlet),
+                    },
+                    threshold={"band_width_c": A2_INLET_MAX_C - A2_INLET_MIN_C},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
 
         # ============ Check 3: operational (tighter) band =================
         ops_band_ok = OPS_INLET_ALARM_LOW_C <= hall_inlet <= OPS_INLET_ALARM_HIGH_C
@@ -354,39 +350,43 @@ class ITThermalModule(PhysicsModule):
         )
         if gpu_tj >= GPU_TJ_TRIP_C:
             result.escalate(Severity.CRITICAL)
-            result.add_justification(PhysicalJustification(
-                law="gpu_junction_thermal_trip",
-                measured={"gpu_tj_max_c": gpu_tj},
-                expected={"trip_threshold_c": GPU_TJ_TRIP_C},
-                residual={"excess_c": gpu_tj - GPU_TJ_TRIP_C},
-                threshold={"trip_c": GPU_TJ_TRIP_C},
-                interpretation=(
-                    f"Hottest GPU reports Tj = {gpu_tj:.1f} C, at or above "
-                    f"{GPU_TJ_TRIP_C:.0f} C thermal trip threshold. "
-                    f"Automatic shutdown imminent or already occurred."
-                ),
-                suggested_action=(
-                    "Investigate per-rack DLC flow immediately. Check cold "
-                    "plate seating if rack was recently serviced."
-                ),
-            ))
+            result.add_justification(
+                PhysicalJustification(
+                    law="gpu_junction_thermal_trip",
+                    measured={"gpu_tj_max_c": gpu_tj},
+                    expected={"trip_threshold_c": GPU_TJ_TRIP_C},
+                    residual={"excess_c": gpu_tj - GPU_TJ_TRIP_C},
+                    threshold={"trip_c": GPU_TJ_TRIP_C},
+                    interpretation=(
+                        f"Hottest GPU reports Tj = {gpu_tj:.1f} C, at or above "
+                        f"{GPU_TJ_TRIP_C:.0f} C thermal trip threshold. "
+                        f"Automatic shutdown imminent or already occurred."
+                    ),
+                    suggested_action=(
+                        "Investigate per-rack DLC flow immediately. Check cold "
+                        "plate seating if rack was recently serviced."
+                    ),
+                )
+            )
         elif gpu_tj >= GPU_TJ_THROTTLE_C:
             result.escalate(Severity.CRITICAL)
-            result.add_justification(PhysicalJustification(
-                law="gpu_junction_throttle",
-                measured={"gpu_tj_max_c": gpu_tj},
-                expected={"throttle_threshold_c": GPU_TJ_THROTTLE_C},
-                residual={"excess_c": gpu_tj - GPU_TJ_THROTTLE_C},
-                threshold={"throttle_c": GPU_TJ_THROTTLE_C},
-                interpretation=(
-                    f"GPU Tj = {gpu_tj:.1f} C triggers automatic throttling. "
-                    f"Compute throughput is degraded."
-                ),
-                suggested_action=(
-                    "Verify DLC supply temperature and flow rate. See "
-                    "T2-VEN-NV-GB200 section 'Troubleshooting'."
-                ),
-            ))
+            result.add_justification(
+                PhysicalJustification(
+                    law="gpu_junction_throttle",
+                    measured={"gpu_tj_max_c": gpu_tj},
+                    expected={"throttle_threshold_c": GPU_TJ_THROTTLE_C},
+                    residual={"excess_c": gpu_tj - GPU_TJ_THROTTLE_C},
+                    threshold={"throttle_c": GPU_TJ_THROTTLE_C},
+                    interpretation=(
+                        f"GPU Tj = {gpu_tj:.1f} C triggers automatic throttling. "
+                        f"Compute throughput is degraded."
+                    ),
+                    suggested_action=(
+                        "Verify DLC supply temperature and flow rate. See "
+                        "T2-VEN-NV-GB200 section 'Troubleshooting'."
+                    ),
+                )
+            )
         elif gpu_tj >= GPU_TJ_WARNING_C:
             result.escalate(Severity.WARNING)
 
@@ -490,21 +490,15 @@ class ITThermalModule(PhysicsModule):
         """
         if not HAS_SCIPY:
             # Fallback: analytic Newton's law of cooling, no ODE integration
-            log.warning(
-                "scipy not available; using analytic Newton's law fallback"
-            )
-            return self._simulate_analytic(
-                initial_state, perturbation, horizon_s, dt_s
-            )
+            log.warning("scipy not available; using analytic Newton's law fallback")
+            return self._simulate_analytic(initial_state, perturbation, horizon_s, dt_s)
 
         # --- Parse initial state ---
         T0_air = float(initial_state.get("hall_return_c", 22.0))
         rack_count = int(initial_state.get("rack_count", RACK_COUNT))
         rack_kw = float(initial_state.get("rack_tdp_kw", RACK_TDP_KW_NOMINAL))
         dlc_supply = float(initial_state.get("dlc_supply_c", DLC_SUPPLY_TARGET_C))
-        dlc_flow_nom = float(
-            initial_state.get("dlc_flow_l_min", DLC_FLOW_NOMINAL_L_MIN)
-        )
+        dlc_flow_nom = float(initial_state.get("dlc_flow_l_min", DLC_FLOW_NOMINAL_L_MIN))
 
         # --- Parse perturbation ---
         cooling_factor = float(perturbation.get("cooling_factor", 1.0))
@@ -522,9 +516,7 @@ class ITThermalModule(PhysicsModule):
         # heat load is rack_count * rack_kw * AIR_FRACTION * 1000 (W), and
         # the hall sits at ~22 C return. So effective cooling capacity at
         # nominal CRAH delta_T is roughly that value (units: W).
-        Q_to_air_nominal = (
-            rack_count * rack_kw * rack_kw_mult * AIR_FRACTION * 1000.0
-        )
+        Q_to_air_nominal = rack_count * rack_kw * rack_kw_mult * AIR_FRACTION * 1000.0
         Q_cooling_nominal = Q_to_air_nominal  # at t=0 we're at steady state
 
         # --- The ODE function ---
@@ -544,9 +536,9 @@ class ITThermalModule(PhysicsModule):
             when active cooling is fully removed.
 
             Asymptote when cooling_factor=0:
-              dT/dt = 0 ⇒ Q_in - (T - T_base)*m*cp/tau = 0
+              dT/dt = 0 => Q_in - (T - T_base)*m*cp/tau = 0
               T_ss = T_base + Q_in * tau / (m * cp)
-              T_ss ≈ 22 + 838,000 * 53.3 / (960 * 1005) ≈ 68 C
+              T_ss ~ 22 + 838,000 * 53.3 / (960 * 1005) ~ 68 C
             which matches literature for a sealed hall of this density.
             """
             t_scalar = float(t)
@@ -561,10 +553,7 @@ class ITThermalModule(PhysicsModule):
 
             # Passive loss to building structure (Newton cooling of hall air)
             T_ambient_base = 22.0  # normal operating hall temperature
-            passive_loss_w = (
-                (T_val - T_ambient_base) * m_air * cp_air
-                / THERMAL_TIME_CONSTANT_S
-            )
+            passive_loss_w = (T_val - T_ambient_base) * m_air * cp_air / THERMAL_TIME_CONSTANT_S
 
             dT = (Q_in - Q_out_active - passive_loss_w) / (m_air * cp_air)
             return np.array([dT])
@@ -598,19 +587,13 @@ class ITThermalModule(PhysicsModule):
             # Estimate GPU Tj from DLC supply + loop delta_T + die-to-coolant
             # resistance. If flow is lost, GPU rapidly heats because the
             # cold plate can no longer dissipate energy.
-            flow_factor_now = (
-                dlc_flow_factor
-                if (start_s <= t < start_s + duration_s)
-                else 1.0
-            )
+            flow_factor_now = dlc_flow_factor if (start_s <= t < start_s + duration_s) else 1.0
             if flow_factor_now > 0.01:
                 # Q = m_dot * cp * delta_T => delta_T = Q / (m_dot * cp)
-                m_dot = _flow_l_min_to_kg_s(
-                    dlc_flow_nom * flow_factor_now
-                )
+                m_dot = _flow_l_min_to_kg_s(dlc_flow_nom * flow_factor_now)
                 Q_per_rack = rack_kw * rack_kw_mult * DLC_FRACTION * 1000.0
                 dlc_dT = Q_per_rack / (m_dot * CP_PGW)
-                # GPU Tj ≈ DLC supply + loop dT + die-to-coolant rise (15 K)
+                # GPU Tj ~ DLC supply + loop dT + die-to-coolant rise (15 K)
                 gpu_tj_estimate = dlc_supply + dlc_dT + 15.0
             else:
                 # Flow lost entirely: GPU rises toward hall temp + large offset.
@@ -632,22 +615,22 @@ class ITThermalModule(PhysicsModule):
                 if prev_T < A2_INLET_MAX_C:
                     events.append("a2_envelope_exceeded")
 
-            trajectory.append(StateSnapshot(
-                t=float(t),
-                state={
-                    "hall_air_c": T_air,
-                    "dlc_supply_c": dlc_supply,
-                    "dlc_flow_factor": flow_factor_now,
-                    "cooling_factor": (
-                        cooling_factor
-                        if (start_s <= t < start_s + duration_s)
-                        else 1.0
-                    ),
-                    "gpu_tj_estimate_c": gpu_tj_estimate,
-                    "dlc_delta_T_k": dlc_dT,
-                },
-                events=events,
-            ))
+            trajectory.append(
+                StateSnapshot(
+                    t=float(t),
+                    state={
+                        "hall_air_c": T_air,
+                        "dlc_supply_c": dlc_supply,
+                        "dlc_flow_factor": flow_factor_now,
+                        "cooling_factor": (
+                            cooling_factor if (start_s <= t < start_s + duration_s) else 1.0
+                        ),
+                        "gpu_tj_estimate_c": gpu_tj_estimate,
+                        "dlc_delta_T_k": dlc_dT,
+                    },
+                    events=events,
+                )
+            )
 
         return trajectory
 
@@ -683,13 +666,19 @@ class ITThermalModule(PhysicsModule):
         while t <= horizon_s:
             T = T_ss + (T0 - T_ss) * math.exp(-t / THERMAL_TIME_CONSTANT_S)
             events = []
-            if T >= A2_INLET_MAX_C and trajectory and trajectory[-1].state["hall_air_c"] < A2_INLET_MAX_C:
+            if (
+                T >= A2_INLET_MAX_C
+                and trajectory
+                and trajectory[-1].state["hall_air_c"] < A2_INLET_MAX_C
+            ):
                 events.append("a2_envelope_exceeded")
-            trajectory.append(StateSnapshot(
-                t=t,
-                state={"hall_air_c": T, "cooling_factor": cooling_factor},
-                events=events,
-            ))
+            trajectory.append(
+                StateSnapshot(
+                    t=t,
+                    state={"hall_air_c": T, "cooling_factor": cooling_factor},
+                    events=events,
+                )
+            )
             t += dt_s
         return trajectory
 
@@ -702,7 +691,7 @@ class ITThermalModule(PhysicsModule):
         current_temp_c: float,
         cooling_factor: float = 0.0,
         critical_temp_c: float = A2_INLET_MAX_C,
-    ) -> Optional[float]:
+    ) -> float | None:
         """Analytic TTC given current temperature and cooling capacity.
 
         Returns seconds until temperature reaches `critical_temp_c`, or
@@ -711,9 +700,7 @@ class ITThermalModule(PhysicsModule):
         """
         import math
 
-        T_ss = current_temp_c + (
-            SS_TEMP_NO_COOLING_C - current_temp_c
-        ) * (1.0 - cooling_factor)
+        T_ss = current_temp_c + (SS_TEMP_NO_COOLING_C - current_temp_c) * (1.0 - cooling_factor)
 
         if T_ss <= critical_temp_c:
             return None  # never reaches critical with this cooling

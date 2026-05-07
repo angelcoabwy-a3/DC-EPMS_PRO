@@ -12,20 +12,19 @@ Covers:
 Run:
     pytest tests/test_site_model.py -v
 """
-import sys
+
 import pathlib
+import sys
+
 import pytest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
 from site_model import (
-    SiteModel,
-    Location,
-    ComponentInfo,
-    ImpactSet,
-    SiteModelLoadError,
     ComponentNotFoundError,
+    SiteModel,
+    SiteModelLoadError,
     get_site_model,
     reset_site_model,
 )
@@ -45,7 +44,6 @@ def model():
 #  Loading & basic indexes
 # ═══════════════════════════════════════════════════════════════════════
 class TestLoading:
-
     def test_load_succeeds(self, model):
         assert model.site_metadata()["id"] == "a3-alpha-toronto"
 
@@ -81,7 +79,6 @@ class TestLoading:
 #  Component lookup & location
 # ═══════════════════════════════════════════════════════════════════════
 class TestLocation:
-
     def test_locate_chiller_returns_yard_path(self, model):
         loc = model.locate("chiller_1")
         assert loc.site_display == "A3-Alpha"
@@ -101,8 +98,9 @@ class TestLocation:
         assert loc.row_display == "Row A-01"
 
     def test_locate_rack_path_string(self, model):
-        assert model.location_path("rack_a_01_05") == \
-               "A3-Alpha / Building A / Data Hall A / Row A-01"
+        assert (
+            model.location_path("rack_a_01_05") == "A3-Alpha / Building A / Data Hall A / Row A-01"
+        )
 
     def test_locate_ups_returns_electrical_room(self, model):
         loc = model.locate("ups_a")
@@ -122,6 +120,7 @@ class TestLocation:
         loc = model.locate("rack_a_01_01")
         d = loc.to_dict()
         import json
+
         json.dumps(d)
         assert d["path"] == "A3-Alpha / Building A / Data Hall A / Row A-01"
         assert d["site_id"] == "a3-alpha-toronto"
@@ -141,7 +140,6 @@ class TestLocation:
 #  Component metadata
 # ═══════════════════════════════════════════════════════════════════════
 class TestComponentMetadata:
-
     def test_chiller_has_correct_metadata(self, model):
         c = model.get_component("chiller_1")
         assert c.type == "chiller"
@@ -182,7 +180,6 @@ class TestComponentMetadata:
 #  Power chain analysis
 # ═══════════════════════════════════════════════════════════════════════
 class TestPowerChain:
-
     def test_rack_has_two_power_paths_2n(self, model):
         """Critical 2N test: every rack has 2 independent feeds."""
         chain = model.power_chain_for("rack_a_01_01")
@@ -202,7 +199,7 @@ class TestPowerChain:
         assert "ups_b" not in path
         assert "xfmr_b" not in path
         # Path A group should have 3 alternative roots: utility + 2 gensets
-        assert len(path_a_feeds[0]["roots"]) >= 1   # at least the utility
+        assert len(path_a_feeds[0]["roots"]) >= 1  # at least the utility
         assert "utility_feed_a" in path_a_feeds[0]["roots"]
 
     def test_rack_path_b_traces_through_path_b_components(self, model):
@@ -226,7 +223,6 @@ class TestPowerChain:
 #  Impact set (downstream walk)
 # ═══════════════════════════════════════════════════════════════════════
 class TestImpactSet:
-
     def test_busway_a_01_impacts_10_racks(self, model):
         impact = model.impact_set("busway_a_01", chain="power")
         assert len(impact.immediate) == 10
@@ -270,7 +266,6 @@ class TestImpactSet:
 #  LOTO impact — the operational query that matters
 # ═══════════════════════════════════════════════════════════════════════
 class TestLotoImpact:
-
     def test_loto_busway_a_01_racks_keep_redundancy_via_path_b(self, model):
         """The headline test: LOTO of busway_a_01 affects 10 racks,
         but ALL of them retain Path B redundancy (cross-fed from busway_b_01)."""
@@ -300,8 +295,9 @@ class TestLotoImpact:
 
     def test_loto_includes_display_name(self, model):
         result = model.loto_impact("genset_a_01")
-        assert "Cummins" in result["loto_target_display"] or \
-               "Genset" in result["loto_target_display"]
+        assert (
+            "Cummins" in result["loto_target_display"] or "Genset" in result["loto_target_display"]
+        )
 
     def test_loto_unknown_component_returns_empty_safely(self, model):
         result = model.loto_impact("nonexistent_thing")
@@ -314,7 +310,6 @@ class TestLotoImpact:
 #  Cooling chain
 # ═══════════════════════════════════════════════════════════════════════
 class TestCoolingChain:
-
     def test_cdu_a_01_cools_racks(self, model):
         impact = model.impact_set("cdu_a_01", chain="cooling")
         assert len(impact.immediate) >= 5
@@ -328,7 +323,6 @@ class TestCoolingChain:
 #  Singleton factory
 # ═══════════════════════════════════════════════════════════════════════
 class TestSingleton:
-
     def test_get_site_model_caches(self):
         reset_site_model()
         m1 = get_site_model(PROJECT_ROOT)
@@ -352,7 +346,6 @@ class TestSingleton:
 #  Integration use case: CMMS work order location injection
 # ═══════════════════════════════════════════════════════════════════════
 class TestCMMSIntegration:
-
     def test_location_injection_for_chiller_work_order(self, model):
         """Simulates cmms_mcp.draft_cmms_work_order injecting location."""
         target = "chiller_1"

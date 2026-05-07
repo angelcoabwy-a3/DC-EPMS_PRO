@@ -7,18 +7,23 @@ Every test uses mock backends — no real hardware, no network.
 Run:
     pytest tests/test_hal_adapters.py -v
 """
-import sys
+
 import pathlib
+import sys
+
 import pytest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
 from hal import (
+    AscoAdapter,
+    CumminsAdapter,
     FailureMode,
-    CumminsAdapter, MockModbusBackend,
-    AscoAdapter, MockBACnetBackend,
-    RusselectricAdapter, MockBypassBackend,
+    MockBACnetBackend,
+    MockBypassBackend,
+    MockModbusBackend,
+    RusselectricAdapter,
 )
 
 
@@ -26,7 +31,6 @@ from hal import (
 #  Cummins
 # ═══════════════════════════════════════════════════════════════════════
 class TestCumminsAdapter:
-
     @pytest.fixture
     def adapter(self):
         backend = MockModbusBackend()
@@ -147,10 +151,11 @@ class TestCumminsAdapter:
     async def test_verify_state_with_min_max_ranges(self, adapter):
         await adapter.connect()
         ok, observed = await adapter.verify_state(
-            "genset_a", {
-                "kw_output": {"min": 1000},          # 1500 >= 1000 OK
-                "hertz":     {"min": 59.5, "max": 60.5},  # 60.05 in range OK
-                "fuel_pct":  {"min": 80},            # 85 >= 80 OK
+            "genset_a",
+            {
+                "kw_output": {"min": 1000},  # 1500 >= 1000 OK
+                "hertz": {"min": 59.5, "max": 60.5},  # 60.05 in range OK
+                "fuel_pct": {"min": 80},  # 85 >= 80 OK
             },
         )
         assert ok is True
@@ -160,8 +165,9 @@ class TestCumminsAdapter:
     async def test_verify_state_fails_when_out_of_range(self, adapter):
         await adapter.connect()
         ok, observed = await adapter.verify_state(
-            "genset_a", {
-                "kw_output": {"min": 5000},          # 1500 < 5000 FAIL
+            "genset_a",
+            {
+                "kw_output": {"min": 5000},  # 1500 < 5000 FAIL
             },
         )
         assert ok is False
@@ -176,18 +182,25 @@ class TestCumminsAdapter:
 #  ASCO
 # ═══════════════════════════════════════════════════════════════════════
 class TestAscoAdapter:
-
     @pytest.fixture
     def adapter(self):
         backend = MockBACnetBackend()
         # Preload state for ats_a — switch is in NORMAL, not in transit, not armed
-        backend.preload("10.5.2.50", "multiStateInput", 1, "presentValue", 0)  # ats_position = 0 (NORMAL)
-        backend.preload("10.5.2.50", "binaryInput",     1, "presentValue", 0)  # ats_in_transit = 0 (False)
-        backend.preload("10.5.2.50", "binaryInput",     2, "presentValue", 0)  # ats_armed = 0 (False)
-        backend.preload("10.5.2.50", "binaryInput",     3, "presentValue", 1)  # source_normal_avail = True
-        backend.preload("10.5.2.50", "binaryInput",     4, "presentValue", 1)  # source_emergency_avail = True
-        backend.preload("10.5.2.50", "analogInput",     1, "presentValue", 480)  # voltage_normal_l_l
-        backend.preload("10.5.2.50", "analogInput",     5, "presentValue", 1500)  # load_kw
+        backend.preload(
+            "10.5.2.50", "multiStateInput", 1, "presentValue", 0
+        )  # ats_position = 0 (NORMAL)
+        backend.preload(
+            "10.5.2.50", "binaryInput", 1, "presentValue", 0
+        )  # ats_in_transit = 0 (False)
+        backend.preload("10.5.2.50", "binaryInput", 2, "presentValue", 0)  # ats_armed = 0 (False)
+        backend.preload(
+            "10.5.2.50", "binaryInput", 3, "presentValue", 1
+        )  # source_normal_avail = True
+        backend.preload(
+            "10.5.2.50", "binaryInput", 4, "presentValue", 1
+        )  # source_emergency_avail = True
+        backend.preload("10.5.2.50", "analogInput", 1, "presentValue", 480)  # voltage_normal_l_l
+        backend.preload("10.5.2.50", "analogInput", 5, "presentValue", 1500)  # load_kw
 
         return AscoAdapter(
             backend=backend,
@@ -268,10 +281,11 @@ class TestAscoAdapter:
         await adapter.write("ats_a", "TRANSFER_TO_EMERGENCY")
         # Simulate PLC asserting new state after transfer
         adapter.backend.preload("10.5.2.50", "multiStateInput", 1, "presentValue", 1)  # EMERGENCY
-        adapter.backend.preload("10.5.2.50", "binaryInput", 1, "presentValue", 0)      # not in transit
+        adapter.backend.preload("10.5.2.50", "binaryInput", 1, "presentValue", 0)  # not in transit
 
         ok, observed = await adapter.verify_state(
-            "ats_a", {"ats_position": "EMERGENCY", "ats_in_transit": False},
+            "ats_a",
+            {"ats_position": "EMERGENCY", "ats_in_transit": False},
         )
         assert ok is True
         assert observed["ats_position"] == "EMERGENCY"
@@ -281,25 +295,24 @@ class TestAscoAdapter:
 #  Russelectric
 # ═══════════════════════════════════════════════════════════════════════
 class TestRusselectricAdapter:
-
     @pytest.fixture
     def adapter(self):
         backend = MockBypassBackend()
         # Preload bypass_a in NORMAL position with interlocks OK
-        backend.preload("BMS.UPS_A.BYPASS_POSITION", 0)        # NORMAL
-        backend.preload("BMS.UPS_A.BYPASS_INTERLOCK_OK", 1)    # interlocks OK
+        backend.preload("BMS.UPS_A.BYPASS_POSITION", 0)  # NORMAL
+        backend.preload("BMS.UPS_A.BYPASS_INTERLOCK_OK", 1)  # interlocks OK
 
         return RusselectricAdapter(
             backend=backend,
             targets={
                 "bypass_a": {
-                    "status_point":         "BMS.UPS_A.BYPASS_POSITION",
-                    "cmd_to_normal_point":  "BMS.UPS_A.CMD_TO_NORMAL",
-                    "cmd_to_test_point":    "BMS.UPS_A.CMD_TO_TEST",
-                    "cmd_to_bypass_point":  "BMS.UPS_A.CMD_TO_BYPASS",
-                    "interlock_ok_point":   "BMS.UPS_A.BYPASS_INTERLOCK_OK",
-                    "pulse_ms":             100,    # short pulse for test speed
-                    "model":                "RTS",
+                    "status_point": "BMS.UPS_A.BYPASS_POSITION",
+                    "cmd_to_normal_point": "BMS.UPS_A.CMD_TO_NORMAL",
+                    "cmd_to_test_point": "BMS.UPS_A.CMD_TO_TEST",
+                    "cmd_to_bypass_point": "BMS.UPS_A.CMD_TO_BYPASS",
+                    "interlock_ok_point": "BMS.UPS_A.BYPASS_INTERLOCK_OK",
+                    "pulse_ms": 100,  # short pulse for test speed
+                    "model": "RTS",
                 },
             },
         )
@@ -343,7 +356,7 @@ class TestRusselectricAdapter:
     async def test_write_rejects_when_interlock_not_ok(self, adapter):
         """Software interlock guard: refuse if BMS reports interlock failure."""
         await adapter.connect()
-        adapter.backend.preload("BMS.UPS_A.BYPASS_INTERLOCK_OK", 0)    # interlocks NOT ok
+        adapter.backend.preload("BMS.UPS_A.BYPASS_INTERLOCK_OK", 0)  # interlocks NOT ok
 
         result = await adapter.write("bypass_a", "GO_TO_BYPASS")
         assert result["status"] == "REJECTED"
@@ -380,7 +393,6 @@ class TestRusselectricAdapter:
 #  Failure mode policy
 # ═══════════════════════════════════════════════════════════════════════
 class TestFailureModes:
-
     @pytest.mark.asyncio
     async def test_fail_open_reraises_backend_error(self):
         class BrokenBackend(MockModbusBackend):
@@ -430,7 +442,7 @@ class TestFailureModes:
                 return await super().read_holding_registers(address, count, slave)
 
         backend = FlakyBackend()
-        backend.preload(slave=1, address=0, value=1)    # mode = AUTO
+        backend.preload(slave=1, address=0, value=1)  # mode = AUTO
 
         adapter = CumminsAdapter(
             backend=backend,
@@ -446,4 +458,4 @@ class TestFailureModes:
         # Second read fails — fail_safe returns cached value with _stale flag
         result_2 = await adapter.read("genset_a", ["mode"])
         assert result_2.get("_stale") is True
-        assert result_2["mode"] == "AUTO"   # cached value preserved
+        assert result_2["mode"] == "AUTO"  # cached value preserved

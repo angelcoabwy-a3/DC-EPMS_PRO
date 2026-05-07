@@ -15,13 +15,15 @@ Public API:
 
 The service is supplied at registration time via set_graphrag_service(svc).
 """
+
 from __future__ import annotations
-from typing import Any, Optional
+
 import logging
+from typing import Any
 
 log = logging.getLogger(__name__)
 
-_SERVICE: Optional[Any] = None
+_SERVICE: Any | None = None
 
 
 def set_graphrag_service(svc: Any) -> None:

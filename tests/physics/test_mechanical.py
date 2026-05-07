@@ -8,21 +8,18 @@ Coverage:
   - NPSH / cavitation detection
   - ODE simulation: flow loss -> return temp rise
 """
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from backend.physics.base import Severity
 from backend.physics.mechanical import (
     HALL_FLOW_NOMINAL_M3_S,
     MechanicalModule,
-    PUMP_MIN_SUCTION_PRESSURE_BAR,
     _darcy_pressure_drop_pa,
 )
 
 
 class TestDarcyWeisbach:
-
     def test_dp_scales_with_velocity_squared(self):
         """Darcy-Weisbach: dp ~ v^2, so dp(2Q) / dp(Q) ~ 4."""
         dp1 = _darcy_pressure_drop_pa(flow_m3_s=0.05)
@@ -38,7 +35,6 @@ class TestDarcyWeisbach:
 
 
 class TestValidateNominal:
-
     def _nominal_measurements(self) -> dict:
         """Measurements at design-point equilibrium.
 
@@ -48,7 +44,6 @@ class TestValidateNominal:
             dT_primary = 5511e3 / (0.066 * 1000 * 4180) = 19.98 K
           So primary_out = 7 + 20 = 27.0 C
         """
-        import math
         dp_pa = _darcy_pressure_drop_pa(HALL_FLOW_NOMINAL_M3_S)
         return {
             "loop_flow_m3_s": HALL_FLOW_NOMINAL_M3_S,
@@ -74,16 +69,13 @@ class TestValidateNominal:
     def test_nominal_darcy_close(self):
         m = MechanicalModule()
         r = m.validate(self._nominal_measurements())
-        check = next(c for c in r.checks
-                     if c["name"] == "darcy_weisbach_loop_pressure_drop")
+        check = next(c for c in r.checks if c["name"] == "darcy_weisbach_loop_pressure_drop")
         assert check["passed"]
 
 
 class TestFaults:
-
     def _baseline(self):
         """Start from nominal and override specific fields."""
-        import math
         dp_pa = _darcy_pressure_drop_pa(HALL_FLOW_NOMINAL_M3_S)
         return {
             "loop_flow_m3_s": HALL_FLOW_NOMINAL_M3_S,
@@ -107,8 +99,7 @@ class TestFaults:
         # Triple the measured dp
         meas["loop_dp_measured_bar"] *= 3.0
         r = m.validate(meas)
-        dp_check = next(c for c in r.checks
-                        if c["name"] == "darcy_weisbach_loop_pressure_drop")
+        dp_check = next(c for c in r.checks if c["name"] == "darcy_weisbach_loop_pressure_drop")
         assert not dp_check["passed"]
         assert r.severity >= Severity.WARNING
         # Justification references darcy-weisbach
@@ -121,8 +112,7 @@ class TestFaults:
         meas = self._baseline()
         meas["loop_dp_measured_bar"] *= 0.3
         r = m.validate(meas)
-        dp_check = next(c for c in r.checks
-                        if c["name"] == "darcy_weisbach_loop_pressure_drop")
+        dp_check = next(c for c in r.checks if c["name"] == "darcy_weisbach_loop_pressure_drop")
         assert not dp_check["passed"]
 
     def test_cavitation_critical(self):
@@ -131,8 +121,7 @@ class TestFaults:
         meas = self._baseline()
         meas["pump_suction_bar"] = 0.5  # well below 1.2 bar
         r = m.validate(meas)
-        cav_check = next(c for c in r.checks
-                         if c["name"] == "pump_cavitation_margin")
+        cav_check = next(c for c in r.checks if c["name"] == "pump_cavitation_margin")
         assert not cav_check["passed"]
         assert r.severity == Severity.CRITICAL
 
@@ -143,8 +132,7 @@ class TestFaults:
         # At 60 Hz, expected ~45 kW. Give it 65 kW.
         meas["pump_power_kw"] = 65.0
         r = m.validate(meas)
-        pwr_check = next(c for c in r.checks
-                         if c["name"] == "pump_affinity_cubic_power")
+        pwr_check = next(c for c in r.checks if c["name"] == "pump_affinity_cubic_power")
         assert not pwr_check["passed"]
 
     def test_cdu_imbalance_flagged(self):
@@ -154,13 +142,11 @@ class TestFaults:
         # Make primary side way too cold a spread => lots less heat
         meas["cdu_primary_out_c"] = 14.0  # should be ~25
         r = m.validate(meas)
-        cdu_check = next(c for c in r.checks
-                         if c["name"] == "cdu_heat_balance")
+        cdu_check = next(c for c in r.checks if c["name"] == "cdu_heat_balance")
         assert not cdu_check["passed"]
 
 
 class TestSimulate:
-
     def test_nominal_flow_keeps_temp_stable(self):
         m = MechanicalModule()
         traj = m.simulate(
@@ -200,9 +186,9 @@ class TestSimulate:
         )
         # Under pump trip, return temp should rise significantly
         final = traj[-1]
-        assert final.state["loop_return_c"] > 45.0, (
-            f"Expected temp rise, got {final.state['loop_return_c']:.1f}"
-        )
+        assert (
+            final.state["loop_return_c"] > 45.0
+        ), f"Expected temp rise, got {final.state['loop_return_c']:.1f}"
         # Overtemp event should fire
         all_events = [e for snap in traj for e in snap.events]
         assert "secondary_loop_overtemp" in all_events

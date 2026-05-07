@@ -27,9 +27,9 @@ $endIdx = -1
 while ($i -lt $content.Length -and $openDivCount -gt 0) {
     $nextOpen = $content.IndexOf('<div', $i)
     $nextClose = $content.IndexOf('</div>', $i)
-    
+
     if ($nextClose -eq -1) { break }
-    
+
     if ($nextOpen -ne -1 -and $nextOpen -lt $nextClose) {
         $openDivCount++
         $i = $nextOpen + 4

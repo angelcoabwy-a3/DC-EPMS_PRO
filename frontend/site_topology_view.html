@@ -1,28 +1,28 @@
 <!--
 ═════════════════════════════════════════════════════════════════════════
   Site Topology View — Sprint S1b
-  
+
   HOW TO INTEGRATE INTO frontend/index.html:
-  
+
   1. SIDEBAR ENTRY: Add this line to the existing nav menu, between the
      'Co-Pilot' entry and any 'Settings' entry:
-     
+
        <li class="nav-item" data-view="site-topology">
          <span class="nav-icon">▦</span>
          <span class="nav-label">Site Topology</span>
        </li>
-  
+
   2. VIEW PANEL: Copy the <section id="view-site-topology"> block below
      and paste it into the <main> area of index.html, alongside the
      other <section id="view-..."> panels.
-  
+
   3. STYLES: Append the contents of the <style> block to assets/app.css
      (or keep inline if your existing setup uses inline styles).
-  
+
   4. SCRIPT: Append the contents of the <script> block to assets/app.js,
      and call SiteTopology.init() from your existing view-router when
      the user navigates to site-topology.
-  
+
   No external dependencies — uses fetch() and vanilla DOM APIs only.
   Compatible with the existing v8.1.0 cyan/anthracite/graphite theme.
 ═════════════════════════════════════════════════════════════════════════

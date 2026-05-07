@@ -20,17 +20,16 @@ Public API:
 The model is lazy-loaded: nothing happens at module import. The first call
 to .search() triggers model download (~90 MB on first run, cached after).
 """
+
 from __future__ import annotations
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional
-import re
+
 import logging
 import threading
+from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import yaml
-
 from knowledge_graph import KnowledgeNode
 
 log = logging.getLogger(__name__)
@@ -47,11 +46,12 @@ _EMBEDDING_DIM = 384  # all-MiniLM-L6-v2 produces 384-d vectors
 @dataclass
 class ChunkHit:
     """One search result."""
-    knowledge_id: str        # parent doc id
-    chunk_index: int         # position within doc
-    text: str                # raw chunk text
-    score: float             # cosine similarity (0..1)
-    knowledge_meta: dict     # frontmatter of parent doc
+
+    knowledge_id: str  # parent doc id
+    chunk_index: int  # position within doc
+    text: str  # raw chunk text
+    score: float  # cosine similarity (0..1)
+    knowledge_meta: dict  # frontmatter of parent doc
 
 
 def _split_frontmatter(raw: str) -> tuple[dict, str]:
@@ -60,7 +60,7 @@ def _split_frontmatter(raw: str) -> tuple[dict, str]:
         return {}, raw
     end = raw.index("---", 3)
     fm_text = raw[3:end].strip()
-    body = raw[end + 3:].lstrip("\n")
+    body = raw[end + 3 :].lstrip("\n")
     meta = yaml.safe_load(fm_text) or {}
     return meta, body
 
@@ -120,7 +120,7 @@ class GraphRAGIndex:
         self.corpus_dir = corpus_dir
         self._docs: list[KnowledgeNode] = []
         self._chunks: list[dict] = []  # each: {knowledge_id, chunk_index, text}
-        self._embeddings: Optional[np.ndarray] = None  # (N, dim) normalized
+        self._embeddings: np.ndarray | None = None  # (N, dim) normalized
         self._faiss_index = None  # type: ignore
         self._model = None  # SentenceTransformer (lazy)
         self._loaded = False
@@ -143,7 +143,9 @@ class GraphRAGIndex:
         with self._lock:
             if self._loaded:
                 return
-            log.info("[graphrag] lazy-loading index (first query triggers model download if cache missing)...")
+            log.info(
+                "[graphrag] lazy-loading index (first query triggers model download if cache missing)..."
+            )
             self._docs = load_knowledge_corpus(self.corpus_dir)
             self._build_chunks()
             self._build_embeddings()
@@ -160,15 +162,18 @@ class GraphRAGIndex:
     def _build_chunks(self) -> None:
         for kn in self._docs:
             for i, c in enumerate(_chunk_text(kn.body_text)):
-                self._chunks.append({
-                    "knowledge_id": kn.id,
-                    "chunk_index": i,
-                    "text": c,
-                })
+                self._chunks.append(
+                    {
+                        "knowledge_id": kn.id,
+                        "chunk_index": i,
+                        "text": c,
+                    }
+                )
 
     def _build_embeddings(self) -> None:
         # Local import to defer heavy module load until first use
         from sentence_transformers import SentenceTransformer
+
         self._model = SentenceTransformer(_EMBEDDING_MODEL_NAME)
         texts = [c["text"] for c in self._chunks]
         if not texts:
@@ -188,6 +193,7 @@ class GraphRAGIndex:
             return
         try:
             import faiss  # type: ignore
+
             index = faiss.IndexFlatIP(_EMBEDDING_DIM)
             index.add(self._embeddings)
             self._faiss_index = index
@@ -199,7 +205,7 @@ class GraphRAGIndex:
         self,
         query: str,
         k: int = 5,
-        filter_jurisdictions: Optional[list[str]] = None,
+        filter_jurisdictions: list[str] | None = None,
     ) -> list[ChunkHit]:
         """Cosine-similarity search.
 
@@ -224,7 +230,7 @@ class GraphRAGIndex:
 
         if self._faiss_index is not None:
             scores, indices = self._faiss_index.search(q_vec, search_k)
-            candidates = list(zip(indices[0].tolist(), scores[0].tolist()))
+            candidates = list(zip(indices[0].tolist(), scores[0].tolist(), strict=False))
         else:
             sims = (self._embeddings @ q_vec.T).flatten()
             top = np.argsort(-sims)[:search_k]
@@ -255,13 +261,15 @@ class GraphRAGIndex:
                 "voltage_class": parent.voltage_class,
                 "tags": parent.tags,
             }
-            hits.append(ChunkHit(
-                knowledge_id=chunk["knowledge_id"],
-                chunk_index=chunk["chunk_index"],
-                text=chunk["text"],
-                score=float(score),
-                knowledge_meta=meta,
-            ))
+            hits.append(
+                ChunkHit(
+                    knowledge_id=chunk["knowledge_id"],
+                    chunk_index=chunk["chunk_index"],
+                    text=chunk["text"],
+                    score=float(score),
+                    knowledge_meta=meta,
+                )
+            )
             if len(hits) >= k:
                 break
         return hits
@@ -273,13 +281,15 @@ class GraphRAGIndex:
             "n_chunks": len(self._chunks),
             "embedding_dim": _EMBEDDING_DIM,
             "embedding_model": _EMBEDDING_MODEL_NAME,
-            "backend": "faiss" if self._faiss_index is not None else ("numpy" if self._loaded else "not_loaded"),
+            "backend": "faiss"
+            if self._faiss_index is not None
+            else ("numpy" if self._loaded else "not_loaded"),
         }
 
 
 # ── module-level singleton ──
 _DEFAULT_CORPUS = Path(__file__).parent.parent / "config" / "knowledge"
-_INDEX: Optional[GraphRAGIndex] = None
+_INDEX: GraphRAGIndex | None = None
 
 
 def get_index() -> GraphRAGIndex:

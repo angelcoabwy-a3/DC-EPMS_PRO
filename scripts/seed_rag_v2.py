@@ -22,10 +22,10 @@ Usage:
     python scripts/seed_rag_v2.py --clean  # clears collection first
     python scripts/seed_rag_v2.py --tier 1 # only tier 1 docs
 """
+
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -34,7 +34,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from backend.rag_service import RAGService  # noqa: E402
-
 
 CORPUS_ROOT = ROOT / "data" / "corpus"
 CHROMA_PATH = str(ROOT / "data" / "chroma_db")
@@ -160,9 +159,7 @@ def index_corpus(
             # Standards may come as list
             standard_refs = metadata.get("standard_refs", "")
             if isinstance(standard_refs, list):
-                metadata["standard_refs"] = ",".join(
-                    str(s) for s in standard_refs
-                )
+                metadata["standard_refs"] = ",".join(str(s) for s in standard_refs)
             applies_to = metadata.get("applies_to", "")
             if isinstance(applies_to, list):
                 metadata["applies_to"] = ",".join(str(a) for a in applies_to)
@@ -187,19 +184,19 @@ def index_corpus(
     print("=" * 60)
     print(f"Indexed: {stats['indexed']} / {stats['total_found']}")
     print(f"Skipped: {stats['skipped']}  Errors: {stats['errors']}")
-    print(f"By tier: T1={stats['by_tier'].get(1, 0)} "
-          f"T2={stats['by_tier'].get(2, 0)} "
-          f"T3={stats['by_tier'].get(3, 0)} "
-          f"T4={stats['by_tier'].get(4, 0)}")
+    print(
+        f"By tier: T1={stats['by_tier'].get(1, 0)} "
+        f"T2={stats['by_tier'].get(2, 0)} "
+        f"T3={stats['by_tier'].get(3, 0)} "
+        f"T4={stats['by_tier'].get(4, 0)}"
+    )
     print(f"Collection size: {rag.count()}")
 
     return stats
 
 
 def main():
-    p = argparse.ArgumentParser(
-        description="DC-EPMS PRO tier-aware RAG indexer"
-    )
+    p = argparse.ArgumentParser(description="DC-EPMS PRO tier-aware RAG indexer")
     p.add_argument(
         "--clean",
         action="store_true",

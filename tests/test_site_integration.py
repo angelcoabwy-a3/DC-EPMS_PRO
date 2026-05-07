@@ -9,20 +9,21 @@ Three groups:
 Run:
     pytest tests/test_site_integration.py -v
 """
-import sys
+
 import pathlib
+import sys
+
 import pytest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
+import site_routes
+from agent_site_tool import TOOL_DEFINITION, tool_query_site_model
+from cmms_site_enrichment import enrich_wo_with_location
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-import site_routes
 from site_model import reset_site_model
-from cmms_site_enrichment import enrich_wo_with_location
-from agent_site_tool import tool_query_site_model, TOOL_DEFINITION
 
 
 @pytest.fixture(autouse=True)
@@ -46,7 +47,6 @@ def client():
 #  HTTP endpoints
 # ═══════════════════════════════════════════════════════════════════════
 class TestSiteRoutes:
-
     def test_metadata_returns_tier_iv(self, client):
         r = client.get("/api/site/metadata")
         assert r.status_code == 200
@@ -77,7 +77,7 @@ class TestSiteRoutes:
         r = client.get("/api/site/tree/building-a")
         data = r.json()
         dh_a = next(rm for rm in data["rooms"] if rm["id"] == "dh-a")
-        assert len(dh_a["rows"]) == 3      # row-a-01, 02, 03
+        assert len(dh_a["rows"]) == 3  # row-a-01, 02, 03
         row_a_01 = next(row for row in dh_a["rows"] if row["id"] == "row-a-01")
         assert len(row_a_01["racks"]) == 10
         assert "rack_a_01_01" in row_a_01["racks"]
@@ -123,7 +123,7 @@ class TestSiteRoutes:
 
     def test_components_invalid_limit_400(self, client):
         r = client.get("/api/site/components?limit=99999")
-        assert r.status_code == 422   # FastAPI validates via Query(le=1000)
+        assert r.status_code == 422  # FastAPI validates via Query(le=1000)
 
     def test_get_component_chiller_1(self, client):
         r = client.get("/api/site/components/chiller_1")
@@ -215,7 +215,6 @@ class TestSiteRoutes:
 #  CMMS WO enrichment
 # ═══════════════════════════════════════════════════════════════════════
 class TestCMMSEnrichment:
-
     def test_enrichment_adds_location_for_chiller(self):
         wo = {
             "title": "Chiller 1 quarterly PM",
@@ -265,20 +264,23 @@ class TestCMMSEnrichment:
 #  Agent site tool
 # ═══════════════════════════════════════════════════════════════════════
 class TestAgentSiteTool:
-
     def test_tool_definition_has_required_fields(self):
         assert TOOL_DEFINITION["name"] == "query_site_model"
         assert "description" in TOOL_DEFINITION
         schema = TOOL_DEFINITION["input_schema"]
         assert "operation" in schema["properties"]
         assert schema["properties"]["operation"]["enum"] == [
-            "locate", "power_chain", "loto_impact", "search",
+            "locate",
+            "power_chain",
+            "loto_impact",
+            "search",
         ]
         assert "operation" in schema["required"]
 
     def test_locate_operation_returns_path(self):
         r = tool_query_site_model(
-            operation="locate", canonical_id="chiller_1",
+            operation="locate",
+            canonical_id="chiller_1",
             project_root=PROJECT_ROOT,
         )
         assert r["success"] is True
@@ -287,7 +289,8 @@ class TestAgentSiteTool:
 
     def test_locate_unknown_returns_error_not_raise(self):
         r = tool_query_site_model(
-            operation="locate", canonical_id="phantom",
+            operation="locate",
+            canonical_id="phantom",
             project_root=PROJECT_ROOT,
         )
         assert r["success"] is False
@@ -295,14 +298,16 @@ class TestAgentSiteTool:
 
     def test_locate_missing_id_returns_error(self):
         r = tool_query_site_model(
-            operation="locate", project_root=PROJECT_ROOT,
+            operation="locate",
+            project_root=PROJECT_ROOT,
         )
         assert r["success"] is False
         assert "required" in r["error"].lower()
 
     def test_power_chain_operation(self):
         r = tool_query_site_model(
-            operation="power_chain", canonical_id="rack_a_01_01",
+            operation="power_chain",
+            canonical_id="rack_a_01_01",
             project_root=PROJECT_ROOT,
         )
         assert r["success"] is True
@@ -311,7 +316,8 @@ class TestAgentSiteTool:
 
     def test_loto_impact_operation_safe_loto(self):
         r = tool_query_site_model(
-            operation="loto_impact", canonical_id="rpp_a_01",
+            operation="loto_impact",
+            canonical_id="rpp_a_01",
             project_root=PROJECT_ROOT,
         )
         assert r["success"] is True
@@ -322,14 +328,16 @@ class TestAgentSiteTool:
 
     def test_loto_impact_includes_location(self):
         r = tool_query_site_model(
-            operation="loto_impact", canonical_id="rpp_a_01",
+            operation="loto_impact",
+            canonical_id="rpp_a_01",
             project_root=PROJECT_ROOT,
         )
         assert "Electrical Room A" in r["summary"]["target_location"]
 
     def test_search_with_query_finds_chillers(self):
         r = tool_query_site_model(
-            operation="search", search_query="chiller",
+            operation="search",
+            search_query="chiller",
             project_root=PROJECT_ROOT,
         )
         assert r["success"] is True
@@ -339,7 +347,8 @@ class TestAgentSiteTool:
 
     def test_search_with_type_filter(self):
         r = tool_query_site_model(
-            operation="search", type_filter="genset",
+            operation="search",
+            type_filter="genset",
             project_root=PROJECT_ROOT,
         )
         assert r["success"] is True
@@ -347,8 +356,10 @@ class TestAgentSiteTool:
 
     def test_search_combined_query_and_type(self):
         r = tool_query_site_model(
-            operation="search", search_query="rack_a_01",
-            type_filter="it_rack", project_root=PROJECT_ROOT,
+            operation="search",
+            search_query="rack_a_01",
+            type_filter="it_rack",
+            project_root=PROJECT_ROOT,
         )
         assert r["success"] is True
         # rack_a_01_01 through rack_a_01_10 = 10
@@ -356,7 +367,8 @@ class TestAgentSiteTool:
 
     def test_search_no_match_returns_empty(self):
         r = tool_query_site_model(
-            operation="search", search_query="zzznonexistent",
+            operation="search",
+            search_query="zzznonexistent",
             project_root=PROJECT_ROOT,
         )
         assert r["success"] is True
@@ -364,7 +376,8 @@ class TestAgentSiteTool:
 
     def test_invalid_operation_returns_error(self):
         r = tool_query_site_model(
-            operation="invalid_op", canonical_id="chiller_1",
+            operation="invalid_op",
+            canonical_id="chiller_1",
             project_root=PROJECT_ROOT,
         )
         assert r["success"] is False
@@ -373,7 +386,8 @@ class TestAgentSiteTool:
     def test_search_truncation_flag(self):
         # Search with no filter returns ALL components; check truncation
         r = tool_query_site_model(
-            operation="search", project_root=PROJECT_ROOT,
+            operation="search",
+            project_root=PROJECT_ROOT,
         )
         # We have ~50+ components total
         if r["count"] >= 50:

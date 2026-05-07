@@ -1,5 +1,5 @@
 """
-DC-EPMS PRO — Agent Engine (NeMo Guardrails + Gemma/Claude streaming)
+DC-EPMS PRO  -  Agent Engine (NeMo Guardrails + Gemma/Claude streaming)
 ======================================================================
 Dual-AI orchestration:
   - Gemma 4 (local via LM Studio) for routine CET queries
@@ -10,27 +10,28 @@ Dual-AI orchestration:
 VRAM safety:
   - No long-lived conversation state on GPU
   - Each stream() call is independent
-  - Context is reset per request — nothing accumulates
+  - Context is reset per request  -  nothing accumulates
 """
+
 from __future__ import annotations
 
-import os
 import json
-import asyncio
 import logging
-from typing import AsyncIterator, Optional
+import os
+from collections.abc import AsyncIterator
 
 import httpx
 
 log = logging.getLogger("dc-epms.agent")
 
-# NeMo Guardrails is optional — agent works without it if uninstalled
+# NeMo Guardrails is optional  -  agent works without it if uninstalled
 try:
     from nemoguardrails import LLMRails, RailsConfig
+
     HAS_NEMO = True
 except ImportError:
     HAS_NEMO = False
-    log.info("NeMo Guardrails not installed — agent runs without input/output rails")
+    log.info("NeMo Guardrails not installed  -  agent runs without input/output rails")
 
 
 SYSTEM_PROMPT = """You are the Edge Operations expert AI for
@@ -70,14 +71,14 @@ class AgentEngine:
         lm_studio_url: str,
         anthropic_api_key: str,
         rag_service=None,
-        config_dir: Optional[str] = None,
+        config_dir: str | None = None,
     ):
-        self.lm_studio_url     = lm_studio_url.rstrip("/")
+        self.lm_studio_url = lm_studio_url.rstrip("/")
         self.anthropic_api_key = anthropic_api_key
-        self.rag               = rag_service
-        self.config_dir        = config_dir
-        self._rails            = None
-        self._gemma_model_id   = None
+        self.rag = rag_service
+        self.config_dir = config_dir
+        self._rails = None
+        self._gemma_model_id = None
         if HAS_NEMO and config_dir:
             self._init_rails(config_dir)
 
@@ -158,16 +159,18 @@ class AgentEngine:
                 snippet = text[:140].replace("\n", " ").strip()
                 if len(text) > 140:
                     snippet += "..."
-                out.append({
-                    "doc_id":   r.get("doc_id", ""),
-                    "tier":     r.get("tier", meta.get("tier", 4)),
-                    "priority": meta.get("priority", ""),
-                    "standard": meta.get("standard", ""),
-                    "score":    round(r.get("score", 0.0), 3),
-                    "similarity": round(r.get("similarity", 0.0), 3),
-                    "boost":    round(r.get("boost", 0.0), 3),
-                    "snippet":  snippet,
-                })
+                out.append(
+                    {
+                        "doc_id": r.get("doc_id", ""),
+                        "tier": r.get("tier", meta.get("tier", 4)),
+                        "priority": meta.get("priority", ""),
+                        "standard": meta.get("standard", ""),
+                        "score": round(r.get("score", 0.0), 3),
+                        "similarity": round(r.get("similarity", 0.0), 3),
+                        "boost": round(r.get("boost", 0.0), 3),
+                        "snippet": snippet,
+                    }
+                )
             return out
         except Exception as e:
             log.debug("get_rag_sources failed: %s", e)
@@ -176,7 +179,7 @@ class AgentEngine:
     async def stream(
         self,
         query: str,
-        context: Optional[dict] = None,
+        context: dict | None = None,
         max_tokens: int = 500,
         model_hint: str = "auto",
     ) -> AsyncIterator[str]:
@@ -185,24 +188,24 @@ class AgentEngine:
         model_hint: 'auto' | 'gemma' | 'claude'
           auto: prefer Gemma for short queries, Claude for complex reasoning
         """
-        # ── Guardrails: input filter ─────────────────────────
+        # -- Guardrails: input filter -------------------------
         # Simple input length guard (NeMo rails would expand this)
         if len(query) > 4000:
-            yield "[Input too long — max 4000 chars]"
+            yield "[Input too long  -  max 4000 chars]"
             return
         if not query.strip():
             yield "[Empty query]"
             return
 
-        # ── Augment with RAG if available ────────────────────
+        # -- Augment with RAG if available --------------------
         augmented_query = self._augment_with_rag(query)
 
-        # ── Route to Gemma or Claude ─────────────────────────
+        # -- Route to Gemma or Claude -------------------------
         use_gemma = False
         if model_hint == "gemma":
             use_gemma = True
         elif model_hint == "auto":
-            # Auto-route: short + routine → Gemma; complex → Claude
+            # Auto-route: short + routine -> Gemma; complex -> Claude
             ql = query.lower()
             routine_keywords = ["define", "what is", "list", "summary", "procedure", "step"]
             use_gemma = any(k in ql for k in routine_keywords) and len(query) < 500
@@ -219,7 +222,7 @@ class AgentEngine:
             async for token in self._stream_claude(augmented_query, max_tokens):
                 yield token
 
-    # ── Gemma streaming via LM Studio OpenAI-compatible API ──
+    # -- Gemma streaming via LM Studio OpenAI-compatible API --
     async def _stream_gemma(self, prompt: str, max_tokens: int) -> AsyncIterator[str]:
         if not self._gemma_model_id:
             await self.probe_gemma()
@@ -227,18 +230,19 @@ class AgentEngine:
 
         url = f"{self.lm_studio_url}/v1/chat/completions"
         payload = {
-            "model":      model,
+            "model": model,
             "max_tokens": max_tokens,
-            "stream":     True,
+            "stream": True,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": prompt},
+                {"role": "user", "content": prompt},
             ],
         }
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
-                async with client.stream("POST", url, json=payload,
-                                         headers={"Content-Type": "application/json"}) as resp:
+                async with client.stream(
+                    "POST", url, json=payload, headers={"Content-Type": "application/json"}
+                ) as resp:
                     if resp.status_code != 200:
                         yield f"[Gemma error {resp.status_code}]"
                         return
@@ -259,7 +263,7 @@ class AgentEngine:
         except Exception as e:
             yield f"[Gemma stream error: {e}]"
 
-    # ── Claude streaming via Anthropic API ───────────────────
+    # -- Claude streaming via Anthropic API -------------------
     async def _stream_claude(self, prompt: str, max_tokens: int) -> AsyncIterator[str]:
         if not self.anthropic_api_key:
             yield "[Claude API key not configured]"
@@ -267,15 +271,15 @@ class AgentEngine:
 
         url = "https://api.anthropic.com/v1/messages"
         payload = {
-            "model":      "claude-sonnet-4-5",
+            "model": "claude-sonnet-4-5",
             "max_tokens": max_tokens,
-            "system":     SYSTEM_PROMPT,
-            "stream":     True,
-            "messages":   [{"role": "user", "content": prompt}],
+            "system": SYSTEM_PROMPT,
+            "stream": True,
+            "messages": [{"role": "user", "content": prompt}],
         }
         headers = {
-            "Content-Type":      "application/json",
-            "X-API-Key":         self.anthropic_api_key,
+            "Content-Type": "application/json",
+            "X-API-Key": self.anthropic_api_key,
             "Anthropic-Version": "2023-06-01",
         }
         try:
@@ -301,7 +305,7 @@ class AgentEngine:
         except Exception as e:
             yield f"[Claude stream error: {e}]"
 
-    # ── PUE advisory (autonomous alert) ──────────────────────
+    # -- PUE advisory (autonomous alert) ----------------------
     async def trigger_pue_advisory(self, telemetry_point: dict):
         """Fire autonomous advisory when PUE > 1.4.
 
@@ -314,7 +318,7 @@ class AgentEngine:
         query = (
             f"PUE has exceeded efficiency threshold: current PUE = {pue:.3f} "
             f"(target < 1.40 per A-Cubed Semiconductor efficiency standard). "
-            f"Hall temperature: {hall:.1f}°C. Active scenario: {scenario}. "
+            f"Hall temperature: {hall:.1f}degC. Active scenario: {scenario}. "
             f"Provide a 2-sentence root-cause hypothesis and immediate action."
         )
         tokens = []

@@ -13,12 +13,12 @@ Tier hierarchy (higher priority = retrieved first for safety queries):
 Safety-first retrieval: when query contains safety keywords, Tier 1
 docs are boosted in ranking. See SAFETY_KEYWORDS for triggers.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import threading
-from typing import Optional
 
 try:
     import chromadb
@@ -31,13 +31,40 @@ log = logging.getLogger("dc-epms.rag")
 
 # ── Safety keyword triggers (boost Tier 1 retrieval) ─────────────────
 SAFETY_KEYWORDS = {
-    "loto", "lockout", "tagout", "arc flash", "arc-flash", "arcflash",
-    "energized", "ppe", "electrocution", "shock", "isolation",
-    "confined space", "epo", "emergency power off", "shunt trip",
-    "fire", "smoke", "suppression", "vesda", "evacuation",
-    "hazmat", "hazard", "safety", "emergency", "injury", "victim",
-    "fatality", "lethal", "dangerous", "combustion",
-    "class 0", "class 2", "nfpa 70e", "csa z462",
+    "loto",
+    "lockout",
+    "tagout",
+    "arc flash",
+    "arc-flash",
+    "arcflash",
+    "energized",
+    "ppe",
+    "electrocution",
+    "shock",
+    "isolation",
+    "confined space",
+    "epo",
+    "emergency power off",
+    "shunt trip",
+    "fire",
+    "smoke",
+    "suppression",
+    "vesda",
+    "evacuation",
+    "hazmat",
+    "hazard",
+    "safety",
+    "emergency",
+    "injury",
+    "victim",
+    "fatality",
+    "lethal",
+    "dangerous",
+    "combustion",
+    "class 0",
+    "class 2",
+    "nfpa 70e",
+    "csa z462",
 }
 
 
@@ -50,9 +77,7 @@ class RAGService:
         collection_name: str = "epms_knowledge",
     ):
         if chromadb is None:
-            raise RuntimeError(
-                "chromadb not installed - run: pip install chromadb"
-            )
+            raise RuntimeError("chromadb not installed - run: pip install chromadb")
         self.chroma_path = chroma_path
         self.collection_name = collection_name
         self._lock = threading.Lock()
@@ -84,7 +109,7 @@ class RAGService:
         self,
         doc_id: str,
         text: str,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> None:
         """Insert or replace a document.
 
@@ -126,8 +151,8 @@ class RAGService:
         self,
         question: str,
         n_results: int = 5,
-        tier_filter: Optional[int] = None,
-        min_priority: Optional[str] = None,
+        tier_filter: int | None = None,
+        min_priority: str | None = None,
     ) -> dict:
         """Semantic search with tier-based priority boosting."""
         safety_boost = self._query_needs_safety_priority(question)
@@ -162,7 +187,7 @@ class RAGService:
 
         # Convert distances to similarity scores, apply tier boost
         results = []
-        for doc_id, text, meta, dist in zip(ids, docs, metas, dists):
+        for doc_id, text, meta, dist in zip(ids, docs, metas, dists, strict=False):
             similarity = 1.0 - (dist or 0.0)
             try:
                 tier = int((meta or {}).get("tier", 4))
@@ -172,9 +197,7 @@ class RAGService:
 
             if min_priority:
                 priority_order = {"medium": 0, "high": 1, "critical": 2}
-                if priority_order.get(priority, 0) < priority_order.get(
-                    min_priority, 0
-                ):
+                if priority_order.get(priority, 0) < priority_order.get(min_priority, 0):
                     continue
 
             boost = 0.0
@@ -264,11 +287,11 @@ class RAGService:
 
 # ── Module-level convenience ────────────────────────────────────────
 
-_service_instance: Optional[RAGService] = None
+_service_instance: RAGService | None = None
 
 
 def get_service(
-    chroma_path: Optional[str] = None,
+    chroma_path: str | None = None,
 ) -> RAGService:
     """Get or create the singleton RAG service."""
     global _service_instance

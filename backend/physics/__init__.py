@@ -25,18 +25,19 @@ four modules and publishes:
   - First-law (energy-balance) cross-check between modules
   - Site Health Index (min() of per-module health + severity modifier)
 """
+
 from __future__ import annotations
 
 from backend.physics.base import (
     PhysicsModule,
-    ValidationResult,
-    StateSnapshot,
     Severity,
+    StateSnapshot,
+    ValidationResult,
 )
-from backend.physics.it_thermal import ITThermalModule
-from backend.physics.mechanical import MechanicalModule
 from backend.physics.electrical import ElectricalModule
 from backend.physics.heat_rejection import HeatRejectionModule
+from backend.physics.it_thermal import ITThermalModule
+from backend.physics.mechanical import MechanicalModule
 
 __all__ = [
     "PhysicsModule",

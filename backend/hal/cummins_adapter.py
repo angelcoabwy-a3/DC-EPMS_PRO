@@ -19,13 +19,13 @@ the _REGISTER_MAP dict.
   have non-trivially different maps.
 ═══════════════════════════════════════════════════════════════════════
 """
+
 from __future__ import annotations
 
-import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any
 
-from . import HardwareAdapter, FailureMode, ModbusBackend
+from . import FailureMode, HardwareAdapter, ModbusBackend
 
 log = logging.getLogger(__name__)
 
@@ -44,31 +44,28 @@ log = logging.getLogger(__name__)
 # PCC 2100/3300 Series. NOT the older PCC1300 map.
 _REGISTER_MAP: dict[str, tuple[int, int, float, str]] = {
     # ── Status / Mode ────────────────────────────────────────────────
-    "mode":              (40001, 1, 1,    "enum"),  # 0=OFF 1=AUTO 2=MANUAL 3=TEST
-    "running_state":     (40002, 1, 1,    "enum"),  # 0=stop 1=start 2=run 3=cooldown
-    "fault_code":        (40003, 1, 1,    "u16"),
-
+    "mode": (40001, 1, 1, "enum"),  # 0=OFF 1=AUTO 2=MANUAL 3=TEST
+    "running_state": (40002, 1, 1, "enum"),  # 0=stop 1=start 2=run 3=cooldown
+    "fault_code": (40003, 1, 1, "u16"),
     # ── Electrical output ────────────────────────────────────────────
-    "kw_output":         (40010, 2, 1,    "u32"),   # kW total
-    "kvar_output":       (40012, 2, 1,    "u32"),   # kVAR
-    "hertz":             (40014, 1, 100,  "u16"),   # 0.01 Hz resolution
-    "voltage_l_l":       (40015, 1, 1,    "u16"),   # L-L average, V
-    "voltage_l_n":       (40016, 1, 1,    "u16"),   # L-N average, V
-    "current_avg":       (40017, 1, 1,    "u16"),   # A
-
+    "kw_output": (40010, 2, 1, "u32"),  # kW total
+    "kvar_output": (40012, 2, 1, "u32"),  # kVAR
+    "hertz": (40014, 1, 100, "u16"),  # 0.01 Hz resolution
+    "voltage_l_l": (40015, 1, 1, "u16"),  # L-L average, V
+    "voltage_l_n": (40016, 1, 1, "u16"),  # L-N average, V
+    "current_avg": (40017, 1, 1, "u16"),  # A
     # ── Engine ───────────────────────────────────────────────────────
-    "fuel_pct":          (40020, 1, 10,   "u16"),   # 0.1% resolution
-    "coolant_temp_c":    (40021, 1, 10,   "i16"),   # 0.1 C resolution
-    "oil_pressure_kpa":  (40022, 1, 1,    "u16"),
-    "engine_speed_rpm":  (40023, 1, 1,    "u16"),
-    "battery_voltage_v": (40024, 1, 100,  "u16"),   # 0.01 V resolution
-    "run_hours":         (40025, 2, 10,   "u32"),   # 0.1 hour resolution
-
+    "fuel_pct": (40020, 1, 10, "u16"),  # 0.1% resolution
+    "coolant_temp_c": (40021, 1, 10, "i16"),  # 0.1 C resolution
+    "oil_pressure_kpa": (40022, 1, 1, "u16"),
+    "engine_speed_rpm": (40023, 1, 1, "u16"),
+    "battery_voltage_v": (40024, 1, 100, "u16"),  # 0.01 V resolution
+    "run_hours": (40025, 2, 10, "u32"),  # 0.1 hour resolution
     # ── Commands (writable holding registers) ────────────────────────
-    "cmd_start":         (40100, 1, 1,    "u16"),   # write 1 to start
-    "cmd_stop":          (40101, 1, 1,    "u16"),   # write 1 to stop
-    "cmd_mode_set":      (40102, 1, 1,    "u16"),   # write 0=OFF 1=AUTO 2=MAN 3=TEST
-    "cmd_reset_fault":   (40103, 1, 1,    "u16"),   # write 1 to reset
+    "cmd_start": (40100, 1, 1, "u16"),  # write 1 to start
+    "cmd_stop": (40101, 1, 1, "u16"),  # write 1 to stop
+    "cmd_mode_set": (40102, 1, 1, "u16"),  # write 0=OFF 1=AUTO 2=MAN 3=TEST
+    "cmd_reset_fault": (40103, 1, 1, "u16"),  # write 1 to reset
 }
 
 # Mode enumeration for human-readable conversion
@@ -138,7 +135,7 @@ class CumminsAdapter(HardwareAdapter):
                     continue
                 address, count, scale, dtype = _REGISTER_MAP[field]
                 raw = await self.backend.read_holding_registers(
-                    address=address - 40001,    # Modbus uses 0-based addressing internally
+                    address=address - 40001,  # Modbus uses 0-based addressing internally
                     count=count,
                     slave=slave,
                 )
@@ -153,9 +150,7 @@ class CumminsAdapter(HardwareAdapter):
         self._cache[target] = result
         return result
 
-    async def write(
-        self, target: str, command: str, payload: Optional[dict] = None
-    ) -> dict:
+    async def write(self, target: str, command: str, payload: dict | None = None) -> dict:
         """Translate canonical command to Modbus write.
 
         Supported canonical commands:
@@ -180,7 +175,7 @@ class CumminsAdapter(HardwareAdapter):
                 await self.backend.write_register(address=addr, value=1, slave=slave)
 
             elif command == "SET_MODE":
-                mode_int = int(payload.get("mode_int", 1))    # default AUTO
+                mode_int = int(payload.get("mode_int", 1))  # default AUTO
                 if mode_int not in _MODE_ENUM:
                     raise ValueError(f"mode_int {mode_int} not in {_MODE_ENUM}")
                 addr = _REGISTER_MAP["cmd_mode_set"][0] - 40001
@@ -208,7 +203,9 @@ class CumminsAdapter(HardwareAdapter):
 
     # ── Decoding helpers ─────────────────────────────────────────────
     @staticmethod
-    def _decode(regs: list[int], count: int, scale: float, dtype: str, address_hint: int = -1) -> Any:
+    def _decode(
+        regs: list[int], count: int, scale: float, dtype: str, address_hint: int = -1
+    ) -> Any:
         if regs is None or len(regs) < count:
             return None
 
@@ -226,7 +223,7 @@ class CumminsAdapter(HardwareAdapter):
             # Mode register specifically maps to string for verify_state compatibility
             # with vendor-agnostic procedure YAMLs. Other enum fields would need
             # similar mapping if they participate in verify_state checks.
-            if address_hint == 0:    # mode register at 40001 (offset 0)
+            if address_hint == 0:  # mode register at 40001 (offset 0)
                 return _MODE_ENUM.get(raw, str(raw))
             return raw
         else:
@@ -242,6 +239,7 @@ class CumminsAdapter(HardwareAdapter):
 # ─────────────────────────────────────────────────────────────────────────
 class _ModbusReadResponse:
     """Mimics pymodbus response object."""
+
     def __init__(self, registers: list[int]):
         self.registers = registers
 
@@ -251,7 +249,7 @@ class MockModbusBackend:
     mode. Never touches a network. Stores register state internally so
     write-then-read round trips work."""
 
-    def __init__(self, initial_state: Optional[dict[int, dict[int, int]]] = None):
+    def __init__(self, initial_state: dict[int, dict[int, int]] | None = None):
         # Structure: {slave_id: {address: value_u16}}
         # All registers default to 0 if not initialized.
         self._state: dict[int, dict[int, int]] = initial_state or {}

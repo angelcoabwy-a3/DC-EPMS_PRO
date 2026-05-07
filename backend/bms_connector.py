@@ -32,14 +32,15 @@ Writable tags accept commands (e.g., HVAC.CHWP1.SPEED setpoint changes).
 Each write is logged with timestamp + originator for audit purposes
 (NFPA 70B / NIST SP 800-82 OT operations).
 """
+
 from __future__ import annotations
 
 import logging
 import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -50,19 +51,21 @@ log = logging.getLogger("dc-epms.bms")
 #  Data classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class BMSTag:
     """Single BMS tag definition + cached current value."""
+
     id: str
-    protocol: str           # "BACnet" | "Modbus" | "OPC-UA"
-    object_type: str        # "AI"|"AO"|"BI"|"BO"|"MV"|"AV"|"HR"|"IR"
+    protocol: str  # "BACnet" | "Modbus" | "OPC-UA"
+    object_type: str  # "AI"|"AO"|"BI"|"BO"|"MV"|"AV"|"HR"|"IR"
     units: str
     source: dict
     writable: bool = False
     description: str = ""
     location: str = ""
-    alarm_band: Optional[list] = None
-    enum_values: Optional[list] = None
+    alarm_band: list | None = None
+    enum_values: list | None = None
 
     # Cached current value
     current_value: Any = None
@@ -115,6 +118,7 @@ class BMSTag:
 @dataclass
 class WriteAuditEntry:
     """Audit log entry for a tag write."""
+
     ts: float
     tag_id: str
     old_value: Any
@@ -127,6 +131,7 @@ class WriteAuditEntry:
 # ---------------------------------------------------------------------------
 #  BMSConnector
 # ---------------------------------------------------------------------------
+
 
 class BMSConnector:
     """Stub BMS connector that resolves tags from telemetry + physics.
@@ -172,8 +177,11 @@ class BMSConnector:
             except Exception as e:
                 log.warning("Skipping invalid tag %s: %s", t.get("id"), e)
         self.categories = data.get("categories", {})
-        log.info("BMS connector loaded %d tags across %d categories",
-                 len(self.tags), len(self.categories))
+        log.info(
+            "BMS connector loaded %d tags across %d categories",
+            len(self.tags),
+            len(self.categories),
+        )
 
     # ------------------------------------------------------------------ #
     #  Tag value resolution
@@ -244,9 +252,7 @@ class BMSConnector:
         ts = time.time()
         for tag in self.tags.values():
             try:
-                value = self._resolve_source(
-                    tag.source, telemetry, physics_metrics
-                )
+                value = self._resolve_source(tag.source, telemetry, physics_metrics)
                 # Round numerics for display sanity
                 if isinstance(value, float):
                     if math.isfinite(value):
@@ -262,12 +268,12 @@ class BMSConnector:
     #  Public read/write API
     # ------------------------------------------------------------------ #
 
-    def read(self, tag_id: str) -> Optional[BMSTag]:
+    def read(self, tag_id: str) -> BMSTag | None:
         return self.tags.get(tag_id)
 
     def list_tags(
         self,
-        category: Optional[str] = None,
+        category: str | None = None,
     ) -> list[BMSTag]:
         if category is None:
             return sorted(self.tags.values(), key=lambda t: t.id)
@@ -289,8 +295,12 @@ class BMSConnector:
         tag = self.tags.get(tag_id)
         if not tag:
             entry = WriteAuditEntry(
-                ts=time.time(), tag_id=tag_id, old_value=None,
-                new_value=value, user=user, success=False,
+                ts=time.time(),
+                tag_id=tag_id,
+                old_value=None,
+                new_value=value,
+                user=user,
+                success=False,
                 error="Tag not found",
             )
             self.write_audit_log.append(entry)
@@ -298,8 +308,12 @@ class BMSConnector:
 
         if not tag.writable:
             entry = WriteAuditEntry(
-                ts=time.time(), tag_id=tag_id, old_value=tag.current_value,
-                new_value=value, user=user, success=False,
+                ts=time.time(),
+                tag_id=tag_id,
+                old_value=tag.current_value,
+                new_value=value,
+                user=user,
+                success=False,
                 error="Tag is read-only",
             )
             self.write_audit_log.append(entry)
@@ -308,8 +322,12 @@ class BMSConnector:
         # For enum tags, validate value
         if tag.enum_values and str(value) not in tag.enum_values:
             entry = WriteAuditEntry(
-                ts=time.time(), tag_id=tag_id, old_value=tag.current_value,
-                new_value=value, user=user, success=False,
+                ts=time.time(),
+                tag_id=tag_id,
+                old_value=tag.current_value,
+                new_value=value,
+                user=user,
+                success=False,
                 error=f"Value must be one of {tag.enum_values}",
             )
             self.write_audit_log.append(entry)
@@ -322,9 +340,7 @@ class BMSConnector:
                 v = float(value)
                 lo, hi = tag.alarm_band
                 if v < lo or v > hi:
-                    warning = (
-                        f" (warning: value outside band [{lo}, {hi}])"
-                    )
+                    warning = f" (warning: value outside band [{lo}, {hi}])"
             except (ValueError, TypeError):
                 pass
 
@@ -334,8 +350,12 @@ class BMSConnector:
         tag.last_write_user = user
 
         entry = WriteAuditEntry(
-            ts=time.time(), tag_id=tag_id, old_value=old_value,
-            new_value=value, user=user, success=True,
+            ts=time.time(),
+            tag_id=tag_id,
+            old_value=old_value,
+            new_value=value,
+            user=user,
+            success=True,
         )
         self.write_audit_log.append(entry)
 
@@ -390,7 +410,7 @@ class BMSConnector:
 #  Singleton
 # ---------------------------------------------------------------------------
 
-_instance: Optional[BMSConnector] = None
+_instance: BMSConnector | None = None
 
 
 def get_bms(project_root: Path) -> BMSConnector:

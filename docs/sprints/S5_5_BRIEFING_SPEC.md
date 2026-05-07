@@ -271,7 +271,7 @@ class BriefingDocument(BaseModel):
     cet_on_duty: str
     shift_start: datetime
     facility: str = "A3-Alpha Toronto Area"
-    
+
     # S5.5a — Steps 1-5
     subsystem_status: dict[str, SubsystemStatus]
     site_health_index: float
@@ -282,10 +282,10 @@ class BriefingDocument(BaseModel):
     relevant_procedures: list[ProcedureRef]
     llm_summary: Optional[str]
     llm_synthesis_status: Literal["success", "timeout", "skipped"]
-    
+
     # S5.5b — Step 6 (None en S5.5a, populated en S5.5b)
     pue_metrics: Optional[PUEMetrics] = None
-    
+
     # Provenance (V9 discipline)
     sources_consulted: dict[str, str]
     decision_time_ms: int
@@ -302,9 +302,9 @@ class BriefingDocument(BaseModel):
 PUE = Total_Facility_Power / IT_Equipment_Power
 
 Donde:
-  Total_Facility_Power = IT_Equipment_Power 
-                       + Cooling_Power 
-                       + Electrical_Losses 
+  Total_Facility_Power = IT_Equipment_Power
+                       + Cooling_Power
+                       + Electrical_Losses
                        + Misc_Loads
 ```
 
@@ -314,34 +314,34 @@ Donde:
 def compute_pue(self, measurements: dict) -> PUEBreakdown:
     """
     Compute facility PUE with first-law cross-check.
-    
+
     Aggregates power consumption from each of the 4 sub-modules:
     - it_thermal: sum of rack power (electrical-to-thermal Q_it)
     - heat_rejection: chillers compressor + cooling tower fans + condenser pumps
     - mechanical: CDU pumps + secondary loop pumps + primary CHW pumps
     - electrical: transformer copper + iron losses + UPS conversion + busway Joule
-    
+
     First-law cross-check: total facility power should equal sum of components
     within 2% (instrumentation tolerance + minor unmodeled loads like lighting).
-    
+
     If residual > 2%, PUEMetrics.cross_check_passed = False and
-    pue_status = "UNVERIFIED" — briefing entrega resto de secciones, 
+    pue_status = "UNVERIFIED" — briefing entrega resto de secciones,
     PUE marcado para investigación.
     """
     it_kw = self._it_thermal.compute_total_power(measurements)
-    cooling_kw = (self._heat_rejection.compute_total_power(measurements) 
+    cooling_kw = (self._heat_rejection.compute_total_power(measurements)
                   + self._mechanical.compute_pump_power(measurements))
     elec_losses_kw = self._electrical.compute_losses(measurements)
     misc_kw = self.MISC_LOADS_FIXED_KW  # placeholder ~50 kW lighting/BMS
-    
+
     total = it_kw + cooling_kw + elec_losses_kw + misc_kw
-    
+
     measured_total = measurements.get('utility_meter_kw')
     if measured_total:
         residual_pct = abs((measured_total - total) / total) * 100
     else:
         residual_pct = 0.0  # No measurement available, skip cross-check
-    
+
     return PUEBreakdown(
         it_equipment_kw=it_kw,
         cooling_total_kw=cooling_kw,
@@ -358,12 +358,12 @@ def compute_pue(self, measurements: dict) -> PUEBreakdown:
 def detect_architecture_baseline(site_model: SiteModel) -> str:
     """
     Returns the active baseline_id based on what's deployed in site_model.
-    
+
     Logic:
     - If any component has voltage_nominal >= 800: "building_d_800vdc_phase2"
     - Else: "a3_alpha_phase1_480vac"
-    
-    Future: when both phases coexist (post Building D deploy), 
+
+    Future: when both phases coexist (post Building D deploy),
     could return per-building baseline. For now, single facility-wide baseline.
     """
 ```
@@ -390,12 +390,12 @@ def classify_pue(current_pue: float, config: PUEThresholdConfig) -> Literal["OPT
 # config/pue_targets.yml
 # Architecture-aware PUE thresholds for A3-Alpha Toronto Area.
 # Loaded by backend/pue_thresholds.py. Reload requires server restart.
-# 
+#
 # Honest engineering targets — NOT marketing claims.
 # References cited inline for defensibility under deep-dive.
 
 pue_targets:
-  
+
   a3_alpha_phase1_480vac:
     optimal_max: 1.30
     deviation_max: 1.45
@@ -412,20 +412,20 @@ pue_targets:
       - "ASHRAE TC 9.9 Class A2 Thermal Guidelines"
       - "Schneider Electric WP122 Critical Power Best Practices"
     architecture_summary: "480 VAC trifásico → UPS Galaxy VX 2N → RPP/PDU → racks"
-  
+
   building_d_800vdc_phase2:
     optimal_max: 1.15
     deviation_max: 1.25
     rationale: |
       Engineered target (NOT marketing). Building D Phase 2 deployment Q2 2026
       with full architecture upgrade:
-      - Upstream 3-phase AC (35 kVAC trifásico) → MV Rectifier 
+      - Upstream 3-phase AC (35 kVAC trifásico) → MV Rectifier
         (balanced rectification, reduced ripple, harmonic mitigation to grid)
       - 800 VDC unipolar TN-S downstream (sin fases — bus DC)
       - SSCBs for fault clearing 1-100 µs (IEC 60947-2)
       - Full DLC retrofit GB300 NVL144 (200 kW/rack, 800VDC → 12VDC at GPU)
       - BESS 2.5 MWh for load-swing absorption (sub-100ms capacitive buffer)
-      
+
       Target 1.15 is achievable per OCP-LVDC modeling for this exact stack.
       Marketing claims of 1.10 require year-round free-cooling AND complete
       DLC adoption — neither present at A3-Alpha.
@@ -455,7 +455,7 @@ from typing import Optional
 
 class PUEThresholdRegistry:
     _cache: Optional[dict] = None
-    
+
     @classmethod
     def load(cls, config_path: Path) -> dict:
         if cls._cache is None:
@@ -463,7 +463,7 @@ class PUEThresholdRegistry:
                 raw = yaml.safe_load(f)
             cls._cache = raw['pue_targets']
         return cls._cache
-    
+
     @classmethod
     def get(cls, baseline_id: str) -> PUEThresholdConfig:
         targets = cls.load(...)
@@ -506,7 +506,7 @@ Después del paso 6 (PUE compute), el frontend renderiza:
   [data-status="OPTIMAL"]   { background: #2ecc71; }  /* Green */
   [data-status="DEVIATION"] { background: #f39c12; }  /* Yellow */
   [data-status="CRITICAL"]  { background: #e74c3c; }  /* Red */
-  [data-status="UNVERIFIED"] { 
+  [data-status="UNVERIFIED"] {
     background: #95a5a6;                              /* Gray */
     border: 2px dashed #34495e;                       /* dashed = "data, no judgment" */
   }
@@ -534,23 +534,23 @@ CREATE TABLE shift_briefings (
     cet_on_duty          TEXT NOT NULL,
     shift_start          TIMESTAMPTZ NOT NULL,
     facility             TEXT NOT NULL DEFAULT 'A3-Alpha Toronto Area',
-    
+
     severity_summary     TEXT NOT NULL CHECK (severity_summary IN ('NOMINAL', 'CAUTION', 'CRITICAL')),
     site_health_index    NUMERIC(4,3) NOT NULL,
-    
+
     briefing_json        JSONB NOT NULL,  -- Full BriefingDocument serialized
     markdown_rendered    TEXT NOT NULL,    -- For PDF export reuse
-    
+
     -- S5.5b: PUE block, NULL en S5.5a (placeholder), populated en S5.5b
     pue_json             JSONB,            -- PUEMetrics serialized
     pue_status           TEXT CHECK (pue_status IS NULL OR pue_status IN ('OPTIMAL', 'DEVIATION', 'CRITICAL', 'UNVERIFIED')),
-    
+
     llm_synthesis_status TEXT NOT NULL CHECK (llm_synthesis_status IN ('success', 'timeout', 'skipped')),
     decision_time_ms     INTEGER NOT NULL,
-    
+
     api_version          TEXT NOT NULL DEFAULT '1.0',
     created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    
+
     CONSTRAINT chk_decision_time CHECK (decision_time_ms > 0)
 );
 

@@ -21,24 +21,23 @@ Errors:
   404 if canonical_id not found
   500 if site_model failed to initialize (returns clear error message)
 """
+
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
-
 from site_model import (
-    get_site_model,
     ComponentNotFoundError,
     SiteModelError,
+    get_site_model,
 )
 
 log = logging.getLogger(__name__)
 
 # Module-level constant set at registration time by main.py
-_PROJECT_ROOT: Optional[Path] = None
+_PROJECT_ROOT: Path | None = None
 
 
 def configure(project_root: Path) -> None:
@@ -90,7 +89,7 @@ def get_building_tree(building_id: str):
     when a building is expanded.
     """
     m = _model()
-    raw = m._raw   # safe read-only access
+    raw = m._raw  # safe read-only access
     for b in raw.get("buildings", []) or []:
         if b.get("id") == building_id:
             # Strip any verbose fields not needed for tree rendering
@@ -127,7 +126,7 @@ def get_building_tree(building_id: str):
 # ─────────────────────────────────────────────────────────────────────────
 @router.get("/components")
 def list_components(
-    type: Optional[str] = Query(None, description="Filter by type (chiller, ups, ats, ...)"),
+    type: str | None = Query(None, description="Filter by type (chiller, ups, ats, ...)"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ):
@@ -135,7 +134,7 @@ def list_components(
     m = _model()
     all_comps = m.list_components(type_filter=type)
     total = len(all_comps)
-    page = all_comps[offset:offset + limit]
+    page = all_comps[offset : offset + limit]
     return {
         "total": total,
         "limit": limit,
@@ -151,8 +150,7 @@ def get_component(canonical_id: str):
     try:
         comp = m.get_component(canonical_id)
     except ComponentNotFoundError:
-        raise HTTPException(status_code=404,
-                            detail=f"component '{canonical_id}' not found")
+        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found")
     return comp.to_dict()
 
 
@@ -164,8 +162,7 @@ def locate(canonical_id: str):
         loc = m.locate(canonical_id)
         comp = m.get_component(canonical_id)
     except ComponentNotFoundError:
-        raise HTTPException(status_code=404,
-                            detail=f"component '{canonical_id}' not found")
+        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found")
     return {
         "canonical_id": canonical_id,
         "display": comp.display,
@@ -187,8 +184,7 @@ def power_chain(canonical_id: str):
     try:
         return m.power_chain_for(canonical_id)
     except ComponentNotFoundError:
-        raise HTTPException(status_code=404,
-                            detail=f"component '{canonical_id}' not found")
+        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found")
 
 
 @router.get("/impact/{canonical_id}")
@@ -205,8 +201,7 @@ def impact(
         result = m.impact_set(canonical_id, chain=chain)
         return result.to_dict()
     except ComponentNotFoundError:
-        raise HTTPException(status_code=404,
-                            detail=f"component '{canonical_id}' not found")
+        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

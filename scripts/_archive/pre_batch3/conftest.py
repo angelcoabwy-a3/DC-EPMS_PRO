@@ -5,6 +5,7 @@ resolves regardless of where pytest is invoked from.
 
 This file is auto-loaded by pytest before any test module imports.
 """
+
 import os
 import sys
 

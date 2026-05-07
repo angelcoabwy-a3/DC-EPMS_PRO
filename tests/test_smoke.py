@@ -8,8 +8,10 @@ Run:
     pytest tests/test_smoke.py       # smoke only
     pytest -v --no-header            # verbose
 """
-import sys
+
 import pathlib
+import sys
+
 import pytest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -22,6 +24,7 @@ from fastapi.testclient import TestClient
 def client():
     """Boot the FastAPI app for testing."""
     from main import app
+
     with TestClient(app) as c:
         yield c
 
@@ -42,11 +45,11 @@ def test_telemetry_point_validation(client):
     """Telemetry POST should validate pydantic schema."""
     # Valid
     valid = {
-        "it_load_kw":  16756.0,
-        "pue":         1.103,
+        "it_load_kw": 16756.0,
+        "pue": 1.103,
         "hall_temp_c": 22.6,
-        "delta_t_c":   4.6,
-        "scenario":    "NORMAL",
+        "delta_t_c": 4.6,
+        "scenario": "NORMAL",
     }
     r = client.post("/api/telemetry", json=valid)
     assert r.status_code == 200
@@ -65,11 +68,11 @@ def test_incident_sql_safe(client):
     """SQL injection attempts must not succeed."""
     sql_injection = {
         "incident_id": "INC-TEST-0001",
-        "source":      "TEST",
-        "title":       "O'Brien'; DROP TABLE incidents; --",
-        "detail":      "x' OR '1'='1",
-        "severity":    "info",
-        "status":      "OPEN",
+        "source": "TEST",
+        "title": "O'Brien'; DROP TABLE incidents; --",
+        "detail": "x' OR '1'='1",
+        "severity": "info",
+        "status": "OPEN",
         "physics_json": '{"safe": true}',
     }
     r = client.post("/api/incidents", json=sql_injection)
@@ -82,11 +85,14 @@ def test_incident_sql_safe(client):
 
 def test_rag_query_validation(client):
     """RAG query validates min/max relevance."""
-    r = client.post("/api/rag/query", json={
-        "question":      "What is ASHRAE A2?",
-        "n_results":     3,
-        "min_relevance": 0.3,
-    })
+    r = client.post(
+        "/api/rag/query",
+        json={
+            "question": "What is ASHRAE A2?",
+            "n_results": 3,
+            "min_relevance": 0.3,
+        },
+    )
     assert r.status_code == 200
     # Results may be empty if RAG unavailable — that's OK
     data = r.json()
@@ -95,16 +101,22 @@ def test_rag_query_validation(client):
 
 def test_agent_query_schema(client):
     """Agent query schema rejects bad inputs."""
-    r = client.post("/agent/stream", json={
-        "query":      "",
-        "model_hint": "auto",
-    })
+    r = client.post(
+        "/agent/stream",
+        json={
+            "query": "",
+            "model_hint": "auto",
+        },
+    )
     assert r.status_code == 422  # empty query rejected by pydantic
 
-    r = client.post("/agent/stream", json={
-        "query":      "x" * 5000,
-        "model_hint": "auto",
-    })
+    r = client.post(
+        "/agent/stream",
+        json={
+            "query": "x" * 5000,
+            "model_hint": "auto",
+        },
+    )
     assert r.status_code == 422  # too long
 
 
@@ -118,10 +130,13 @@ def test_lm_proxy_graceful_down(client):
 
 def test_shift_report_endpoint_exists(client):
     """Shift report generation endpoint should respond."""
-    r = client.post("/api/shift/report", json={
-        "operator":   "Test Operator",
-        "hours_back": 8,
-    })
+    r = client.post(
+        "/api/shift/report",
+        json={
+            "operator": "Test Operator",
+            "hours_back": 8,
+        },
+    )
     # 200 (PDF generated) or 503 (reportlab missing)
     assert r.status_code in (200, 503)
     if r.status_code == 200:

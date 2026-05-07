@@ -29,22 +29,22 @@ A weighted-sum of per-module scores would hide an emergency when one
 module is critical. The min-rule surfaces the weakest link immediately
 - what an operator needs to know first.
 """
+
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from backend.physics.base import (
     PhysicsModule,
     Severity,
     ValidationResult,
-    StateSnapshot,
 )
-from backend.physics.it_thermal import ITThermalModule
-from backend.physics.mechanical import MechanicalModule
 from backend.physics.electrical import ElectricalModule
 from backend.physics.heat_rejection import HeatRejectionModule
+from backend.physics.it_thermal import ITThermalModule
+from backend.physics.mechanical import MechanicalModule
 
 log = logging.getLogger("dc-epms.physics.engine")
 
@@ -52,6 +52,7 @@ log = logging.getLogger("dc-epms.physics.engine")
 # ---------------------------------------------------------------------------
 #  Site validation result
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class SiteValidationResult:
@@ -89,6 +90,7 @@ class SiteValidationResult:
 #  PhysicsEngine facade
 # ---------------------------------------------------------------------------
 
+
 class PhysicsEngine:
     """Orchestrator for DC-EPMS PRO physics validation and simulation."""
 
@@ -99,9 +101,9 @@ class PhysicsEngine:
         self.hr = HeatRejectionModule()
 
         self._modules: dict[str, PhysicsModule] = {
-            "it_thermal":     self.it,
-            "mechanical":     self.mech,
-            "electrical":     self.elec,
+            "it_thermal": self.it,
+            "mechanical": self.mech,
+            "electrical": self.elec,
             "heat_rejection": self.hr,
         }
 
@@ -162,9 +164,9 @@ class PhysicsEngine:
         result.overall_severity = worst_severity
 
         severity_modifier = {
-            Severity.OK:       1.00,
-            Severity.INFO:     0.98,
-            Severity.WARNING:  0.90,
+            Severity.OK: 1.00,
+            Severity.INFO: 0.98,
+            Severity.WARNING: 0.90,
             Severity.CRITICAL: 0.70,
         }[worst_severity]
 
@@ -209,9 +211,7 @@ class PhysicsEngine:
                 residuals["it_vs_mechanical_kw"] = residual_kw
 
         if mech_metrics and hr_metrics:
-            mech_q_primary_per_hall = mech_metrics.metrics.get(
-                "q_primary_kw", 0.0
-            )
+            mech_q_primary_per_hall = mech_metrics.metrics.get("q_primary_kw", 0.0)
             mech_q_primary_site = mech_q_primary_per_hall * 3.0
             hr_total = hr_metrics.metrics.get("total_heat_rejection_kw", 0.0)
             if mech_q_primary_site > 0 and hr_total > 0:
@@ -248,36 +248,32 @@ class PhysicsEngine:
         # Pattern 1: DLC flow / cavitation linkage
         if it and mech:
             it_flagged = any(
-                not c["passed"]
-                and c["name"] == "first_law_energy_balance"
-                for c in it.checks
+                not c["passed"] and c["name"] == "first_law_energy_balance" for c in it.checks
             )
             cav_flagged = any(
-                not c["passed"]
-                and c["name"] == "pump_cavitation_margin"
-                for c in mech.checks
+                not c["passed"] and c["name"] == "pump_cavitation_margin" for c in mech.checks
             )
             if it_flagged and cav_flagged:
-                cascades.append({
-                    "pattern": "pump_cavitation_to_it_thermal_stress",
-                    "severity": "critical",
-                    "interpretation": (
-                        "Pump cavitation reducing DLC flow; IT thermal "
-                        "energy balance shows unremoved heat. Cascading "
-                        "failure mode - cooling loss propagating to rack."
-                    ),
-                    "action": (
-                        "Activate EOP-003 (emergency cooling reduction). "
-                        "Investigate pump NPSH margin."
-                    ),
-                })
+                cascades.append(
+                    {
+                        "pattern": "pump_cavitation_to_it_thermal_stress",
+                        "severity": "critical",
+                        "interpretation": (
+                            "Pump cavitation reducing DLC flow; IT thermal "
+                            "energy balance shows unremoved heat. Cascading "
+                            "failure mode - cooling loss propagating to rack."
+                        ),
+                        "action": (
+                            "Activate EOP-003 (emergency cooling reduction). "
+                            "Investigate pump NPSH margin."
+                        ),
+                    }
+                )
 
         # Pattern 2: heat wave + chiller degraded
         if hr:
             wb_flagged = any(
-                not c["passed"]
-                and c["name"] == "outdoor_wet_bulb_capacity"
-                for c in hr.checks
+                not c["passed"] and c["name"] == "outdoor_wet_bulb_capacity" for c in hr.checks
             )
             cop_flagged = any(
                 not c["passed"]
@@ -286,42 +282,43 @@ class PhysicsEngine:
                 for c in hr.checks
             )
             if wb_flagged and cop_flagged:
-                cascades.append({
-                    "pattern": "heat_wave_chiller_degradation",
-                    "severity": "warning",
-                    "interpretation": (
-                        "Outdoor wet-bulb elevated AND chiller COP below "
-                        "curve. Combined effect may push ECWT toward trip "
-                        "threshold."
-                    ),
-                    "action": (
-                        "Monitor ECWT closely. Consider workload reduction "
-                        "if wet-bulb continues to rise."
-                    ),
-                })
+                cascades.append(
+                    {
+                        "pattern": "heat_wave_chiller_degradation",
+                        "severity": "warning",
+                        "interpretation": (
+                            "Outdoor wet-bulb elevated AND chiller COP below "
+                            "curve. Combined effect may push ECWT toward trip "
+                            "threshold."
+                        ),
+                        "action": (
+                            "Monitor ECWT closely. Consider workload reduction "
+                            "if wet-bulb continues to rise."
+                        ),
+                    }
+                )
 
         # Pattern 3: utility loss during IT load
         if elec and it:
-            on_batt = any(
-                c["name"] == "on_battery_runtime_remaining"
-                for c in elec.checks
-            )
+            on_batt = any(c["name"] == "on_battery_runtime_remaining" for c in elec.checks)
             it_critical = it.severity == Severity.CRITICAL
             if on_batt and it_critical:
-                cascades.append({
-                    "pattern": "utility_loss_with_it_thermal_stress",
-                    "severity": "critical",
-                    "interpretation": (
-                        "On battery power while IT thermal state is "
-                        "critical. Both cooling and IT will lose power "
-                        "if battery depletes before generator online."
-                    ),
-                    "action": (
-                        "Verify generator start status. Initiate orderly "
-                        "workload migration. See T1-SAF-EPO-005 if "
-                        "shutdown required."
-                    ),
-                })
+                cascades.append(
+                    {
+                        "pattern": "utility_loss_with_it_thermal_stress",
+                        "severity": "critical",
+                        "interpretation": (
+                            "On battery power while IT thermal state is "
+                            "critical. Both cooling and IT will lose power "
+                            "if battery depletes before generator online."
+                        ),
+                        "action": (
+                            "Verify generator start status. Initiate orderly "
+                            "workload migration. See T1-SAF-EPO-005 if "
+                            "shutdown required."
+                        ),
+                    }
+                )
 
         return cascades
 
@@ -372,11 +369,7 @@ class PhysicsEngine:
         )
 
         # Extract events chronologically
-        events = [
-            {"t": snap.t, "event": e}
-            for snap in trajectory
-            for e in snap.events
-        ]
+        events = [{"t": snap.t, "event": e} for snap in trajectory for e in snap.events]
 
         # Build a tiny summary for the UI
         summary = {
@@ -411,6 +404,7 @@ def _sanitize_for_json(obj):
     still return inf/nan for genuinely undefined states.
     """
     import math
+
     if isinstance(obj, dict):
         return {k: _sanitize_for_json(v) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -422,7 +416,7 @@ def _sanitize_for_json(obj):
 
 
 # Convenience singleton
-_engine_instance: Optional[PhysicsEngine] = None
+_engine_instance: PhysicsEngine | None = None
 
 
 def get_engine() -> PhysicsEngine:

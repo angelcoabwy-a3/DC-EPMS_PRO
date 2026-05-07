@@ -50,14 +50,16 @@ References
   - T4-MOP-CHI-001            (York YZ chiller quarterly PM)
   - Moody diagram for friction factors (turbulent region)
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 try:
     import numpy as np
     from scipy.integrate import solve_ivp
+
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
@@ -80,15 +82,15 @@ log = logging.getLogger("dc-epms.physics.mechanical")
 # ---------------------------------------------------------------------------
 
 # --- 50/50 propylene glycol-water coolant at ~30 C ---
-RHO_PGW = 1_040.0           # kg/m^3
-CP_PGW = 3_650.0            # J/(kg*K)
-MU_PGW = 3.2e-3             # Pa*s (dynamic viscosity, ~3x that of water)
+RHO_PGW = 1_040.0  # kg/m^3
+CP_PGW = 3_650.0  # J/(kg*K)
+MU_PGW = 3.2e-3  # Pa*s (dynamic viscosity, ~3x that of water)
 
 # --- Secondary loop pipe geometry (approximate, plant as-built) ---
 # Main headers going from CDU to manifolds
-LOOP_PIPE_DIAMETER_M = 0.152    # 6" schedule-40 steel
-LOOP_PIPE_LENGTH_M = 240.0      # aggregated round-trip length per hall
-DARCY_FRICTION_FACTOR = 0.020   # turbulent, commercial steel
+LOOP_PIPE_DIAMETER_M = 0.152  # 6" schedule-40 steel
+LOOP_PIPE_LENGTH_M = 240.0  # aggregated round-trip length per hall
+DARCY_FRICTION_FACTOR = 0.020  # turbulent, commercial steel
 
 # --- Per-hall secondary loop design ---
 HALL_FLOW_NOMINAL_M3_S = 0.066  # ~4000 L/min = 40 racks x 100 L/min
@@ -96,19 +98,20 @@ HALL_FLOW_NOMINAL_L_MIN = 3960.0
 HALL_COOLANT_MASS_KG = 4_500.0  # aggregate fluid in hall loop (pipes + HX)
 
 # --- CDU thermal design ---
-CDU_NOMINAL_CAPACITY_KW = 6_000.0       # 6 MW per CDU
-CDU_EFFECTIVENESS_NOMINAL = 0.82        # plate HX effectiveness
-CDU_APPROACH_NOMINAL_K = 2.5            # T_cold_out - T_cold_in at design
+CDU_NOMINAL_CAPACITY_KW = 6_000.0  # 6 MW per CDU
+CDU_EFFECTIVENESS_NOMINAL = 0.82  # plate HX effectiveness
+CDU_APPROACH_NOMINAL_K = 2.5  # T_cold_out - T_cold_in at design
 
 # --- Pump design ---
-PUMP_RATED_HEAD_M = 35.0        # 35 m head at rated flow
-PUMP_RATED_POWER_KW = 45.0      # 45 kW shaft input at rated point
+PUMP_RATED_HEAD_M = 35.0  # 35 m head at rated flow
+PUMP_RATED_POWER_KW = 45.0  # 45 kW shaft input at rated point
 PUMP_MIN_SUCTION_PRESSURE_BAR = 1.2  # below this, cavitation risk rises
 
 
 # ---------------------------------------------------------------------------
 #  Helpers
 # ---------------------------------------------------------------------------
+
 
 def _volumetric_to_velocity(
     flow_m3_s: float,
@@ -119,7 +122,8 @@ def _volumetric_to_velocity(
     v = Q / A = Q / (pi/4 * D^2)
     """
     import math
-    area = math.pi * 0.25 * diameter_m ** 2
+
+    area = math.pi * 0.25 * diameter_m**2
     return flow_m3_s / area if area > 0 else 0.0
 
 
@@ -147,7 +151,7 @@ def _darcy_pressure_drop_pa(
     v = _volumetric_to_velocity(flow_m3_s, diameter_m)
     if length_m == 0 or diameter_m == 0:
         return 0.0
-    return friction_factor * (length_m / diameter_m) * (density * v ** 2 / 2.0)
+    return friction_factor * (length_m / diameter_m) * (density * v**2 / 2.0)
 
 
 def _clamp01(x: float) -> float:
@@ -157,6 +161,7 @@ def _clamp01(x: float) -> float:
 # ---------------------------------------------------------------------------
 #  MechanicalModule
 # ---------------------------------------------------------------------------
+
 
 class MechanicalModule(PhysicsModule):
     """Validator + simulator for the cooling mechanical plant.
@@ -250,19 +255,21 @@ class MechanicalModule(PhysicsModule):
                     "curve."
                 )
                 r.escalate(Severity.WARNING)
-            r.add_justification(PhysicalJustification(
-                law="darcy_weisbach",
-                measured={
-                    "loop_dp_measured_bar": dp_meas_bar,
-                    "loop_flow_m3_s": flow,
-                    "loop_flow_l_min": flow * 60_000.0,
-                },
-                expected={"dp_theoretical_bar": dp_expected_bar},
-                residual={"dp_residual_bar": dp_residual_bar},
-                threshold={"dp_threshold_bar": dp_threshold_bar},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            r.add_justification(
+                PhysicalJustification(
+                    law="darcy_weisbach",
+                    measured={
+                        "loop_dp_measured_bar": dp_meas_bar,
+                        "loop_flow_m3_s": flow,
+                        "loop_flow_l_min": flow * 60_000.0,
+                    },
+                    expected={"dp_theoretical_bar": dp_expected_bar},
+                    residual={"dp_residual_bar": dp_residual_bar},
+                    threshold={"dp_threshold_bar": dp_threshold_bar},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
 
         # ============ Check 2: CDU thermal balance ======================
         # Secondary side heat pickup
@@ -296,28 +303,30 @@ class MechanicalModule(PhysicsModule):
                 "HX cleaning log per T4-MOP-CHI-001."
             )
             r.escalate(Severity.WARNING)
-            r.add_justification(PhysicalJustification(
-                law="cdu_heat_exchanger_balance",
-                measured={
-                    "q_secondary_kw": q_secondary_kw,
-                    "q_primary_kw": q_primary_kw,
-                    "loop_supply_c": loop_supply_c,
-                    "loop_return_c": loop_return_c,
-                    "cdu_primary_in_c": cdu_prim_in,
-                    "cdu_primary_out_c": cdu_prim_out,
-                },
-                expected={
-                    "balanced_kw": 0.0,
-                },
-                residual={"residual_kw": cdu_residual_kw},
-                threshold={"threshold_kw": cdu_threshold_kw},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            r.add_justification(
+                PhysicalJustification(
+                    law="cdu_heat_exchanger_balance",
+                    measured={
+                        "q_secondary_kw": q_secondary_kw,
+                        "q_primary_kw": q_primary_kw,
+                        "loop_supply_c": loop_supply_c,
+                        "loop_return_c": loop_return_c,
+                        "cdu_primary_in_c": cdu_prim_in,
+                        "cdu_primary_out_c": cdu_prim_out,
+                    },
+                    expected={
+                        "balanced_kw": 0.0,
+                    },
+                    residual={"residual_kw": cdu_residual_kw},
+                    threshold={"threshold_kw": cdu_threshold_kw},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
 
         # ============ Check 3: Pump affinity laws (expected power) ======
         speed_ratio = pump_hz / 60.0  # nominal is 60 Hz (North America)
-        expected_power_kw = PUMP_RATED_POWER_KW * (speed_ratio ** 3)
+        expected_power_kw = PUMP_RATED_POWER_KW * (speed_ratio**3)
         power_residual = pump_power_kw - expected_power_kw
         power_threshold = max(expected_power_kw * 0.20, 3.0)
         power_ok = abs(power_residual) <= power_threshold
@@ -348,18 +357,20 @@ class MechanicalModule(PhysicsModule):
                 "Compare to pump-curve factory data."
             )
             r.escalate(Severity.INFO)
-            r.add_justification(PhysicalJustification(
-                law="pump_affinity_cubic",
-                measured={
-                    "pump_power_kw": pump_power_kw,
-                    "pump_speed_hz": pump_hz,
-                },
-                expected={"power_kw_at_speed": expected_power_kw},
-                residual={"residual_kw": power_residual},
-                threshold={"threshold_kw": power_threshold},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            r.add_justification(
+                PhysicalJustification(
+                    law="pump_affinity_cubic",
+                    measured={
+                        "pump_power_kw": pump_power_kw,
+                        "pump_speed_hz": pump_hz,
+                    },
+                    expected={"power_kw_at_speed": expected_power_kw},
+                    residual={"residual_kw": power_residual},
+                    threshold={"threshold_kw": power_threshold},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
 
         # ============ Check 4: Pump NPSH / cavitation risk ==============
         cavit_ok = pump_suct_bar >= PUMP_MIN_SUCTION_PRESSURE_BAR
@@ -383,21 +394,21 @@ class MechanicalModule(PhysicsModule):
                 "check suction-side strainer. See T4-MOP-CHI-001."
             )
             r.escalate(Severity.CRITICAL if margin > 0.3 else Severity.WARNING)
-            r.add_justification(PhysicalJustification(
-                law="pump_npsh_limit",
-                measured={"pump_suction_bar": pump_suct_bar},
-                expected={"min_suction_bar": PUMP_MIN_SUCTION_PRESSURE_BAR},
-                residual={"margin_bar": -margin},
-                threshold={"min_suction_bar": PUMP_MIN_SUCTION_PRESSURE_BAR},
-                interpretation=interp,
-                suggested_action=action,
-            ))
+            r.add_justification(
+                PhysicalJustification(
+                    law="pump_npsh_limit",
+                    measured={"pump_suction_bar": pump_suct_bar},
+                    expected={"min_suction_bar": PUMP_MIN_SUCTION_PRESSURE_BAR},
+                    residual={"margin_bar": -margin},
+                    threshold={"min_suction_bar": PUMP_MIN_SUCTION_PRESSURE_BAR},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
 
         # --- Compute module health ---
         penalty = max(
-            0.0 if dp_ok else min(
-                0.4, abs(dp_residual_bar) / max(dp_threshold_bar, 0.01) * 0.15
-            ),
+            0.0 if dp_ok else min(0.4, abs(dp_residual_bar) / max(dp_threshold_bar, 0.01) * 0.15),
             0.0 if cdu_ok else 0.20,
             0.0 if power_ok else 0.10,
             0.0 if cavit_ok else 0.60,
@@ -448,9 +459,7 @@ class MechanicalModule(PhysicsModule):
         T_supply = float(initial_state.get("loop_supply_c", 18.0))
         rack_count = int(initial_state.get("rack_count", 40))
         rack_kw = float(initial_state.get("rack_tdp_kw", 142.0))
-        flow_nom = float(initial_state.get(
-            "loop_flow_m3_s", HALL_FLOW_NOMINAL_M3_S
-        ))
+        flow_nom = float(initial_state.get("loop_flow_m3_s", HALL_FLOW_NOMINAL_M3_S))
 
         flow_factor = float(perturbation.get("flow_factor", 1.0))
         pump_trip = bool(perturbation.get("pump_trip", False))
@@ -503,7 +512,6 @@ class MechanicalModule(PhysicsModule):
             ts = np.arange(0.0, horizon_s + dt_s, dt_s) if np else None
             if ts is None:
                 # No numpy; pure python fallback
-                import math
                 ts_list, T_list = [], []
                 T = T0_return
                 t = 0.0
@@ -541,16 +549,18 @@ class MechanicalModule(PhysicsModule):
                 events.append("secondary_loop_overtemp")
                 overtemp_triggered = True
 
-            trajectory.append(StateSnapshot(
-                t=t_s,
-                state={
-                    "loop_return_c": T_return,
-                    "loop_supply_c": T_supply,
-                    "flow_factor": ff,
-                    "flow_m3_s": flow_nom * ff,
-                    "dlc_delta_T_k": T_return - T_supply,
-                },
-                events=events,
-            ))
+            trajectory.append(
+                StateSnapshot(
+                    t=t_s,
+                    state={
+                        "loop_return_c": T_return,
+                        "loop_supply_c": T_supply,
+                        "flow_factor": ff,
+                        "flow_m3_s": flow_nom * ff,
+                        "dlc_delta_T_k": T_return - T_supply,
+                    },
+                    events=events,
+                )
+            )
 
         return trajectory

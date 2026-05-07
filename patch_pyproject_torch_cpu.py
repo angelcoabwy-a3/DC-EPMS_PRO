@@ -42,7 +42,7 @@ if has_bom:
     print("INFO: UTF-8 BOM detected. Will preserve in output.")
 
 # Idempotency check
-if 'torch>=2.0.0,<3.0.0' in content or '"torch>' in content:
+if "torch>=2.0.0,<3.0.0" in content or '"torch>' in content:
     print("INFO: torch already pinned in pyproject.toml. No changes.")
     sys.exit(0)
 
@@ -64,7 +64,7 @@ print(f"Backup created: {backup.name}")
 #   ]
 
 rag_pattern = re.compile(
-    r'(rag\s*=\s*\[\s*\n)',  # capture the opening
+    r"(rag\s*=\s*\[\s*\n)",  # capture the opening
     re.MULTILINE,
 )
 
@@ -101,4 +101,6 @@ print("  Added: torch>=2.0.0,<3.0.0 + torchvision>=0.15.0,<1.0.0 to [rag] extra"
 print(f"  BOM preserved: {has_bom}")
 print()
 print("Verify with:")
-print("  python -c \"import tomllib; data=tomllib.loads(open('pyproject.toml','rb').read().decode('utf-8-sig')); print(data['project']['optional-dependencies']['rag'][:3])\"")
+print(
+    "  python -c \"import tomllib; data=tomllib.loads(open('pyproject.toml','rb').read().decode('utf-8-sig')); print(data['project']['optional-dependencies']['rag'][:3])\""
+)

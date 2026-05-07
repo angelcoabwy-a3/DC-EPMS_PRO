@@ -18,7 +18,7 @@ Write-Host "Total lines: $($lines.Count)" -ForegroundColor Cyan
 #   viewSiteTopoStartLine: line with comment "<!-- View: Site Topology"
 #   viewSiteTopoEndLine: matching </div> for the view block
 #
-# Strategy: 
+# Strategy:
 #   - Find the comment marker (unique)
 #   - Walk forward to find the closing </div> by matching nesting
 #   - Find the </section> that's BEFORE the comment marker (panel-main closer)
@@ -110,7 +110,7 @@ Write-Host "Block to move: lines $($blockStart + 1) to $($blockEnd + 1) ($($bloc
 # Extract the block
 $blockLines = $lines[$blockStart..$blockEnd]
 
-# Build new array: 
+# Build new array:
 #   1. Everything from start to panelMainCloseIdx-1 (i.e., before </section>)
 #   2. blockLines
 #   3. The </section> line and everything after, EXCEPT the original block location

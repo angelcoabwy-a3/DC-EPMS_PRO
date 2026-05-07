@@ -8,16 +8,12 @@ Coverage:
     N+1 redundancy
   - Simulate: heat wave ramp up
 """
-from __future__ import annotations
 
-import math
-import pytest
+from __future__ import annotations
 
 from backend.physics.base import Severity
 from backend.physics.heat_rejection import (
-    CHILLER_RATED_CAPACITY_KW,
     CHILLER_RATED_COP,
-    DLC_SUPPLY_TARGET_C,
     HeatRejectionModule,
     chiller_cop,
     dew_point_c_from_rh,
@@ -28,7 +24,6 @@ from backend.physics.heat_rejection import (
 
 
 class TestPsychrometrics:
-
     def test_sat_pressure_0c_matches_literature(self):
         """At 0 C, saturation pressure = 611.2 Pa."""
         p = saturation_vapor_pressure_pa(0.0)
@@ -83,7 +78,6 @@ class TestPsychrometrics:
 
 
 class TestChillerCOP:
-
     def test_rated_conditions(self):
         """At rated PLR and ECWT, COP matches nominal within tolerance."""
         cop = chiller_cop(plr=1.0, ecwt_c=29.4, lchwt_c=6.7)
@@ -106,13 +100,12 @@ class TestChillerCOP:
 
 
 class TestValidateNominal:
-
     def _nominal(self) -> dict:
         """Operational point at Toronto summer, moderate load."""
         return {
             "outdoor_t_db_c": 25.0,
             "outdoor_rh_percent": 50.0,
-            "hall_dew_point_c": 8.0,     # well below 16 C margin
+            "hall_dew_point_c": 8.0,  # well below 16 C margin
             "dlc_supply_c": 18.0,
             "chiller_1_load_kw": 2_500.0,
             "chiller_1_power_kw": 350.0,  # COP ~7.1
@@ -139,7 +132,6 @@ class TestValidateNominal:
 
 
 class TestFaults:
-
     def _baseline(self) -> dict:
         return {
             "outdoor_t_db_c": 25.0,
@@ -162,8 +154,7 @@ class TestFaults:
         meas["outdoor_t_db_c"] = 36.0
         meas["outdoor_rh_percent"] = 65.0
         r = m.validate(meas)
-        wb_check = next(c for c in r.checks
-                        if c["name"] == "outdoor_wet_bulb_capacity")
+        wb_check = next(c for c in r.checks if c["name"] == "outdoor_wet_bulb_capacity")
         assert not wb_check["passed"]
         assert r.severity >= Severity.WARNING
 
@@ -173,8 +164,7 @@ class TestFaults:
         # Force dew point higher than DLC supply
         meas["hall_dew_point_c"] = 20.0  # above 18 C DLC supply
         r = m.validate(meas)
-        cond_check = next(c for c in r.checks
-                          if c["name"] == "condensation_margin_dlc_manifold")
+        cond_check = next(c for c in r.checks if c["name"] == "condensation_margin_dlc_manifold")
         assert not cond_check["passed"]
         assert r.severity == Severity.CRITICAL
 
@@ -183,8 +173,7 @@ class TestFaults:
         meas = self._baseline()
         meas["hall_dew_point_c"] = 17.0  # 1 C below 18 -> margin < 2
         r = m.validate(meas)
-        cond_check = next(c for c in r.checks
-                          if c["name"] == "condensation_margin_dlc_manifold")
+        cond_check = next(c for c in r.checks if c["name"] == "condensation_margin_dlc_manifold")
         assert not cond_check["passed"]
 
     def test_chiller_cop_deficit_flagged(self):
@@ -193,8 +182,7 @@ class TestFaults:
         meas = self._baseline()
         meas["chiller_1_power_kw"] = 700.0  # 2x expected at 50% PLR
         r = m.validate(meas)
-        cop_check = next(c for c in r.checks
-                         if c["name"] == "chiller_1_cop_vs_curve")
+        cop_check = next(c for c in r.checks if c["name"] == "chiller_1_cop_vs_curve")
         assert not cop_check["passed"]
 
     def test_n_plus_1_redundancy_violated(self):
@@ -206,13 +194,11 @@ class TestFaults:
         meas["chiller_1_power_kw"] = 700.0
         meas["chiller_2_power_kw"] = 700.0
         r = m.validate(meas)
-        red_check = next(c for c in r.checks
-                         if c["name"] == "n_plus_1_redundancy_margin")
+        red_check = next(c for c in r.checks if c["name"] == "n_plus_1_redundancy_margin")
         assert not red_check["passed"]
 
 
 class TestSimulate:
-
     def test_heat_wave_ramp_generates_trajectory(self):
         m = HeatRejectionModule()
         traj = m.simulate(
@@ -238,7 +224,7 @@ class TestSimulate:
         wb_start = traj[0].state["outdoor_wet_bulb_c"]
         wb_end = traj[-1].state["outdoor_wet_bulb_c"]
         assert wb_end > wb_start
-        assert wb_end > 25.0   # got hot
+        assert wb_end > 25.0  # got hot
 
     def test_chiller_cop_declines_with_ecwt(self):
         m = HeatRejectionModule()
@@ -275,5 +261,4 @@ class TestSimulate:
         # No perturbation -> state essentially constant
         first = traj[0]
         last = traj[-1]
-        assert abs(first.state["outdoor_wet_bulb_c"]
-                   - last.state["outdoor_wet_bulb_c"]) < 0.5
+        assert abs(first.state["outdoor_wet_bulb_c"] - last.state["outdoor_wet_bulb_c"]) < 0.5

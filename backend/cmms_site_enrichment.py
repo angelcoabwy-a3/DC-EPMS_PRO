@@ -32,10 +32,10 @@ warning logged. This preserves v8.1 behavior for callers that don't pass
 target_component_id, AND for callers in environments where site_model.yml
 hasn't been deployed yet.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ log = logging.getLogger(__name__)
 def enrich_wo_with_location(
     wo_draft: dict,
     target_component_id: str,
-    project_root: Optional["Path"] = None,    # type: ignore[name-defined]
+    project_root: Path | None = None,  # type: ignore[name-defined]
 ) -> dict:
     """Add location and component metadata to a CMMS work order draft.
 
@@ -65,15 +65,15 @@ def enrich_wo_with_location(
         original draft with site_context.error set to an explanation.
         Never raises.
     """
-    enriched = dict(wo_draft)    # shallow copy to avoid mutation
+    enriched = dict(wo_draft)  # shallow copy to avoid mutation
     enriched["target_component_id"] = target_component_id
 
     try:
         # Lazy import: cmms_mcp may run in environments without site_model
         from site_model import (
-            get_site_model,
             ComponentNotFoundError,
             SiteModelError,
+            get_site_model,
         )
     except ImportError as e:
         log.warning("[cmms_site_enrichment] site_model module not importable: %s", e)
@@ -88,6 +88,7 @@ def enrich_wo_with_location(
         # returns it; otherwise we have to provide a project_root.
         if project_root is None:
             from pathlib import Path as _Path
+
             # Fallback: assume we're in <project>/backend/ and config is sibling
             project_root = _Path(__file__).resolve().parent.parent
         model = get_site_model(project_root)

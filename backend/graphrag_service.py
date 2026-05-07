@@ -16,20 +16,22 @@ Public API:
     .loto_with_knowledge(component_id) -> dict
     .stats() -> dict
 """
+
 from __future__ import annotations
-from typing import Optional, Any
-from pathlib import Path
+
 import logging
+from pathlib import Path
+from typing import Any
 
 import networkx as nx
+from graphrag_index import GraphRAGIndex, get_index
 
 from backend.knowledge_graph import (
     build_knowledge_graph,
-    get_upstream_chain,
-    get_applicable_knowledge,
     filter_by_jurisdiction,
+    get_applicable_knowledge,
+    get_upstream_chain,
 )
-from graphrag_index import get_index, GraphRAGIndex
 
 log = logging.getLogger(__name__)
 
@@ -40,7 +42,7 @@ class GraphRAGService:
     def __init__(self, site_model_obj: Any, knowledge_dir: Path):
         self.site_model = site_model_obj
         self.knowledge_dir = knowledge_dir
-        self._graph: Optional[nx.MultiDiGraph] = None
+        self._graph: nx.MultiDiGraph | None = None
         self._index: GraphRAGIndex = get_index()
 
     @property
@@ -57,9 +59,9 @@ class GraphRAGService:
     def query(
         self,
         text: str,
-        component_id: Optional[str] = None,
+        component_id: str | None = None,
         k: int = 5,
-        jurisdictions: Optional[list[str]] = None,
+        jurisdictions: list[str] | None = None,
     ) -> dict:
         """Mode A: deterministic retrieval.
 
@@ -152,7 +154,9 @@ class GraphRAGService:
         comp_node = self.graph.nodes.get(component_id, {})
         comp_type = comp_node.get("type", "")
         loto_query = f"LOTO procedure {comp_type} arc-flash PPE capacitor discharge"
-        hits = self._index.search(loto_query, k=3, filter_jurisdictions=["canada", "ontario_canada"])
+        hits = self._index.search(
+            loto_query, k=3, filter_jurisdictions=["canada", "ontario_canada"]
+        )
 
         return {
             "component_id": component_id,

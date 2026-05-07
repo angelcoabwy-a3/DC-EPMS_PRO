@@ -1,4 +1,4 @@
-﻿"""
+"""
 cmms_mcp.py â€” Paperclip orchestrator + CMMS work-order draft tool.
 
 Production-ready v8.1 module. Drop-in compatible with v8.0
@@ -27,12 +27,11 @@ Honest scope notes:
     import time. If unavailable, hardcoded defaults take over and
     a warning is logged. The platform does not fail to boot.
 """
+
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -41,6 +40,7 @@ log = logging.getLogger(__name__)
 # Sprint S1b: site model enrichment for WO drafts (fail-soft)
 try:
     from cmms_site_enrichment import enrich_wo_with_location
+
     _SITE_ENRICHMENT_AVAILABLE = True
 except ImportError:
     _SITE_ENRICHMENT_AVAILABLE = False
@@ -76,12 +76,8 @@ def _yaml_get(path: list, default):
 
 
 # Conservative defaults (used if YAML unavailable)
-DEFAULT_COST_THRESHOLD_USD = float(
-    _yaml_get(["routing", "cost_threshold_usd"], 5000.0)
-)
-DEFAULT_LOTO_LOR_THRESHOLD = int(
-    _yaml_get(["routing", "loto_required_threshold_lor"], 3)
-)
+DEFAULT_COST_THRESHOLD_USD = float(_yaml_get(["routing", "cost_threshold_usd"], 5000.0))
+DEFAULT_LOTO_LOR_THRESHOLD = int(_yaml_get(["routing", "loto_required_threshold_lor"], 3))
 THERMAL_CRITICAL_DT_K_PER_S = float(
     _yaml_get(["routing", "emergency_threshold_thermal_dt", "critical"], 0.5)
 )
@@ -116,13 +112,9 @@ def compute_lor(
         ValueError: if likelihood_idx or consequence_idx out of [1, 5]
     """
     if not (1 <= likelihood_idx <= 5):
-        raise ValueError(
-            f"likelihood_idx out of range [1, 5]: got {likelihood_idx}"
-        )
+        raise ValueError(f"likelihood_idx out of range [1, 5]: got {likelihood_idx}")
     if not (1 <= consequence_idx <= 5):
-        raise ValueError(
-            f"consequence_idx out of range [1, 5]: got {consequence_idx}"
-        )
+        raise ValueError(f"consequence_idx out of range [1, 5]: got {consequence_idx}")
 
     redundancy_mod = {"2N": -1, "N+1": 0, "N": +1}.get(redundancy_mode, 0)
     raw = (likelihood_idx * consequence_idx) / 5.0
@@ -150,7 +142,7 @@ def compute_lor(
 def select_procedure_class(
     work_class: str,
     lor: int,
-    thermal_derivative_k_per_s: Optional[float],
+    thermal_derivative_k_per_s: float | None,
     requires_loto: bool,
 ) -> str:
     """Pick exactly one procedure class. Decision tree, not LLM.
@@ -190,15 +182,15 @@ def select_procedure_class(
 #  PURE FUNCTION 3 â€” THA (Task Hazard Analysis) generation
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 _BASE_HAZARDS_BY_KIND: dict[str, list[str]] = {
-    "ups":      ["arc_flash_cat_2", "stored_dc_energy", "battery_acid_exposure"],
-    "chiller":  ["refrigerant_release_a2l", "rotating_equipment", "high_pressure_lines"],
-    "rpp":      ["arc_flash_cat_3", "shock_277V_to_ground"],
-    "cdu":      ["propylene_glycol_skin_contact", "rotating_equipment_pump"],
-    "busway":   ["arc_flash_cat_2", "shock_480V_three_phase"],
-    "xfmr":     ["arc_flash_cat_4", "induced_voltage", "oil_release"],
-    "genset":   ["co_exposure", "high_temperature_exhaust", "fuel_release"],
-    "hall":     ["arc_flash_cat_2", "high_density_compute_thermal"],
-    "utility":  ["arc_flash_cat_4", "medium_voltage_27_5kV"],
+    "ups": ["arc_flash_cat_2", "stored_dc_energy", "battery_acid_exposure"],
+    "chiller": ["refrigerant_release_a2l", "rotating_equipment", "high_pressure_lines"],
+    "rpp": ["arc_flash_cat_3", "shock_277V_to_ground"],
+    "cdu": ["propylene_glycol_skin_contact", "rotating_equipment_pump"],
+    "busway": ["arc_flash_cat_2", "shock_480V_three_phase"],
+    "xfmr": ["arc_flash_cat_4", "induced_voltage", "oil_release"],
+    "genset": ["co_exposure", "high_temperature_exhaust", "fuel_release"],
+    "hall": ["arc_flash_cat_2", "high_density_compute_thermal"],
+    "utility": ["arc_flash_cat_4", "medium_voltage_27_5kV"],
 }
 
 _PPE_CATEGORY_LABELS = {
@@ -224,9 +216,7 @@ def generate_tha(
     """
     component_kind_clean = component_kind.lower().split("_")[0]
     hazards = list(
-        _BASE_HAZARDS_BY_KIND.get(
-            component_kind_clean, ["unknown_hazards_review_required"]
-        )
+        _BASE_HAZARDS_BY_KIND.get(component_kind_clean, ["unknown_hazards_review_required"])
     )
 
     # Procedure-specific hazards (additive)
@@ -256,9 +246,7 @@ def generate_tha(
         "lor": lor,
         "hazards": hazards,
         "ppe_level": ppe_level,
-        "two_person_rule_required": (
-            procedure_class in ("DMOP", "EOP") or lor >= 3
-        ),
+        "two_person_rule_required": (procedure_class in ("DMOP", "EOP") or lor >= 3),
         "standards": ["NFPA_70E", "CSA_Z462", "OSHA_1910_269"],
         "_authoring_method": "deterministic_rule_based",
         "_review_required_by": "operator_certified_qualified_electrical_worker",
@@ -275,10 +263,7 @@ def determine_contractor_attachments(
 ) -> dict:
     """Decide whether to attach MSOW (master agreement) and EMPS
     (task-specific procedure statement) for contractor work."""
-    needs_contractor = (
-        estimated_cost_usd >= DEFAULT_COST_THRESHOLD_USD
-        or requires_oem_specialist
-    )
+    needs_contractor = estimated_cost_usd >= DEFAULT_COST_THRESHOLD_USD or requires_oem_specialist
     if not needs_contractor:
         return {"contractor_required": False}
 
@@ -309,7 +294,7 @@ def sla_review_hours_for(work_class: str) -> int:
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 #  PURE FUNCTION 6 â€” Thermal derivative fetcher (stub for v8.1 sprint)
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-async def _fetch_thermal_derivative(component_id: str) -> Optional[float]:
+async def _fetch_thermal_derivative(component_id: str) -> float | None:
     """Pull the latest thermal derivative dT/dt for the component.
 
     Stub returning None until v8.1 sprint integrates the streaming
@@ -449,7 +434,7 @@ async def tool_draft_cmms_work_order(args: dict) -> dict:
 
     # If thermal derivative is critical, auto-escalate work_class to EM
     work_class = work_class_hint
-    escalation_reason: Optional[str] = None
+    escalation_reason: str | None = None
     if thermal_dt is not None and abs(thermal_dt) >= THERMAL_CRITICAL_DT_K_PER_S:
         work_class = "EM"
         escalation_reason = (
@@ -496,8 +481,7 @@ async def tool_draft_cmms_work_order(args: dict) -> dict:
         rationale=(
             f"CMMS WO for {component_id}: {issue_summary}. "
             f"Class {work_class}, LOR {lor}, procedure {procedure_class}, "
-            f"SLA {sla_hours}h."
-            + (f" {escalation_reason}" if escalation_reason else "")
+            f"SLA {sla_hours}h." + (f" {escalation_reason}" if escalation_reason else "")
         ),
         metadata={
             "work_class": work_class,

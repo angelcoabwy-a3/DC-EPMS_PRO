@@ -9,6 +9,7 @@ Coverage:
   - Analytic fallback (when scipy unavailable)
   - Time-to-critical calculation
 """
+
 from __future__ import annotations
 
 import os
@@ -19,7 +20,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-import pytest
 
 from backend.physics.base import (
     PhysicalJustification,
@@ -31,15 +31,14 @@ from backend.physics.it_thermal import (
     A2_INLET_MAX_C,
     GPU_TJ_THROTTLE_C,
     GPU_TJ_TRIP_C,
-    ITThermalModule,
     OPS_INLET_TARGET_C,
-    RACK_COUNT,
+    ITThermalModule,
 )
-
 
 # ---------------------------------------------------------------------------
 #  Base data type tests
 # ---------------------------------------------------------------------------
+
 
 class TestBaseTypes:
     """Sanity tests on dataclasses."""
@@ -94,6 +93,7 @@ class TestBaseTypes:
 #  Steady-state validator tests
 # ---------------------------------------------------------------------------
 
+
 class TestValidateNominal:
     """When telemetry matches physics exactly, all checks pass."""
 
@@ -138,7 +138,6 @@ class TestValidateNominal:
 
 
 class TestValidateFaultInjection:
-
     def test_energy_residual_flagged_when_dlc_flow_low(self):
         """If DLC flow drops 50% but delta_T stays the same, we violate
         first-law balance: removed heat drops in proportion."""
@@ -153,15 +152,10 @@ class TestValidateFaultInjection:
             "gpu_tj_max_c": 72.0,
         }
         r = m.validate(meas)
-        balance_check = next(
-            c for c in r.checks if c["name"] == "first_law_energy_balance"
-        )
+        balance_check = next(c for c in r.checks if c["name"] == "first_law_energy_balance")
         assert balance_check["passed"] is False
         # At least one justification with residual
-        energy_just = [
-            j for j in r.justifications
-            if j.law == "first_law_energy_balance_dlc"
-        ]
+        energy_just = [j for j in r.justifications if j.law == "first_law_energy_balance_dlc"]
         assert len(energy_just) == 1
         assert energy_just[0].residual["residual_kw"] > 0  # missing removed heat
 
@@ -178,9 +172,7 @@ class TestValidateFaultInjection:
         }
         r = m.validate(meas)
         assert r.severity == Severity.CRITICAL
-        envelope_check = next(
-            c for c in r.checks if c["name"] == "ashrae_a2_inlet_envelope"
-        )
+        envelope_check = next(c for c in r.checks if c["name"] == "ashrae_a2_inlet_envelope")
         assert envelope_check["passed"] is False
 
     def test_gpu_trip_critical(self):
@@ -196,10 +188,7 @@ class TestValidateFaultInjection:
         }
         r = m.validate(meas)
         assert r.severity == Severity.CRITICAL
-        trip_just = [
-            j for j in r.justifications
-            if j.law == "gpu_junction_thermal_trip"
-        ]
+        trip_just = [j for j in r.justifications if j.law == "gpu_junction_thermal_trip"]
         assert len(trip_just) == 1
 
     def test_gpu_throttle_critical(self):
@@ -246,8 +235,8 @@ class TestValidateDefaults:
 #  Simulation tests
 # ---------------------------------------------------------------------------
 
-class TestSimulateTrajectory:
 
+class TestSimulateTrajectory:
     def test_nominal_trajectory_stable(self):
         """With cooling_factor=1.0 (no fault), temperature stays near T0."""
         m = ITThermalModule()
@@ -285,9 +274,9 @@ class TestSimulateTrajectory:
         )
         # After 15 min with no cooling, hall temp should have risen materially
         final = traj[-1]
-        assert final.state["hall_air_c"] > 25.0, (
-            f"Expected rise, got {final.state['hall_air_c']:.1f} C"
-        )
+        assert (
+            final.state["hall_air_c"] > 25.0
+        ), f"Expected rise, got {final.state['hall_air_c']:.1f} C"
 
     def test_a2_exceeded_event_appears(self):
         """When temperature crosses 35 C we should emit an event."""
@@ -334,7 +323,6 @@ class TestSimulateTrajectory:
 
 
 class TestTimeToCritical:
-
     def test_ttc_matches_literature_value(self):
         """With total cooling loss at 22 C, TTC to 35 C should be ~44 s."""
         m = ITThermalModule()

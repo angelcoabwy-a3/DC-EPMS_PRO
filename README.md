@@ -203,4 +203,3 @@ python backend\mcp_server.py
 # Then press Enter; the server replies with the resource list.
 # Ctrl+C to exit.
 ```
-

@@ -210,7 +210,7 @@ def main() -> int:
     target = Path(".gitignore")
     project_root = Path.cwd()
 
-    print(f"DC-EPMS PRO - create_gitignore.py")
+    print("DC-EPMS PRO - create_gitignore.py")
     print(f"Project root: {project_root}")
     print(f"Target: {target.absolute()}")
     print()
@@ -226,12 +226,12 @@ def main() -> int:
     if target.exists():
         existing = target.read_text(encoding="utf-8-sig")
         if EXPECTED_MARKER in existing:
-            print(f"[OK] .gitignore already exists with expected marker (idempotent skip)")
+            print("[OK] .gitignore already exists with expected marker (idempotent skip)")
             print(f"     Size: {target.stat().st_size} bytes")
             return 0
         else:
             backup = Path(f".gitignore.bak_pre_create_{Path.cwd().name}")
-            print(f"[WARN] .gitignore exists but lacks expected marker")
+            print("[WARN] .gitignore exists but lacks expected marker")
             print(f"       Backing up to: {backup.name}")
             target.replace(backup)
 

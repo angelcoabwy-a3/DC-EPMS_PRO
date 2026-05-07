@@ -1,5 +1,5 @@
 """
-DC-EPMS PRO v8 — Agentic Copilot Engine
+DC-EPMS PRO v8  -  Agentic Copilot Engine
 ========================================
 Tool-using LLM agent that consumes the HAL/physics/STGNN read-side and
 emits human-in-the-loop drafts for any write-side action.
@@ -23,29 +23,30 @@ Wire protocol:
   only the final assistant message back to the SPA
 
 Honest scope notes (read this before assuming everything works):
-- query_unified_graph()    → reads from the v5.2 topology endpoint
+- query_unified_graph()    -> reads from the v5.2 topology endpoint
                               + bms_connector. The "Unified Graph" of
                               v7.1 is the architectural target; today
                               we expose the existing graph shape.
-- analyze_rul_and_supply() → RUL is a deterministic placeholder until
+- analyze_rul_and_supply() -> RUL is a deterministic placeholder until
                               v6 STGNN is trained; supply is a stub
                               until the Wesco partnership is signed.
                               Both pieces are clearly labelled in the
                               tool's response so the operator (and the
                               LLM) know what is real vs nominal.
-- draft_precooling_plan()  → builds a setpoint trajectory using the
+- draft_precooling_plan()  -> builds a setpoint trajectory using the
                               existing physics engine in inverse-mode
                               approximation (bisection on chiller
                               setpoint). Returns a Draft, never writes.
 
 Dependencies (kept light, no agent frameworks):
-    httpx (already in stack)  — calls to LM Studio
-    pydantic (already)        — validation
-    fastapi (already)         — endpoint exposure
+    httpx (already in stack)   -  calls to LM Studio
+    pydantic (already)         -  validation
+    fastapi (already)          -  endpoint exposure
 
 No LangChain, no CrewAI, no AutoGen. The agent loop is < 200 lines of
 Python because that is all it should be.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -54,8 +55,9 @@ import logging
 import os
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Awaitable, Callable
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -65,28 +67,28 @@ from pydantic import BaseModel, Field
 log = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Configuration
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 LM_STUDIO_URL = os.environ.get("LM_STUDIO_URL", "http://127.0.0.1:1234")
 LM_STUDIO_TIMEOUT_S = float(os.environ.get("LM_STUDIO_TIMEOUT_S", "60.0"))
 AGENT_MAX_TOOL_HOPS = int(os.environ.get("AGENT_MAX_TOOL_HOPS", "6"))
 AGENT_TEMPERATURE = float(os.environ.get("AGENT_TEMPERATURE", "0.2"))
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # System prompt
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 SYSTEM_PROMPT = """You are the DC-EPMS PRO Facility Co-Pilot, an embedded \
 operational assistant for a Tier IV 2N data center hosting 118 NVIDIA GB200 \
 NVL72 racks at A3-Alpha (Toronto). You speak with the on-shift Critical \
 Environments Technician (CET).
 
 OPERATING ENVELOPE:
-- 40 MW total · 2N redundancy · ASHRAE A2 thermal envelope (10–35°C inlet)
-- DLC primary (propylene glycol 50/50, supply 18°C, return ≤45°C)
-- Chillers: York YZ centrifugal, 2 × 5275 kW, N+1
-- UPS: Schneider Galaxy VX 750 kVA · 2N · VRLA batteries
+- 40 MW total - 2N redundancy - ASHRAE A2 thermal envelope (10-35degC inlet)
+- DLC primary (propylene glycol 50/50, supply 18degC, return <=45degC)
+- Chillers: York YZ centrifugal, 2 x 5275 kW, N+1
+- UPS: Schneider Galaxy VX 750 kVA - 2N - VRLA batteries
 - BMS: 42 BACnet/Modbus tags via the v5.2 bms_connector
 
 OPERATING DOCTRINE:
@@ -104,7 +106,7 @@ you say so. You do not silently treat nominal values as live.
 6. If asked to do something outside your tool surface, you decline \
 clearly and suggest the right channel (operator action, EOP \
 retrieval via RAG, escalation to Engineering).
-7. DATA PROVENANCE DISCLOSURE — MANDATORY. If a tool result contains \
+7. DATA PROVENANCE DISCLOSURE  -  MANDATORY. If a tool result contains \
 ANY field whose key starts with an underscore (e.g. `_honest_note`, \
 `_source`, `_data_source`) OR whose value contains the literal string \
 "PLACEHOLDER", you MUST surface that disclosure verbatim to the \
@@ -114,7 +116,7 @@ NIST SP 800-82 §6.2.4 (data quality attestation). Failure to surface \
 such a notice is treated as if you fabricated the data.
 8. WRITE-INTENT REPORTING. When a tool returns a `draft_id`, your reply \
 MUST include the draft ID verbatim, the proposed setpoint changes with \
-old → new values, and the explicit instruction "This draft will NOT \
+old -> new values, and the explicit instruction "This draft will NOT \
 execute until you approve it via the HMI." The operator must know \
 exactly what they are approving before they click.
 
@@ -122,9 +124,9 @@ You are NOT a chatbot. You are a tool-using operational agent. Prefer \
 short, structured answers. The operator is busy."""
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Tool schemas (OpenAI / MCP compatible JSON Schema)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 TOOLS_SCHEMA: list[dict] = [
     {
         "type": "function",
@@ -134,7 +136,7 @@ TOOLS_SCHEMA: list[dict] = [
                 "Read live state of any equipment node in the facility's "
                 "Unified Graph: telemetry, severity, redundancy role (2N path A or B), "
                 "and the node's neighbours in the topology. Use this when the operator "
-                "asks about the current state of a specific component — UPS, transformer, "
+                "asks about the current state of a specific component  -  UPS, transformer, "
                 "chiller, CDU, RPP, busway, hall, rack."
             ),
             "parameters": {
@@ -190,7 +192,7 @@ TOOLS_SCHEMA: list[dict] = [
                 "Compose a pre-cooling setpoint trajectory for the chilled-water "
                 "loop in anticipation of an incoming IT load (typically a CoreWeave "
                 "training job on the GB200 fleet). Returns a Draft object listing "
-                "the proposed setpoint changes — the operator must approve via the "
+                "the proposed setpoint changes  -  the operator must approve via the "
                 "HMI before any setpoint is written. The draft is ALWAYS within the "
                 "operator's existing manual write envelope (no privilege escalation)."
             ),
@@ -200,8 +202,8 @@ TOOLS_SCHEMA: list[dict] = [
                     "target_kw": {
                         "type": "number",
                         "description": (
-                            "Estimated IT load in kW that will arrive (per rack × "
-                            "number of racks). Range: 0–17000 kW (full facility)."
+                            "Estimated IT load in kW that will arrive (per rack x "
+                            "number of racks). Range: 0-17000 kW (full facility)."
                         ),
                     },
                     "duration_s": {
@@ -228,11 +230,11 @@ TOOLS_SCHEMA: list[dict] = [
 ]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Tool registry: name → async callable
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# Tool registry: name -> async callable
+# -----------------------------------------------------------------------------
 class ToolRegistry:
-    """Owns the dispatch from LLM tool-call → Python callable.
+    """Owns the dispatch from LLM tool-call -> Python callable.
 
     Tools are async functions that take the parsed arguments dict and
     return any JSON-serializable value. The agent loop wraps the result
@@ -242,9 +244,7 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, Callable[[dict], Awaitable[Any]]] = {}
 
-    def register(
-        self, name: str, fn: Callable[[dict], Awaitable[Any]]
-    ) -> None:
+    def register(self, name: str, fn: Callable[[dict], Awaitable[Any]]) -> None:
         self._tools[name] = fn
 
     async def dispatch(self, name: str, args: dict) -> Any:
@@ -261,9 +261,9 @@ class ToolRegistry:
         return name in self._tools
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Tool implementations
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 async def tool_query_unified_graph(args: dict) -> dict:
     """READ tool. Pulls from the v5.2 topology endpoint + BMS connector.
 
@@ -350,12 +350,12 @@ async def tool_analyze_rul_and_supply(args: dict) -> dict:
     placeholder_in_stock = True
     placeholder_lead_time_days = 7
 
-    # Action recommendation logic: short RUL + lead time gap → expedite.
+    # Action recommendation logic: short RUL + lead time gap -> expedite.
     days_buffer = placeholder_rul_days - placeholder_lead_time_days
     if days_buffer < 7:
         action = "expedite"
         rationale = (
-            f"RUL ({placeholder_rul_days:.1f} d) − lead time "
+            f"RUL ({placeholder_rul_days:.1f} d) - lead time "
             f"({placeholder_lead_time_days} d) = {days_buffer:.1f} d buffer. "
             f"Below 7-day expedite threshold."
         )
@@ -367,9 +367,7 @@ async def tool_analyze_rul_and_supply(args: dict) -> dict:
         )
     else:
         action = "watch"
-        rationale = (
-            f"Buffer {days_buffer:.1f} d sufficient. Monitor RUL trajectory."
-        )
+        rationale = f"Buffer {days_buffer:.1f} d sufficient. Monitor RUL trajectory."
 
     return {
         "component_id": component_id,
@@ -380,15 +378,14 @@ async def tool_analyze_rul_and_supply(args: dict) -> dict:
         "rul": {
             "predicted_days": round(placeholder_rul_days, 1),
             "confidence_band_days": round(confidence_band_days, 1),
-            "_source": "PLACEHOLDER — v6 STGNN not yet trained. "
-                       "Value is a deterministic function of current health.",
+            "_source": "PLACEHOLDER  -  v6 STGNN not yet trained. "
+            "Value is a deterministic function of current health.",
         },
         "supply": {
             "part_number": placeholder_part_number,
             "in_stock": placeholder_in_stock,
             "lead_time_days": placeholder_lead_time_days,
-            "_source": "PLACEHOLDER — Wesco partnership pending. "
-                       "Stub catalog entry returned.",
+            "_source": "PLACEHOLDER  -  Wesco partnership pending. " "Stub catalog entry returned.",
         },
         "recommended_action": action,
         "rationale": rationale,
@@ -418,11 +415,11 @@ async def tool_draft_precooling_plan(args: dict) -> dict:
 
     # Bounds checking
     if not (0 < target_kw <= 17_000):
-        return {"error": "target_kw outside facility envelope (0–17000 kW)"}
+        return {"error": "target_kw outside facility envelope (0-17000 kW)"}
     if duration_s < 300:
         return {
-            "error": "duration_s < 300 s — pre-cool not justified for "
-                     "loads shorter than 5 minutes (chiller slew rate)"
+            "error": "duration_s < 300 s  -  pre-cool not justified for "
+            "loads shorter than 5 minutes (chiller slew rate)"
         }
     if not (60 <= lookahead_s <= 1800):
         return {"error": "lookahead_s must be in [60, 1800] s"}
@@ -439,7 +436,7 @@ async def tool_draft_precooling_plan(args: dict) -> dict:
     setpoint_reduction_k = 1.5 * capacity_fraction
     proposed_setpoint_c = nominal_chw_setpoint_c - setpoint_reduction_k
 
-    # Clamp to ASHRAE-driven minimums (don't go below 5°C — risk of
+    # Clamp to ASHRAE-driven minimums (don't go below 5degC  -  risk of
     # condensation on dry coils, refrigerant approach issues)
     proposed_setpoint_c = max(5.5, proposed_setpoint_c)
 
@@ -499,16 +496,28 @@ async def tool_draft_precooling_plan(args: dict) -> dict:
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Topology helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 _REDUNDANCY_PATH_A = {
-    "utility_north", "xfmr_a", "ups_a", "rpp_a1", "rpp_a2",
-    "busway_a", "cdu_a", "chiller_1",
+    "utility_north",
+    "xfmr_a",
+    "ups_a",
+    "rpp_a1",
+    "rpp_a2",
+    "busway_a",
+    "cdu_a",
+    "chiller_1",
 }
 _REDUNDANCY_PATH_B = {
-    "utility_south", "xfmr_b", "ups_b", "rpp_b1", "rpp_b2",
-    "busway_b", "cdu_b", "chiller_2",
+    "utility_south",
+    "xfmr_b",
+    "ups_b",
+    "rpp_b1",
+    "rpp_b2",
+    "busway_b",
+    "cdu_b",
+    "chiller_2",
 }
 _TOPOLOGY_EDGES: dict[str, list[str]] = {
     "utility_north": ["xfmr_a"],
@@ -546,9 +555,9 @@ def _topology_neighbours(device_id: str) -> list[str]:
     return _TOPOLOGY_EDGES.get(device_id, [])
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Draft store (in-memory, with TTL)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 @dataclass
 class Draft:
     draft_id: str
@@ -559,9 +568,9 @@ class Draft:
     created_at_unix: float = field(default_factory=time.time)
     expires_at_unix: float = 0.0
     status: str = "PENDING_OPERATOR_APPROVAL"
-    approved_by: Optional[str] = None
-    approved_at_unix: Optional[float] = None
-    rejection_reason: Optional[str] = None
+    approved_by: str | None = None
+    approved_at_unix: float | None = None
+    rejection_reason: str | None = None
 
 
 class _DraftStoreImpl:
@@ -580,7 +589,7 @@ class _DraftStoreImpl:
         kind: str,
         commands: list[dict],
         rationale: str,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
         ttl_s: int = DEFAULT_TTL_S,
     ) -> Draft:
         draft_id = uuid.uuid4().hex
@@ -597,7 +606,7 @@ class _DraftStoreImpl:
         self._drafts[draft_id] = draft
         return draft
 
-    def get(self, draft_id: str) -> Optional[Draft]:
+    def get(self, draft_id: str) -> Draft | None:
         draft = self._drafts.get(draft_id)
         if draft is None:
             return None
@@ -608,11 +617,12 @@ class _DraftStoreImpl:
     def list_pending(self) -> list[Draft]:
         now = time.time()
         return [
-            d for d in self._drafts.values()
+            d
+            for d in self._drafts.values()
             if d.status == "PENDING_OPERATOR_APPROVAL" and d.expires_at_unix > now
         ]
 
-    def approve(self, draft_id: str, operator: str) -> Optional[Draft]:
+    def approve(self, draft_id: str, operator: str) -> Draft | None:
         draft = self.get(draft_id)
         if draft is None or draft.status != "PENDING_OPERATOR_APPROVAL":
             return None
@@ -621,7 +631,7 @@ class _DraftStoreImpl:
         draft.approved_at_unix = time.time()
         return draft
 
-    def reject(self, draft_id: str, operator: str, reason: str) -> Optional[Draft]:
+    def reject(self, draft_id: str, operator: str, reason: str) -> Draft | None:
         draft = self.get(draft_id)
         if draft is None or draft.status != "PENDING_OPERATOR_APPROVAL":
             return None
@@ -635,24 +645,24 @@ class _DraftStoreImpl:
 DraftStore = _DraftStoreImpl()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 # Agent loop
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
 class FacilityCoPilot:
     """The agent loop. Stateless across requests; the SPA manages
     conversation history and replays it on each call."""
 
     def __init__(
         self,
-        registry: Optional[ToolRegistry] = None,
+        registry: ToolRegistry | None = None,
         lm_studio_url: str = LM_STUDIO_URL,
         max_tool_hops: int = AGENT_MAX_TOOL_HOPS,
     ) -> None:
         self._registry = registry or _build_default_registry()
         self._lm_studio_url = lm_studio_url
         self._max_tool_hops = max_tool_hops
-        self._http: Optional[httpx.AsyncClient] = None
-        self._model_id: Optional[str] = None
+        self._http: httpx.AsyncClient | None = None
+        self._model_id: str | None = None
 
     async def _client(self) -> httpx.AsyncClient:
         if self._http is None:
@@ -682,7 +692,7 @@ class FacilityCoPilot:
     async def chat(
         self,
         operator_message: str,
-        history: Optional[list[dict]] = None,
+        history: list[dict] | None = None,
     ) -> dict:
         """Run the agent loop until the model returns a final assistant
         message (no further tool calls) or max_tool_hops is exceeded.
@@ -704,9 +714,13 @@ class FacilityCoPilot:
             # Defensive copy + filter out our internal-only fields
             for msg in history:
                 if msg.get("role") in ("user", "assistant", "tool"):
-                    messages.append({k: v for k, v in msg.items()
-                                     if k in ("role", "content", "tool_call_id",
-                                              "tool_calls", "name")})
+                    messages.append(
+                        {
+                            k: v
+                            for k, v in msg.items()
+                            if k in ("role", "content", "tool_call_id", "tool_calls", "name")
+                        }
+                    )
         messages.append({"role": "user", "content": operator_message})
 
         invocations: list[dict] = []
@@ -754,11 +768,13 @@ class FacilityCoPilot:
                 }
 
             # Append the assistant's tool_calls turn to the history
-            messages.append({
-                "role": "assistant",
-                "content": msg.get("content", "") or None,
-                "tool_calls": tool_calls,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": msg.get("content", "") or None,
+                    "tool_calls": tool_calls,
+                }
+            )
 
             # Execute every requested tool and append the results
             for call in tool_calls:
@@ -771,24 +787,28 @@ class FacilityCoPilot:
                 tool_result = await self._registry.dispatch(fn_name, fn_args)
 
                 # Capture invocation for the response
-                invocations.append({
-                    "tool": fn_name,
-                    "args": fn_args,
-                    "result_summary": _summarize_result(tool_result),
-                })
+                invocations.append(
+                    {
+                        "tool": fn_name,
+                        "args": fn_args,
+                        "result_summary": _summarize_result(tool_result),
+                    }
+                )
 
                 # Track any drafts emitted
                 if isinstance(tool_result, dict) and "draft_id" in tool_result:
                     emitted_drafts.append(tool_result["draft_id"])
 
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": call["id"],
-                    "name": fn_name,
-                    "content": json.dumps(tool_result, default=str),
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call["id"],
+                        "name": fn_name,
+                        "content": json.dumps(tool_result, default=str),
+                    }
+                )
 
-        # Hop limit reached without terminal — return what we have
+        # Hop limit reached without terminal  -  return what we have
         return {
             "reply": (
                 "[Agent reached maximum tool-call hops without producing a "
@@ -814,9 +834,10 @@ def _build_default_registry() -> ToolRegistry:
     reg.register("analyze_rul_and_supply", tool_analyze_rul_and_supply)
     reg.register("draft_precooling_plan", tool_draft_precooling_plan)
 
-    # ── v8.1: CMMS work-order draft tool (Phase 1 of Tri-Brain) ──
+    # -- v8.1: CMMS work-order draft tool (Phase 1 of Tri-Brain) --
     try:
-        from cmms_mcp import tool_draft_cmms_work_order, DRAFT_CMMS_WORK_ORDER_SCHEMA
+        from cmms_mcp import DRAFT_CMMS_WORK_ORDER_SCHEMA, tool_draft_cmms_work_order
+
         reg.register("draft_cmms_work_order", tool_draft_cmms_work_order)
         TOOLS_SCHEMA.append(DRAFT_CMMS_WORK_ORDER_SCHEMA)
         log.info("[v8.1] CMMS work-order tool registered")
@@ -825,22 +846,23 @@ def _build_default_registry() -> ToolRegistry:
 
     # Sprint S1b: Site Model query tool
     try:
-        from agent_site_tool import tool_query_site_model, QUERY_SITE_MODEL_SCHEMA
+        from agent_site_tool import QUERY_SITE_MODEL_SCHEMA, tool_query_site_model
+
         reg.register("query_site_model", tool_query_site_model)
         TOOLS_SCHEMA.append(QUERY_SITE_MODEL_SCHEMA)
         log.info("[Sprint S1b] Site model query tool registered")
     except Exception as e:
         log.warning(f"[Sprint S1b] Site model query tool NOT registered: {e}")
 
-
     # Sprint S2: GraphRAG query tool
     try:
-        from agent_graph_tool import tool_query_graph_rag, QUERY_GRAPH_RAG_SCHEMA
-        reg.register('query_graph_rag', tool_query_graph_rag)
+        from agent_graph_tool import QUERY_GRAPH_RAG_SCHEMA, tool_query_graph_rag
+
+        reg.register("query_graph_rag", tool_query_graph_rag)
         TOOLS_SCHEMA.append(QUERY_GRAPH_RAG_SCHEMA)
-        log.info('[Sprint S2] GraphRAG query tool registered')
+        log.info("[Sprint S2] GraphRAG query tool registered")
     except Exception as e:
-        log.warning(f'[Sprint S2] GraphRAG query tool NOT registered: {e}')
+        log.warning(f"[Sprint S2] GraphRAG query tool NOT registered: {e}")
 
     return reg
 
@@ -858,16 +880,16 @@ def _summarize_result(result: Any) -> str:
     return str(result)[:120]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# FastAPI router — mount on the existing app via app.include_router(router)
-# ─────────────────────────────────────────────────────────────────────────────
+# -----------------------------------------------------------------------------
+# FastAPI router  -  mount on the existing app via app.include_router(router)
+# -----------------------------------------------------------------------------
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 _copilot = FacilityCoPilot()
 
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
-    history: Optional[list[dict]] = None
+    history: list[dict] | None = None
     operator: str = Field("anonymous", description="CET user id for audit")
 
 
@@ -877,12 +899,12 @@ class ChatResponse(BaseModel):
     drafts: list[str]
     model_id: str
     hops: int
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class DraftActionRequest(BaseModel):
     operator: str = Field(..., description="CET user id, recorded in audit")
-    reason: Optional[str] = Field(None, description="Required for reject")
+    reason: str | None = Field(None, description="Required for reject")
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -898,6 +920,7 @@ async def agent_chat_stream(req: ChatRequest):
     """Server-Sent Events variant. Tool calls are non-streamed, but the
     final assistant message is streamed token-by-token. Useful for
     long-form replies."""
+
     async def event_stream():
         result = await _copilot.chat(req.message, req.history)
         # Emit invocations first so the SPA can render a call trace
@@ -908,7 +931,7 @@ async def agent_chat_stream(req: ChatRequest):
         # Final reply chunked into ~80-char pieces for visual streaming
         reply = result["reply"]
         for i in range(0, len(reply), 80):
-            chunk = reply[i:i + 80]
+            chunk = reply[i : i + 80]
             yield f"event: token\ndata: {json.dumps({'text': chunk})}\n\n"
             await asyncio.sleep(0.02)
         yield f"event: done\ndata: {json.dumps({'hops': result['hops']})}\n\n"
@@ -941,7 +964,7 @@ async def approve_draft(draft_id: str, req: DraftActionRequest) -> dict:
     appropriate write path with NIST SP 800-82 audit logging.
 
     NOTE: actual write dispatch is delegated to the existing BMS /
-    setpoint write infrastructure. We DO NOT bypass it — every command
+    setpoint write infrastructure. We DO NOT bypass it  -  every command
     is filtered through the same validation (safety bounds, rate limits,
     alarm preconditions) that operator-originated writes pass through.
     """
@@ -956,6 +979,7 @@ async def approve_draft(draft_id: str, req: DraftActionRequest) -> dict:
     execution_log: list[dict] = []
     try:
         from main import _execute_drafted_command  # type: ignore
+
         for cmd in draft.commands:
             outcome = await _execute_drafted_command(
                 command=cmd,
@@ -966,11 +990,13 @@ async def approve_draft(draft_id: str, req: DraftActionRequest) -> dict:
     except ImportError:
         # Bootstrap path: the dispatch hook is not yet wired into main.
         # Audit the approval anyway and report.
-        execution_log.append({
-            "status": "DEFERRED",
-            "note": "main._execute_drafted_command not yet implemented; "
-                    "approval is logged but commands are not dispatched.",
-        })
+        execution_log.append(
+            {
+                "status": "DEFERRED",
+                "note": "main._execute_drafted_command not yet implemented; "
+                "approval is logged but commands are not dispatched.",
+            }
+        )
 
     return {
         "draft_id": draft_id,

@@ -8,18 +8,16 @@ Coverage:
   - On-battery runtime calculation
   - ODE: utility loss -> discharge -> generator online
 """
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from backend.physics.base import Severity
 from backend.physics.electrical import (
     BATT_NOMINAL_VDC,
-    ElectricalModule,
     UPS_ETA_DOUBLE_CONV_MAX,
-    UPS_ETA_MAX,
     UPS_RATED_KW,
     XFMR_WINDING_MAX_C,
+    ElectricalModule,
     _battery_voltage_from_soc,
     _transformer_losses_kw,
     _ups_efficiency,
@@ -27,7 +25,6 @@ from backend.physics.electrical import (
 
 
 class TestUPSEfficiencyCurve:
-
     def test_peak_efficiency_in_mid_load(self):
         """Efficiency should peak in the 30-90% load band."""
         eta_peak = _ups_efficiency(0.5, mode="online")
@@ -53,7 +50,6 @@ class TestUPSEfficiencyCurve:
 
 
 class TestTransformerLosses:
-
     def test_no_load_losses_always_present(self):
         """At zero load, iron losses are still present."""
         loss = _transformer_losses_kw(0.0)
@@ -70,7 +66,6 @@ class TestTransformerLosses:
 
 
 class TestBatteryVoltageCurve:
-
     def test_full_soc_nominal_voltage(self):
         v = _battery_voltage_from_soc(1.0)
         assert abs(v - BATT_NOMINAL_VDC) < 1.0
@@ -90,7 +85,6 @@ class TestBatteryVoltageCurve:
 
 
 class TestValidateNominal:
-
     def _nominal(self) -> dict:
         # UPS at 50% load gives peak efficiency (96% online)
         # Rated load = 600 kW, so 50% = 300 kW
@@ -125,7 +119,6 @@ class TestValidateNominal:
 
 
 class TestFaults:
-
     def _baseline(self):
         ups_load = 300.0
         return {
@@ -148,8 +141,7 @@ class TestFaults:
         meas = self._baseline()
         meas["xfmr_winding_c"] = XFMR_WINDING_MAX_C + 5.0
         r = m.validate(meas)
-        wnd_check = next(c for c in r.checks
-                         if c["name"] == "transformer_winding_thermal_model")
+        wnd_check = next(c for c in r.checks if c["name"] == "transformer_winding_thermal_model")
         assert not wnd_check["passed"]
         assert r.severity == Severity.CRITICAL
 
@@ -160,8 +152,7 @@ class TestFaults:
         # Triple the input for same load => efficiency drops way below curve
         meas["ups_input_kw"] = 900.0
         r = m.validate(meas)
-        eff_check = next(c for c in r.checks
-                         if c["name"] == "ups_efficiency_vs_curve")
+        eff_check = next(c for c in r.checks if c["name"] == "ups_efficiency_vs_curve")
         assert not eff_check["passed"]
 
     def test_battery_soc_voltage_mismatch(self):
@@ -172,8 +163,7 @@ class TestFaults:
         meas["battery_soc"] = 1.0
         meas["battery_vdc"] = 480.0
         r = m.validate(meas)
-        batt_check = next(c for c in r.checks
-                          if c["name"] == "battery_voltage_soc_consistency")
+        batt_check = next(c for c in r.checks if c["name"] == "battery_voltage_soc_consistency")
         assert not batt_check["passed"]
         assert r.severity >= Severity.WARNING
 
@@ -185,15 +175,13 @@ class TestFaults:
         meas["battery_soc"] = 0.3
         meas["battery_vdc"] = _battery_voltage_from_soc(0.3)
         r = m.validate(meas)
-        rt_check = next(c for c in r.checks
-                        if c["name"] == "on_battery_runtime_remaining")
+        rt_check = next(c for c in r.checks if c["name"] == "on_battery_runtime_remaining")
         # 12 min rated * 0.3 = 3.6 min -> below 5 min threshold
         assert not rt_check["passed"]
         assert r.severity == Severity.CRITICAL
 
 
 class TestSimulate:
-
     def test_utility_fail_depletes_battery(self):
         """Utility fails at t=0, gen never starts -> SOC drops."""
         m = ElectricalModule()
@@ -210,9 +198,9 @@ class TestSimulate:
         )
         # After 15 min at full load, battery should be near empty
         final = traj[-1]
-        assert final.state["battery_soc"] < 0.1, (
-            f"SOC should be depleted, got {final.state['battery_soc']:.2f}"
-        )
+        assert (
+            final.state["battery_soc"] < 0.1
+        ), f"SOC should be depleted, got {final.state['battery_soc']:.2f}"
         events = [e for snap in traj for e in snap.events]
         assert "battery_low_warning" in events
 

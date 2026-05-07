@@ -15,6 +15,7 @@ What it does:
   5. Archives legacy files to _legacy_backup/
   6. Deletes test_* files, backups, and obsolete HTML versions
 """
+
 from __future__ import annotations
 
 import argparse
@@ -24,10 +25,10 @@ import sys
 
 # Files we want to keep and move
 KEEP_FILES = {
-    "dc-epms-v15.html":       "frontend/index.html",
-    "chroma_db":              "data/chroma_db",       # directory
-    "epms_mcp.db":            "data/epms_mcp.db",
-    ".env":                   "config/.env",
+    "dc-epms-v15.html": "frontend/index.html",
+    "chroma_db": "data/chroma_db",  # directory
+    "epms_mcp.db": "data/epms_mcp.db",
+    ".env": "config/.env",
 }
 
 # Files to delete — obsolete
@@ -37,11 +38,11 @@ DELETE_PATTERNS = [
     "check_*.py",
     "*_backup.*",
     "*_old.*",
-    "serve_epms.py",      # legacy pre-v3
-    "mcp_epms_server.py", # superseded by FastAPI main.py
-    "mcp_epms_stdio*.py", # superseded
-    "fix_schema.py",      # one-shot migration already done
-    "index_docs*.py",     # one-shot indexing already done
+    "serve_epms.py",  # legacy pre-v3
+    "mcp_epms_server.py",  # superseded by FastAPI main.py
+    "mcp_epms_stdio*.py",  # superseded
+    "fix_schema.py",  # one-shot migration already done
+    "index_docs*.py",  # one-shot indexing already done
 ]
 
 
@@ -87,7 +88,7 @@ def migrate(source: pathlib.Path, target: pathlib.Path, dry_run: bool = False):
 
     # ── Archive everything else for safety ───────────────────
     for item in source.iterdir():
-        if item.name in {k.split("/")[0] for k in KEEP_FILES.keys()}:
+        if item.name in {k.split("/")[0] for k in KEEP_FILES}:
             continue
         if any(item.match(p) for p in DELETE_PATTERNS):
             if dry_run:
@@ -120,10 +121,14 @@ def migrate(source: pathlib.Path, target: pathlib.Path, dry_run: bool = False):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--source",  required=True,  help="Legacy flat project path")
-    p.add_argument("--target",  default=".",    help="Target DC-EPMS_PRO path")
+    p.add_argument("--source", required=True, help="Legacy flat project path")
+    p.add_argument("--target", default=".", help="Target DC-EPMS_PRO path")
     p.add_argument("--dry-run", action="store_true", help="Preview only")
     args = p.parse_args()
-    sys.exit(migrate(pathlib.Path(args.source).resolve(),
-                     pathlib.Path(args.target).resolve(),
-                     dry_run=args.dry_run))
+    sys.exit(
+        migrate(
+            pathlib.Path(args.source).resolve(),
+            pathlib.Path(args.target).resolve(),
+            dry_run=args.dry_run,
+        )
+    )

@@ -7,29 +7,29 @@ executor (with SimulatedAdapter), and full procedure run end-to-end.
 Run:
     pytest tests/test_procedure_engine.py -v
 """
-import sys
+
 import pathlib
+import sys
+
 import pytest
-import asyncio
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
 from procedure_engine import (
-    ProcedureState,
-    ProcedureExecution,
-    ProcedureRegistry,
-    PreConditionEvaluator,
-    StateProvider,
-    AdapterRegistry,
-    SimulatedAdapter,
-    BaseAdapter,
-    StepExecutor,
-    ProcedureOrchestrator,
-    InvalidTransitionError,
-    ProcedureNotFoundError,
-    build_default_orchestrator,
     _VALID_TRANSITIONS,
+    AdapterRegistry,
+    InvalidTransitionError,
+    PreConditionEvaluator,
+    ProcedureExecution,
+    ProcedureNotFoundError,
+    ProcedureOrchestrator,
+    ProcedureRegistry,
+    ProcedureState,
+    SimulatedAdapter,
+    StateProvider,
+    StepExecutor,
+    build_default_orchestrator,
 )
 
 
@@ -37,7 +37,6 @@ from procedure_engine import (
 #  State machine
 # ═══════════════════════════════════════════════════════════════════════
 class TestStateMachine:
-
     def _new_execution(self) -> ProcedureExecution:
         return ProcedureExecution(
             execution_id="test_exec",
@@ -99,7 +98,6 @@ class TestStateMachine:
 #  Procedure registry (loads YAML)
 # ═══════════════════════════════════════════════════════════════════════
 class TestProcedureRegistry:
-
     def test_load_real_procedure_yml(self):
         reg = ProcedureRegistry(PROJECT_ROOT / "config" / "procedures")
         reg.load_all()
@@ -135,22 +133,21 @@ class TestProcedureRegistry:
 #  Pre-condition evaluator (Sprint 1 stub level)
 # ═══════════════════════════════════════════════════════════════════════
 class TestPreConditionEvaluator:
-
     @pytest.mark.asyncio
     async def test_redundancy_2n_passes(self):
         ev = PreConditionEvaluator(StateProvider())
-        results = await ev.evaluate([
-            {"id": "test1", "check": "site_redundancy_mode == '2N'", "failure_action": "ABORT"}
-        ])
+        results = await ev.evaluate(
+            [{"id": "test1", "check": "site_redundancy_mode == '2N'", "failure_action": "ABORT"}]
+        )
         assert len(results) == 1
         assert results[0]["passed"] is True
 
     @pytest.mark.asyncio
     async def test_no_critical_incidents_passes(self):
         ev = PreConditionEvaluator(StateProvider())
-        results = await ev.evaluate([
-            {"id": "test1", "check": "severity_max < CRITICAL", "failure_action": "ABORT"}
-        ])
+        results = await ev.evaluate(
+            [{"id": "test1", "check": "severity_max < CRITICAL", "failure_action": "ABORT"}]
+        )
         assert len(results) == 1
         assert results[0]["passed"] is True
 
@@ -158,18 +155,19 @@ class TestPreConditionEvaluator:
     async def test_unsupported_check_fails_closed(self):
         """Unsupported expressions must fail closed for safety."""
         ev = PreConditionEvaluator(StateProvider())
-        results = await ev.evaluate([
-            {"id": "test1", "check": "outdoor_temp_c < 35", "failure_action": "WARN"}
-        ])
+        results = await ev.evaluate(
+            [{"id": "test1", "check": "outdoor_temp_c < 35", "failure_action": "WARN"}]
+        )
         assert results[0]["passed"] is False
-        assert "_sprint_5_TODO" in results[0] or "_unsupported_expression" in str(results[0]["observed"])
+        assert "_sprint_5_TODO" in results[0] or "_unsupported_expression" in str(
+            results[0]["observed"]
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Adapter registry + simulated adapter
 # ═══════════════════════════════════════════════════════════════════════
 class TestSimulatedAdapter:
-
     @pytest.mark.asyncio
     async def test_simulated_write_returns_ok(self):
         adapter = SimulatedAdapter()
@@ -185,11 +183,10 @@ class TestSimulatedAdapter:
 
 
 class TestAdapterRegistry:
-
     def test_unknown_adapter_falls_back_to_simulated(self):
         reg = AdapterRegistry()
         reg.register("simulated", SimulatedAdapter())
-        a = reg.get("cummins")     # not registered
+        a = reg.get("cummins")  # not registered
         assert isinstance(a, SimulatedAdapter)
 
     def test_registered_adapter_is_returned(self):
@@ -203,7 +200,6 @@ class TestAdapterRegistry:
 #  Step executor
 # ═══════════════════════════════════════════════════════════════════════
 class TestStepExecutor:
-
     @pytest.fixture
     def executor(self):
         reg = AdapterRegistry()
@@ -213,8 +209,11 @@ class TestStepExecutor:
     @pytest.fixture
     def execution(self):
         return ProcedureExecution(
-            execution_id="exec1", procedure_id="P1", procedure_title="T",
-            operator="op", state=ProcedureState.IN_PROGRESS,
+            execution_id="exec1",
+            procedure_id="P1",
+            procedure_title="T",
+            operator="op",
+            state=ProcedureState.IN_PROGRESS,
             created_at_unix=0.0,
         )
 
@@ -228,9 +227,13 @@ class TestStepExecutor:
     @pytest.mark.asyncio
     async def test_write_verify_step_succeeds(self, executor, execution):
         step = {
-            "id": "s2", "title": "Write", "type": "write_verify",
-            "adapter": "simulated", "target": "ats_a",
-            "command": "TRANSFER", "payload": {},
+            "id": "s2",
+            "title": "Write",
+            "type": "write_verify",
+            "adapter": "simulated",
+            "target": "ats_a",
+            "command": "TRANSFER",
+            "payload": {},
             "verify_after": {"position": "EMERGENCY"},
         }
         result = await executor.execute_step(step, execution)
@@ -240,11 +243,12 @@ class TestStepExecutor:
     async def test_dwell_step_caps_at_dev_limit(self, executor, execution):
         """Dev mode caps dwell to 0.5s for fast tests."""
         import time
+
         step = {"id": "s3", "title": "Wait", "type": "dwell", "duration_s": 600}
         t0 = time.time()
         result = await executor.execute_step(step, execution)
         elapsed = time.time() - t0
-        assert elapsed < 1.5   # capped well below 600s
+        assert elapsed < 1.5  # capped well below 600s
         assert result.status == "OK"
         assert "_sprint_1_dev_note" in result.adapter_response
 
@@ -260,16 +264,20 @@ class TestStepExecutor:
 #  Full orchestrator integration
 # ═══════════════════════════════════════════════════════════════════════
 class TestOrchestrator:
-
     @pytest.fixture
     def orchestrator(self):
         """Sprint 1 orchestrator WITHOUT witness gate. Sprint 3 adds
         witness behavior in test_witness_engine.py — these tests verify
         the unwitnessed flow."""
         from procedure_engine import (
-            ProcedureRegistry, PreConditionEvaluator, StateProvider,
-            AdapterRegistry, SimulatedAdapter, StepExecutor, ProcedureOrchestrator,
+            AdapterRegistry,
+            PreConditionEvaluator,
+            ProcedureRegistry,
+            SimulatedAdapter,
+            StateProvider,
+            StepExecutor,
         )
+
         registry = ProcedureRegistry(PROJECT_ROOT / "config" / "procedures")
         registry.load_all()
         adapters = AdapterRegistry()
@@ -354,7 +362,7 @@ class TestOrchestrator:
         await orchestrator.advance_to_in_progress(ex.execution_id, "test_op")
         # Now COMPLETED
         ex2 = await orchestrator.abort_now(ex.execution_id, "test_op", "too late")
-        assert ex2.state == ProcedureState.COMPLETED   # unchanged
+        assert ex2.state == ProcedureState.COMPLETED  # unchanged
 
     @pytest.mark.asyncio
     async def test_failed_step_triggers_abort_sequence(self, orchestrator, monkeypatch):
@@ -389,6 +397,6 @@ class TestOrchestrator:
 def test_build_default_orchestrator_smoke():
     """Just confirm the factory can construct everything from disk."""
     orch = build_default_orchestrator(PROJECT_ROOT)
-    assert orch.registry.list_ids()       # at least one procedure loaded
+    assert orch.registry.list_ids()  # at least one procedure loaded
     assert orch.executor is not None
     assert orch.evaluator is not None

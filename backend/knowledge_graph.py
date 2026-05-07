@@ -16,10 +16,12 @@ Edge types in the graph:
   - applies_to_type      (knowledge_node -> type_marker_node)
   - is_a                 (component -> type_marker_node)
 """
+
 from __future__ import annotations
+
+import logging
 from dataclasses import dataclass
 from typing import Any
-import logging
 
 import networkx as nx
 
@@ -29,6 +31,7 @@ log = logging.getLogger(__name__)
 @dataclass
 class KnowledgeNode:
     """A single knowledge document (one markdown file)."""
+
     id: str
     title: str
     source: str
@@ -132,7 +135,8 @@ def build_knowledge_graph(
                     continue
                 power_edges_added.add(key)
                 g.add_edge(
-                    src, dst,
+                    src,
+                    dst,
                     key=f"power:{group}:{src}:{dst}",
                     relation="feeds_power_to",
                     group=group,
@@ -162,7 +166,8 @@ def build_knowledge_graph(
                         continue
                     cooling_edges_added.add((src, dst))
                     g.add_edge(
-                        src, dst,
+                        src,
+                        dst,
                         key=f"cool:{src}:{dst}",
                         relation="cools",
                     )
@@ -286,16 +291,18 @@ def get_knowledge_for_component_type(
         if data.get("relation") == "applies_to_type":
             kn_data = graph.nodes[src]
             if kn_data.get("kind") == "knowledge":
-                knowledge_nodes.append({
-                    "id": src,
-                    "title": kn_data.get("title"),
-                    "source": kn_data.get("source"),
-                    "source_type": kn_data.get("source_type"),
-                    "jurisdiction": kn_data.get("jurisdiction"),
-                    "version": kn_data.get("version"),
-                    "voltage_class": kn_data.get("voltage_class"),
-                    "tags": kn_data.get("tags", []),
-                })
+                knowledge_nodes.append(
+                    {
+                        "id": src,
+                        "title": kn_data.get("title"),
+                        "source": kn_data.get("source"),
+                        "source_type": kn_data.get("source_type"),
+                        "jurisdiction": kn_data.get("jurisdiction"),
+                        "version": kn_data.get("version"),
+                        "voltage_class": kn_data.get("voltage_class"),
+                        "tags": kn_data.get("tags", []),
+                    }
+                )
     return knowledge_nodes
 
 
@@ -313,10 +320,12 @@ def filter_by_jurisdiction(
     keep: list[dict] = []
     for kn in knowledge_list:
         kj = kn.get("jurisdiction", "international")
-        if kj == "international":
-            keep.append(kn)
-        elif kj == "canada" and "canada" in component_jurisdiction:
-            keep.append(kn)
-        elif kj == "ontario_canada" and component_jurisdiction == "ontario_canada":
+        if (
+            kj == "international"
+            or kj == "canada"
+            and "canada" in component_jurisdiction
+            or kj == "ontario_canada"
+            and component_jurisdiction == "ontario_canada"
+        ):
             keep.append(kn)
     return keep

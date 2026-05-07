@@ -11,21 +11,22 @@ Usage:
   python scripts/seed_rag.py            # incremental seed (upsert)
   python scripts/seed_rag.py --reset    # wipe collection and re-index
 """
+
 from __future__ import annotations
 
 import argparse
-import sys
 import pathlib
 import re
+import sys
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
 
 TIER_META = {
-    "tier1_safety":    {"tier": 1, "source": "safety",    "priority": 1},
-    "tier2_vendor":    {"tier": 2, "source": "vendor",    "priority": 2},
-    "tier3_standards": {"tier": 3, "source": "standard",  "priority": 3},
+    "tier1_safety": {"tier": 1, "source": "safety", "priority": 1},
+    "tier2_vendor": {"tier": 2, "source": "vendor", "priority": 2},
+    "tier3_standards": {"tier": 3, "source": "standard", "priority": 3},
 }
 
 
@@ -33,7 +34,7 @@ def parse_markdown_header(content: str) -> dict:
     """Extract metadata hints from markdown header lines like '**Standard**: ...'."""
     meta = {}
     for line in content.splitlines()[:20]:
-        m = re.match(r'^\*\*([A-Za-z ]+)\*\*:\s*(.+)$', line.strip())
+        m = re.match(r"^\*\*([A-Za-z ]+)\*\*:\s*(.+)$", line.strip())
         if m:
             key = m.group(1).strip().lower().replace(" ", "_")
             val = m.group(2).strip()
@@ -77,8 +78,9 @@ def collect_corpus() -> list[tuple[str, str, dict]]:
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--reset", action="store_true",
-                   help="Delete and recreate the collection before indexing")
+    p.add_argument(
+        "--reset", action="store_true", help="Delete and recreate the collection before indexing"
+    )
     args = p.parse_args()
 
     print("DC-EPMS PRO - RAG seed v2 (tier-based)")

@@ -11,24 +11,24 @@ Covers:
 Run:
     pytest tests/test_witness_engine.py -v
 """
-import sys
-import pathlib
-import pytest
+
 import asyncio
+import pathlib
+import sys
 import time
+
+import pytest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
 from witness_engine import (
-    WitnessStatus,
-    WitnessStore,
-    WitnessGate,
-    WitnessRequest,
     IdentityCollisionError,
+    WitnessGate,
     WitnessRequestNotFoundError,
     WitnessRequestNotPendingError,
-    DEFAULT_WITNESS_TTL_S,
+    WitnessStatus,
+    WitnessStore,
     serialize_request,
 )
 
@@ -37,7 +37,6 @@ from witness_engine import (
 #  WitnessStore — basic CRUD
 # ═══════════════════════════════════════════════════════════════════════
 class TestWitnessStoreBasic:
-
     def _make_store(self) -> WitnessStore:
         return WitnessStore()
 
@@ -57,8 +56,7 @@ class TestWitnessStoreBasic:
 
     def test_get_returns_existing_request(self):
         store = self._make_store()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, "alice")
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, "alice")
         retrieved = store.get(req.request_id)
         assert retrieved.request_id == req.request_id
         assert retrieved.initiator == "alice"
@@ -72,7 +70,7 @@ class TestWitnessStoreBasic:
         store = self._make_store()
         r1 = store.create("exec-1", "MOP-001", "step_03", "A", {}, "alice")
         r2 = store.create("exec-2", "MOP-001", "step_04", "B", {}, "alice")
-        store.sign(r1.request_id, "bob")    # r1 now SIGNED
+        store.sign(r1.request_id, "bob")  # r1 now SIGNED
 
         pending = store.list_pending()
         assert len(pending) == 1
@@ -97,45 +95,39 @@ class TestIdentitySeparation:
 
     def test_different_identity_can_sign(self):
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, initiator="alice")
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice")
         signed = store.sign(req.request_id, witness="bob")
         assert signed.status == WitnessStatus.SIGNED
         assert signed.witness == "bob"
 
     def test_same_identity_cannot_sign(self):
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, initiator="alice")
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice")
         with pytest.raises(IdentityCollisionError):
             store.sign(req.request_id, witness="alice")
 
     def test_same_identity_cannot_reject(self):
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, initiator="alice")
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice")
         with pytest.raises(IdentityCollisionError):
             store.reject(req.request_id, witness="alice", reason="self-test")
 
     def test_empty_witness_identity_rejected(self):
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, initiator="alice")
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice")
         with pytest.raises(IdentityCollisionError):
             store.sign(req.request_id, witness="")
 
     def test_whitespace_witness_identity_rejected(self):
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, initiator="alice")
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice")
         with pytest.raises(IdentityCollisionError):
             store.sign(req.request_id, witness="   ")
 
     def test_request_status_unchanged_after_failed_sign(self):
         """If sign() raises, the request stays PENDING (not corrupted)."""
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, initiator="alice")
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice")
         try:
             store.sign(req.request_id, witness="alice")
         except IdentityCollisionError:
@@ -147,30 +139,24 @@ class TestIdentitySeparation:
 #  Rejection workflow
 # ═══════════════════════════════════════════════════════════════════════
 class TestRejection:
-
     def test_reject_with_reason(self):
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, initiator="alice")
-        rejected = store.reject(
-            req.request_id, witness="bob", reason="weather looks unsafe"
-        )
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice")
+        rejected = store.reject(req.request_id, witness="bob", reason="weather looks unsafe")
         assert rejected.status == WitnessStatus.REJECTED
         assert rejected.witness == "bob"
         assert rejected.rejection_reason == "weather looks unsafe"
 
     def test_cannot_reject_already_signed(self):
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, initiator="alice")
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice")
         store.sign(req.request_id, "bob")
         with pytest.raises(WitnessRequestNotPendingError):
             store.reject(req.request_id, "carol", "changed my mind")
 
     def test_cannot_sign_already_rejected(self):
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, initiator="alice")
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice")
         store.reject(req.request_id, "bob", "no")
         with pytest.raises(WitnessRequestNotPendingError):
             store.sign(req.request_id, "carol")
@@ -180,26 +166,22 @@ class TestRejection:
 #  Expiry & supersede
 # ═══════════════════════════════════════════════════════════════════════
 class TestExpiryAndSupersede:
-
     def test_expired_request_marked_on_get(self):
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, initiator="alice", ttl_s=1)
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice", ttl_s=1)
         time.sleep(1.2)
         retrieved = store.get(req.request_id)
         assert retrieved.status == WitnessStatus.EXPIRED
 
     def test_expired_excluded_from_list_pending(self):
         store = WitnessStore()
-        store.create("exec-1", "MOP-001", "step_03", "Arm",
-                     {}, initiator="alice", ttl_s=1)
+        store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice", ttl_s=1)
         time.sleep(1.2)
         assert store.list_pending() == []
 
     def test_cannot_sign_expired(self):
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {}, initiator="alice", ttl_s=1)
+        req = store.create("exec-1", "MOP-001", "step_03", "Arm", {}, initiator="alice", ttl_s=1)
         time.sleep(1.2)
         with pytest.raises(WitnessRequestNotPendingError):
             store.sign(req.request_id, "bob")
@@ -230,7 +212,6 @@ class TestExpiryAndSupersede:
 #  WitnessGate — async waiting
 # ═══════════════════════════════════════════════════════════════════════
 class TestWitnessGate:
-
     @pytest.mark.asyncio
     async def test_gate_returns_signed_when_witness_signs(self):
         store = WitnessStore()
@@ -299,14 +280,19 @@ class TestWitnessGate:
 #  Integration: procedure_engine pauses on requires_witness
 # ═══════════════════════════════════════════════════════════════════════
 class TestProcedureIntegration:
-
     @pytest.fixture
     def orchestrator_with_witness(self):
         """Build orchestrator with a fresh WitnessStore + WitnessGate."""
         from procedure_engine import (
-            ProcedureRegistry, PreConditionEvaluator, StateProvider,
-            AdapterRegistry, SimulatedAdapter, StepExecutor, ProcedureOrchestrator,
+            AdapterRegistry,
+            PreConditionEvaluator,
+            ProcedureOrchestrator,
+            ProcedureRegistry,
+            SimulatedAdapter,
+            StateProvider,
+            StepExecutor,
         )
+
         registry = ProcedureRegistry(PROJECT_ROOT / "config" / "procedures")
         registry.load_all()
 
@@ -320,15 +306,12 @@ class TestProcedureIntegration:
 
         evaluator = PreConditionEvaluator(StateProvider())
         executor = StepExecutor(adapters)
-        return ProcedureOrchestrator(
-            registry, evaluator, executor, witness_gate=gate
-        ), store
+        return ProcedureOrchestrator(registry, evaluator, executor, witness_gate=gate), store
 
     @pytest.mark.asyncio
-    async def test_procedure_pauses_at_witness_step_then_proceeds(
-        self, orchestrator_with_witness
-    ):
+    async def test_procedure_pauses_at_witness_step_then_proceeds(self, orchestrator_with_witness):
         from procedure_engine import ProcedureState
+
         orch, store = orchestrator_with_witness
 
         # Background task that signs witness requests as they appear.
@@ -345,7 +328,7 @@ class TestProcedureIntegration:
                         try:
                             store.sign(req.request_id, "operator_b")
                         except WitnessRequestNotPendingError:
-                            pass    # already signed by another iteration
+                            pass  # already signed by another iteration
 
         signer = asyncio.create_task(auto_sign_loop())
 
@@ -367,16 +350,14 @@ class TestProcedureIntegration:
 
         # Audit trail: those 3 step results have witness_acknowledged_by set
         witnessed_steps = [
-            r for r in ex2.execution_log
-            if r.witness_acknowledged_by == "operator_b"
+            r for r in ex2.execution_log if r.witness_acknowledged_by == "operator_b"
         ]
         assert len(witnessed_steps) == 3
 
     @pytest.mark.asyncio
-    async def test_procedure_aborts_when_witness_rejects(
-        self, orchestrator_with_witness
-    ):
+    async def test_procedure_aborts_when_witness_rejects(self, orchestrator_with_witness):
         from procedure_engine import ProcedureState
+
         orch, store = orchestrator_with_witness
 
         async def reject_loop():
@@ -404,10 +385,9 @@ class TestProcedureIntegration:
         assert "witness" in (ex2.abort_reason or "").lower()
 
     @pytest.mark.asyncio
-    async def test_procedure_aborts_on_witness_timeout(
-        self, orchestrator_with_witness
-    ):
+    async def test_procedure_aborts_on_witness_timeout(self, orchestrator_with_witness):
         from procedure_engine import ProcedureState
+
         orch, _store = orchestrator_with_witness
 
         # No signer task — witness will time out (2s in the fixture)
@@ -421,17 +401,23 @@ class TestProcedureIntegration:
 #  Serialization helpers
 # ═══════════════════════════════════════════════════════════════════════
 class TestSerialization:
-
     def test_serialize_request_returns_json_safe_dict(self):
         store = WitnessStore()
-        req = store.create("exec-1", "MOP-001", "step_03", "Arm",
-                           {"id": "step_03", "type": "write_verify"}, "alice")
+        req = store.create(
+            "exec-1",
+            "MOP-001",
+            "step_03",
+            "Arm",
+            {"id": "step_03", "type": "write_verify"},
+            "alice",
+        )
 
         d = serialize_request(req)
         assert isinstance(d, dict)
-        assert d["status"] == "PENDING"      # enum converted to string
+        assert d["status"] == "PENDING"  # enum converted to string
         assert d["initiator"] == "alice"
         assert d["request_id"] == req.request_id
         # Should be JSON-serializable
         import json
+
         json.dumps(d)

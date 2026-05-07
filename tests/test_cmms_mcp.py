@@ -11,22 +11,24 @@ tests below codify the contract.
 Run:
     pytest tests/test_cmms_mcp.py -v
 """
-import sys
+
 import pathlib
+import sys
+
 import pytest
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
 from cmms_mcp import (
-    compute_lor,
-    select_procedure_class,
-    generate_tha,
-    determine_contractor_attachments,
-    sla_review_hours_for,
     DEFAULT_COST_THRESHOLD_USD,
     DEFAULT_LOTO_LOR_THRESHOLD,
     THERMAL_CRITICAL_DT_K_PER_S,
+    compute_lor,
+    determine_contractor_attachments,
+    generate_tha,
+    select_procedure_class,
+    sla_review_hours_for,
 )
 
 

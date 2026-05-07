@@ -14,17 +14,18 @@ Design principles
 3. No neural networks. All validation comes from the first law of
    thermodynamics, fluid mechanics, or electrical engineering.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
-
+from typing import Any
 
 # ---------------------------------------------------------------------------
 #  Severity enumeration
 # ---------------------------------------------------------------------------
+
 
 class Severity(str, Enum):
     """Severity classification per a3semi incident taxonomy."""
@@ -47,6 +48,7 @@ class Severity(str, Enum):
 # ---------------------------------------------------------------------------
 #  Physical Justification block
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class PhysicalJustification:
@@ -89,6 +91,7 @@ class PhysicalJustification:
 #  ValidationResult - returned by .validate()
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ValidationResult:
     """Outcome of a steady-state physics check on live telemetry.
@@ -114,17 +117,19 @@ class ValidationResult:
         name: str,
         passed: bool,
         value: float,
-        threshold: Optional[float] = None,
+        threshold: float | None = None,
         unit: str = "",
     ) -> None:
         """Append a sub-check record to this result."""
-        self.checks.append({
-            "name": name,
-            "passed": passed,
-            "value": value,
-            "threshold": threshold,
-            "unit": unit,
-        })
+        self.checks.append(
+            {
+                "name": name,
+                "passed": passed,
+                "value": value,
+                "threshold": threshold,
+                "unit": unit,
+            }
+        )
 
     def add_justification(self, j: PhysicalJustification) -> None:
         self.justifications.append(j)
@@ -148,6 +153,7 @@ class ValidationResult:
 # ---------------------------------------------------------------------------
 #  StateSnapshot - single time-step of a simulate() trajectory
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class StateSnapshot:
@@ -175,6 +181,7 @@ class StateSnapshot:
 # ---------------------------------------------------------------------------
 #  PhysicsModule abstract base class
 # ---------------------------------------------------------------------------
+
 
 class PhysicsModule(ABC):
     """Contract every physics sub-module must implement.
@@ -240,4 +247,3 @@ class PhysicsModule(ABC):
 
     def reset_defaults(self) -> None:
         """Reset any instance-level cached state. Default no-op."""
-        pass

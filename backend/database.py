@@ -14,12 +14,12 @@ Physics payload guarantees:
   - physics_json is validated as JSONB by Postgres → malformed JSON rejected
   - String fields are auto-escaped by asyncpg parameterized queries
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 try:
     import asyncpg
@@ -92,7 +92,7 @@ class DBManager:
         self.dsn = dsn
         self.min_size = min_size
         self.max_size = max_size
-        self.pool: Optional["asyncpg.Pool"] = None
+        self.pool: asyncpg.Pool | None = None
 
     async def connect(self) -> None:
         """Establish connection pool and ensure schema.
@@ -124,9 +124,15 @@ class DBManager:
                 """)
                 col_names = {r["column_name"] for r in cols}
                 required = {
-                    "ts", "it_load_kw", "pue", "hall_temp_c",
-                    "delta_t_c", "ttc_seconds", "scenario",
-                    "rack_count", "rack_tdp_kw",
+                    "ts",
+                    "it_load_kw",
+                    "pue",
+                    "hall_temp_c",
+                    "delta_t_c",
+                    "ttc_seconds",
+                    "scenario",
+                    "rack_count",
+                    "rack_tdp_kw",
                 }
                 missing = required - col_names
                 if missing:
@@ -285,7 +291,7 @@ class DBManager:
         for k, v in dict(row).items():
             if isinstance(v, datetime):
                 if v.tzinfo is None:
-                    v = v.replace(tzinfo=timezone.utc)
+                    v = v.replace(tzinfo=UTC)
                 result[k] = v.isoformat()
             else:
                 result[k] = v

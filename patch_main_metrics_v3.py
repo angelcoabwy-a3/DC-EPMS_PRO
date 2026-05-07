@@ -92,7 +92,7 @@ def find_balanced_paren_end(src: str, open_paren_pos: int) -> int:
                 i += 2
                 continue
             if is_triple:
-                if src[i:i + 3] == string_char:
+                if src[i : i + 3] == string_char:
                     in_string = False
                     string_char = ""
                     is_triple = False
@@ -106,7 +106,7 @@ def find_balanced_paren_end(src: str, open_paren_pos: int) -> int:
 
         # Not in string — check for string start
         if ch in ('"', "'"):
-            triple = src[i:i + 3]
+            triple = src[i : i + 3]
             if triple == ch * 3:
                 in_string = True
                 string_char = ch * 3
@@ -153,9 +153,7 @@ if not already_imported:
         content = content[:insert_pos] + new_import + content[insert_pos:]
         print("  [PATCH 1/2] Inserted: from backend.metrics_router import setup_metrics")
     else:
-        import_re = re.compile(
-            r"^(import [^\n]+|from [^\n]+ import [^\n]+)$", re.MULTILINE
-        )
+        import_re = re.compile(r"^(import [^\n]+|from [^\n]+ import [^\n]+)$", re.MULTILINE)
         matches = list(import_re.finditer(content))
         if not matches:
             print("ERROR: Could not find any import statements in main.py")
@@ -233,7 +231,7 @@ print()
 print("SUCCESS: backend/main.py patched.")
 print(f"  Lines added: {content.count(chr(10)) - original.count(chr(10))}")
 print(f"  BOM preserved: {has_bom}")
-print(f"  AST validation: PASSED (BOM-aware, paren-balanced)")
+print("  AST validation: PASSED (BOM-aware, paren-balanced)")
 print()
 print("Verify with:")
-print('  python -c "from backend.main import app; print(\'main.py imports OK\')"')
+print("  python -c \"from backend.main import app; print('main.py imports OK')\"")

@@ -16,14 +16,16 @@ Usage:
     python scripts/smoke_graphrag.py --base http://localhost:8080
     python scripts/smoke_graphrag.py --skip-tool   # only HTTP tests
 """
+
 from __future__ import annotations
+
 import argparse
 import json
 import sys
 import time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
 
 
 def _http(method: str, url: str, body: dict | None = None, timeout: float = 60.0) -> dict:
@@ -118,7 +120,9 @@ def main() -> int:
         elif chunks:
             top = chunks[0]
             print(f"        top hit: {top['meta']['title']} (score={top['score']:.3f})")
-            print(f"        source : {top['meta']['source']} (jurisdiction={top['meta']['jurisdiction']})")
+            print(
+                f"        source : {top['meta']['source']} (jurisdiction={top['meta']['jurisdiction']})"
+            )
     except Exception as e:
         _check("query", False, str(e))
         fails += 1
@@ -151,7 +155,9 @@ def main() -> int:
         _check(f"chiller_1 has {len(knowledge)} applicable docs (csa-z462-24 expected)", ok)
         if knowledge:
             for kn in knowledge:
-                print(f"        - {kn['id']}: {kn['title'][:60]}... (jurisdiction={kn['jurisdiction']})")
+                print(
+                    f"        - {kn['id']}: {kn['title'][:60]}... (jurisdiction={kn['jurisdiction']})"
+                )
         if not ok:
             fails += 1
     except Exception as e:
@@ -185,31 +191,33 @@ def main() -> int:
         try:
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
             import asyncio
-            from agent_graph_tool import tool_query_graph_rag
+
+            from agent_graph_tool import set_graphrag_service, tool_query_graph_rag
+            from graphrag_service import GraphRAGService
 
             # Trigger graph build via the live service in main.py - but here we're
             # in a separate process from the server. So we re-instantiate.
             from site_model import SiteModel
-            from graphrag_service import GraphRAGService
-            from agent_graph_tool import set_graphrag_service
 
             corpus = Path(__file__).resolve().parent.parent / "config" / "knowledge"
-            sm = SiteModel(yaml_path=Path(__file__).resolve().parent.parent / "config" / "site_model.yml")
+            sm = SiteModel(
+                yaml_path=Path(__file__).resolve().parent.parent / "config" / "site_model.yml"
+            )
             sm.load()
             svc = GraphRAGService(sm, corpus)
             set_graphrag_service(svc)
 
-            result = asyncio.run(tool_query_graph_rag({
-                "text": "lockout tagout chiller refrigerant safety",
-                "component_id": "chiller_1",
-                "k": 3,
-                "include_loto": True,
-            }))
-            ok = (
-                "chunks" in result
-                and "applicable_knowledge" in result
-                and "loto_block" in result
+            result = asyncio.run(
+                tool_query_graph_rag(
+                    {
+                        "text": "lockout tagout chiller refrigerant safety",
+                        "component_id": "chiller_1",
+                        "k": 3,
+                        "include_loto": True,
+                    }
+                )
             )
+            ok = "chunks" in result and "applicable_knowledge" in result and "loto_block" in result
             _check(
                 f"tool returned {len(result.get('chunks', []))} chunks, "
                 f"{len(result.get('applicable_knowledge', []))} applicable docs, "

@@ -30,11 +30,11 @@ Integration in agent_copilot.py:
             return tool_query_site_model(**args)
         ...
 """
+
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -85,10 +85,10 @@ TOOL_DEFINITION = {
 
 def tool_query_site_model(
     operation: str,
-    canonical_id: Optional[str] = None,
-    search_query: Optional[str] = None,
-    type_filter: Optional[str] = None,
-    project_root: Optional[Path] = None,
+    canonical_id: str | None = None,
+    search_query: str | None = None,
+    type_filter: str | None = None,
+    project_root: Path | None = None,
 ) -> dict:
     """Dispatch to the right site_model query.
 
@@ -97,9 +97,9 @@ def tool_query_site_model(
     """
     try:
         from site_model import (
-            get_site_model,
             ComponentNotFoundError,
             SiteModelError,
+            get_site_model,
         )
     except ImportError as e:
         return {
@@ -209,15 +209,14 @@ def _do_loto_impact(model, canonical_id: str) -> dict:
 
 def _do_search(
     model,
-    search_query: Optional[str],
-    type_filter: Optional[str],
+    search_query: str | None,
+    type_filter: str | None,
 ) -> dict:
     components = model.list_components(type_filter=type_filter)
     if search_query:
         q = search_query.lower()
         components = [
-            c for c in components
-            if q in c.canonical_id.lower() or q in c.display.lower()
+            c for c in components if q in c.canonical_id.lower() or q in c.display.lower()
         ]
     # Cap results
     max_results = 50

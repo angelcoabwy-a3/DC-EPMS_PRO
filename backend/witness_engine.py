@@ -50,15 +50,15 @@ The pattern:
     different from the initiator. Sprint 5+ adds role-based qualification.
 ═══════════════════════════════════════════════════════════════════════
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Optional
 
 log = logging.getLogger(__name__)
 
@@ -67,11 +67,11 @@ log = logging.getLogger(__name__)
 #  Witness request lifecycle
 # ─────────────────────────────────────────────────────────────────────────
 class WitnessStatus(str, Enum):
-    PENDING   = "PENDING"     # awaiting witness signature
-    SIGNED    = "SIGNED"      # witness signed, step can proceed
-    REJECTED  = "REJECTED"    # witness explicitly rejected
-    EXPIRED   = "EXPIRED"     # TTL elapsed
-    SUPERSEDED = "SUPERSEDED" # procedure aborted, request voided
+    PENDING = "PENDING"  # awaiting witness signature
+    SIGNED = "SIGNED"  # witness signed, step can proceed
+    REJECTED = "REJECTED"  # witness explicitly rejected
+    EXPIRED = "EXPIRED"  # TTL elapsed
+    SUPERSEDED = "SUPERSEDED"  # procedure aborted, request voided
 
 
 # Default TTL — 15 minutes. Long enough for a witness to walk to the
@@ -89,19 +89,19 @@ class WitnessRequest:
     specific procedure execution. Unique by (execution_id, step_id)."""
 
     request_id: str
-    execution_id: str          # the procedure execution that is paused
+    execution_id: str  # the procedure execution that is paused
     procedure_id: str
     step_id: str
     step_title: str
-    step_payload: dict         # the step dict from the YAML — for HMI display
-    initiator: str             # operator who started the procedure
+    step_payload: dict  # the step dict from the YAML — for HMI display
+    initiator: str  # operator who started the procedure
     created_at_unix: float
     expires_at_unix: float
 
     status: WitnessStatus = WitnessStatus.PENDING
-    witness: Optional[str] = None
-    signed_at_unix: Optional[float] = None
-    rejection_reason: Optional[str] = None
+    witness: str | None = None
+    signed_at_unix: float | None = None
+    rejection_reason: str | None = None
 
     # Optional context the HMI shows to the witness so they understand
     # what they're signing — current site state, expected state delta,
@@ -110,10 +110,7 @@ class WitnessRequest:
 
     @property
     def is_expired(self) -> bool:
-        return (
-            self.status == WitnessStatus.PENDING
-            and time.time() > self.expires_at_unix
-        )
+        return self.status == WitnessStatus.PENDING and time.time() > self.expires_at_unix
 
 
 class WitnessError(RuntimeError):
@@ -152,7 +149,7 @@ class WitnessStore:
         step_payload: dict,
         initiator: str,
         ttl_s: int = DEFAULT_WITNESS_TTL_S,
-        context: Optional[dict] = None,
+        context: dict | None = None,
     ) -> WitnessRequest:
         """Create a pending witness request. Returns the WitnessRequest."""
         now = time.time()
@@ -171,7 +168,11 @@ class WitnessStore:
         self._requests[req.request_id] = req
         log.info(
             "[witness] created request %s for %s/%s by %s (expires %.0fs)",
-            req.request_id[:8], execution_id[:8], step_id, initiator, ttl_s,
+            req.request_id[:8],
+            execution_id[:8],
+            step_id,
+            initiator,
+            ttl_s,
         )
         return req
 
@@ -221,13 +222,13 @@ class WitnessStore:
         req.status = WitnessStatus.SIGNED
         log.info(
             "[witness] %s SIGNED by %s (initiator was %s)",
-            req.request_id[:8], witness, req.initiator,
+            req.request_id[:8],
+            witness,
+            req.initiator,
         )
         return req
 
-    def reject(
-        self, request_id: str, witness: str, reason: str
-    ) -> WitnessRequest:
+    def reject(self, request_id: str, witness: str, reason: str) -> WitnessRequest:
         """A witness explicitly rejects the request."""
         req = self.get(request_id)
 
@@ -247,7 +248,9 @@ class WitnessStore:
         req.rejection_reason = reason
         log.warning(
             "[witness] %s REJECTED by %s: %s",
-            req.request_id[:8], witness, reason,
+            req.request_id[:8],
+            witness,
+            reason,
         )
         return req
 
@@ -262,7 +265,8 @@ class WitnessStore:
         if count:
             log.info(
                 "[witness] superseded %d pending request(s) for execution %s",
-                count, execution_id[:8],
+                count,
+                execution_id[:8],
             )
         return count
 
@@ -305,7 +309,7 @@ class WitnessGate:
         procedure_id: str,
         step: dict,
         initiator: str,
-        context: Optional[dict] = None,
+        context: dict | None = None,
     ) -> WitnessRequest:
         """Create a WitnessRequest and poll until signed/rejected/expired.
 
@@ -336,7 +340,7 @@ class WitnessGate:
             await asyncio.sleep(self.poll_interval_s)
 
         # Timed out — return the now-expired request
-        final = self.store.get(req.request_id)   # triggers lazy expiry
+        final = self.store.get(req.request_id)  # triggers lazy expiry
         return final
 
 

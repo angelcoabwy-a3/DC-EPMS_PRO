@@ -61,37 +61,37 @@ print(f"Current [obs] extra: {current_obs if obs_exists else 'DOES NOT EXIST'}")
 # ── Scenario A: [obs] doesn't exist - create it ────────────────────────────
 if not obs_exists:
     print("Scenario A: creating [obs] extra")
-    
+
     # Find the [project.optional-dependencies] section
     section_re = re.compile(
-        r'(\[project\.optional-dependencies\][^\[]*?)(\n\[|\Z)',
+        r"(\[project\.optional-dependencies\][^\[]*?)(\n\[|\Z)",
         re.MULTILINE | re.DOTALL,
     )
     match = section_re.search(content)
     if not match:
         print("ERROR: [project.optional-dependencies] section not found")
         sys.exit(2)
-    
+
     section_end = match.end(1)
-    
+
     # Insert obs extra at the end of the section
     new_extra = (
-        f'\n# Observability stack (Batch 2 - Prometheus instrumentation)\n'
-        f'obs = [\n'
-        f'  {TARGET_PIN},\n'
-        f']\n'
+        f"\n# Observability stack (Batch 2 - Prometheus instrumentation)\n"
+        f"obs = [\n"
+        f"  {TARGET_PIN},\n"
+        f"]\n"
     )
-    
+
     content = content[:section_end] + new_extra + content[section_end:]
     print(f"  Added new [obs] extra with {TARGET_PKG}")
 
 # ── Scenario B: [obs] exists but missing package - add to existing ─────────
 else:
     print("Scenario B: adding to existing [obs] extra")
-    
+
     # Find the obs = [ ... ] block
     obs_pattern = re.compile(
-        r'(obs\s*=\s*\[\s*\n)',
+        r"(obs\s*=\s*\[\s*\n)",
         re.MULTILINE,
     )
     match = obs_pattern.search(content)
@@ -99,9 +99,9 @@ else:
         print("ERROR: 'obs = [' pattern not found despite tomllib seeing it")
         print("Manual edit required.")
         sys.exit(3)
-    
+
     insert_pos = match.end()
-    new_line = f'  {TARGET_PIN},\n'
+    new_line = f"  {TARGET_PIN},\n"
     content = content[:insert_pos] + new_line + content[insert_pos:]
     print(f"  Added {TARGET_PKG} to [obs]")
 

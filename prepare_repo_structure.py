@@ -27,7 +27,6 @@ import argparse
 import ast
 import datetime as dt
 import hashlib
-import os
 import shutil
 import sys
 import tarfile
@@ -85,8 +84,10 @@ TARBALL_PATH = PROJECT_ROOT / TARBALL_NAME
 # UTILITY FUNCTIONS
 # ============================================================
 
+
 class Color:
     """ANSI colors that work on Windows Terminal and most modern terminals."""
+
     RED = "\033[91m"
     GREEN = "\033[92m"
     YELLOW = "\033[93m"
@@ -140,6 +141,7 @@ def ast_validate_python(path: Path) -> bool:
 # PRE-CLEANUP TARBALL
 # ============================================================
 
+
 def create_pre_cleanup_tarball(apply: bool) -> bool:
     """Create defensive tarball before any destructive operation."""
     info(f"{dry_run_marker(apply)} Creating pre-cleanup tarball: {TARBALL_NAME}")
@@ -192,6 +194,7 @@ def create_pre_cleanup_tarball(apply: bool) -> bool:
 # DC-EPMS-002 - Fix graphrag_service.py import
 # ============================================================
 
+
 def fix_dc_epms_002(apply: bool) -> bool:
     info(f"{dry_run_marker(apply)} DC-EPMS-002: Fix graphrag_service.py import path")
 
@@ -204,7 +207,7 @@ def fix_dc_epms_002(apply: bool) -> bool:
     content = raw.decode("utf-8-sig")
 
     if GRAPHRAG_NEW in content:
-        info(f"DC-EPMS-002 already fixed (idempotent skip)")
+        info("DC-EPMS-002 already fixed (idempotent skip)")
         return True
 
     if GRAPHRAG_OLD not in content:
@@ -237,6 +240,7 @@ def fix_dc_epms_002(apply: bool) -> bool:
 # DC-EPMS-004 - Delete 4+1 MD5-identical duplicates
 # ============================================================
 
+
 def fix_dc_epms_004(apply: bool) -> bool:
     info(f"{dry_run_marker(apply)} DC-EPMS-004: Delete duplicate physics modules")
 
@@ -263,7 +267,9 @@ def fix_dc_epms_004(apply: bool) -> bool:
             md5_dup = md5_of_file(dup)
             md5_canon = md5_of_file(canon)
             if md5_dup != md5_canon:
-                error(f"Files differ! Refusing to delete: {dup_rel} ({md5_dup}) vs {canon_rel} ({md5_canon})")
+                error(
+                    f"Files differ! Refusing to delete: {dup_rel} ({md5_dup}) vs {canon_rel} ({md5_canon})"
+                )
                 return False
             info(f"MD5 verified identical: {dup_rel} == {canon_rel}")
         else:
@@ -283,6 +289,7 @@ def fix_dc_epms_004(apply: bool) -> bool:
 # ============================================================
 # DC-EPMS-005 - Archive root iteration scripts
 # ============================================================
+
 
 def fix_dc_epms_005(apply: bool) -> bool:
     info(f"{dry_run_marker(apply)} DC-EPMS-005: Archive root iteration scripts")
@@ -328,6 +335,7 @@ def fix_dc_epms_005(apply: bool) -> bool:
 # DC-EPMS-006 - Resolve 2 chroma_db directories
 # ============================================================
 
+
 def fix_dc_epms_006(apply: bool) -> bool:
     info(f"{dry_run_marker(apply)} DC-EPMS-006: Resolve stray chroma_db directory")
 
@@ -346,7 +354,9 @@ def fix_dc_epms_006(apply: bool) -> bool:
     info(f"Stray chroma:      {stray_size / 1024:.1f} KB at {CHROMA_STRAY_ROOT}")
 
     if stray_size > op_size:
-        error(f"Stray ({stray_size}) is LARGER than operational ({op_size}). MANUAL INTERVENTION REQUIRED.")
+        error(
+            f"Stray ({stray_size}) is LARGER than operational ({op_size}). MANUAL INTERVENTION REQUIRED."
+        )
         return False
 
     if apply:
@@ -361,6 +371,7 @@ def fix_dc_epms_006(apply: bool) -> bool:
 # ============================================================
 # logs/ skeleton creation (B3-2 logs/ excluded but dir versioned)
 # ============================================================
+
 
 def create_logs_skeleton(apply: bool) -> bool:
     info(f"{dry_run_marker(apply)} Create logs/ skeleton with .gitkeep")
@@ -379,6 +390,7 @@ def create_logs_skeleton(apply: bool) -> bool:
 # MAIN
 # ============================================================
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="DC-EPMS PRO Batch 3 cleanup orchestrator")
     parser.add_argument(
@@ -390,7 +402,9 @@ def main() -> int:
 
     print(f"\n{Color.BOLD}{'=' * 60}{Color.RESET}")
     print(f"{Color.BOLD}DC-EPMS PRO - Batch 3 Cleanup Orchestrator{Color.RESET}")
-    print(f"{Color.BOLD}Mode: {'APPLY (will modify filesystem)' if args.apply else 'DRY-RUN (no changes)'}{Color.RESET}")
+    print(
+        f"{Color.BOLD}Mode: {'APPLY (will modify filesystem)' if args.apply else 'DRY-RUN (no changes)'}{Color.RESET}"
+    )
     print(f"{Color.BOLD}{'=' * 60}{Color.RESET}\n")
 
     if not args.apply:
@@ -440,7 +454,9 @@ def main() -> int:
             print(f"\n{Color.GREEN}{Color.BOLD}All cleanup steps SUCCEEDED.{Color.RESET}")
             print(f"{Color.GREEN}Tarball preserved: {TARBALL_NAME} (gitignored){Color.RESET}\n")
         else:
-            print(f"\n{Color.YELLOW}{Color.BOLD}DRY-RUN complete. Review output, then re-run with --apply.{Color.RESET}\n")
+            print(
+                f"\n{Color.YELLOW}{Color.BOLD}DRY-RUN complete. Review output, then re-run with --apply.{Color.RESET}\n"
+            )
         return 0
     else:
         error("Some steps FAILED. Check output above.")

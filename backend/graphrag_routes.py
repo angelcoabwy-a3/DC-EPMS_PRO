@@ -13,21 +13,21 @@ Endpoints:
   GET  /api/graph/related-knowledge/{component_id}
   GET  /api/graph/loto-with-knowledge/{component_id}
 """
-from __future__ import annotations
-from typing import Optional
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
 
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException
 from graphrag_service import GraphRAGService
+from pydantic import BaseModel, Field
 
 
 # Module-level pydantic models (FastAPI's forward-ref resolution requires
 # these to be in the global namespace, not nested in a function).
 class QueryReq(BaseModel):
     text: str = Field(..., min_length=2, description="Free-text query")
-    component_id: Optional[str] = Field(None, description="Optional component context")
+    component_id: str | None = Field(None, description="Optional component context")
     k: int = Field(5, ge=1, le=20, description="Top-k results")
-    jurisdictions: Optional[list[str]] = Field(
+    jurisdictions: list[str] | None = Field(
         None,
         description="Restrict to these jurisdictions (international always included)",
     )
