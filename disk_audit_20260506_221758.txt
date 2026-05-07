@@ -1,0 +1,126 @@
+======================================================================
+DC-EPMS PRO Disk Audit - 20260506_221758
+======================================================================
+
+
+======================================================================
+  Section 1 of 9: Drive overview
+======================================================================
+  Drive                                              C:
+  Used                                               548.26 GB
+  Free                                               382.15 GB
+  Total                                              930.40 GB
+  Used percent                                       58.9 percent
+
+======================================================================
+  Section 2 of 9: Top-level project subdirectories
+======================================================================
+    .venv/                                           1.08 GB
+    data/                                            5.71 MB
+    _legacy_backup/                                  1.38 MB
+    .git/                                            1.21 MB
+    logs/                                            1.13 MB
+    backend/                                         1.11 MB
+    scripts/                                         389.34 KB
+    frontend/                                        365.25 KB
+    docs/                                            182.59 KB
+    tests/                                           170.57 KB
+    config/                                          86.74 KB
+    .pytest_cache/                                   31.16 KB
+    dc_epms_pro.egg-info/                            11.91 KB
+    .ruff_cache/                                     4.07 KB
+  TOTAL project root                                 1.09 GB
+
+======================================================================
+  Section 3 of 9: Python virtualenv analysis
+======================================================================
+  .venv total                                        1.08 GB
+  Top 10 site-packages by size:                      
+      torch                                          424.97 MB
+      scipy                                          95.45 MB
+      transformers                                   54.19 MB
+      faiss_cpu.libs                                 49.43 MB
+      sympy                                          37.38 MB
+      numpy.libs                                     36.40 MB
+      onnxruntime                                    35.06 MB
+      sklearn                                        27.02 MB
+      faiss                                          23.98 MB
+      numpy                                          21.12 MB
+
+======================================================================
+  Section 4 of 9: __pycache__ regenerable bytecode
+======================================================================
+  Total __pycache__ directories                      807
+  Combined size                                      91.25 MB
+  [NOTE] Safe to delete: pyc files regenerate on next import
+  [NOTE] Cleanup command (read-only check, copy to run): Get-ChildItem -Recurse -Force -Filter __pycache__ | Remove-Item -Recurse -Force
+
+======================================================================
+  Section 5 of 9: Backup files (.bak_pre_*)
+======================================================================
+  Total .bak_pre_* files                             53
+  Combined size                                      1.89 MB
+  Files (newest first):                              
+      dpo_edge_healing.py.bak_pre_dc015_20260506_214729 22.01 KB (0.5 hours ago)
+      cyber_physical_tools.py.bak_pre_dc015_20260506_214729 13.35 KB (0.5 hours ago)
+      main.py.bak_pre_dc015_20260506_214729          81.80 KB (1.0 hours ago)
+      cyber_physical_tools.py.bak_pre_dc012_20260506_214651 12.49 KB (1.0 hours ago)
+      heat_rejection.py.bak_pre_dc015_20260506_214729 25.98 KB (1.0 hours ago)
+      shift_report.py.bak_pre_dc015_20260506_214729  14.97 KB (1.0 hours ago)
+      metrics_router.py.bak_pre_dc015_20260506_214729 11.33 KB (1.0 hours ago)
+      it_thermal.py.bak_pre_dc015_20260506_214729    28.91 KB (1.0 hours ago)
+      agent_copilot.py.bak_pre_dc015_20260506_214729 42.51 KB (1.0 hours ago)
+      agent_engine.py.bak_pre_dc015_20260506_214729  13.64 KB (1.0 hours ago)
+      dpo_edge_healing.py.bak_pre_dc013_20260506_214651 18.20 KB (1.0 hours ago)
+      simulator.py.bak_pre_dc015_20260506_214729     9.01 KB (1.0 hours ago)
+      cummins_adapter.py.bak_pre_dc014_20260506_214713 13.35 KB (1.0 hours ago)
+      CHANGELOG.md.bak_pre_finalize_20260506_213323  18.25 KB (2.0 hours ago)
+      pyproject.toml.bak_pre_obs_fix_20260506_200403 12.96 KB (2.2 hours ago)
+  [NOTE] ...and 38 more older backups
+  [NOTE] Retention policy: keep last 24 hours of backups, archive or delete older
+
+======================================================================
+  Section 6 of 9: Logs and ephemeral files
+======================================================================
+  logs/ directory total                              1.13 MB
+      epms_pro.log                                   867.30 KB
+      .gitkeep                                       0 B
+  Top-level batch/diag logs                          2
+  Combined size                                      421.35 KB
+  [NOTE] Safe to archive after batch closure (preserve last 1-2 for forensics)
+
+======================================================================
+  Section 7 of 9: Forensic archives
+======================================================================
+  Top-level .tar.gz forensic tarballs:               
+      pre_batch3_cleanup_20260506_211234.tar.gz      88.37 KB
+  [NOTE] These are precious forensic backups. Do NOT delete pre-batch tarballs.
+  scripts/_archive/ total                            302.61 KB
+      pre_batch3/                                    261.03 KB
+      pre_batch3_5/                                  41.58 KB
+  _legacy_backup/                                    1.38 MB
+  [NOTE] Pre-V9 baseline. Do NOT touch.
+
+======================================================================
+  Section 8 of 9: Docker disk consumption
+======================================================================
+  docker system df:                                  
+      TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE 
+      Images          2         2         3.27GB    0B (0%) 
+      Containers      2         2         40.96kB   0B (0%) 
+      Local Volumes   3         2         140MB     70.38MB (50%) 
+      Build Cache     0         0         0B        0B 
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          2         2         3.27GB    0B (0%)
+Containers      2         2         40.96kB   0B (0%)
+Local Volumes   3         2         140MB     70.38MB (50%)
+Build Cache     0         0         0B        0B
+
+  DC-EPMS PRO images:                                
+      dc-epms-pro:latest 1.54GB                      
+  [NOTE] Buildx cache present. Use 'docker builder prune' to clean.
+  [NOTE] To prune everything safely (preserves running containers): docker system prune -a --volumes
+
+======================================================================
+  Section 9 of 9: Recommendations
+======================================================================
