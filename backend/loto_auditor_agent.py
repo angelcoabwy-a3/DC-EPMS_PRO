@@ -136,11 +136,13 @@ class LotoAuditorAgent:
         physics_engine: Any,
         witness_engine: Any,
         procedures_dir: Optional[Path] = None,
+        cmms_service: Optional[Any] = None,
     ) -> None:
         self.site_model = site_model
         self.graphrag_service = graphrag_service
         self.physics_engine = physics_engine
         self.witness_engine = witness_engine
+        self.cmms_service = cmms_service
         self.procedures_dir = procedures_dir or self.DEFAULT_PROCEDURES_DIR
 
     # -------------------------------------------------------------------------
@@ -551,11 +553,51 @@ class LotoAuditorAgent:
     ) -> bool:
         """Check if opposite path is also in maintenance window.
 
-        Batch 4.B: returns False (placeholder)
-        Batch 4.D: queries cmms_mcp for active LOTO on opposite path
+        Production behavior (when cmms_service is injected):
+          - Calls cmms_service.query_active_loto(opposite_path)
+          - Returns True if any active LOTO found on opposite path
+
+        Fallback behavior (no cmms_service):
+          - Returns False (safe default)
+          - Sources annotated to clarify the deferral
+
+        The cmms_service is expected to expose query_active_loto(path: str) -> bool
+        method. If the actual cmms_mcp API differs, integration adapter
+        should wrap it before injection.
         """
-        sources["cmms_overlapping_maintenance_check"] = "skipped (Batch 4.D scope)"
-        return False
+        if self.cmms_service is None:
+            sources["cmms_overlapping_maintenance_check"] = (
+                "skipped (no cmms_service injected, see ADR-009 V10 deferral)"
+            )
+            return False
+
+        if target_path not in ("A", "B"):
+            sources["cmms_overlapping_maintenance_check"] = (
+                "n/a (target has no path metadata)"
+            )
+            return False
+
+        opposite_path = "B" if target_path == "A" else "A"
+
+        try:
+            if hasattr(self.cmms_service, "query_active_loto"):
+                result = bool(self.cmms_service.query_active_loto(opposite_path))
+                sources["cmms_overlapping_maintenance_check"] = (
+                    f"queried opposite_path={opposite_path}, active={result}"
+                )
+                return result
+            else:
+                sources["cmms_overlapping_maintenance_check"] = (
+                    "cmms_service injected but lacks query_active_loto interface"
+                )
+                return False
+        except Exception as e:
+            log.warning(
+                "cmms_service.query_active_loto failed: %s. "
+                "Returning False (safe default).", e,
+            )
+            sources["cmms_overlapping_maintenance_check"] = f"error: {type(e).__name__}"
+            return False
 
     # -------------------------------------------------------------------------
     #  Pillar 3: Capacitor Discharge Verification (Batch 4.B implementation)
@@ -928,9 +970,116 @@ class LotoAuditorAgent:
         )
 
     # -------------------------------------------------------------------------
-    #  Optional LLM summary (Batch 4.D)
+    #  LLM summary - Batch 4.D implementation
     # -------------------------------------------------------------------------
 
+    LM_STUDIO_URL = "http://127.0.0.1:1234/v1/chat/completions"
+    LM_STUDIO_TIMEOUT_S = 8.0
+    LM_STUDIO_MODEL = "gemma-4-e2b-it"
+
     def _render_llm_summary(self, report: LotoAuditReport) -> str:
-        """LLM summary deferred to Batch 4.D."""
-        raise NotImplementedError("LLM summary deferred to Batch 4.D")
+        """Generate human-readable executive summary via LM Studio.
+
+        Calls local LM Studio (gemma-4-e2b-it) at 127.0.0.1:1234 with 8s
+        timeout. Returns markdown executive summary suitable for CET handoff.
+
+        On timeout or connection error, raises an exception that the parent
+        audit() method catches, marking llm_synthesis_status as 'error' or
+        'timeout'.
+
+        Defensive: this method does NOT modify report.llm_summary directly.
+        The audit() method assigns the return value.
+        """
+        try:
+            import httpx  # late import to keep agent importable without httpx
+        except ImportError as e:
+            raise LotoAuditorError(
+                "httpx not available for LLM summary. "
+                "Install via 'pip install httpx' or set include_llm_summary=False."
+            ) from e
+
+        prompt = self._build_llm_prompt(report)
+
+        payload = {
+            "model": self.LM_STUDIO_MODEL,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a CET (Critical Environment Technician) assistant "
+                        "writing concise executive summaries of LOTO audit reports "
+                        "for shift handover. Be direct, factual, and cite the "
+                        "specific pillar outcomes. Keep summary under 200 words. "
+                        "Use markdown formatting. Do not invent details not in the "
+                        "report. End with a clear actionable recommendation."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.2,
+            "max_tokens": 400,
+        }
+
+        with httpx.Client(timeout=self.LM_STUDIO_TIMEOUT_S) as client:
+            try:
+                response = client.post(self.LM_STUDIO_URL, json=payload)
+                response.raise_for_status()
+            except httpx.TimeoutException as e:
+                raise LotoAuditorError(
+                    f"LM Studio timeout after {self.LM_STUDIO_TIMEOUT_S}s"
+                ) from e
+            except httpx.ConnectError as e:
+                raise LotoAuditorError(
+                    f"LM Studio connection refused at {self.LM_STUDIO_URL}: {e}"
+                ) from e
+            except httpx.HTTPStatusError as e:
+                raise LotoAuditorError(
+                    f"LM Studio returned status {e.response.status_code}"
+                ) from e
+
+        try:
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            return content.strip()
+        except (KeyError, IndexError, ValueError) as e:
+            raise LotoAuditorError(
+                f"LM Studio response malformed: {e}. Response: {response.text[:200]}"
+            ) from e
+
+    def _build_llm_prompt(self, report: LotoAuditReport) -> str:
+        """Build the prompt sent to LM Studio. Pure function for testability."""
+        pillar_lines = [
+            f"Pillar 1 Topology: {report.impact_radius.outcome.value} "
+            f"(blast radius {report.impact_radius.blast_radius_racks} racks, "
+            f"{report.impact_radius.blast_radius_kw:.0f} kW)",
+            f"Pillar 2 Redundancy: {report.redundancy.outcome.value} "
+            f"(SHI post-LOTO {report.redundancy.shi_post_loto:.3f}, "
+            f"threshold {report.redundancy.shi_threshold:.3f}, "
+            f"SPOFs={len(report.redundancy.single_points_of_failure)})",
+            f"Pillar 3 Capacitor Discharge: {report.capacitor_discharge.outcome.value} "
+            f"(required={report.capacitor_discharge.required}, "
+            f"wait={report.capacitor_discharge.wait_duration_s}s)",
+            f"Pillar 4 Witness Gate: {report.witness_gate.outcome.value} "
+            f"(LOTO Level {report.witness_gate.loto_level.value}, "
+            f"witness_required={report.witness_gate.witness_required})",
+            f"Pillar 5 Sequential Order: {report.sequential_order.outcome.value} "
+            f"(purge_required={report.sequential_order.purge_required}, "
+            f"order_correct={report.sequential_order.phases_in_correct_order})",
+            f"Pillar 6 PPE: {report.ppe_category.outcome.value} "
+            f"(voltage {report.ppe_category.voltage_nominal:.0f}V, "
+            f"computed CAT {report.ppe_category.computed_category.value})",
+        ]
+
+        return (
+            f"LOTO Audit Report Summary Request\n\n"
+            f"Procedure: {report.procedure_id}\n"
+            f"Target component: {report.target_component_id}\n"
+            f"CET on duty: {report.cet_on_duty}\n\n"
+            f"Overall outcome: {report.overall_outcome.value} "
+            f"(hard_fails={report.hard_fail_count}, warns={report.warn_count})\n\n"
+            "Pillar results:\n" + "\n".join(f"- {line}" for line in pillar_lines) + "\n\n"
+            f"Standards cited: {', '.join(report.standards_cited)}\n\n"
+            "Write a concise executive summary (under 200 words) for the CET "
+            "shift handover. Highlight the overall outcome, the most critical "
+            "pillar findings, and a clear actionable recommendation. Use markdown."
+        )
