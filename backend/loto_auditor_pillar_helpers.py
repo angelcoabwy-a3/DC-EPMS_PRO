@@ -75,12 +75,24 @@ ELECTRICAL_PHASE_KEYWORDS: tuple[str, ...] = (
 
 HYDRAULIC_PHASE_KEYWORDS: tuple[str, ...] = (
     "close valve",
+    "close coolant",
+    "coolant valve",
+    "valve to isolate",
     "isolate cooling",
-    "stop pump",
-    "drain coolant",
+    "isolate coolant",
+    "isolate manifold",
+    "isolate loop",
     "isolate cdu",
+    "stop pump",
+    "stop secondary pump",
+    "stop primary pump",
+    "drain coolant",
+    "drain loop",
+    "drain manifold",
     "close manifold",
     "shut off chilled water",
+    "shut down chilled water",
+    "isolate chilled water",
 )
 
 PURGE_PHASE_KEYWORDS: tuple[str, ...] = (
@@ -485,3 +497,267 @@ def is_rack_type(component_type: str) -> bool:
         lower.endswith("_rack")
         or lower in ("rack", "compute_rack")
     )
+
+
+# =============================================================================
+#  LOTO Level classifier (Pillar 4 support)
+# =============================================================================
+
+# Imported lazily within functions to avoid circular import at module load
+def classify_loto_level(
+    voltage_nominal: float,
+    target_type: str,
+    has_dc_link: bool,
+) -> tuple[Any, str]:
+    """Classify LOTO Level per a3semi doctrine.
+
+    Returns (LotoLevel enum, rationale string).
+
+    Rules (highest-severity first):
+      1. voltage_nominal >= 800: Level 4 (arc flash hazard, Building D)
+      2. has_dc_link OR type == 'ups': Level 3 (cap discharge required)
+      3. 50 <= voltage_nominal < 600: Level 2 (intermediate, single-source)
+      4. otherwise: Level 1 (basic, low voltage)
+
+    Note: passing 600 <= voltage_nominal < 800 with no caps and not UPS
+    is treated as Level 2 with caveat - this is unusual in A3-Alpha
+    (no equipment in this range exists in current site_model) but the
+    classifier is conservative and does not crash.
+    """
+    from loto_auditor_models import LotoLevel  # late import
+
+    if voltage_nominal >= 800.0:
+        return LotoLevel.LEVEL_4_ARC_FLASH, (
+            f"voltage_nominal {voltage_nominal:.0f}V >= 800V "
+            "(Building D arc flash hazard, NFPA 70E Cat 3+ mandate)"
+        )
+
+    type_lower = (target_type or "").lower()
+    has_caps = has_dc_link or type_lower == "ups"
+    if has_caps:
+        reasons = []
+        if type_lower == "ups":
+            reasons.append("UPS type (Galaxy VX DC link caps)")
+        if has_dc_link:
+            reasons.append("metadata.has_dc_link is True")
+        return LotoLevel.LEVEL_3_CAP_DISCHARGE, "; ".join(reasons)
+
+    if 50.0 <= voltage_nominal < 600.0:
+        return LotoLevel.LEVEL_2_INTERMEDIATE, (
+            f"voltage_nominal {voltage_nominal:.0f}V in 50-600V range, "
+            "no capacitor discharge hazard"
+        )
+
+    if 600.0 <= voltage_nominal < 800.0:
+        return LotoLevel.LEVEL_2_INTERMEDIATE, (
+            f"voltage_nominal {voltage_nominal:.0f}V in 600-800V range "
+            "without DC link - unusual configuration, treated as Level 2"
+        )
+
+    return LotoLevel.LEVEL_1_BASIC, (
+        f"voltage_nominal {voltage_nominal:.0f}V < 50V, "
+        "basic LOTO with low voltage"
+    )
+
+
+def find_witness_steps(steps: list[dict]) -> list[str]:
+    """Return list of step IDs that have requires_witness=true.
+
+    Recognizes truthy values: True, 'true', 'yes', 'TRUE', 'YES'.
+    Step ID falls back to 'step_N' if not explicitly set.
+    """
+    witness_step_ids: list[str] = []
+    for i, step in enumerate(steps):
+        flag = step.get("requires_witness")
+        if flag in (True, "true", "True", "TRUE", "yes", "Yes", "YES", 1):
+            step_id = (
+                step.get("id")
+                or step.get("step_id")
+                or step.get("name")
+                or f"step_{i + 1}"
+            )
+            witness_step_ids.append(str(step_id))
+    return witness_step_ids
+
+
+# =============================================================================
+#  Phase classification and order check (Pillar 5 support)
+# =============================================================================
+
+# Phase rank for sequential order check.
+# Lower rank steps must come BEFORE higher rank steps.
+# OTHER and VERIFICATION are rank 0 - they don't constrain ordering.
+def get_phase_rank(phase: Any) -> int:
+    """Return rank for a LotoPhase enum. ELECTRICAL=1, HYDRAULIC=2, PURGE=3."""
+    from loto_auditor_models import LotoPhase  # late import
+    rank_map = {
+        LotoPhase.OTHER: 0,
+        LotoPhase.VERIFICATION: 0,
+        LotoPhase.ELECTRICAL_ISOLATION: 1,
+        LotoPhase.HYDRAULIC_ISOLATION: 2,
+        LotoPhase.PURGE: 3,
+    }
+    return rank_map.get(phase, 0)
+
+
+def classify_step_phase(step: dict) -> Any:
+    """Classify a procedure step into a LotoPhase enum.
+
+    Strategy:
+      1. Explicit 'phase' field in step (highest priority)
+      2. Keyword match on step text against ELECTRICAL/HYDRAULIC/PURGE keywords
+      3. Verification keyword match (verify, voltmeter, test, check absence)
+      4. Default: LotoPhase.OTHER
+
+    Returns LotoPhase enum value.
+    """
+    from loto_auditor_models import LotoPhase  # late import
+
+    # Explicit phase field
+    phase_raw = step.get("phase")
+    if phase_raw is not None:
+        try:
+            return LotoPhase(str(phase_raw).lower().strip())
+        except ValueError:
+            log.debug("Unknown explicit phase value: %r", phase_raw)
+
+    text = step_text(step)
+
+    # Verification keywords (allowed at any position)
+    if any(kw in text for kw in (
+        "verify", "voltmeter", "test absence", "test for voltage",
+        "verify zero", "verify de-energized", "verify de-energised",
+        "absence of voltage",
+    )):
+        return LotoPhase.VERIFICATION
+
+    # Phase keywords (order matters: check most specific first)
+    if any(kw in text for kw in PURGE_PHASE_KEYWORDS):
+        return LotoPhase.PURGE
+    if any(kw in text for kw in HYDRAULIC_PHASE_KEYWORDS):
+        return LotoPhase.HYDRAULIC_ISOLATION
+    if any(kw in text for kw in ELECTRICAL_PHASE_KEYWORDS):
+        return LotoPhase.ELECTRICAL_ISOLATION
+
+    return LotoPhase.OTHER
+
+
+def verify_phase_order(phases: list[Any]) -> bool:
+    """Verify ELECTRICAL precedes HYDRAULIC precedes PURGE.
+
+    OTHER and VERIFICATION steps are skipped (rank 0).
+    Equal ranks are allowed (multiple electrical steps in a row).
+
+    Returns True if order respected, False if a higher-rank step
+    appears before a lower-rank step (e.g. PURGE then HYDRAULIC).
+    """
+    last_rank = 0
+    for phase in phases:
+        rank = get_phase_rank(phase)
+        if rank == 0:
+            continue
+        if rank < last_rank:
+            return False
+        last_rank = rank
+    return True
+
+
+def is_cooling_component_type(component_type: str) -> bool:
+    """Return True if component type is part of cooling subsystem."""
+    if not component_type:
+        return False
+    type_lower = component_type.lower().strip()
+    return type_lower in (
+        "chiller",
+        "cdu",
+        "cooling_tower",
+        "chw_pump",
+        "manifold",
+        "secondary_pump",
+        "primary_pump",
+        "heat_exchanger",
+    )
+
+
+# =============================================================================
+#  PPE Category computation (Pillar 6 support)
+# =============================================================================
+
+def compute_ppe_category(voltage_nominal: float) -> Any:
+    """Compute required PPE category from voltage (NFPA 70E §130 conservative).
+
+    Voltage matrix (no IEEE 1584 calc - that is V10 ADR-010 deferred):
+      < 50V    -> CAT 0  (no PPE required)
+      50-600V  -> CAT 2  (covers A3-Alpha 480 VAC trifásico Phase 1)
+      600-1000V -> CAT 3 (covers Building D 800 VDC Phase 2)
+      >= 1000V -> CAT 4  (MV switchgear)
+
+    NOTE: this is FLOOR not ceiling. Real IEEE 1584 might require higher
+    category if short-circuit current is large. The audit warns CETs to
+    escalate via real arc-flash study if calculated incident energy
+    exceeds the voltage-matrix category threshold.
+    """
+    from loto_auditor_models import PPECategory  # late import
+
+    if voltage_nominal < 50.0:
+        return PPECategory.CAT_0
+    if voltage_nominal < 600.0:
+        return PPECategory.CAT_2
+    if voltage_nominal < 1000.0:
+        return PPECategory.CAT_3
+    return PPECategory.CAT_4
+
+
+def parse_ppe_category_from_procedure(procedure: Any) -> Optional[Any]:
+    """Extract PPE category from procedure metadata or step text.
+
+    Search order:
+      1. procedure.metadata['ppe_category'] (explicit field)
+      2. step['ppe_category'] in any step (explicit field)
+      3. text regex match: 'cat 4', 'category 4', 'cat-4', 'category iv'
+
+    Returns PPECategory enum or None if not found.
+    """
+    from loto_auditor_models import PPECategory  # late import
+
+    # 1. Procedure metadata
+    metadata = getattr(procedure, "metadata", {}) or {}
+    if "ppe_category" in metadata:
+        try:
+            return PPECategory(int(metadata["ppe_category"]))
+        except (ValueError, TypeError):
+            log.debug("Bad ppe_category in metadata: %r", metadata["ppe_category"])
+
+    steps = getattr(procedure, "steps", []) or []
+
+    # 2. Step explicit field
+    for step in steps:
+        if "ppe_category" in step:
+            try:
+                return PPECategory(int(step["ppe_category"]))
+            except (ValueError, TypeError):
+                log.debug("Bad ppe_category in step: %r", step["ppe_category"])
+
+    # 3. Text regex
+    roman_to_int = {"i": 1, "ii": 2, "iii": 3, "iv": 4}
+    pattern = re.compile(
+        r"(?:ppe\s*)?cat(?:egory)?\s*[-]?\s*(0|1|2|3|4|iv|iii|ii|i)\b",
+        re.IGNORECASE,
+    )
+
+    for step in steps:
+        text = step_text(step)
+        match = pattern.search(text)
+        if match:
+            value = match.group(1).lower()
+            if value in roman_to_int:
+                try:
+                    return PPECategory(roman_to_int[value])
+                except (ValueError, TypeError):
+                    continue
+            try:
+                return PPECategory(int(value))
+            except (ValueError, TypeError):
+                continue
+
+    return None

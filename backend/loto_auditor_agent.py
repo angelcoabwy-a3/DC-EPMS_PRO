@@ -47,16 +47,23 @@ from loto_auditor_models import (
 from loto_auditor_pillar_helpers import (
     build_steady_state_measurements,
     classify_capacitor_discharge_requirement,
+    classify_loto_level,
+    classify_step_phase,
+    compute_ppe_category,
     detect_chiller_spof,
     detect_ups_path_spof,
+    find_witness_steps,
     get_component_type,
     get_has_dc_link,
     get_path,
     get_rated_kw,
     get_voltage_nominal,
+    is_cooling_component_type,
     is_rack_type,
     parse_discharge_compliance,
+    parse_ppe_category_from_procedure,
     simulate_loto_measurements,
+    verify_phase_order,
 )
 
 log = logging.getLogger(__name__)
@@ -647,7 +654,7 @@ class LotoAuditorAgent:
         )
 
     # -------------------------------------------------------------------------
-    #  Pillar method stubs (Batch 4.C will implement)
+    #  Pillar 4: Witness Gate (LOTO Level 3+) - Batch 4.C implementation
     # -------------------------------------------------------------------------
 
     def _check_pillar_4_witness_gate(
@@ -656,8 +663,107 @@ class LotoAuditorAgent:
         procedure: ProcedureSpec,
         sources: dict[str, str],
     ) -> WitnessGateCheck:
-        """Pillar 4 deferred to Batch 4.C."""
-        raise NotImplementedError("Pillar 4 implementation deferred to Batch 4.C")
+        """Verify witness gate compliance for LOTO Level 3+ procedures."""
+        target_id = request.target_component_id
+
+        # 1. Read target metadata
+        try:
+            target_comp = self.site_model.get_component(target_id)
+            voltage_nominal = get_voltage_nominal(target_comp)
+            target_type = get_component_type(target_comp)
+            has_dc_link = get_has_dc_link(target_comp)
+            sources["site_model_target_loto_level"] = "OK"
+        except Exception as e:
+            sources["site_model_target_loto_level"] = f"error: {e}"
+            raise LotoAuditorError(
+                f"Cannot read target metadata for LOTO level classification: {e}"
+            ) from e
+
+        # 2. Classify LOTO Level
+        loto_level, level_rationale = classify_loto_level(
+            voltage_nominal=voltage_nominal,
+            target_type=target_type,
+            has_dc_link=has_dc_link,
+        )
+
+        # 3. Determine if witness required (Level 3+)
+        witness_required = loto_level >= LotoLevel.LEVEL_3_CAP_DISCHARGE
+
+        # 4. Scan procedure for steps with requires_witness flag
+        witness_step_ids = find_witness_steps(procedure.steps)
+        sources["procedure_witness_scan"] = "OK"
+
+        # 5. Check witness_engine identity collision protection
+        identity_collision_protected = self._check_witness_engine_protection(sources)
+
+        # 6. Verdict
+        outcome = PillarOutcome.PASS
+        notes: list[str] = [
+            f"LOTO Level {loto_level.value}: {level_rationale}",
+        ]
+
+        if witness_required and not witness_step_ids:
+            outcome = PillarOutcome.HARD_FAIL
+            notes.append(
+                f"LOTO Level {loto_level.value} requires witness gate but no "
+                f"steps in procedure '{procedure.procedure_id}' have "
+                "requires_witness=true. Per a3semi SOP, high-risk LOTO must "
+                "have dual-CET signature on at least one critical step."
+            )
+        elif witness_required and not identity_collision_protected:
+            outcome = PillarOutcome.WARN
+            notes.append(
+                "Witness steps present but witness_engine identity collision "
+                "protection could not be confirmed. CET signing must verify "
+                "no self-witness occurs."
+            )
+        elif not witness_required:
+            notes.append(
+                f"Witness gate not required for LOTO Level {loto_level.value}"
+            )
+
+        return WitnessGateCheck(
+            loto_level=loto_level,
+            level_rationale=level_rationale,
+            witness_required=witness_required,
+            witness_steps=witness_step_ids,
+            identity_collision_protected=identity_collision_protected,
+            outcome=outcome,
+            notes=notes,
+        )
+
+    def _check_witness_engine_protection(
+        self,
+        sources: dict[str, str],
+    ) -> bool:
+        """Check if witness_engine exposes identity collision protection.
+
+        Defensive: if witness_engine doesn't have the expected interface,
+        return False but do not raise. Pillar 4 will WARN rather than fail.
+        """
+        if self.witness_engine is None:
+            sources["witness_engine_protection"] = "no engine injected"
+            return False
+
+        # Check for any of these protection-confirming methods
+        protection_attrs = (
+            "get_protection_status",
+            "is_identity_collision_protected",
+            "validate_signer_identity",
+        )
+
+        for attr in protection_attrs:
+            if hasattr(self.witness_engine, attr):
+                sources["witness_engine_protection"] = f"confirmed via {attr}"
+                return True
+
+        # Soft fallback: presence of the engine alone is weak evidence
+        sources["witness_engine_protection"] = "engine present but interface unknown"
+        return False
+
+    # -------------------------------------------------------------------------
+    #  Pillar 5: Hybrid Sequential Order - Batch 4.C implementation
+    # -------------------------------------------------------------------------
 
     def _check_pillar_5_sequential_order(
         self,
@@ -665,8 +771,92 @@ class LotoAuditorAgent:
         procedure: ProcedureSpec,
         sources: dict[str, str],
     ) -> SequentialOrderCheck:
-        """Pillar 5 deferred to Batch 4.C."""
-        raise NotImplementedError("Pillar 5 implementation deferred to Batch 4.C")
+        """Verify ELECTRICAL precedes HYDRAULIC precedes PURGE."""
+        target_id = request.target_component_id
+
+        # 1. Determine if cooling involved (mandates PURGE step)
+        cooling_involved = self._target_has_cooling_chain(target_id, sources)
+
+        # 2. Classify each step's phase
+        phases_detected = [classify_step_phase(step) for step in procedure.steps]
+        sources["procedure_phase_classification"] = "OK"
+
+        # 3. Verify order
+        order_correct = verify_phase_order(phases_detected)
+
+        # 4. Check purge presence
+        from loto_auditor_models import LotoPhase
+        purge_present = LotoPhase.PURGE in phases_detected
+
+        # 5. Verdict
+        warnings: list[str] = []
+        hard_fail_reasons: list[str] = []
+        outcome = PillarOutcome.PASS
+
+        if not order_correct:
+            warnings.append(
+                "Phase order violation: hybrid sequential LOTO doctrine requires "
+                "ELECTRICAL before HYDRAULIC before PURGE. Procedure "
+                f"'{procedure.procedure_id}' has steps that violate this order."
+            )
+            outcome = PillarOutcome.WARN
+
+        if cooling_involved and not purge_present:
+            hard_fail_reasons.append(
+                f"Target '{target_id}' involves cooling chain (CDU/chiller/manifold) "
+                f"but procedure '{procedure.procedure_id}' has no purge step. "
+                "Per a3semi hybrid LOTO doctrine, cooling-involved LOTO requires "
+                "purge step to safely release pressure and evacuate coolant."
+            )
+            outcome = PillarOutcome.HARD_FAIL
+
+        return SequentialOrderCheck(
+            phases_detected=phases_detected,
+            phases_in_correct_order=order_correct,
+            purge_required=cooling_involved,
+            purge_present=purge_present,
+            warnings=warnings,
+            hard_fail_reasons=hard_fail_reasons,
+            outcome=outcome,
+        )
+
+    def _target_has_cooling_chain(
+        self,
+        target_id: str,
+        sources: dict[str, str],
+    ) -> bool:
+        """Determine if target has cooling chain that requires PURGE step.
+
+        Two checks:
+        1. Target itself is cooling-related (chiller, CDU, manifold, etc.)
+        2. Target has non-empty cooling chain affecting downstream cooling components
+        """
+        # Check 1: target itself is cooling component
+        try:
+            comp = self.site_model.get_component(target_id)
+            if is_cooling_component_type(get_component_type(comp)):
+                sources["cooling_chain_check"] = "target is cooling component"
+                return True
+        except Exception as e:
+            log.debug("Cooling type check failed: %s", e)
+
+        # Check 2: cooling chain has affected components
+        try:
+            cooling_impact = self.site_model.cooling_chain_for(target_id)
+            affected = list(getattr(cooling_impact, "immediate", []) or []) + \
+                       list(getattr(cooling_impact, "transitive", []) or [])
+            if affected:
+                sources["cooling_chain_check"] = f"target has {len(affected)} downstream cooling components"
+                return True
+        except Exception as e:
+            log.debug("Cooling chain walk failed: %s", e)
+
+        sources["cooling_chain_check"] = "no cooling chain"
+        return False
+
+    # -------------------------------------------------------------------------
+    #  Pillar 6: PPE Category per NFPA 70E - Batch 4.C implementation
+    # -------------------------------------------------------------------------
 
     def _check_pillar_6_ppe_category(
         self,
@@ -674,8 +864,68 @@ class LotoAuditorAgent:
         procedure: ProcedureSpec,
         sources: dict[str, str],
     ) -> PPECategoryCheck:
-        """Pillar 6 deferred to Batch 4.C."""
-        raise NotImplementedError("Pillar 6 implementation deferred to Batch 4.C")
+        """Verify PPE category specified in procedure meets NFPA 70E §130 minimum."""
+        target_id = request.target_component_id
+
+        # 1. Read target voltage
+        try:
+            target_comp = self.site_model.get_component(target_id)
+            voltage_nominal = get_voltage_nominal(target_comp)
+            sources["site_model_target_ppe_voltage"] = "OK"
+        except Exception as e:
+            sources["site_model_target_ppe_voltage"] = f"error: {e}"
+            raise LotoAuditorError(
+                f"Cannot read voltage for PPE classification: {e}"
+            ) from e
+
+        # 2. Compute required PPE category from voltage matrix
+        computed_cat = compute_ppe_category(voltage_nominal)
+
+        # 3. Parse procedure for specified PPE
+        specified_cat = parse_ppe_category_from_procedure(procedure)
+        sources["procedure_ppe_parse"] = "OK"
+
+        # 4. Verdict
+        warnings: list[str] = []
+        hard_fail_reasons: list[str] = []
+        outcome = PillarOutcome.PASS
+
+        if specified_cat is None:
+            warnings.append(
+                f"No PPE category specified in procedure "
+                f"'{procedure.procedure_id}'. Voltage matrix requires minimum "
+                f"CAT {computed_cat.value} (voltage_nominal={voltage_nominal:.0f}V) "
+                "per NFPA 70E §130 Table 130.7(C)(15)(c). CET must add explicit "
+                "PPE category before execution."
+            )
+            outcome = PillarOutcome.WARN
+        elif specified_cat.value < computed_cat.value:
+            hard_fail_reasons.append(
+                f"PPE category specified is CAT {specified_cat.value} but voltage "
+                f"matrix requires CAT {computed_cat.value} minimum (voltage="
+                f"{voltage_nominal:.0f}V) per NFPA 70E §130. Under-PPE'd CET "
+                "exposed to arc flash injury risk."
+            )
+            outcome = PillarOutcome.HARD_FAIL
+        elif specified_cat.value > computed_cat.value:
+            warnings.append(
+                f"Procedure specifies CAT {specified_cat.value} which exceeds "
+                f"voltage-matrix minimum CAT {computed_cat.value}. This is "
+                "acceptable (over-PPE'd is safer) but verify rationale - it "
+                "may indicate informal IEEE 1584 calc requiring escalation."
+            )
+
+        return PPECategoryCheck(
+            voltage_nominal=voltage_nominal,
+            computed_category=computed_cat,
+            procedure_specified_category=specified_cat,
+            incident_energy_cal_cm2=None,  # IEEE 1584 V10 deferred per ADR-009
+            arc_flash_boundary_mm=None,
+            citations=["NFPA 70E Section 130", "CSA Z462-24"],
+            outcome=outcome,
+            warnings=warnings,
+            hard_fail_reasons=hard_fail_reasons,
+        )
 
     # -------------------------------------------------------------------------
     #  Optional LLM summary (Batch 4.D)
