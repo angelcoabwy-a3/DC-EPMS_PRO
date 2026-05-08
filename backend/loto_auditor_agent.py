@@ -1,33 +1,25 @@
 """
 backend/loto_auditor_agent.py
 ==============================
-LOTO Auditor Agent (Batch 4 V9 Pillar 4 deliverable - SKELETON).
+LOTO Auditor Agent (Batch 4.B - Pillars 1+2+3 implemented).
 
-This module defines the LotoAuditorAgent class. The skeleton phase
-(Batch 4.A) provides:
-
-- Orchestration logic for the 6-pillar audit pipeline
-- Provenance tracing (sources_consulted)
-- Latency profiling (decision_time_ms)
-- Pillar method stubs that raise NotImplementedError
-
-Batch 4.B will implement Pillars 1+2+3 (topology, redundancy, caps).
-Batch 4.C will implement Pillars 4+5+6 (witness, order, PPE).
-Batch 4.D will add the FastAPI endpoint and report renderer.
+Phase status:
+  - Batch 4.A: skeleton + models + DB schema + 21 unit tests
+  - Batch 4.B: Pillars 1+2+3 implemented (THIS FILE)  <-- current
+  - Batch 4.C: Pillars 4+5+6 to be implemented
+  - Batch 4.D: FastAPI endpoint + report renderer + integration tests
 
 Per ADR-006 (Deterministic Sandbox):
-- Agent has read-only authority over all subsystems
-- Reports are always created in pending_approval state
-- No autonomous state transition is permitted
-- Report persistence requires explicit CET acknowledgment via
-  witness_engine
+  - Agent has read-only authority over all subsystems
+  - Reports are always created in pending_approval state
+  - No autonomous state transition is permitted
 
 Standards cited in audit reports:
-- NFPA 70E Section 130
-- CSA Z462-24 (Ontario jurisdiction)
-- Ontario Electrical Safety Code 28th Edition
-- NEC 460.6
-- IEC 60947-2 (for 800VDC SSCB)
+  - NFPA 70E Section 130
+  - CSA Z462-24 (Ontario jurisdiction)
+  - Ontario Electrical Safety Code 28th Edition
+  - NEC 460.6
+  - IEC 60947-2 (for 800VDC SSCB)
 """
 
 from __future__ import annotations
@@ -52,6 +44,20 @@ from loto_auditor_models import (
     SequentialOrderCheck,
     WitnessGateCheck,
 )
+from loto_auditor_pillar_helpers import (
+    build_steady_state_measurements,
+    classify_capacitor_discharge_requirement,
+    detect_chiller_spof,
+    detect_ups_path_spof,
+    get_component_type,
+    get_has_dc_link,
+    get_path,
+    get_rated_kw,
+    get_voltage_nominal,
+    is_rack_type,
+    parse_discharge_compliance,
+    simulate_loto_measurements,
+)
 
 log = logging.getLogger(__name__)
 
@@ -73,14 +79,13 @@ class TargetComponentNotFoundError(LotoAuditorError):
 
 
 # =============================================================================
-#  Procedure parser (lightweight - full impl in Batch 4.B)
+#  Procedure parser
 # =============================================================================
 
 class ProcedureSpec:
     """Lightweight wrapper around procedure YAML.
 
-    Full parser will be implemented in Batch 4.B with steps,
-    pre-conditions, witness flags, and phase tagging.
+    Full parser will be enhanced in Batch 4.C with phase tagging.
     """
 
     def __init__(self, procedure_id: str, raw: dict):
@@ -90,10 +95,7 @@ class ProcedureSpec:
         self.metadata: dict = raw.get("metadata", {})
 
     def has_step_with_keyword(self, keyword: str) -> bool:
-        """Return True if any step description or action contains the keyword.
-
-        Used by Batch 4.B/C pillars for procedure introspection.
-        """
+        """Return True if any step description or action contains the keyword."""
         keyword_lower = keyword.lower()
         for step in self.steps:
             text_blob = " ".join([
@@ -111,30 +113,14 @@ class ProcedureSpec:
 # =============================================================================
 
 class LotoAuditorAgent:
-    """Paranoid LOTO procedure validator.
+    """Paranoid LOTO procedure validator (Batch 4.B).
 
-    Ingests a procedure YAML plus target equipment ID, runs 6 pillars
-    of validation, and drafts a pending_approval LotoAuditReport.
-
-    Dependencies (injected via constructor for testability):
-      - site_model: SiteModel instance for topology and impact analysis
-      - graphrag_service: GraphRAG service for semantic topology cross-check
-      - physics_engine: PhysicsEngine for redundancy and SHI computation
-      - witness_engine: WitnessGate for identity collision check
-      - procedures_dir: directory containing procedure YAML files
-
-    Usage:
-        agent = LotoAuditorAgent(
-            site_model=site,
-            graphrag_service=graph,
-            physics_engine=physics,
-            witness_engine=witness,
-        )
-        report = agent.audit(request)
-        # report.status == AuditStatus.PENDING_APPROVAL
+    Pillars 1+2+3 are now functional. Pillars 4+5+6 remain stubs.
     """
 
     DEFAULT_PROCEDURES_DIR = Path("config/procedures")
+    SHI_DEFAULT_THRESHOLD = 0.7
+    N_PLUS_1_CHILLER_THRESHOLD = 2
 
     def __init__(
         self,
@@ -155,24 +141,13 @@ class LotoAuditorAgent:
     # -------------------------------------------------------------------------
 
     def audit(self, request: LotoAuditRequest) -> LotoAuditReport:
-        """Run the full 6-pillar audit. Returns pending_approval report.
-
-        Provenance is traced in report.sources_consulted dict. Latency
-        is measured in milliseconds across the entire pipeline.
-
-        This method NEVER raises on pillar failures - failures are
-        captured as PillarOutcome.HARD_FAIL within the report. The
-        method only raises on infrastructure errors (target not found,
-        procedure missing).
-        """
+        """Run the full 6-pillar audit. Returns pending_approval report."""
         t0 = time.perf_counter()
         as_of = request.as_of_timestamp or datetime.now(timezone.utc)
 
-        # Validate inputs (raise on infra errors)
         self._validate_target_exists(request.target_component_id)
         procedure = self._load_procedure(request.procedure_id)
 
-        # Build report shell with placeholder pillar results
         report = LotoAuditReport(
             procedure_id=request.procedure_id,
             target_component_id=request.target_component_id,
@@ -187,10 +162,9 @@ class LotoAuditorAgent:
             status=AuditStatus.PENDING_APPROVAL,
         )
 
-        # Run pillars one by one with isolated try/except per pillar
-        # so a failure in one does NOT abort the others (defensive design).
         sources: dict[str, str] = {}
 
+        # Pillar 1
         try:
             report.impact_radius = self._check_pillar_1_topology(
                 request, procedure, sources
@@ -198,9 +172,12 @@ class LotoAuditorAgent:
         except Exception as e:
             log.exception("Pillar 1 failed: %s", e)
             report.impact_radius.outcome = PillarOutcome.HARD_FAIL
-            report.impact_radius.notes.append(f"Pillar 1 exception: {type(e).__name__}: {e}")
+            report.impact_radius.notes.append(
+                f"Pillar 1 exception: {type(e).__name__}: {e}"
+            )
             sources["pillar_1_topology"] = f"error: {e}"
 
+        # Pillar 2
         try:
             report.redundancy = self._check_pillar_2_redundancy(
                 request, procedure, sources
@@ -213,6 +190,7 @@ class LotoAuditorAgent:
             )
             sources["pillar_2_redundancy"] = f"error: {e}"
 
+        # Pillar 3
         try:
             report.capacitor_discharge = self._check_pillar_3_capacitor_discharge(
                 request, procedure, sources
@@ -225,6 +203,7 @@ class LotoAuditorAgent:
             )
             sources["pillar_3_caps"] = f"error: {e}"
 
+        # Pillar 4 (stub)
         try:
             report.witness_gate = self._check_pillar_4_witness_gate(
                 request, procedure, sources
@@ -237,6 +216,7 @@ class LotoAuditorAgent:
             )
             sources["pillar_4_witness"] = f"error: {e}"
 
+        # Pillar 5 (stub)
         try:
             report.sequential_order = self._check_pillar_5_sequential_order(
                 request, procedure, sources
@@ -249,6 +229,7 @@ class LotoAuditorAgent:
             )
             sources["pillar_5_order"] = f"error: {e}"
 
+        # Pillar 6 (stub)
         try:
             report.ppe_category = self._check_pillar_6_ppe_category(
                 request, procedure, sources
@@ -261,7 +242,6 @@ class LotoAuditorAgent:
             )
             sources["pillar_6_ppe"] = f"error: {e}"
 
-        # Optional LLM summary (Batch 4.D)
         if request.include_llm_summary:
             try:
                 report.llm_summary = self._render_llm_summary(report)
@@ -275,13 +255,9 @@ class LotoAuditorAgent:
         else:
             report.llm_synthesis_status = "skipped"
 
-        # Aggregate verdict
         report.aggregate_outcomes()
-
-        # Provenance and latency
         report.sources_consulted = sources
-        elapsed_ms = int((time.perf_counter() - t0) * 1000)
-        report.decision_time_ms = elapsed_ms
+        report.decision_time_ms = int((time.perf_counter() - t0) * 1000)
 
         log.info(
             "LOTO audit %s complete: outcome=%s hard_fails=%d warns=%d in %dms",
@@ -289,20 +265,19 @@ class LotoAuditorAgent:
             report.overall_outcome.value,
             report.hard_fail_count,
             report.warn_count,
-            elapsed_ms,
+            report.decision_time_ms,
         )
         return report
 
     # -------------------------------------------------------------------------
-    #  Helper methods (input validation)
+    #  Input validation helpers
     # -------------------------------------------------------------------------
 
     def _validate_target_exists(self, target_id: str) -> None:
         """Raise TargetComponentNotFoundError if target is not in site_model."""
         if not hasattr(self.site_model, "get_component"):
             raise LotoAuditorError(
-                "site_model dependency does not expose get_component(). "
-                "Cannot validate target."
+                "site_model dependency does not expose get_component()."
             )
         try:
             self.site_model.get_component(target_id)
@@ -312,12 +287,7 @@ class LotoAuditorAgent:
             ) from e
 
     def _load_procedure(self, procedure_id: str) -> ProcedureSpec:
-        """Load procedure YAML from procedures_dir.
-
-        Returns ProcedureSpec wrapper. Raises ProcedureNotFoundError if
-        the file doesn't exist or YAML parsing fails.
-        """
-        # Try common file naming patterns
+        """Load procedure YAML from procedures_dir."""
         candidates = [
             self.procedures_dir / f"{procedure_id}.yml",
             self.procedures_dir / f"{procedure_id}.yaml",
@@ -341,7 +311,7 @@ class LotoAuditorAgent:
         )
 
     # -------------------------------------------------------------------------
-    #  Pillar method stubs (Batch 4.B and 4.C will implement)
+    #  Pillar 1: Topological Impact Radius (Batch 4.B implementation)
     # -------------------------------------------------------------------------
 
     def _check_pillar_1_topology(
@@ -350,19 +320,101 @@ class LotoAuditorAgent:
         procedure: ProcedureSpec,
         sources: dict[str, str],
     ) -> ImpactRadius:
-        """Pillar 1: topological impact radius analysis.
+        """Compute impact radius via site_model walk + GraphRAG cross-check."""
+        target_id = request.target_component_id
 
-        Implementation in Batch 4.B will:
-        - Walk site_model.power_chain_for(target_id)
-        - Walk site_model.cooling_chain_for(target_id) if exists
-        - Cross-check with graphrag_service.query_topology(target_id)
-        - Compute blast_radius_racks and blast_radius_kw
-        - Set outcome to PASS if affected_components is non-empty AND
-          GraphRAG cross-check is consistent
-        """
-        raise NotImplementedError(
-            "Pillar 1 implementation deferred to Batch 4.B"
+        # 1. Walk site_model power chain
+        immediate: list[str] = []
+        transitive: list[str] = []
+        try:
+            power_impact = self.site_model.power_chain_for(target_id)
+            immediate = list(getattr(power_impact, "immediate", []) or [])
+            transitive = list(getattr(power_impact, "transitive", []) or [])
+            sources["site_model_power_chain"] = "OK"
+        except Exception as e:
+            sources["site_model_power_chain"] = f"error: {e}"
+            raise LotoAuditorError(
+                f"Cannot walk power chain for {target_id}: {e}"
+            ) from e
+
+        # 2. Walk site_model cooling chain (graceful skip if not applicable)
+        cooling_chain_affected: list[str] = []
+        try:
+            cooling_impact = self.site_model.cooling_chain_for(target_id)
+            cooling_chain_affected = list(
+                set(getattr(cooling_impact, "immediate", []) or [])
+                | set(getattr(cooling_impact, "transitive", []) or [])
+            )
+            sources["site_model_cooling_chain"] = "OK"
+        except Exception as e:
+            sources["site_model_cooling_chain"] = f"skipped: {type(e).__name__}"
+            log.debug("Cooling chain skip for %s: %s", target_id, e)
+
+        # 3. Cross-check with GraphRAG semantic topology
+        graphrag_consistency = True
+        graphrag_extra: set[str] = set()
+        try:
+            graphrag_result = self.graphrag_service.query_topology(target_id)
+            graphrag_components = set(
+                graphrag_result.get("affected_components", [])
+                if isinstance(graphrag_result, dict)
+                else []
+            )
+            site_components = set(immediate) | set(transitive)
+            graphrag_extra = graphrag_components - site_components - {target_id}
+            if graphrag_extra:
+                graphrag_consistency = False
+            sources["graphrag_topology"] = "OK"
+        except Exception as e:
+            sources["graphrag_topology"] = f"skipped: {type(e).__name__}"
+            log.debug("GraphRAG skip for %s: %s", target_id, e)
+
+        # 4. Compute blast radius
+        all_affected = sorted(set(immediate) | set(transitive))
+        racks_affected = 0
+        blast_kw = 0.0
+        for cid in all_affected:
+            try:
+                comp = self.site_model.get_component(cid)
+                if is_rack_type(get_component_type(comp)):
+                    racks_affected += 1
+                blast_kw += get_rated_kw(comp)
+            except Exception as e:
+                log.debug("Skipping rated_kw for %s: %s", cid, e)
+
+        # 5. Verdict
+        outcome = PillarOutcome.PASS
+        notes: list[str] = []
+
+        if not all_affected:
+            outcome = PillarOutcome.WARN
+            notes.append(
+                "No downstream components found via power chain. "
+                "Target may be isolated or end-of-chain leaf node."
+            )
+
+        if not graphrag_consistency:
+            extra_summary = ", ".join(sorted(graphrag_extra)[:5])
+            notes.append(
+                f"GraphRAG semantic topology references components not in site_model: "
+                f"[{extra_summary}{'...' if len(graphrag_extra) > 5 else ''}]"
+            )
+
+        return ImpactRadius(
+            affected_components=all_affected,
+            immediate_loads=sorted(set(immediate)),
+            transitive_loads=sorted(set(transitive)),
+            blast_radius_racks=racks_affected,
+            blast_radius_kw=round(blast_kw, 2),
+            cooling_chain_affected=sorted(cooling_chain_affected),
+            graphrag_consistency_check=graphrag_consistency,
+            outcome=outcome,
+            notes=notes,
         )
+
+    # -------------------------------------------------------------------------
+    #  Pillar 2: 2N Redundancy Survival (Batch 4.B implementation)
+    # -------------------------------------------------------------------------
 
     def _check_pillar_2_redundancy(
         self,
@@ -370,18 +422,137 @@ class LotoAuditorAgent:
         procedure: ProcedureSpec,
         sources: dict[str, str],
     ) -> RedundancyAssessment:
-        """Pillar 2: 2N redundancy survival check.
+        """Verify 2N redundancy survives LOTO via physics_engine simulation."""
+        target_id = request.target_component_id
 
-        Implementation in Batch 4.B will:
-        - Determine target's path (A or B) from site_model metadata
-        - Run physics_engine.validate_site() at as_of timestamp (pre-LOTO SHI)
-        - Re-run physics_engine.validate_site() with target removed (post-LOTO SHI)
-        - Detect single points of failure in remaining path
-        - HARD_FAIL if shi_post_loto < shi_threshold OR overlapping_maintenance
-        """
-        raise NotImplementedError(
-            "Pillar 2 implementation deferred to Batch 4.B"
+        # 1. Read target metadata
+        try:
+            target_comp = self.site_model.get_component(target_id)
+            target_type = get_component_type(target_comp)
+            target_path = get_path(target_comp)
+            sources["site_model_target_metadata"] = "OK"
+        except Exception as e:
+            sources["site_model_target_metadata"] = f"error: {e}"
+            raise LotoAuditorError(
+                f"Cannot read target metadata for {target_id}: {e}"
+            ) from e
+
+        # 2. Build pre-LOTO measurements (Batch 4.D will replace with TimescaleDB)
+        pre_measurements = build_steady_state_measurements()
+
+        # 3. Pre-LOTO physics validation
+        shi_pre = 1.0
+        try:
+            pre_validation = self.physics_engine.validate_site(pre_measurements)
+            shi_pre = float(pre_validation.get("site_health_index", 1.0))
+            sources["physics_engine_pre_loto"] = "OK"
+        except Exception as e:
+            sources["physics_engine_pre_loto"] = f"error: {e}"
+            log.warning("Pre-LOTO physics validation failed: %s", e)
+
+        # 4. Simulate post-LOTO measurements
+        post_measurements = simulate_loto_measurements(
+            pre_measurements,
+            target_id=target_id,
+            target_type=target_type,
+            target_path=target_path,
         )
+
+        # 5. Post-LOTO physics validation
+        shi_post = 0.0
+        try:
+            post_validation = self.physics_engine.validate_site(post_measurements)
+            shi_post = float(post_validation.get("site_health_index", 0.0))
+            sources["physics_engine_post_loto"] = "OK"
+        except Exception as e:
+            sources["physics_engine_post_loto"] = f"error: {e}"
+            log.warning("Post-LOTO physics validation failed: %s", e)
+
+        # 6. Determine path states from post-LOTO measurements
+        if target_path == "A":
+            path_a_state = "loto_in_progress"
+            path_b_state = "carrying_full_load" if shi_post >= self.SHI_DEFAULT_THRESHOLD else "degraded"
+        elif target_path == "B":
+            path_a_state = "carrying_full_load" if shi_post >= self.SHI_DEFAULT_THRESHOLD else "degraded"
+            path_b_state = "loto_in_progress"
+        else:
+            path_a_state = "unknown_no_path_metadata"
+            path_b_state = "unknown_no_path_metadata"
+
+        # 7. Detect SPOFs
+        spofs: list[str] = []
+        chiller_spof = detect_chiller_spof(
+            target_type=target_type,
+            chiller_count_online_post=int(post_measurements.get("chiller_count_online", 0)),
+            n_plus_1_threshold=self.N_PLUS_1_CHILLER_THRESHOLD,
+        )
+        if chiller_spof:
+            spofs.append(chiller_spof)
+
+        ups_spof = detect_ups_path_spof(
+            target_type=target_type,
+            target_path=target_path,
+            ups_a_online=bool(post_measurements.get("ups_a_online", True)),
+            ups_b_online=bool(post_measurements.get("ups_b_online", True)),
+        )
+        if ups_spof:
+            spofs.append(ups_spof)
+
+        # 8. Overlapping maintenance check (Batch 4.D adds CMMS integration)
+        overlapping_maintenance = self._check_overlapping_maintenance(
+            target_path, sources
+        )
+
+        # 9. Verdict
+        hard_fail_reasons: list[str] = []
+        outcome = PillarOutcome.PASS
+
+        if shi_post < self.SHI_DEFAULT_THRESHOLD:
+            hard_fail_reasons.append(
+                f"Post-LOTO SHI {shi_post:.3f} below threshold "
+                f"{self.SHI_DEFAULT_THRESHOLD:.3f}"
+            )
+            outcome = PillarOutcome.HARD_FAIL
+
+        if overlapping_maintenance:
+            hard_fail_reasons.append("Opposite path is also in maintenance window")
+            outcome = PillarOutcome.HARD_FAIL
+
+        if spofs:
+            hard_fail_reasons.append(
+                f"Single points of failure detected post-LOTO: {len(spofs)} found"
+            )
+            outcome = PillarOutcome.HARD_FAIL
+
+        return RedundancyAssessment(
+            target_path=target_path,
+            path_a_state=path_a_state,
+            path_b_state=path_b_state,
+            shi_pre_loto=max(0.0, min(1.0, shi_pre)),
+            shi_post_loto=max(0.0, min(1.0, shi_post)),
+            shi_threshold=self.SHI_DEFAULT_THRESHOLD,
+            single_points_of_failure=spofs,
+            overlapping_maintenance=overlapping_maintenance,
+            hard_fail_reasons=hard_fail_reasons,
+            outcome=outcome,
+        )
+
+    def _check_overlapping_maintenance(
+        self,
+        target_path: Optional[str],
+        sources: dict[str, str],
+    ) -> bool:
+        """Check if opposite path is also in maintenance window.
+
+        Batch 4.B: returns False (placeholder)
+        Batch 4.D: queries cmms_mcp for active LOTO on opposite path
+        """
+        sources["cmms_overlapping_maintenance_check"] = "skipped (Batch 4.D scope)"
+        return False
+
+    # -------------------------------------------------------------------------
+    #  Pillar 3: Capacitor Discharge Verification (Batch 4.B implementation)
+    # -------------------------------------------------------------------------
 
     def _check_pillar_3_capacitor_discharge(
         self,
@@ -389,19 +560,95 @@ class LotoAuditorAgent:
         procedure: ProcedureSpec,
         sources: dict[str, str],
     ) -> CapacitorDischargeCheck:
-        """Pillar 3: capacitor discharge verification per NEC 460.6.
+        """Verify capacitor discharge step compliance per NEC 460.6."""
+        target_id = request.target_component_id
 
-        Implementation in Batch 4.B will:
-        - Determine if discharge is required:
-            - voltage_nominal >= 800: required (Building D 800VDC)
-            - target.type == 'ups': required (Galaxy VX caps)
-            - target.has_dc_link: required
-        - Parse procedure for wait step >= 60s + voltmeter verification
-        - HARD_FAIL if required AND not found
-        """
-        raise NotImplementedError(
-            "Pillar 3 implementation deferred to Batch 4.B"
+        # 1. Read target metadata
+        try:
+            target_comp = self.site_model.get_component(target_id)
+            voltage_nominal = get_voltage_nominal(target_comp)
+            target_type = get_component_type(target_comp)
+            has_dc_link = get_has_dc_link(target_comp)
+            sources["site_model_target_voltage"] = "OK"
+        except Exception as e:
+            sources["site_model_target_voltage"] = f"error: {e}"
+            raise LotoAuditorError(
+                f"Cannot read target voltage metadata for {target_id}: {e}"
+            ) from e
+
+        # 2. Classify if discharge is required
+        required, reasons = classify_capacitor_discharge_requirement(
+            voltage_nominal=voltage_nominal,
+            target_type=target_type,
+            has_dc_link=has_dc_link,
         )
+
+        required_reason = "; ".join(reasons) if reasons else None
+
+        # 3. If not required, return NOT_APPLICABLE early
+        if not required:
+            return CapacitorDischargeCheck(
+                required=False,
+                required_reason=None,
+                found_in_procedure=False,
+                wait_duration_s=0,
+                minimum_required_s=60,
+                voltmeter_verification=False,
+                target_threshold_v=50.0,
+                citation="NEC 460.6",
+                outcome=PillarOutcome.NOT_APPLICABLE,
+                notes=[
+                    f"Discharge not required: voltage_nominal={voltage_nominal:.0f}V, "
+                    f"type={target_type}, has_dc_link={has_dc_link}"
+                ],
+            )
+
+        # 4. Parse procedure for discharge step
+        found, wait_seconds, has_voltmeter = parse_discharge_compliance(
+            procedure.steps
+        )
+        sources["procedure_discharge_parse"] = "OK"
+
+        # 5. Verdict
+        outcome = PillarOutcome.PASS
+        notes: list[str] = [f"Discharge required because: {required_reason}"]
+
+        if not found:
+            outcome = PillarOutcome.HARD_FAIL
+            notes.append(
+                f"NEC 460.6 violation: capacitor discharge required but no "
+                f"discharge step found in procedure '{procedure.procedure_id}'"
+            )
+        elif wait_seconds < 60:
+            outcome = PillarOutcome.HARD_FAIL
+            notes.append(
+                f"NEC 460.6 violation: discharge wait {wait_seconds}s is below "
+                f"minimum 60s for standard capacitor banks"
+            )
+        elif not has_voltmeter:
+            outcome = PillarOutcome.WARN
+            notes.append(
+                "Discharge step found and wait duration adequate, but no CAT IV "
+                "voltmeter verification specified. Add explicit voltmeter check "
+                "to confirm caps below 50 V threshold."
+            )
+
+        return CapacitorDischargeCheck(
+            required=True,
+            required_reason=required_reason,
+            found_in_procedure=found,
+            wait_duration_s=wait_seconds,
+            minimum_required_s=60,
+            voltmeter_verification=has_voltmeter,
+            target_threshold_v=50.0,
+            citation="NEC 460.6",
+            outcome=outcome,
+            notes=notes,
+        )
+
+    # -------------------------------------------------------------------------
+    #  Pillar method stubs (Batch 4.C will implement)
+    # -------------------------------------------------------------------------
 
     def _check_pillar_4_witness_gate(
         self,
@@ -409,17 +656,8 @@ class LotoAuditorAgent:
         procedure: ProcedureSpec,
         sources: dict[str, str],
     ) -> WitnessGateCheck:
-        """Pillar 4: witness gate compliance for LOTO Level 3+.
-
-        Implementation in Batch 4.C will:
-        - Determine LOTO level from voltage + caps + arc-flash criteria
-        - For Level 3+: scan procedure for steps with requires_witness=true
-        - Verify witness_engine identity collision protection is active
-        - HARD_FAIL if Level 3+ and no witness steps found
-        """
-        raise NotImplementedError(
-            "Pillar 4 implementation deferred to Batch 4.C"
-        )
+        """Pillar 4 deferred to Batch 4.C."""
+        raise NotImplementedError("Pillar 4 implementation deferred to Batch 4.C")
 
     def _check_pillar_5_sequential_order(
         self,
@@ -427,17 +665,8 @@ class LotoAuditorAgent:
         procedure: ProcedureSpec,
         sources: dict[str, str],
     ) -> SequentialOrderCheck:
-        """Pillar 5: hybrid sequential order check.
-
-        Implementation in Batch 4.C will:
-        - Tag each procedure step with its LotoPhase
-        - Verify ELECTRICAL precedes HYDRAULIC precedes PURGE
-        - If target has cooling chain: mandate PURGE step
-        - HARD_FAIL if order incorrect or purge missing when required
-        """
-        raise NotImplementedError(
-            "Pillar 5 implementation deferred to Batch 4.C"
-        )
+        """Pillar 5 deferred to Batch 4.C."""
+        raise NotImplementedError("Pillar 5 implementation deferred to Batch 4.C")
 
     def _check_pillar_6_ppe_category(
         self,
@@ -445,35 +674,13 @@ class LotoAuditorAgent:
         procedure: ProcedureSpec,
         sources: dict[str, str],
     ) -> PPECategoryCheck:
-        """Pillar 6: PPE category and arc flash compliance per NFPA 70E.
-
-        Implementation in Batch 4.C will:
-        - Compute required PPE category from voltage_nominal:
-          - <50V: CAT_0
-          - 50-600V: CAT_2
-          - 600-1000V: CAT_3
-          - >1000V: CAT_4
-        - Parse procedure for PPE specification
-        - WARN if not specified, HARD_FAIL if inadequate
-        - Citations: NFPA 70E Section 130, CSA Z462-24
-        """
-        raise NotImplementedError(
-            "Pillar 6 implementation deferred to Batch 4.C"
-        )
+        """Pillar 6 deferred to Batch 4.C."""
+        raise NotImplementedError("Pillar 6 implementation deferred to Batch 4.C")
 
     # -------------------------------------------------------------------------
     #  Optional LLM summary (Batch 4.D)
     # -------------------------------------------------------------------------
 
     def _render_llm_summary(self, report: LotoAuditReport) -> str:
-        """Generate human-readable executive summary via LM Studio.
-
-        Implementation in Batch 4.D will:
-        - Format pillar outcomes into prompt
-        - POST to http://127.0.0.1:1234/v1/chat/completions with timeout 8s
-        - Return rendered markdown summary
-        - On timeout/error, set llm_synthesis_status='timeout'
-        """
-        raise NotImplementedError(
-            "LLM summary deferred to Batch 4.D"
-        )
+        """LLM summary deferred to Batch 4.D."""
+        raise NotImplementedError("LLM summary deferred to Batch 4.D")
