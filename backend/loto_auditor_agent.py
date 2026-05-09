@@ -350,7 +350,7 @@ class LotoAuditorAgent:
         graphrag_consistency = True
         graphrag_extra: set[str] = set()
         try:
-            graphrag_result = self.graphrag_service.query_topology(target_id)
+            graphrag_result = self.graphrag_service.loto_with_knowledge(target_id)
             graphrag_components = set(
                 graphrag_result.get("affected_components", [])
                 if isinstance(graphrag_result, dict)
