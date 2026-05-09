@@ -715,6 +715,262 @@ body {
     gap: 6px;
 }
 
+/* ── Multi-Agent view (Sprint 10.1 façade) ─────────────────────────
+   4 agents in 2x2 grid; consensus banner verdict-coded; Safety Officer
+   VETO highlighted by a left red border + chip. Same instrument-grade
+   discipline as Maintenance + Tech Assist. */
+
+#view-multi-agent .view-hdr h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 4px 0;
+}
+#view-multi-agent .view-hdr .view-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+}
+
+.ma-input-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+}
+.ma-field-label {
+    display: block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    margin: 0 0 4px;
+}
+.ma-field-label-inline {
+    display: inline-flex;
+    flex-direction: column;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    flex: 1 1 180px;
+}
+.ma-textarea {
+    width: 100%;
+    background: var(--bg-elevated, #0F1115);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 10px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    line-height: 1.45;
+    border-radius: 3px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+.ma-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+.ma-input {
+    background: var(--bg-elevated, #0F1115);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    border-radius: 3px;
+    margin-top: 3px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.ma-context-row {
+    display: flex;
+    gap: 12px;
+    margin: 10px 0;
+    flex-wrap: wrap;
+}
+.ma-controls-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+.ma-meta {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+}
+
+/* Consensus banner */
+.ma-consensus-panel {
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin-bottom: 12px;
+    background: var(--bg-surface);
+    border-left-width: 4px;
+}
+.ma-consensus-good { border-left-color: var(--good, #10b981); background: rgba(16, 185, 129, 0.04); }
+.ma-consensus-warn { border-left-color: var(--warn, #f59e0b); background: rgba(245, 158, 11, 0.04); }
+.ma-consensus-crit { border-left-color: var(--crit, #ef4444); background: rgba(239, 68, 68, 0.05); }
+.ma-consensus-dim  { border-left-color: var(--text-dim); }
+.ma-consensus-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+.ma-consensus-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-dim);
+}
+.ma-consensus-verdict {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+.ma-consensus-verdict-good { color: var(--good, #10b981); }
+.ma-consensus-verdict-warn { color: var(--warn, #f59e0b); }
+.ma-consensus-verdict-crit { color: var(--crit, #ef4444); }
+.ma-consensus-verdict-dim  { color: var(--text-dim); }
+.ma-veto-badge {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: var(--crit, #ef4444);
+    background: rgba(239, 68, 68, 0.10);
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    padding: 4px 10px;
+    border-radius: 2px;
+    animation: ma-veto-blink 1.6s ease-in-out infinite;
+}
+@keyframes ma-veto-blink {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    50%      { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.18); }
+}
+.ma-consensus-rationale {
+    font-size: 11.5px;
+    color: var(--text);
+    line-height: 1.5;
+}
+
+/* Agent grid */
+.ma-agents-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+.ma-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 11px;
+    padding: 30px 8px;
+    font-style: italic;
+}
+.ma-empty.ma-error { color: var(--crit); font-style: normal; }
+.ma-agent-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: 3px;
+    padding: 12px 14px;
+    transition: all 0.2s ease;
+}
+.ma-agent-card-good { border-left-color: var(--good, #10b981); }
+.ma-agent-card-warn { border-left-color: var(--warn, #f59e0b); }
+.ma-agent-card-crit { border-left-color: var(--crit, #ef4444); }
+.ma-agent-card-dim  { border-left-color: var(--text-dim); }
+.ma-agent-card-veto {
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.5);
+    background: rgba(239, 68, 68, 0.04);
+}
+.ma-agent-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 5px;
+}
+.ma-agent-name {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text);
+    font-weight: 600;
+}
+.ma-agent-verdict {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    border: 1px solid var(--border);
+}
+.ma-verdict-good { color: var(--good, #10b981); border-color: rgba(16, 185, 129, 0.5); background: rgba(16, 185, 129, 0.08); }
+.ma-verdict-warn { color: var(--warn, #f59e0b); border-color: rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.08); }
+.ma-verdict-crit { color: var(--crit, #ef4444); border-color: rgba(239, 68, 68, 0.5);  background: rgba(239, 68, 68, 0.08); }
+.ma-verdict-dim  { color: var(--text-dim); }
+.ma-agent-time {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--text-dim);
+}
+.ma-agent-summary {
+    font-size: 11.5px;
+    color: var(--text);
+    margin: 6px 0 6px;
+    font-weight: 500;
+}
+.ma-agent-reasoning {
+    margin: 4px 0 6px 18px;
+    padding: 0;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+.ma-agent-reasoning li {
+    margin-bottom: 3px;
+}
+.ma-agent-evidence-row {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dotted var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+}
+.ma-evidence-label {
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-right: 4px;
+}
+.ma-evidence {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    background: rgba(0, 184, 212, 0.08);
+    color: var(--accent);
+    border: 1px solid rgba(0, 184, 212, 0.3);
+}
+
 /* ── Tech Assist view (Sprint 7.1a/b/d) ───────────────────────────
    Three-panel field assistance surface backed by /api/tech-assist/*.
    Same instrument-grade discipline as Maintenance: anthracite + cyan,

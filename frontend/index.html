@@ -80,6 +80,7 @@
                 <div class="nav-item" data-route="loto"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="shield-alert"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>LOTO Auditor</div>
                 <div class="nav-item" data-route="maintenance"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="wrench"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>Maintenance</div>
                 <div class="nav-item" data-route="tech-assist"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="life-buoy"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/></svg></span>Tech Assist</div>
+                <div class="nav-item" data-route="multi-agent"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="users"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Multi-Agent</div>
             </div>
 
             <div class="nav-section">
@@ -1785,6 +1786,59 @@
                             </table>
                         </div>
                     </div>
+                </section>
+            </div>
+
+            <!-- ══════════ View: Multi-Agent (Sprint 10.1 façade) ══════════
+                 Four deterministic agents (Architect / Safety Officer /
+                 Diagnostician / Analyst) consult in parallel. Safety
+                 Officer hard_stop OUTRANKS all per ADR-006.
+                 Driven by frontend/assets/js/views/multi_agent.js.
+                 No polling — event-driven on Consult. -->
+            <div class="view" id="view-multi-agent" hidden>
+                <div class="view-hdr">
+                    <h2>Multi-Agent — Operator consultation</h2>
+                    <div class="view-sub">Four specialized agents evaluate in parallel. Safety Officer holds VETO power per ADR-006. Pure deterministic Python on the critical path; no LLM in the consensus rule.</div>
+                </div>
+
+                <section class="ma-input-panel">
+                    <label class="ma-field-label">Operator question</label>
+                    <textarea id="ma-query" class="ma-textarea" rows="3"
+                        placeholder="Example:&#10;Should I authorize LOTO on rpp_a_01 right now? The Kalman trigger flagged THDi at 18.4%."></textarea>
+
+                    <div class="ma-context-row">
+                        <label class="ma-field-label-inline">asset_id
+                            <input id="ma-asset-id" class="ma-input" type="text" placeholder="e.g. rpp_a_01" maxlength="64">
+                        </label>
+                        <label class="ma-field-label-inline">procedure_id
+                            <input id="ma-procedure-id" class="ma-input" type="text" placeholder="e.g. T4-MOP-UPS-001" maxlength="120">
+                        </label>
+                        <label class="ma-field-label-inline">work_order_id
+                            <input id="ma-wo-id" class="ma-input" type="text" placeholder="e.g. WO-20260509-..." maxlength="64">
+                        </label>
+                    </div>
+
+                    <div class="ma-controls-row">
+                        <button id="ma-consult-btn" class="btn btn-primary" type="button">Consult all 4 agents</button>
+                        <button id="ma-load-rpp" class="btn btn-secondary" type="button">Load RPP scenario</button>
+                        <button id="ma-load-cdu" class="btn btn-secondary" type="button">Load CDU scenario</button>
+                        <button id="ma-load-genset" class="btn btn-secondary" type="button">Load Genset scenario</button>
+                        <span id="ma-consult-meta" class="ma-meta">—</span>
+                    </div>
+                </section>
+
+                <section class="ma-consensus-panel" id="ma-consensus-panel" hidden>
+                    <div class="ma-consensus-header">
+                        <span class="ma-consensus-label">Consensus</span>
+                        <span class="ma-consensus-verdict" id="ma-consensus-verdict">—</span>
+                        <span class="ma-veto-badge" id="ma-veto-badge" hidden>SAFETY OFFICER VETO</span>
+                    </div>
+                    <div class="ma-consensus-rationale" id="ma-consensus-rationale">—</div>
+                </section>
+
+                <section class="ma-agents-grid" id="ma-agents-grid">
+                    <!-- 4 agent cards rendered dynamically by multi_agent.js -->
+                    <div class="ma-empty">Submit a query to consult all four agents in parallel.</div>
                 </section>
             </div>
 </section>

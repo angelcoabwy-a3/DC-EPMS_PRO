@@ -271,6 +271,26 @@ async def lifespan(app: FastAPI):
                 log.info("[BOOT] Tech Assist QA + ingest active (upload_dir=%s)", _upload_dir)
             except Exception as e:
                 log.error("[BOOT] Tech Assist init failed: %s", e, exc_info=True)
+
+            # ─── Sprint 10.1: Multi-Agent façade init ─────────────────
+            # 4 deterministic agents (Architect, Safety Officer,
+            # Diagnostician, Analyst) with Safety Officer veto. Pure
+            # Python critical path per ADR-006. The site_model + graphrag
+            # references are bound later in lifespan; we resolve them
+            # lazily from globals() at registration time.
+            try:
+                from backend.multi_agent_routes import register_multi_agent_routes
+                register_multi_agent_routes(
+                    app,
+                    site_model=globals().get("_site_model"),
+                    graphrag=globals().get("_s2_service"),
+                    cmms_repo=_cmms_repo_instance,
+                    rag_service=rag_service,
+                )
+                log.info("[BOOT] Multi-Agent façade active (4 agents, "
+                         "Safety Officer veto, deterministic consensus)")
+            except Exception as e:
+                log.error("[BOOT] Multi-Agent init failed: %s", e, exc_info=True)
         else:
             log.warning("[BOOT] CMMS skipped: db_manager pool unavailable")
     except Exception as e:
