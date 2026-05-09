@@ -458,24 +458,72 @@ async def get_telemetry_latest():
 
 @app.get("/api/telemetry/stream")
 async def telemetry_stream(request: Request):
-    """SSE: push latest telemetry every 5 seconds."""
+    """SSE: synthetic Path C2 telemetry per channel (Sprint 5 C1).
+
+    Emits per-channel windows produced by telemetry_simulator, wrapped
+    in the channel_innovations schema that the frontend Activity Strip
+    consumes (see frontend/assets/js/core/telemetry_engine.js).
+
+    Feature flag (env var):
+        DC_EPMS_USE_SIMULATOR=1  (default) -> simulator path
+        DC_EPMS_USE_SIMULATOR=0            -> legacy DB-poll path
+
+    The legacy path is preserved byte-identical behaviour from before
+    Sprint 5 C1 so any operator monitoring tool that depends on the old
+    {latest, ts} shape can opt out via the env var without code change.
+    """
+    use_simulator = os.environ.get("DC_EPMS_USE_SIMULATOR", "1").strip() == "1"
+
+    sim = None
+    build_payload = None
+    if use_simulator:
+        try:
+            from telemetry_simulator import build_placeholder_payload, get_simulator
+            from site_model import get_site_model as _sm_get
+            sim = get_simulator(_sm_get())
+            build_payload = build_placeholder_payload
+            log.info(
+                "[telemetry/stream] simulator active: %d components, %d channels",
+                sim.component_count, sim.channel_count,
+            )
+        except Exception as e:
+            log.warning("[telemetry/stream] simulator init failed, falling back to legacy: %s", e)
+            sim = None
 
     async def gen() -> AsyncIterator[str]:
         while True:
             if await request.is_disconnected():
                 break
             try:
-                if db_manager:
-                    rows = await db_manager.fetch_telemetry(limit=1)
-                    latest = rows[0] if rows else None
-                    payload = json.dumps({"latest": latest, "ts": time.time()})
-                    yield f"data: {payload}\n\n"
+                if sim is not None:
+                    window = sim.get_window(dt_seconds=1.0, n_samples=5)
+                    channels = build_payload(window)
+                    payload = json.dumps({
+                        "schema": "channel_innovations",
+                        "channels": channels,
+                        "ts": time.time(),
+                    })
                 else:
-                    yield f"data: {json.dumps({'latest': None, 'error': 'DB unavailable'})}\n\n"
+                    if db_manager:
+                        rows = await db_manager.fetch_telemetry(limit=1)
+                        latest = rows[0] if rows else None
+                        payload = json.dumps({
+                            "schema": "legacy_kpi",
+                            "latest": latest,
+                            "ts": time.time(),
+                        })
+                    else:
+                        payload = json.dumps({
+                            "schema": "legacy_kpi",
+                            "latest": None,
+                            "error": "DB unavailable",
+                            "ts": time.time(),
+                        })
+                yield f"data: {payload}\n\n"
             except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
                 break
             except Exception as e:
-                yield f"data: {json.dumps({'error': str(e)[:200]})}\n\n"
+                yield f"data: {json.dumps({'schema': 'error', 'error': str(e)[:200], 'ts': time.time()})}\n\n"
             await asyncio.sleep(5)
 
     # [FIX 4] SSE must NOT send Content-Length. X-Accel-Buffering: no

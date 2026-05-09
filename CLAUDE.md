@@ -16,37 +16,43 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 
 **Vocabulary discipline (CRITICAL)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is unipolar (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in panel review.
 
-## 📊 CURRENT STATE (verified 2026-05-09 ~04:00)
+## 📊 CURRENT STATE (verified 2026-05-09 mid-cycle)
 
 ```
-HEAD:    509be04  fix(loto): DC-EPMS-034 witness_engine call site (LOW)
-Tag:     v0.7.3-sprint5-patches (at d853907, 2 commits behind HEAD)
-Tests:   412+ passing (Pillar 4-5-6 14/14 GREEN; 4 pre-existing failures
-         in pillars.py = DC-EPMS-036 test-fixture drift, NON-regressive)
-Validation layers: 8 of 8 PASS
-
-System completion:
-  Backend:   80%
-  Frontend:  82%
-  Total V9:  80% (DC-EPMS-034 closed, +1%)
-
 Tags chronological:
   v0.5.0
   v0.6.0-batch3
   v0.6.1-batch3.5
   v0.7.0-batch4
   v0.7.2-camino1
-  v0.7.3-sprint5-patches    ← previous HEAD
-  (Sprint 5 C0 locked; v0.8.0-sprint5-kalman pending C1+C2+C3)
+  v0.7.3-sprint5-patches
+  v0.7.4-frontend-pivot     ← Sprint 5.5 hybrid frontend pivot (browser milestone)
+  v0.7.5-telemetry-stream   ← Sprint 5 C1: synthetic telemetry simulator + SSE wired
+
+System completion:
+  Backend:   84% (Sprint 5 C1 wired, simulator emits 238 channels)
+  Frontend:  88% (4 reactive layers + sparkline; Activity Strip C2-ready)
+  Total V9:  85%
+
+Tests:   429+ passing
+         - 412 baseline
+         - 17 NEW telemetry_simulator tests (Sprint 5 C1)
+         - Pillar 4-5-6: 14/14 GREEN
+         - 4 pre-existing failures in test_loto_auditor_pillars.py
+           (DC-EPMS-036 fixture drift, non-regressive)
+
+Validation layers: 8 of 8 PASS
 ```
 
-**Last 5 commits**:
+**Recent commits (latest at top)**:
 ```
-509be04 (HEAD)                       fix(loto): DC-EPMS-034 witness_engine call site (LOW)
-17dfded                              chore(sprint5): close session 7+8 + recovery [DC-EPMS-035]
-d853907 (tag: v0.7.3-sprint5-patches) docs(loto): DC-EPMS-032 walk direction polarity (LOW)
-324d87f                              fix(loto): DC-EPMS-031 graphrag loto_with_knowledge (MED)
-da995e1                              fix(loto): DC-EPMS-030 cooling_chain via impact_set (MED)
+HEAD                                feat(backend): Sprint 5 C1 telemetry simulator + SSE wiring
+26b9b1d (tag: v0.7.4-frontend-pivot) feat(frontend): Bite B SHI trend sparkline
+c42187b                             feat(frontend): Bites A1+A2+A3 telemetry activity strip
+b872396                             feat(frontend): Bite 1.3 stale-data badge
+b8065db                             feat(frontend): Phase 1.0 setup (Chart.js local + skeletons)
+8f3f2e6                             docs(sprint5): C0 architecture locked + PAUSE_STATE
+509be04                             fix(loto): DC-EPMS-034 witness_engine call site
 ```
 
 ## 🛰 ROADMAP_V9_NEXT_STEPS — Sprint 5 C0 Architecture (locked 2026-05-09)
@@ -145,12 +151,17 @@ HMI heat map + agent_copilot anomaly tools
 
 ### Atomic batch ladder (C1 → C2 → C3)
 
-| Batch | Effort | Output | Tag (optional) | Bug resolved |
+| Batch | Effort | Output | Tag | Bug resolved |
 |---|---|---|---|---|
-| C0 (DONE 2026-05-09) | 15 min | This 1-pager. No code. | — | — |
-| C1 | 1-1.5 h | `telemetry_simulator.py` + 6-8 tests + SSE wiring | `v0.7.4-telemetry-stream` | — |
-| C2 | 1.5-2 h | `telemetry_pipeline.py` + 6-8 tests + DC-EPMS-029b reproducer | `v0.7.5-kalman-pipeline` | DC-EPMS-029b (natural) |
+| C0 (DONE 2026-05-09) | 15 min | 1-pager architecture. No code. | — | — |
+| C1 (DONE 2026-05-09) | 1.5 h | `telemetry_simulator.py` (354 LOC) + 17 tests + SSE wiring with feature flag `DC_EPMS_USE_SIMULATOR` | `v0.7.5-telemetry-stream` | — |
+| C2 | 1.5-2 h | `telemetry_pipeline.py` + 6-8 tests + DC-EPMS-029b reproducer | `v0.7.6-kalman-pipeline` | DC-EPMS-029b (natural) |
 | C3 | 1-1.5 h | `telemetry_channels.yml` + perf tests + 2 MOPs MD→YAML (T4-MOP-CHI-001, T4-MOP-UPS-001) | `v0.8.0-sprint5-kalman` | (Decision 4-B closure) |
+
+**Note**: tag scheme renamed mid-flight to avoid `v0.7.4-*` namespace
+collision with `v0.7.4-frontend-pivot` (Sprint 5.5 hybrid milestone,
+shipped 2026-05-09 between C0 and C1). C1 closure is now `v0.7.5-*`,
+C2 is `v0.7.6-*`, C3 final stays at `v0.8.0-*`.
 
 ### Risks + countermeasures
 
@@ -511,22 +522,28 @@ When making changes that need to coordinate with external services:
 4. **Activate venv**: `.\.venv\Scripts\Activate.ps1`.
 5. **Wait for explicit GO** from Wilmer before starting C1 (`telemetry_simulator.py`).
 
-## ⏸ PAUSE_STATE (2026-05-09 ~04:00)
+## ⏸ PAUSE_STATE (last updated 2026-05-09 mid-cycle)
 
-> Pause invoked PROACTIVELY by Wilmer (Lead Architect) per Zero-Incidents discipline. Token budget healthy; pause is design-driven, not constraint-driven. "Heroísmo de madrugada es el enemigo de la Zero-Incidents goal."
+> Original pause was PROACTIVE per Zero-Incidents discipline. Resumption was driven by user re-engagement; backend C1 + frontend Sprint 5.5 hybrid pivot were both completed in this same calendar day in alternating turns. PAUSE_STATE preserved as resumption protocol record.
 
-### What was accomplished this session (commits beyond v0.7.3-sprint5-patches)
+### Session arc (commits beyond v0.7.3-sprint5-patches, oldest first)
 
-| Commit | Phase | Bugs touched |
+| Commit | Phase | Bugs / milestones |
 |---|---|---|
-| `17dfded` chore(sprint5): close session 7+8 + recovery from shell friction [DC-EPMS-035] | A | DC-EPMS-035 opened+closed |
-| `509be04` fix(loto): DC-EPMS-034 witness_engine call site (LOW) | B | DC-EPMS-034 RESOLVED, DC-EPMS-036 opened |
-| (no commit) C0 read-only architecture 1-pager | C0 | — |
+| `17dfded` chore(sprint5): close session 7+8 + recovery from shell friction [DC-EPMS-035] | Phase A | DC-EPMS-035 opened+closed |
+| `509be04` fix(loto): DC-EPMS-034 witness_engine call site (LOW) | Phase B | DC-EPMS-034 RESOLVED, DC-EPMS-036 opened |
+| `8f3f2e6` docs(sprint5): C0 architecture locked + PAUSE_STATE | C0 | — (read-only 1-pager) |
+| `b8065db` feat(frontend): Phase 1.0 setup (Chart.js local + skeletons) | Frontend pivot | Edge-first ADR-006 reinforced |
+| `b872396` feat(frontend): Bite 1.3 stale-data badge | Frontend pivot | Stream pill 4-state |
+| `c42187b` feat(frontend): Bites A1+A2+A3 telemetry activity strip | Frontend pivot | 6-field strip, C2-ready |
+| `26b9b1d` (tag: v0.7.4-frontend-pivot) feat(frontend): Bite B SHI trend sparkline | Frontend pivot CLOSED | SVG sparkline + breach markers |
+| HEAD (tag: v0.7.5-telemetry-stream) feat(backend): Sprint 5 C1 telemetry simulator + SSE wiring | Sprint 5 C1 | 17 tests GREEN, simulator emits 238 channels |
 
 ### Pending from this session (NOT blocking next session)
 
-- **Browser smoke verification of DC-EPMS-034 fix**: requires uvicorn restart. User to verify at `http://127.0.0.1:8080/` when convenient — audit on `MOP-ATS-MONTHLY-001` + `ups_a`, confirm `sources_consulted.witness_engine_protection = "confirmed via WitnessStore.sign + IdentityCollisionError (IEC 62443 SR 6.1)"`.
-- **Optional tag** `v0.7.4-loto-witness-fix` on commit `509be04`. Deferred for bundling with Sprint 5 `v0.8.0-sprint5-kalman`.
+- **Browser smoke verification of DC-EPMS-034 fix** (older): requires uvicorn restart. Audit on `MOP-ATS-MONTHLY-001` + `ups_a`, confirm `sources_consulted.witness_engine_protection = "confirmed via WitnessStore.sign + IdentityCollisionError (IEC 62443 SR 6.1)"`.
+- **Browser smoke verification of Sprint 5 C1** (current): requires uvicorn restart. After restart, hard-reload `http://127.0.0.1:8080/`. Activity Strip "SCHEMA" cell should flip from `legacy_kpi` (gray) to `channel_innovations` (neon-cyan, glow). Anomaly counter remains 0 until C2 wires real Kalman residuals.
+- **Optional rollback for C1**: set env var `DC_EPMS_USE_SIMULATOR=0` and restart uvicorn — reverts to legacy DB-poll without code change.
 
 ### Resumption protocol (next session entry)
 
