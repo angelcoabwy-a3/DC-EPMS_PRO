@@ -13,6 +13,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.7.0-batch4] - 2026-05-08
+
+### Added
+
+- **Batch 4.D**: LOTO Auditor closure (REST endpoint + persistence + rendering).
+  - `backend/loto_auditor_repository.py` (267 lines): asyncpg-backed
+    PostgreSQL persistence with idempotent INSERT ON CONFLICT save,
+    AuditNotFoundError exception for explicit FastAPI 404 mapping,
+    MockLotoAuditRepository for tests.
+  - `backend/loto_auditor_report_renderer.py` (347 lines): pure-function
+    markdown renderer producing per-pillar sections, citations table,
+    provenance trace, ADR-006 PENDING APPROVAL banner.
+  - `backend/loto_auditor_routes.py` (332 lines): FastAPI router with
+    4 endpoints. Exports `register_loto_auditor()` for 1-line wiring.
+  - `backend/loto_auditor_agent.py` (PATCH +149 lines): final
+    NotImplementedError stub replaced with full LM Studio LLM summary
+    implementation. Optional `cmms_service` constructor parameter.
+  - `tests/test_loto_auditor_e2e.py` (NEW, 7 integration tests).
+
+- **Batch 4.C** (commit `bb4a26b`): Pillars 4+5+6 implementation.
+  Witness Gate, Hybrid Sequential Order, PPE Category. +14 unit tests.
+
+- **Batch 4.B** (commit `f0d373e`): Pillars 1+2+3 implementation.
+  Topology Impact Radius, 2N Redundancy Survival, Capacitor Discharge.
+  +18 unit tests.
+
+- **Batch 4.A** (commit `d4a5ac8`): LOTO Auditor skeleton + models +
+  PostgreSQL schema. +21 unit tests. Added ADR-009.
+
+### Changed
+
+- `backend/loto_auditor_agent.py` constructor accepts optional
+  `cmms_service` parameter for Pillar 2 overlapping_maintenance check.
+  All Batch 4.B/4.C tests remain GREEN with default None.
+- `git config --local i18n.commitencoding utf-8` and
+  `i18n.logoutputencoding utf-8` set on repo (DC-EPMS-024 mitigation).
+
+### Fixed
+
+- **DC-EPMS-024**: mojibake in commit messages when apply_batch*.ps1
+  orchestrators contained Unicode characters. Mitigations:
+  1. Phase 0 of `apply_batch4d.ps1` sets git's UTF-8 commitencoding.
+  2. All future apply_batch*.ps1 commit messages are ASCII-only.
+  3. Historical commit `bb4a26b` not amended (cosmetic only).
+
+
+
 <!-- Batch 3 closure addendum 2026-05-06 -->
 ### Batch 3 closure addendum (2026-05-06)
 
