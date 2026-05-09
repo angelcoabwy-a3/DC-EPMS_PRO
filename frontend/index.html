@@ -15,8 +15,8 @@
         <div class="logo"><span class="logo-mark">A&sup3;</span> DC-EPMS <span class="logo-pro">PRO</span></div>
         <div class="facility-info">
             <span>A&sup3; Semiconductor Systems — Edge Operations</span>
-            <span>Tier IV 2N · 40 MW</span>
-            <span>118 × NVIDIA GB200 NVL72</span>
+            <span>Tier IV 2N (Path C2) - 67 MW total</span>
+            <span>P1: 118 GB200 NVL72 / P2: 250 GB300 NVL144</span>
         </div>
         <div class="spacer"></div>
         <div class="status-pill" id="health-pg" data-label="PostgreSQL"><span class="dot"></span><span class="lbl">PostgreSQL</span></div>
@@ -81,12 +81,12 @@
                 <div class="kpi-card">
                     <div class="label">IT load</div>
                     <div class="value" id="kpi-load">—</div>
-                    <div class="sub">Nominal 16.8 MW</div>
+                    <div class="sub">P1 Nominal 16.8 MW (P2: +50 MW Q2 2026)</div>
                 </div>
                 <div class="kpi-card">
                     <div class="label">Blackwell fleet</div>
                     <div class="value" id="kpi-racks">—</div>
-                    <div class="sub">GB200 NVL72 DLC</div>
+                    <div class="sub">GB200 NVL72 DLC (Phase 1)</div>
                 </div>
             </div>
 
@@ -401,12 +401,12 @@
 
                         <!-- ══ IT HALLS (middle) ══ -->
                         <g class="topo-section topo-it">
-                            <text x="40" y="245" class="topo-section-lbl">WHITE SPACE · 3 halls · 118 racks · 16.8 MW IT</text>
+                            <text x="40" y="245" class="topo-section-lbl">WHITE SPACE (P1) - 3 halls - 118 racks - 16.8 MW IT</text>
 
                             <g class="topo-node topo-node-large" data-node="hall_1" transform="translate(580, 260)">
                                 <rect width="150" height="80" rx="4" class="topo-node-rect"/>
                                 <text x="75" y="22" class="topo-node-title">Hall 1</text>
-                                <text x="75" y="38" class="topo-node-sub">~40 racks GB200</text>
+                                <text x="75" y="38" class="topo-node-sub">~40 racks GB200 (P1)</text>
                                 <text x="75" y="56" class="topo-node-metric" data-metric="hall_1-inlet">— °C inlet</text>
                                 <text x="75" y="72" class="topo-node-metric" data-metric="hall_1-load">— kW</text>
                                 <g class="topo-physics-badge" transform="translate(132, 4)">
@@ -418,7 +418,7 @@
                             <g class="topo-node topo-node-large" data-node="hall_2" transform="translate(750, 260)">
                                 <rect width="150" height="80" rx="4" class="topo-node-rect"/>
                                 <text x="75" y="22" class="topo-node-title">Hall 2</text>
-                                <text x="75" y="38" class="topo-node-sub">~40 racks GB200</text>
+                                <text x="75" y="38" class="topo-node-sub">~40 racks GB200 (P1)</text>
                                 <text x="75" y="56" class="topo-node-metric" data-metric="hall_2-inlet">— °C inlet</text>
                                 <text x="75" y="72" class="topo-node-metric" data-metric="hall_2-load">— kW</text>
                                 <g class="topo-physics-badge" transform="translate(132, 4)">
@@ -430,7 +430,7 @@
                             <g class="topo-node topo-node-large" data-node="hall_3" transform="translate(920, 260)">
                                 <rect width="150" height="80" rx="4" class="topo-node-rect"/>
                                 <text x="75" y="22" class="topo-node-title">Hall 3</text>
-                                <text x="75" y="38" class="topo-node-sub">~38 racks GB200</text>
+                                <text x="75" y="38" class="topo-node-sub">~38 racks GB200 (P1)</text>
                                 <text x="75" y="56" class="topo-node-metric" data-metric="hall_3-inlet">— °C inlet</text>
                                 <text x="75" y="72" class="topo-node-metric" data-metric="hall_3-load">— kW</text>
                                 <g class="topo-physics-badge" transform="translate(132, 4)">
@@ -755,7 +755,7 @@
                         </g>
 
                         <!-- ════ RACK ROW (right) ════ -->
-                        <text x="700" y="30" class="pid-section-lbl">WHITE SPACE · GB200 NVL72 · 142 kW/rack</text>
+                        <text x="700" y="30" class="pid-section-lbl">WHITE SPACE (P1) - GB200 NVL72 - 142 kW/rack</text>
                         <g class="pid-rack-row" transform="translate(580, 60)">
                             <!-- 12 representative racks -->
                             <g class="pid-rack" data-rack="R01" transform="translate(0, 0)"><use xlink:href="#sym-rack" width="30" height="60" class="pid-symbol"/></g>
@@ -1515,7 +1515,7 @@
                     <div><strong>Facility:</strong> A3-Alpha Toronto Area</div>
                     <div><strong>Operator:</strong> a3semi (A-Cubed Semiconductor Systems Inc.)</div>
                     <div><strong>Standards:</strong> CSA Z462 · NFPA 70E/110 · ASHRAE A2 · IEC 62443 · ISO 22301</div>
-                    <div><strong>Hardware:</strong> GB200 NVL72 @ 142 kW/rack</div>
+                    <div><strong>Hardware:</strong> 118 GB200 (P1) + 250 GB300 (P2 Q2-2026)</div>
                     <div><strong>Cooling:</strong> DLC 18°C inlet · 45°C outlet max</div>
                     <div><strong>Lead:</strong> W. Angel (CTO)</div>
                 </div>
@@ -1525,7 +1525,7 @@
     </main>
 
     <footer class="app-footer">
-        <div class="footer-item">DC-EPMS PRO v4.0</div>
+        <div class="footer-item">DC-EPMS PRO v8.1.0</div>
         <div class="footer-item">© A-Cubed Semiconductor</div>
         <div style="flex:1"></div>
         <div class="footer-item">SSE telemetry: 5s · Incidents: 10s · Health: 15s</div>
