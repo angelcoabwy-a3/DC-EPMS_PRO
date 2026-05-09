@@ -130,7 +130,7 @@ class LotoAuditorAgent:
     """
 
     DEFAULT_PROCEDURES_DIR = Path("config/procedures")
-    SHI_DEFAULT_THRESHOLD = 0.7
+    SHI_DEFAULT_THRESHOLD = 0.5  # DC-EPMS-029a calibration: 0.7 to 0.5 for synthetic baseline; Sprint 5 deferral, see CHANGELOG.md
     N_PLUS_1_CHILLER_THRESHOLD = 2
 
     def __init__(
