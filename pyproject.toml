@@ -88,6 +88,11 @@ rag = [
   "networkx==3.6.1",                 # PIN EXACT — GraphRAG MultiDiGraph
 ]
 
+# Tech Assist document ingestion (Sprint 7.1b+)
+tech-assist = [
+  "pypdf>=5.0,<7.0",                 # pure-Python PDF text extraction, MIT license
+]
+
 # Observability
 obs = [
   "prometheus-fastapi-instrumentator>=7.0.0,<8.0.0",

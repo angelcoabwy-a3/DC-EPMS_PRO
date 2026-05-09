@@ -256,18 +256,19 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 log.error("[BOOT] Predictive trigger init failed: %s", e, exc_info=True)
 
-            # ─── Sprint 7.1a: Tech Assist troubleshoot QA init ────────
-            # Mounts /api/tech-assist/* with a TroubleshootAgent that
-            # combines rag_service (ChromaDB corpus) + cmms_repo (WO
-            # history) + LM Studio gemma synthesis.
+            # ─── Sprint 7.1a + 7.1b: Tech Assist init ─────────────────
+            # 7.1a: TroubleshootAgent (RAG + CMMS history + LM Studio).
+            # 7.1b: DocumentIngester (PDF upload -> ChromaDB chunks).
             try:
                 from backend.tech_assist.routes import register_tech_assist_routes
+                _upload_dir = PROJECT_ROOT / "data" / "tech_assist_uploads"
                 register_tech_assist_routes(
                     app,
-                    rag_service=rag_service,  # may be None if init failed earlier
+                    rag_service=rag_service,
                     cmms_repo=_cmms_repo_instance,
+                    upload_dir=_upload_dir,
                 )
-                log.info("[BOOT] Tech Assist troubleshoot QA active")
+                log.info("[BOOT] Tech Assist QA + ingest active (upload_dir=%s)", _upload_dir)
             except Exception as e:
                 log.error("[BOOT] Tech Assist init failed: %s", e, exc_info=True)
         else:
