@@ -1,10 +1,11 @@
-# DC-EPMS PRO — Canonical Demo Script (v2, 12 min)
+# DC-EPMS PRO — Canonical Demo Script (v3, 13 min)
 
 **Audience**: Microsoft CO+I CET Lead Architect panel (or Equinix equivalent)
-**Duration**: 12 minutes (10 min demo + 2 min Q&A buffer)
+**Duration**: 13 minutes (11 min demo + 2 min Q&A buffer)
 **Mode**: Live walkthrough on this laptop, browser at `http://127.0.0.1:8080/`
 **Maintainer**: Wilmer Y. Angel Beltran · a3semi
-**Locked**: 2026-05-09 — supersedes the LOTO-only v1 script.
+**Locked**: 2026-05-09 — v3 adds Sprint 10.1 Multi-Agent Act between
+predictive arc and LOTO Auditor (supersedes v2).
 
 This script is the canonical 12-min walkthrough. Anything outside this list of acts is **out of scope** for the live demo — discuss in Q&A only.
 
@@ -79,7 +80,38 @@ curl -X POST http://127.0.0.1:8080/api/cmms/work-orders/<the-wo-id>/approve `
 
 ---
 
-## Act 3 — LOTO Auditor (3:00) — *the safety-critical agent*
+## Act 3 — Multi-Agent consultation (1:30) — *deterministic 4-perspective evaluation*
+
+> *"Before approving any of these predictive work orders, an experienced CET would consult colleagues — the architect for redundancy impact, the safety officer for LOTO compliance, a diagnostician for recurrence patterns, an analyst for cost framing. The platform formalizes that pattern."*
+
+**Navigate** `http://127.0.0.1:8080/#multi-agent`.
+
+**Click** "Load RPP scenario" → textarea pre-fills with the THDi narrative + `asset_id=rpp_a_01`.
+
+**Click** "Consult all 4 agents".
+
+> *"Eight to fourteen milliseconds. Four agents in parallel. Watch the cards."*
+
+**Walk through the 4 cards left-to-right, top-to-bottom**:
+
+> **Architect** — *"`Path A 2N (high)` — caution. The reasoning bullets cite the redundancy pillar pulled directly from the CMMS asset row, plus the GraphRAG impact set if a procedure is supplied. Taking rpp_a_01 offline drops Path A from 2N to 1N for the duration of the LOTO; acceptable only if Path B is healthy."*
+>
+> **Safety Officer** — *"Caution. This agent has VETO power. If the work order requires LOTO and no MOP is linked, this card lights up red — `HARD STOP`, blinking — and the consensus banner switches to red regardless of what the other three say. CSA Z462-24 plus NFPA 70E §130. The Safety Officer never auto-approves; CET signature is mandatory."*
+>
+> **Diagnostician** — *"Caution because of recurrence. The agent queried the CMMS work-order history and found five prior incidents on rpp_a_01 in the lookback window. That's the threshold for accelerated wear. The recommendation isn't 'fix it again' — it's investigate the root cause."*
+>
+> **Analyst** — *"OpEx repair $3,200 vs CapEx replace $42,000. With five prior repairs the cumulative OpEx is approaching 40% of replacement cost; the Analyst recommends escalating to capital planning review. This is the framing that turns reactive maintenance into informed lifecycle decisions."*
+
+**Point at the consensus banner**:
+
+> *"Consensus rule is deterministic: Safety Officer hard_stop outranks all; otherwise any agent caution forces caution; otherwise approve. Pure Python in the critical path — no LLM in the consensus rule, per ADR-006. The whole consultation is sub-15ms because the four agents fanned out via `asyncio.gather`. This is the kind of structured reasoning that makes Tier IV operations decisions defensible to an auditor."*
+
+**Optional 30s deep cut** (if pacing allows): show a VETO scenario.
+> *"Watch what happens with a non-compliant work order."* — paste a `work_order_id` known to have `requires_loto=true` with no `linked_mop_id` → Consult → consensus flips to red, Safety Officer card has the blinking VETO chip, rationale cites ADR-006.
+
+---
+
+## Act 4 — LOTO Auditor (2:30) — *the safety-critical agent*
 
 > *"Predictive maintenance is half the picture. The other half is making sure the work itself is safe. The LOTO Auditor validates Method-of-Procedure documents against six engineering pillars before any CET ever locks out a breaker."*
 
@@ -105,7 +137,7 @@ curl -X POST http://127.0.0.1:8080/api/loto/audit \
 
 ---
 
-## Act 4 — Tech Assist field surface (2:00) — *the operator-facing layer*
+## Act 5 — Tech Assist field surface (2:00) — *the operator-facing layer*
 
 > *"Operators don't speak in JSON. The Tech Assist view gives them three tools."*
 
@@ -124,7 +156,7 @@ curl -X POST http://127.0.0.1:8080/api/loto/audit \
 
 ---
 
-## Act 5 — Defensive engineering + audit trail (1:30)
+## Act 6 — Defensive engineering + audit trail (1:30)
 
 > *"Here's the discipline behind it."*
 
@@ -145,9 +177,9 @@ pytest -m "not slow" -q --tb=short 2>&1 | tail -5
 
 ---
 
-## Act 6 — Wrap (30 seconds)
+## Act 7 — Wrap (30 seconds)
 
-> *"To recap. The platform predicts subsystem failures before alarms fire — three subsystems, three Kalman triggers, three CET signatures, eleven minutes. It validates LOTO procedures against six engineering pillars in 12 milliseconds. It gives operators a nameplate-to-asset matcher, a corpus-grounded troubleshooter, and a managed knowledge library. The audit trail is locked — original CET signatures cannot be silently overwritten. ADR-006 enforced. NEC, NFPA, CSA, ASHRAE, IEEE cited by section, not paraphrased."*
+> *"To recap. The platform predicts subsystem failures before alarms fire — three Kalman triggers across three subsystems. It surfaces those triggers to a 4-agent panel that reasons in parallel from architectural, safety, diagnostic and financial perspectives in under 15 ms, with the Safety Officer holding veto power per ADR-006. It validates LOTO procedures against six engineering pillars in 12 milliseconds. It gives operators a nameplate-to-asset matcher, a corpus-grounded troubleshooter, and a managed knowledge library. The audit trail is locked — original CET signatures cannot be silently overwritten. NEC, NFPA, CSA, ASHRAE, IEEE cited by section, not paraphrased."*
 >
 > *"This is what V9 AI-Factory speed plus Tier IV doctrine looks like in practice on a single laptop. I'd be grateful for the chance to bring this discipline to your team."*
 
@@ -165,6 +197,8 @@ pytest -m "not slow" -q --tb=short 2>&1 | tail -5
 | Approve button hangs | `sessionStorage.clear(); location.reload()` in DevTools console |
 | Troubleshoot QA timeout | LM Studio offline: verify `http://127.0.0.1:1234/v1/models` |
 | LOTO audit returns 500 | GraphRAG cache cold: first call takes ~30s, subsequent <50ms |
+| Multi-Agent shows "Path unknown" | CMMS asset row not seeded — re-run replay_demo.ps1 |
+| Multi-Agent consult timeout | All 4 agents are <15ms; if hung, check `/api/multi-agent/health` |
 
 ---
 
@@ -172,12 +206,13 @@ pytest -m "not slow" -q --tb=short 2>&1 | tail -5
 
 1. *"Path C2 — 67 MW, 368 racks. 800 VDC is unipolar, not three-phase."*
 2. *"Three predictive triggers, three subsystems, eleven minutes."*
-3. *"ADR-006 Deterministic Sandbox: AI drafts, CET approves."*
-4. *"Six pillars, each grounded in a specific standard."*
-5. *"Pure Python, no LLM in the critical path."*
-6. *"Original CET signature can never be silently overwritten — DC-EPMS-040."*
-7. *"Honest tech debt registry — every bug has a status, an effort, a sprint."*
-8. *"Single laptop, no cloud dependency, fully reproducible."*
+3. *"Four agents in parallel, sub-15 milliseconds, Safety Officer holds the veto."*
+4. *"ADR-006 Deterministic Sandbox: AI drafts, CET approves."*
+5. *"Six pillars, each grounded in a specific standard."*
+6. *"Pure Python, no LLM in the critical path."*
+7. *"Original CET signature can never be silently overwritten — DC-EPMS-040."*
+8. *"Honest tech debt registry — every bug has a status, an effort, a sprint."*
+9. *"Single laptop, no cloud dependency, fully reproducible."*
 
 ---
 
@@ -187,12 +222,13 @@ pytest -m "not slow" -q --tb=short 2>&1 | tail -5
 |---|---|
 | **Architectural thinking** | 7 ADRs with rejected alternatives + rationale |
 | **Standards literacy** | NFPA 70E, NEC 460.6, CSA Z462, IEC 62443, IEEE 519-2014, ASHRAE TC 9.9, NFPA 110-2022 cited by section |
-| **Operational discipline** | 530+ tests, atomic commits, replay script, ADR-006 audit trail |
-| **Safety-critical engineering** | Deterministic LOTO auditor, 12ms decisions, defense in depth, no LLM on critical path |
+| **Operational discipline** | 549+ tests (19 new in Sprint 10.1), atomic commits, replay script, ADR-006 audit trail |
+| **Safety-critical engineering** | Deterministic LOTO auditor, 12ms decisions, 4-agent consultation with Safety Officer veto in <15ms, no LLM on critical path |
 | **Honest scope reporting** | DC-EPMS bug registry with status precision, in-session catches (DC-EPMS-040) |
 | **Tier IV operational mindset** | Single-signature audit trail, pending_approval gating, retention-aware schema |
 | **Hyperscale fluency** | 67 MW Path C2, GB200/GB300 specs, 480 VAC vs 800 VDC vocabulary discipline |
 | **Edge-first autonomy** | Single-laptop deployment, no cloud CI, deterministic replay |
+| **Multi-perspective reasoning** | Architect / Safety / Diagnostician / Analyst run in `asyncio.gather`; deterministic consensus rule with Safety Officer veto |
 
 The panel walks away knowing **this person can be trusted to own a Tier IV problem end-to-end**.
 
@@ -200,4 +236,4 @@ That's the bar.
 
 ---
 
-**Locked: 2026-05-09. Tag the recording session as `demo-take-NN` and reference this file's commit hash in your notes.**
+**Locked: 2026-05-09 (v3 with Sprint 10.1). Tag the recording session as `demo-take-NN` and reference this file's commit hash in your notes.**
