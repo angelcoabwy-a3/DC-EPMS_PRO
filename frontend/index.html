@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -42,6 +42,7 @@
                 <div class="nav-item" data-route="gemini"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="cpu"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg></span>Gemini ER 1.6</div>
                 <div class="nav-item" data-route="omniverse"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="box"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></span>Omniverse 3D</div>
                 <div class="nav-item" data-route="site_topology"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="building-2"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span>Site Topology</div>
+                <div class="nav-item" data-route="loto"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="shield-alert"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>LOTO Auditor</div>
             </div>
 
             <div class="nav-section">
@@ -1357,7 +1358,143 @@
                 </style>
             </div>
 
-        </section>
+        
+            <!-- LOTO Auditor view (Camino 1 Phase D - Sprint 5 partial) -->
+            <div class="view" id="view-loto-auditor" hidden>
+                <div class="view-hdr">
+                    <h2>LOTO Auditor (6-Pillar Validation)</h2>
+                    <div class="view-sub">Paranoid procedure auditor per ADR-009 / ADR-006 Deterministic Sandbox - read-only AI authority, every output stays in pending_approval</div>
+                </div>
+
+                <div class="loto-action-bar" style="display:flex;gap:12px;align-items:center;padding:14px;background:var(--surface,#14181D);border:1px solid var(--border,#1f262d);border-radius:8px;margin-bottom:14px;">
+                    <div style="flex:1;display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;">
+                        <div>
+                            <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted,#8a9aab);margin-bottom:4px;">Procedure ID</label>
+                            <select id="loto-procedure-select" class="loto-input" style="width:100%;padding:8px 10px;background:var(--bg,#0B0D10);border:1px solid var(--border,#1f262d);color:var(--text,#c4cdd6);border-radius:4px;font-size:13px;">
+                                <option value="">Loading procedures...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted,#8a9aab);margin-bottom:4px;">Target Component</label>
+                            <input type="text" id="loto-target-input" class="loto-input" value="ups_a" style="width:100%;padding:8px 10px;background:var(--bg,#0B0D10);border:1px solid var(--border,#1f262d);color:var(--text,#c4cdd6);border-radius:4px;font-size:13px;font-family:'JetBrains Mono','Consolas',monospace;"/>
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted,#8a9aab);margin-bottom:4px;">CET on duty</label>
+                            <input type="text" id="loto-cet-input" class="loto-input" value="demo_cet" style="width:100%;padding:8px 10px;background:var(--bg,#0B0D10);border:1px solid var(--border,#1f262d);color:var(--text,#c4cdd6);border-radius:4px;font-size:13px;font-family:'JetBrains Mono','Consolas',monospace;"/>
+                        </div>
+                        <button class="btn" id="loto-audit-btn" style="padding:8px 18px;">Audit Procedure</button>
+                    </div>
+                </div>
+
+                <div id="loto-status-bar" style="display:none;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px;">
+                    <span id="loto-status-text"></span>
+                </div>
+
+                <div id="loto-results-empty" style="background:var(--surface,#14181D);border:1px solid var(--border,#1f262d);border-radius:8px;padding:36px;text-align:center;color:var(--text-muted,#6a7a8b);">
+                    <div style="font-size:28px;margin-bottom:10px;">[shield]</div>
+                    <p>Select a procedure and target component, then click "Audit Procedure".</p>
+                    <p style="font-size:12px;margin-top:10px;">The Auditor walks 6 pillars: Topology / Redundancy 2N / Capacitor Discharge (NEC 460.6) / Witness Gate / Sequential Order / PPE Category (NFPA 70E).</p>
+                </div>
+
+                <div id="loto-results-panel" hidden>
+                    <!-- Overall outcome badge -->
+                    <div id="loto-overall-card" style="background:var(--surface,#14181D);border:2px solid var(--border,#1f262d);border-radius:8px;padding:18px;margin-bottom:14px;display:flex;align-items:center;gap:18px;">
+                        <div style="flex:1;">
+                            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted,#8a9aab);margin-bottom:5px;">Overall Outcome</div>
+                            <div id="loto-overall-badge" style="font-size:24px;font-weight:700;font-family:'JetBrains Mono','Consolas',monospace;">--</div>
+                            <div id="loto-overall-sub" style="font-size:12px;color:var(--text-muted,#8a9aab);margin-top:4px;"></div>
+                        </div>
+                        <div style="display:grid;grid-template-columns:repeat(3,auto);gap:18px;text-align:right;">
+                            <div>
+                                <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted,#6a7a8b);">Decision time</div>
+                                <div id="loto-decision-time" style="font-size:15px;font-family:'JetBrains Mono','Consolas',monospace;color:var(--cyan,#00B8D4);">-- ms</div>
+                            </div>
+                            <div>
+                                <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted,#6a7a8b);">Hard fails</div>
+                                <div id="loto-hard-fails" style="font-size:15px;font-family:'JetBrains Mono','Consolas',monospace;">--</div>
+                            </div>
+                            <div>
+                                <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted,#6a7a8b);">Status</div>
+                                <div id="loto-status-pill" style="display:inline-block;padding:3px 10px;background:rgba(255,193,7,0.18);color:#FFC107;border-radius:3px;font-size:12px;font-family:'JetBrains Mono','Consolas',monospace;">pending_approval</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 6 pillar cards grid -->
+                    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;">
+                        <div class="loto-pillar-card" data-pillar="1" style="background:var(--surface,#14181D);border:1px solid var(--border,#1f262d);border-radius:8px;padding:14px;">
+                            <div class="loto-pillar-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <span style="font-weight:600;color:var(--cyan,#00B8D4);">Pillar 1 - Topology</span>
+                                <span class="loto-pillar-outcome" data-pillar-outcome="1" style="font-size:11px;font-family:'JetBrains Mono','Consolas',monospace;padding:2px 8px;border-radius:3px;">--</span>
+                            </div>
+                            <div class="loto-pillar-body" data-pillar-body="1" style="font-size:12px;color:var(--text-muted,#8a9aab);min-height:60px;">--</div>
+                        </div>
+
+                        <div class="loto-pillar-card" data-pillar="2" style="background:var(--surface,#14181D);border:1px solid var(--border,#1f262d);border-radius:8px;padding:14px;">
+                            <div class="loto-pillar-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <span style="font-weight:600;color:var(--cyan,#00B8D4);">Pillar 2 - Redundancy 2N</span>
+                                <span class="loto-pillar-outcome" data-pillar-outcome="2" style="font-size:11px;font-family:'JetBrains Mono','Consolas',monospace;padding:2px 8px;border-radius:3px;">--</span>
+                            </div>
+                            <div class="loto-pillar-body" data-pillar-body="2" style="font-size:12px;color:var(--text-muted,#8a9aab);min-height:60px;">--</div>
+                        </div>
+
+                        <div class="loto-pillar-card" data-pillar="3" style="background:var(--surface,#14181D);border:1px solid var(--border,#1f262d);border-radius:8px;padding:14px;">
+                            <div class="loto-pillar-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <span style="font-weight:600;color:var(--cyan,#00B8D4);">Pillar 3 - Capacitor Discharge (NEC 460.6)</span>
+                                <span class="loto-pillar-outcome" data-pillar-outcome="3" style="font-size:11px;font-family:'JetBrains Mono','Consolas',monospace;padding:2px 8px;border-radius:3px;">--</span>
+                            </div>
+                            <div class="loto-pillar-body" data-pillar-body="3" style="font-size:12px;color:var(--text-muted,#8a9aab);min-height:60px;">--</div>
+                        </div>
+
+                        <div class="loto-pillar-card" data-pillar="4" style="background:var(--surface,#14181D);border:1px solid var(--border,#1f262d);border-radius:8px;padding:14px;">
+                            <div class="loto-pillar-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <span style="font-weight:600;color:var(--cyan,#00B8D4);">Pillar 4 - Witness Gate</span>
+                                <span class="loto-pillar-outcome" data-pillar-outcome="4" style="font-size:11px;font-family:'JetBrains Mono','Consolas',monospace;padding:2px 8px;border-radius:3px;">--</span>
+                            </div>
+                            <div class="loto-pillar-body" data-pillar-body="4" style="font-size:12px;color:var(--text-muted,#8a9aab);min-height:60px;">--</div>
+                        </div>
+
+                        <div class="loto-pillar-card" data-pillar="5" style="background:var(--surface,#14181D);border:1px solid var(--border,#1f262d);border-radius:8px;padding:14px;">
+                            <div class="loto-pillar-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <span style="font-weight:600;color:var(--cyan,#00B8D4);">Pillar 5 - Sequential Order</span>
+                                <span class="loto-pillar-outcome" data-pillar-outcome="5" style="font-size:11px;font-family:'JetBrains Mono','Consolas',monospace;padding:2px 8px;border-radius:3px;">--</span>
+                            </div>
+                            <div class="loto-pillar-body" data-pillar-body="5" style="font-size:12px;color:var(--text-muted,#8a9aab);min-height:60px;">--</div>
+                        </div>
+
+                        <div class="loto-pillar-card" data-pillar="6" style="background:var(--surface,#14181D);border:1px solid var(--border,#1f262d);border-radius:8px;padding:14px;">
+                            <div class="loto-pillar-hdr" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                                <span style="font-weight:600;color:var(--cyan,#00B8D4);">Pillar 6 - PPE Category (NFPA 70E)</span>
+                                <span class="loto-pillar-outcome" data-pillar-outcome="6" style="font-size:11px;font-family:'JetBrains Mono','Consolas',monospace;padding:2px 8px;border-radius:3px;">--</span>
+                            </div>
+                            <div class="loto-pillar-body" data-pillar-body="6" style="font-size:12px;color:var(--text-muted,#8a9aab);min-height:60px;">--</div>
+                        </div>
+                    </div>
+
+                    <!-- Sources consulted (audit trail) -->
+                    <div style="background:var(--surface,#14181D);border:1px solid var(--border,#1f262d);border-radius:8px;padding:14px;margin-top:14px;">
+                        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted,#8a9aab);margin-bottom:8px;">Sources Consulted (audit trail)</div>
+                        <pre id="loto-sources-pre" style="font-family:'JetBrains Mono','Consolas',monospace;font-size:11px;color:var(--text,#c4cdd6);background:var(--bg,#0B0D10);padding:10px;border-radius:4px;max-height:200px;overflow-y:auto;margin:0;">{}</pre>
+                    </div>
+                </div>
+
+                <style>
+                    .loto-input:focus { outline:none; border-color:var(--cyan,#00B8D4); }
+                    .loto-pillar-outcome.outcome-pass { background:rgba(0,212,122,0.18); color:#00d47a; }
+                    .loto-pillar-outcome.outcome-warn { background:rgba(255,193,7,0.18); color:#FFC107; }
+                    .loto-pillar-outcome.outcome-hard-fail { background:rgba(255,80,80,0.18); color:#ff5050; }
+                    .loto-pillar-card.outcome-hard-fail { border-color:rgba(255,80,80,0.45); }
+                    .loto-pillar-card.outcome-warn { border-color:rgba(255,193,7,0.35); }
+                    .loto-pillar-card.outcome-pass { border-color:rgba(0,212,122,0.35); }
+                    #loto-overall-badge.overall-all-pass { color:#00d47a; }
+                    #loto-overall-badge.overall-warn { color:#FFC107; }
+                    #loto-overall-badge.overall-hard-fail { color:#ff5050; }
+                    #loto-overall-card.overall-all-pass { border-color:rgba(0,212,122,0.5); background:rgba(0,212,122,0.04); }
+                    #loto-overall-card.overall-warn { border-color:rgba(255,193,7,0.5); background:rgba(255,193,7,0.04); }
+                    #loto-overall-card.overall-hard-fail { border-color:rgba(255,80,80,0.5); background:rgba(255,80,80,0.06); }
+                </style>
+            </div>
+</section>
 
         <aside class="panel-side">
             <div class="telemetry-panel">
