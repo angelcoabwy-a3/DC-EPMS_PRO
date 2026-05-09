@@ -222,6 +222,68 @@ async def lifespan(app: FastAPI):
             log.warning("Agent engine init failed: %s", e)
             agent = None
 
+    # ─── Eager warmup of all audit-path lazy services (CET directive) ─
+    # In critical infrastructure, availability is immediate. Lazy init of
+    # GraphRAG (sentence-transformers all-MiniLM-L6-v2 + FAISS + NetworkX)
+    # plus other audit-path cold loads imposes a ~30s penalty on the
+    # FIRST /api/loto/audit. We pay that cost once at startup so the
+    # operator-facing first audit lands sub-second.
+    #
+    # Trade-off: uvicorn "Application startup complete" log line appears
+    # 10-30s later than before. CET-grade operations consider this
+    # acceptable; the SLA is "first audit < 1s", not "uvicorn ready < 5s".
+    #
+    # Two-stage warmup:
+    #   Stage 1 (always): GraphRAG.loto_with_knowledge() exercises
+    #     sentence-transformers, FAISS index construction, NetworkX graph
+    #     build, corpus embeddings, and site_model.loto_impact walk.
+    #   Stage 2 (if LOTO Auditor registered): full dry-run audit.audit()
+    #     covers the remaining pillar paths (physics_engine.validate_site,
+    #     procedure load, witness_engine introspection, pillar 3-6 logic,
+    #     report aggregation). Effectively pre-runs the same work the
+    #     first user audit will do.
+    _s2 = globals().get("_s2_service")
+    if _s2 is not None:
+        log.info("[BOOT] Pre-warming GraphRAG AI Models...")
+        _wt0 = time.perf_counter()
+        try:
+            # ups_a is a guaranteed-present component in site_model.yml.
+            _ = _s2.loto_with_knowledge("ups_a")
+            _wt = time.perf_counter() - _wt0
+            log.info("[BOOT] GraphRAG Ready (Warm) -- stage 1 completed in %.2fs", _wt)
+        except Exception as e:
+            log.warning(
+                "[BOOT] GraphRAG warmup skipped: %s. First audit will pay cold-init penalty.",
+                e,
+            )
+    else:
+        log.warning("[BOOT] GraphRAG warmup skipped: _s2_service not initialized.")
+
+    # Stage 2: dry-run audit to warm physics_engine + procedure_engine +
+    # any remaining pillar lazy paths.
+    _loto_auditor = getattr(app.state, "loto_auditor", None)
+    if _loto_auditor is not None:
+        log.info("[BOOT] Pre-warming LOTO Auditor pillars (dry-run)...")
+        _wt0 = time.perf_counter()
+        try:
+            from loto_auditor_models import LotoAuditRequest as _AuditRequest
+            _dry_request = _AuditRequest(
+                procedure_id="MOP-ATS-MONTHLY-001",
+                target_component_id="ups_a",
+                cet_on_duty="_warmup",
+                include_llm_summary=False,
+            )
+            _ = _loto_auditor.audit(_dry_request)
+            _wt = time.perf_counter() - _wt0
+            log.info("[BOOT] GraphRAG Ready (Warm) -- stage 2 audit dry-run in %.2fs", _wt)
+        except Exception as e:
+            log.warning(
+                "[BOOT] LOTO dry-run warmup skipped: %s. First user audit may still pay some cold-init.",
+                e,
+            )
+    else:
+        log.warning("[BOOT] LOTO dry-run skipped: app.state.loto_auditor not registered.")
+
     yield
 
     log.info("DC-EPMS PRO shutting down...")
