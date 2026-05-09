@@ -599,3 +599,26 @@ pyproject.toml. Better: only install via extras mechanism.
 - Date format: `YYYY-MM-DD`. `TBD` indicates date to be reconstructed from journal.
 - Sprint references: `S{N}` for sprints, `W{N}` for weeks of 12-week roadmap.
 - Bug IDs: `DC-EPMS-NNN`, sequential, registered in `[Unreleased]` until resolution.
+
+## [v0.7.2-camino1] - 2026-05-09 (Frontend Path C2 sync + LOTO Auditor view)
+
+### Added
+- Frontend view-loto-auditor with form + 6 pillar cards renderer (commits 2a04d03, a90869c)
+- Path C2 drift sync: 10 strings updated in frontend/index.html (commit 7ec55b2)
+- nav-item LOTO Auditor with Lucide shield-alert icon
+- Real-world demo: MOP-ATS-MONTHLY-001 + ups_a target catches NEC 460.6 violation in 12ms
+
+### Fixed
+- DC-EPMS-FE-001 MED: Path C2 drift in frontend (40 MW to 67 MW total, v4.0 to v8.1.0 footer)
+- DC-EPMS-FE-002 LOW: LOTO Auditor view ausente in HMI
+
+### Tech debt
+- Phase B v1 bug discovered + remediated: [regex]::Replace breaks on $N patterns in replacement strings
+- Multi-variant tolerance for middle-dot encoding (U+00B7 / and-middot / numeric entities)
+
+### Demo capability
+- Production-grade HMI now demonstrates 6-pillar LOTO Auditor end-to-end
+- ADR-006 Deterministic Sandbox visible: status=pending_approval enforced
+- Decision time 4-12ms in browser
+- WARN vs HARD_FAIL color coding visible
+
