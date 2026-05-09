@@ -255,6 +255,21 @@ async def lifespan(app: FastAPI):
                          _predictive_trigger.sustain_threshold)
             except Exception as e:
                 log.error("[BOOT] Predictive trigger init failed: %s", e, exc_info=True)
+
+            # ─── Sprint 7.1a: Tech Assist troubleshoot QA init ────────
+            # Mounts /api/tech-assist/* with a TroubleshootAgent that
+            # combines rag_service (ChromaDB corpus) + cmms_repo (WO
+            # history) + LM Studio gemma synthesis.
+            try:
+                from backend.tech_assist.routes import register_tech_assist_routes
+                register_tech_assist_routes(
+                    app,
+                    rag_service=rag_service,  # may be None if init failed earlier
+                    cmms_repo=_cmms_repo_instance,
+                )
+                log.info("[BOOT] Tech Assist troubleshoot QA active")
+            except Exception as e:
+                log.error("[BOOT] Tech Assist init failed: %s", e, exc_info=True)
         else:
             log.warning("[BOOT] CMMS skipped: db_manager pool unavailable")
     except Exception as e:
