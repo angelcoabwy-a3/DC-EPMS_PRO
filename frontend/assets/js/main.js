@@ -24,6 +24,7 @@
 import { setState, getState, subscribe } from './core/state.js';
 import { initStaleness } from './core/staleness.js';
 import { initActivityStrip } from './core/activity_strip.js';
+import { initShiSparkline } from './core/shi_sparkline.js';
 import { startTelemetry } from './core/telemetry_engine.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
@@ -40,6 +41,7 @@ window.__epms = Object.freeze({
 
 initStaleness();
 initActivityStrip();
+initShiSparkline();
 
 if (USE_NEW_TELEMETRY_ENGINE) {
     startTelemetry(window.location.origin);

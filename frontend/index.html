@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DC-EPMS PRO · a3semi Edge Operations</title>
-    <link rel="stylesheet" href="/assets/app.css?v=8.1.0-s5h2">
+    <link rel="stylesheet" href="/assets/app.css?v=8.1.0-s5h3">
     <!-- Chart.js 4.4.1 served locally per ADR-006 edge-first autonomy.
          Origin: https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js
          SHA-256: 74401D738DD3E03EE5DFB3B6841210FE2C4EAD8A960C4011CA4BA0B78A9FD8F3 -->
@@ -143,6 +143,16 @@
                 <div class="shi-bar-wrap">
                     <div class="shi-bar" id="shi-bar" style="width:100%">
                         <span id="shi-value">1.00</span>
+                    </div>
+                </div>
+                <!-- Sprint 5.5 hybrid Bite B: SHI trend sparkline.
+                     Driven by frontend/assets/js/core/shi_sparkline.js.
+                     viewBox set in JS (600 x 50). Threshold 0.50 dashed. -->
+                <div class="shi-sparkline-wrap">
+                    <svg id="shi-sparkline" class="shi-sparkline" aria-label="Site Health Index trend, last 15 minutes"></svg>
+                    <div class="shi-sparkline-meta">
+                        <span class="shi-sparkline-label">Trend · 60 samples · 15s interval</span>
+                        <span class="shi-sparkline-threshold-label">threshold 0.50</span>
                     </div>
                 </div>
                 <div class="shi-modules">
@@ -1571,8 +1581,8 @@
 <!-- Sprint 5.5 hybrid pivot: ES module bootstrap loads BEFORE app.js IIFE.
      Both scripts deferred so they run in document order after parsing,
      ensuring window.__epms bridge is available when app.js evaluates. -->
-<script type="module" src="/assets/js/main.js?v=s5h2"></script>
-<script defer src="/assets/app.js?v=8.1.0-s5h2"></script>
+<script type="module" src="/assets/js/main.js?v=s5h3"></script>
+<script defer src="/assets/app.js?v=8.1.0-s5h3"></script>
 
 </body>
 </html>

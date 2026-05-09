@@ -749,6 +749,19 @@
             }
             if (val) val.textContent = h.toFixed(2);
         });
+
+        // Sprint 5.5 hybrid Bite B: push to capped 60-sample history so
+        // core/shi_sparkline.js can render the trend. New array reference
+        // (not in-place mutation) so the Proxy notifies subscribers.
+        if (window.__epms) {
+            const prev = window.__epms.getState('shiHistory') || [];
+            const next = [...prev, {
+                ts: Date.now(),
+                shi: d.site_health || 0,
+                severity: d.overall_severity || 'ok',
+            }].slice(-60);
+            window.__epms.setState('shiHistory', next);
+        }
     }
 
     function severityClass(sev) {

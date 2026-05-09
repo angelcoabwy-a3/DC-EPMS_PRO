@@ -219,6 +219,61 @@ body {
     color: var(--text-dim);
 }
 
+/* ── SHI sparkline (Sprint 5.5 hybrid Bite B) ───────────────
+   Pure SVG trend renderer, driven by core/shi_sparkline.js.
+   Sits between .shi-bar-wrap and .shi-modules. */
+.shi-sparkline-wrap {
+    margin-top: 10px;
+    padding: 0 4px;
+}
+.shi-sparkline {
+    width: 100%;
+    height: 42px;
+    display: block;
+    overflow: visible;
+}
+.sparkline-threshold {
+    stroke: var(--warn);
+    stroke-width: 1;
+    stroke-dasharray: 4 3;
+    opacity: 0.55;
+    pointer-events: none;
+}
+.sparkline-trend {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    transition: stroke 0.25s ease;
+    filter: drop-shadow(0 0 2px rgba(0, 184, 212, 0.35));
+}
+.sparkline-trend[data-severity="ok"]       { stroke: var(--ok); filter: drop-shadow(0 0 2px rgba(74, 222, 128, 0.30)); }
+.sparkline-trend[data-severity="info"]     { stroke: var(--accent); }
+.sparkline-trend[data-severity="warning"]  { stroke: var(--warn); filter: drop-shadow(0 0 3px rgba(251, 191, 36, 0.45)); }
+.sparkline-trend[data-severity="critical"] { stroke: var(--crit); filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.55)); }
+.sparkline-breach {
+    fill: var(--crit);
+    stroke: var(--bg-primary);
+    stroke-width: 0.6;
+    pointer-events: none;
+}
+.shi-sparkline-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 9px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-family: var(--font-mono);
+}
+.shi-sparkline-threshold-label {
+    color: var(--warn);
+    opacity: 0.85;
+}
+
 /* ── Main grid ────────────────────────────────────────────── */
 .app-main {
     display: grid;

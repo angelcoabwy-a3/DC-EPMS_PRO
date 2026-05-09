@@ -54,6 +54,10 @@ const _initial = {
     serverClientLagMs: null,
     anomalyCount60min: 0,
     _apiBase: null,
+    // Sprint 5.5 hybrid Bite B (SHI sparkline) — capped 60-sample trend.
+    // Pushed by app.js renderSiteHealth via bridge after each successful
+    // /api/site/health fetch (15s interval -> 15min visible window).
+    shiHistory: [],
 };
 
 const _listeners = new Map();
