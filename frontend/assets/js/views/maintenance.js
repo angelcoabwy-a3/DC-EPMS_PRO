@@ -51,6 +51,119 @@ async function _fetchWorkOrders() {
     return r.json();
 }
 
+// ─── Sprint 6.6: CET signature + approve/reject actions ───────────
+// CET id stored in sessionStorage so it persists across page reloads
+// within the tab but resets on browser close. ADR-006 compliance:
+// the backend enforces the state machine; this is just convenience.
+function _getCetId() {
+    let id = sessionStorage.getItem('cmms_cet_id');
+    if (!id || !id.trim()) {
+        id = prompt(
+            'Enter your CET ID for this session\n(used to sign work order approvals; reset on browser close):',
+            'wilmer',
+        );
+        if (id && id.trim()) {
+            sessionStorage.setItem('cmms_cet_id', id.trim());
+            return id.trim();
+        }
+        return null;
+    }
+    return id;
+}
+
+async function _approveWorkOrder(woId, woContext) {
+    const cetId = _getCetId();
+    if (!cetId) return false;
+
+    const ok = confirm(
+        `Approve work order?\n\n` +
+        `  WO:        ${woId}\n` +
+        `  Asset:     ${woContext.asset_id}\n` +
+        `  Priority:  ${woContext.priority}\n` +
+        `  Class:     ${woContext.work_class} / ${woContext.procedure_class || '—'}\n` +
+        `  LOTO:      ${woContext.requires_loto ? 'YES' : 'no'}\n` +
+        `  CET sign:  ${cetId}\n\n` +
+        `This transitions status pending_approval -> approved per ADR-006.`,
+    );
+    if (!ok) return false;
+
+    const r = await fetch(`${API_BASE}/api/cmms/work-orders/${encodeURIComponent(woId)}/approve`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cet_id: cetId}),
+    });
+    if (!r.ok) {
+        const errText = await r.text().catch(() => `${r.status}`);
+        alert(`Approve failed: ${errText.slice(0, 200)}`);
+        return false;
+    }
+    return true;
+}
+
+async function _rejectWorkOrder(woId, woContext) {
+    const cetId = _getCetId();
+    if (!cetId) return false;
+
+    const reason = prompt(
+        `Reject work order ${woId}?\n` +
+        `Asset: ${woContext.asset_id} (priority ${woContext.priority})\n\n` +
+        `Enter rejection reason (required):`,
+    );
+    if (!reason || !reason.trim()) return false;
+
+    const ok = confirm(
+        `Confirm rejection?\n\n` +
+        `  WO:     ${woId}\n` +
+        `  Reason: ${reason.trim()}\n` +
+        `  CET:    ${cetId}\n\n` +
+        `This transitions status pending_approval -> rejected (irreversible).`,
+    );
+    if (!ok) return false;
+
+    const r = await fetch(`${API_BASE}/api/cmms/work-orders/${encodeURIComponent(woId)}/reject`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({cet_id: cetId, rejection_reason: reason.trim()}),
+    });
+    if (!r.ok) {
+        const errText = await r.text().catch(() => `${r.status}`);
+        alert(`Reject failed: ${errText.slice(0, 200)}`);
+        return false;
+    }
+    return true;
+}
+
+async function _onActionClick(e) {
+    const btn = e.target.closest('[data-cmms-action]');
+    if (!btn || btn.disabled) return;
+    const action = btn.dataset.cmmsAction;
+    const woId = btn.dataset.woId;
+    if (!action || !woId) return;
+
+    // Build context from the row's data attributes
+    const tr = btn.closest('tr');
+    const ctx = {
+        asset_id: tr?.dataset.assetId || '',
+        priority: tr?.dataset.priority || '',
+        work_class: tr?.dataset.workClass || '',
+        procedure_class: tr?.dataset.procedureClass || '',
+        requires_loto: tr?.dataset.requiresLoto === 'true',
+    };
+
+    btn.disabled = true;
+    btn.textContent = action === 'approve' ? '...' : '...';
+    try {
+        const ok = action === 'approve'
+            ? await _approveWorkOrder(woId, ctx)
+            : await _rejectWorkOrder(woId, ctx);
+        if (ok) {
+            await _refresh();
+        }
+    } finally {
+        btn.disabled = false;
+    }
+}
+
 // ─── Formatters ───────────────────────────────────────────────────
 function _ageText(isoTimestamp) {
     if (!isoTimestamp) return '—';
@@ -200,7 +313,7 @@ function _renderWOBacklog(workOrders) {
     if (meta) meta.textContent = `${workOrders.length} shown`;
 
     if (workOrders.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="m-empty">No work orders match the current filters.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="m-empty">No work orders match the current filters.</td></tr>';
         return;
     }
 
@@ -211,13 +324,32 @@ function _renderWOBacklog(workOrders) {
         const asset = _escape(w.asset_id);
         const pri = _escape(w.priority);
         const wclass = _escape(w.work_class);
+        const procClass = _escape(w.procedure_class || '');
         const lor = w.lor;
         const status = _escape(w.status);
         const trigger = _escape(w.trigger_source);
         const mop = _escape(w.linked_mop_id || '—');
         const age = _ageText(w.timestamp);
+        const requiresLoto = w.requires_loto ? 'true' : 'false';
+
+        // Sprint 6.6: inline approve/reject ONLY when pending_approval.
+        // Other statuses show a dim "—" placeholder to preserve column width.
+        const actionsCell = w.status === 'pending_approval'
+            ? `
+                <td class="m-wo-actions">
+                    <button class="m-action-btn m-action-approve" data-cmms-action="approve" data-wo-id="${wid}" title="Approve and sign as CET">✓</button>
+                    <button class="m-action-btn m-action-reject"  data-cmms-action="reject"  data-wo-id="${wid}" title="Reject with reason">✗</button>
+                </td>
+            `
+            : `<td class="m-wo-actions m-wo-actions-disabled">—</td>`;
+
         return `
-            <tr ${isOverdue ? 'data-overdue="true"' : ''}>
+            <tr ${isOverdue ? 'data-overdue="true"' : ''}
+                data-asset-id="${asset}"
+                data-priority="${pri}"
+                data-work-class="${wclass}"
+                data-procedure-class="${procClass}"
+                data-requires-loto="${requiresLoto}">
                 <td class="m-wo-id" title="${wid}">${wid.slice(-12)}</td>
                 <td class="m-wo-asset">${asset}</td>
                 <td><span class="m-pri-badge m-pri-${pri.toLowerCase()}">${pri}</span></td>
@@ -227,6 +359,7 @@ function _renderWOBacklog(workOrders) {
                 <td class="m-wo-trigger">${trigger.replace(/_/g, ' ')}</td>
                 <td class="m-wo-mop">${mop}</td>
                 <td class="m-wo-age">${age}</td>
+                ${actionsCell}
             </tr>
         `;
     }).join('');
@@ -251,7 +384,7 @@ async function _refresh() {
         console.warn('[maintenance] refresh failed:', err);
         const tbody = document.getElementById('m-wo-tbody');
         if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="9" class="m-empty m-error">Refresh failed: ${_escape(err.message)}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="m-empty m-error">Refresh failed: ${_escape(err.message)}</td></tr>`;
         }
     }
 }
@@ -290,6 +423,15 @@ function _wireFilters() {
     if (rb) rb.addEventListener('click', _refresh);
 }
 
+// Sprint 6.6: delegated click listener for inline approve/reject buttons.
+// Single listener on the tbody catches clicks even on dynamically rendered
+// rows (no need to re-bind on every refresh).
+function _wireActionButtons() {
+    const tbody = document.getElementById('m-wo-tbody');
+    if (!tbody) return;
+    tbody.addEventListener('click', _onActionClick);
+}
+
 // ─── Public API ───────────────────────────────────────────────────
 export function initMaintenanceView() {
     _container = document.getElementById('view-maintenance');
@@ -298,6 +440,7 @@ export function initMaintenanceView() {
         return;
     }
     _wireFilters();
+    _wireActionButtons();
 
     // Observe show/hide via mutation observer on the hidden attribute.
     const observer = new MutationObserver(_onVisibilityChange);

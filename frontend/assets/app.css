@@ -542,6 +542,63 @@ body {
 }
 .m-error { color: var(--crit); }
 
+/* ── Sprint 6.6: inline approve/reject buttons ─────────────── */
+.m-wo-actions {
+    text-align: center;
+    white-space: nowrap;
+    width: 64px;
+}
+.m-wo-actions-disabled {
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+}
+.m-action-btn {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 2px;
+    padding: 3px 7px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    margin-right: 3px;
+    font-family: var(--font-mono);
+    transition: all 0.15s ease;
+}
+.m-action-btn:last-child { margin-right: 0; }
+.m-action-btn:hover {
+    transform: translateY(-1px);
+}
+.m-action-btn:active {
+    transform: translateY(0);
+}
+.m-action-btn:disabled {
+    opacity: 0.5;
+    cursor: wait;
+    transform: none;
+}
+.m-action-approve {
+    background: rgba(74, 222, 128, 0.10);
+    border-color: rgba(74, 222, 128, 0.40);
+    color: var(--ok);
+}
+.m-action-approve:hover {
+    background: rgba(74, 222, 128, 0.22);
+    border-color: var(--ok);
+    box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.4);
+}
+.m-action-reject {
+    background: rgba(239, 68, 68, 0.10);
+    border-color: rgba(239, 68, 68, 0.40);
+    color: var(--crit);
+}
+.m-action-reject:hover {
+    background: rgba(239, 68, 68, 0.22);
+    border-color: var(--crit);
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.4);
+}
+
 /* ── Main grid ────────────────────────────────────────────── */
 .app-main {
     display: grid;
