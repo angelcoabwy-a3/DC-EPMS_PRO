@@ -225,7 +225,7 @@ class SiteModel:
         self._build_cooling_chains()
 
         log.info(
-            "[site_model] loaded: %d components, %d locations, " "%d power edges, %d cooling edges",
+            "[site_model] loaded: %d components, %d locations, %d power edges, %d cooling edges",
             len(self._component_by_id),
             len(self._location_by_id),
             sum(len(v) for v in self._power_downstream.values()),

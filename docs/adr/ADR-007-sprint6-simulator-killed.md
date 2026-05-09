@@ -1,10 +1,10 @@
 # ADR-007: Kill Sprint 6 "DPO Spike From Scratch" — Reuse `dpo_edge_healing.py` Capture-Only
 
-* Status: ACCEPTED
-* Date: 2026-05-03 (decision taken during archaeological audit + roadmap re-plan, retroactively documented 2026-05-06 in Batch 3)
-* Decision-maker: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-* Sprint: Affects S6 V9 W7-8 (DPO sprint)
-* MADR template: https://adr.github.io/madr/
+- Status: ACCEPTED
+- Date: 2026-05-03 (decision taken during archaeological audit + roadmap re-plan, retroactively documented 2026-05-06 in Batch 3)
+- Decision-maker: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
+- Sprint: Affects S6 V9 W7-8 (DPO sprint)
+- MADR template: https://adr.github.io/madr/
 
 ## Context
 

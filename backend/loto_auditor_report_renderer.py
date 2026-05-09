@@ -17,11 +17,10 @@ Design principles:
 from __future__ import annotations
 
 from loto_auditor_models import (
+    AuditStatus,
     LotoAuditReport,
     PillarOutcome,
-    AuditStatus,
 )
-
 
 # =============================================================================
 #  Outcome marker mapping (text-based, no emoji to avoid encoding pitfalls)
@@ -43,6 +42,7 @@ def _marker(outcome: PillarOutcome) -> str:
 #  Section renderers (each returns a markdown string)
 # =============================================================================
 
+
 def _render_header(report: LotoAuditReport) -> str:
     status_text = report.status.value.upper().replace("_", " ")
     banner = ""
@@ -52,9 +52,7 @@ def _render_header(report: LotoAuditReport) -> str:
             "(per ADR-006 Deterministic Sandbox: AI drafts, CET approves)\n"
         )
     elif report.status == AuditStatus.APPROVED:
-        banner = (
-            f"\n> **STATUS: APPROVED** by {report.approver_cet or 'unknown'}\n"
-        )
+        banner = f"\n> **STATUS: APPROVED** by {report.approver_cet or 'unknown'}\n"
     elif report.status == AuditStatus.REJECTED:
         reason = report.rejection_reason or "no reason provided"
         banner = f"\n> **STATUS: REJECTED** Reason: {reason}\n"
@@ -148,8 +146,7 @@ def _render_pillar_2(report: LotoAuditReport) -> str:
     fail_block = ""
     if p.hard_fail_reasons:
         fail_block = (
-            "\n**Hard fail reasons**:\n"
-            + "\n".join(f"- {r}" for r in p.hard_fail_reasons) + "\n"
+            "\n**Hard fail reasons**:\n" + "\n".join(f"- {r}" for r in p.hard_fail_reasons) + "\n"
         )
 
     return (
@@ -219,15 +216,11 @@ def _render_pillar_5(report: LotoAuditReport) -> str:
     )
     warnings_block = ""
     if p.warnings:
-        warnings_block = (
-            "\n**Warnings**:\n"
-            + "\n".join(f"- {w}" for w in p.warnings) + "\n"
-        )
+        warnings_block = "\n**Warnings**:\n" + "\n".join(f"- {w}" for w in p.warnings) + "\n"
     fail_block = ""
     if p.hard_fail_reasons:
         fail_block = (
-            "\n**Hard fail reasons**:\n"
-            + "\n".join(f"- {r}" for r in p.hard_fail_reasons) + "\n"
+            "\n**Hard fail reasons**:\n" + "\n".join(f"- {r}" for r in p.hard_fail_reasons) + "\n"
         )
 
     return (
@@ -251,15 +244,11 @@ def _render_pillar_6(report: LotoAuditReport) -> str:
     citations_str = ", ".join(p.citations)
     warnings_block = ""
     if p.warnings:
-        warnings_block = (
-            "\n**Warnings**:\n"
-            + "\n".join(f"- {w}" for w in p.warnings) + "\n"
-        )
+        warnings_block = "\n**Warnings**:\n" + "\n".join(f"- {w}" for w in p.warnings) + "\n"
     fail_block = ""
     if p.hard_fail_reasons:
         fail_block = (
-            "\n**Hard fail reasons**:\n"
-            + "\n".join(f"- {r}" for r in p.hard_fail_reasons) + "\n"
+            "\n**Hard fail reasons**:\n" + "\n".join(f"- {r}" for r in p.hard_fail_reasons) + "\n"
         )
 
     incident_str = (
@@ -283,25 +272,16 @@ def _render_provenance(report: LotoAuditReport) -> str:
     if not report.sources_consulted:
         return ""
     rows = "\n".join(
-        f"| `{src}` | {status} |"
-        for src, status in sorted(report.sources_consulted.items())
+        f"| `{src}` | {status} |" for src, status in sorted(report.sources_consulted.items())
     )
-    return (
-        "\n## Provenance Trace\n"
-        "\n| Source | Status |\n"
-        "|---|---|\n"
-        f"{rows}\n"
-    )
+    return f"\n## Provenance Trace\n\n| Source | Status |\n|---|---|\n{rows}\n"
 
 
 def _render_standards(report: LotoAuditReport) -> str:
     if not report.standards_cited:
         return ""
     items = "\n".join(f"- {std}" for std in report.standards_cited)
-    return (
-        "\n## Standards Cited\n\n"
-        f"{items}\n"
-    )
+    return f"\n## Standards Cited\n\n{items}\n"
 
 
 def _render_footer(report: LotoAuditReport) -> str:
@@ -316,6 +296,7 @@ def _render_footer(report: LotoAuditReport) -> str:
 # =============================================================================
 #  Public API
 # =============================================================================
+
 
 def render_audit_report_markdown(report: LotoAuditReport) -> str:
     """Render a LotoAuditReport as a complete markdown document.
@@ -342,6 +323,6 @@ def render_audit_report_markdown(report: LotoAuditReport) -> str:
 
 
 __all__ = [
-    "render_audit_report_markdown",
     "OUTCOME_MARKER",
+    "render_audit_report_markdown",
 ]

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -194,7 +194,9 @@ def parse_discharge_compliance(steps: list[dict]) -> tuple[bool, int, bool]:
 
     log.debug(
         "Discharge parse: found=%s wait_s=%d voltmeter=%s",
-        found, wait_seconds, has_voltmeter,
+        found,
+        wait_seconds,
+        has_voltmeter,
     )
     return found, wait_seconds, has_voltmeter
 
@@ -203,8 +205,9 @@ def parse_discharge_compliance(steps: list[dict]) -> tuple[bool, int, bool]:
 #  Steady-state measurement builder (Pillar 2 support)
 # =============================================================================
 
+
 def build_steady_state_measurements(
-    overrides: Optional[dict[str, Any]] = None,
+    overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build a baseline measurement dictionary for physics_engine.validate_site().
 
@@ -258,7 +261,7 @@ def simulate_loto_measurements(
     base: dict[str, Any],
     target_id: str,
     target_type: str,
-    target_path: Optional[str] = None,
+    target_path: str | None = None,
 ) -> dict[str, Any]:
     """Apply LOTO simulation to baseline measurements.
 
@@ -292,9 +295,7 @@ def simulate_loto_measurements(
         sim["ups_load_kw"] = base.get("ups_load_kw", 16756.0) * 0.95
 
     elif type_lower == "chiller":
-        sim["chiller_count_online"] = max(
-            0, int(base.get("chiller_count_online", 3)) - 1
-        )
+        sim["chiller_count_online"] = max(0, int(base.get("chiller_count_online", 3)) - 1)
 
     elif type_lower == "ats":
         sim["ats_position"] = "alternate"
@@ -305,9 +306,7 @@ def simulate_loto_measurements(
         )
 
     elif type_lower == "chw_pump":
-        sim["chw_pump_count_online"] = max(
-            0, int(base.get("chw_pump_count_online", 3)) - 1
-        )
+        sim["chw_pump_count_online"] = max(0, int(base.get("chw_pump_count_online", 3)) - 1)
 
     elif type_lower == "cdu":
         # CDU loss reduces secondary loop capacity
@@ -315,9 +314,7 @@ def simulate_loto_measurements(
 
     elif type_lower in ("rpp", "busway", "xfmr", "transformer"):
         # Path-level loss reduces facility IT capacity
-        if target_path == "A":
-            sim["facility_it_kw"] = base.get("facility_it_kw", 16756.0) * 0.5
-        elif target_path == "B":
+        if target_path == "A" or target_path == "B":
             sim["facility_it_kw"] = base.get("facility_it_kw", 16756.0) * 0.5
 
     return sim
@@ -327,11 +324,12 @@ def simulate_loto_measurements(
 #  SPOF detection (Pillar 2 support)
 # =============================================================================
 
+
 def detect_chiller_spof(
     target_type: str,
     chiller_count_online_post: int,
     n_plus_1_threshold: int = 2,
-) -> Optional[str]:
+) -> str | None:
     """Return SPOF description if chiller redundancy is lost, else None.
 
     Logic (per A3-Alpha N+1 cooling doctrine):
@@ -353,10 +351,10 @@ def detect_chiller_spof(
 
 def detect_ups_path_spof(
     target_type: str,
-    target_path: Optional[str],
+    target_path: str | None,
     ups_a_online: bool,
     ups_b_online: bool,
-) -> Optional[str]:
+) -> str | None:
     """Return SPOF description if UPS path redundancy is lost.
 
     LOTO of UPS_A means UPS_B must carry full load. If UPS_B is also
@@ -367,21 +365,16 @@ def detect_ups_path_spof(
         return None
 
     if target_path == "A" and not ups_b_online:
-        return (
-            "UPS_A is target of LOTO and UPS_B is also offline. "
-            "Total loss of conditioned power."
-        )
+        return "UPS_A is target of LOTO and UPS_B is also offline. Total loss of conditioned power."
     if target_path == "B" and not ups_a_online:
-        return (
-            "UPS_B is target of LOTO and UPS_A is also offline. "
-            "Total loss of conditioned power."
-        )
+        return "UPS_B is target of LOTO and UPS_A is also offline. Total loss of conditioned power."
     return None
 
 
 # =============================================================================
 #  Capacitor discharge requirement classifier (Pillar 3 support)
 # =============================================================================
+
 
 def classify_capacitor_discharge_requirement(
     voltage_nominal: float,
@@ -405,16 +398,12 @@ def classify_capacitor_discharge_requirement(
     if voltage_nominal >= 800.0:
         required = True
         reasons.append(
-            f"voltage_nominal {voltage_nominal:.0f} V >= 800 V "
-            "(Building D 800VDC mandate)"
+            f"voltage_nominal {voltage_nominal:.0f} V >= 800 V (Building D 800VDC mandate)"
         )
 
     if target_type.lower() == "ups":
         required = True
-        reasons.append(
-            "UPS targets always require capacitor discharge "
-            "(Galaxy VX DC link caps)"
-        )
+        reasons.append("UPS targets always require capacitor discharge (Galaxy VX DC link caps)")
 
     if has_dc_link:
         required = True
@@ -426,6 +415,7 @@ def classify_capacitor_discharge_requirement(
 # =============================================================================
 #  Component metadata accessors (defensive readers)
 # =============================================================================
+
 
 def get_voltage_nominal(component: Any) -> float:
     """Read voltage_nominal from component metadata, default 0.0 if missing."""
@@ -446,7 +436,7 @@ def get_rated_kw(component: Any) -> float:
         return 0.0
 
 
-def get_path(component: Any) -> Optional[str]:
+def get_path(component: Any) -> str | None:
     """Read path (A or B) from component metadata, None if not 2N protected."""
     try:
         meta = getattr(component, "metadata", {}) or {}
@@ -482,6 +472,7 @@ def get_component_type(component: Any) -> str:
 #  Rack counting helper (Pillar 1 support)
 # =============================================================================
 
+
 def is_rack_type(component_type: str) -> bool:
     """Return True if component type denotes a compute rack.
 
@@ -493,15 +484,13 @@ def is_rack_type(component_type: str) -> bool:
     if not component_type:
         return False
     lower = component_type.lower().strip()
-    return (
-        lower.endswith("_rack")
-        or lower in ("rack", "compute_rack")
-    )
+    return lower.endswith("_rack") or lower in ("rack", "compute_rack")
 
 
 # =============================================================================
 #  LOTO Level classifier (Pillar 4 support)
 # =============================================================================
+
 
 # Imported lazily within functions to avoid circular import at module load
 def classify_loto_level(
@@ -555,8 +544,7 @@ def classify_loto_level(
         )
 
     return LotoLevel.LEVEL_1_BASIC, (
-        f"voltage_nominal {voltage_nominal:.0f}V < 50V, "
-        "basic LOTO with low voltage"
+        f"voltage_nominal {voltage_nominal:.0f}V < 50V, basic LOTO with low voltage"
     )
 
 
@@ -570,12 +558,7 @@ def find_witness_steps(steps: list[dict]) -> list[str]:
     for i, step in enumerate(steps):
         flag = step.get("requires_witness")
         if flag in (True, "true", "True", "TRUE", "yes", "Yes", "YES", 1):
-            step_id = (
-                step.get("id")
-                or step.get("step_id")
-                or step.get("name")
-                or f"step_{i + 1}"
-            )
+            step_id = step.get("id") or step.get("step_id") or step.get("name") or f"step_{i + 1}"
             witness_step_ids.append(str(step_id))
     return witness_step_ids
 
@@ -584,12 +567,14 @@ def find_witness_steps(steps: list[dict]) -> list[str]:
 #  Phase classification and order check (Pillar 5 support)
 # =============================================================================
 
+
 # Phase rank for sequential order check.
 # Lower rank steps must come BEFORE higher rank steps.
 # OTHER and VERIFICATION are rank 0 - they don't constrain ordering.
 def get_phase_rank(phase: Any) -> int:
     """Return rank for a LotoPhase enum. ELECTRICAL=1, HYDRAULIC=2, PURGE=3."""
     from loto_auditor_models import LotoPhase  # late import
+
     rank_map = {
         LotoPhase.OTHER: 0,
         LotoPhase.VERIFICATION: 0,
@@ -624,11 +609,19 @@ def classify_step_phase(step: dict) -> Any:
     text = step_text(step)
 
     # Verification keywords (allowed at any position)
-    if any(kw in text for kw in (
-        "verify", "voltmeter", "test absence", "test for voltage",
-        "verify zero", "verify de-energized", "verify de-energised",
-        "absence of voltage",
-    )):
+    if any(
+        kw in text
+        for kw in (
+            "verify",
+            "voltmeter",
+            "test absence",
+            "test for voltage",
+            "verify zero",
+            "verify de-energized",
+            "verify de-energised",
+            "absence of voltage",
+        )
+    ):
         return LotoPhase.VERIFICATION
 
     # Phase keywords (order matters: check most specific first)
@@ -683,6 +676,7 @@ def is_cooling_component_type(component_type: str) -> bool:
 #  PPE Category computation (Pillar 6 support)
 # =============================================================================
 
+
 def compute_ppe_category(voltage_nominal: float) -> Any:
     """Compute required PPE category from voltage (NFPA 70E §130 conservative).
 
@@ -708,7 +702,7 @@ def compute_ppe_category(voltage_nominal: float) -> Any:
     return PPECategory.CAT_4
 
 
-def parse_ppe_category_from_procedure(procedure: Any) -> Optional[Any]:
+def parse_ppe_category_from_procedure(procedure: Any) -> Any | None:
     """Extract PPE category from procedure metadata or step text.
 
     Search order:

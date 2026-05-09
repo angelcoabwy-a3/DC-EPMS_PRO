@@ -40,12 +40,12 @@ from backend.physics.it_thermal import ITThermalModule
 from backend.physics.mechanical import MechanicalModule
 
 __all__ = [
-    "PhysicsModule",
-    "ValidationResult",
-    "StateSnapshot",
-    "Severity",
-    "ITThermalModule",
-    "MechanicalModule",
     "ElectricalModule",
     "HeatRejectionModule",
+    "ITThermalModule",
+    "MechanicalModule",
+    "PhysicsModule",
+    "Severity",
+    "StateSnapshot",
+    "ValidationResult",
 ]

@@ -1,0 +1,49 @@
+# DEMO-RECTIFIER-UNDER-PPE
+# A defective LOTO procedure: PPE Category 1 specified for an 800VDC
+# rectifier. NFPA 70E §130 voltage matrix requires Category 3 minimum
+# for 600V+ DC. Pillar 6 should HARD_FAIL.
+procedure_id: DEMO-RECTIFIER-UNDER-PPE
+title: MV Rectifier - LOTO (Defective - PPE under-specified)
+target_component_id: rectifier_a
+ppe_category: 1
+loto_level: 4
+metadata:
+  version: 1.0
+  author: wilmer
+  reviewed_by: "[CET pending]"
+  jurisdiction: Ontario
+  estimated_duration_minutes: 60
+  defect_type: "PPE Category 1 specified for 800VDC equipment (NFPA 70E violation)"
+
+steps:
+  - id: step_1
+    description: "Don PPE Category 1: standard arc-rated shirt and pants."
+    phase: PPE_DON
+    estimated_duration_s: 120
+
+  - id: step_2
+    description: "Open MV upstream isolation breaker BKR-MV-01 with witness."
+    phase: ELECTRICAL
+    requires_witness: true
+    estimated_duration_s: 90
+
+  - id: step_3
+    description: "Apply lockout on BKR-MV-01."
+    phase: ELECTRICAL
+    estimated_duration_s: 120
+
+  - id: step_4
+    description: "Wait 300 seconds for full DC bus discharge per NEC 460.6."
+    phase: ELECTRICAL
+    duration_s: 300
+
+  - id: step_5
+    description: "Verify zero voltage with CAT IV voltmeter on DC+ and DC- buses."
+    phase: ELECTRICAL
+    requires_voltmeter: true
+    estimated_duration_s: 90
+
+  - id: step_6
+    description: "Close DC output isolation switch SW-DC-01."
+    phase: ELECTRICAL
+    estimated_duration_s: 60

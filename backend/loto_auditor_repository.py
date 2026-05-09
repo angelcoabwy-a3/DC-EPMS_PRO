@@ -26,8 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 from loto_auditor_models import LotoAuditReport
 
@@ -37,6 +36,7 @@ log = logging.getLogger(__name__)
 # =============================================================================
 #  Exceptions
 # =============================================================================
+
 
 class RepositoryError(RuntimeError):
     """Base exception for repository failures (connection, query)."""
@@ -49,6 +49,7 @@ class AuditNotFoundError(RepositoryError):
 # =============================================================================
 #  Protocol (interface contract)
 # =============================================================================
+
 
 class LotoAuditRepositoryProtocol(Protocol):
     """Repository interface contract.
@@ -73,6 +74,7 @@ class LotoAuditRepositoryProtocol(Protocol):
 # =============================================================================
 #  Postgres implementation (production)
 # =============================================================================
+
 
 class PostgresLotoAuditRepository:
     """asyncpg-backed repository for loto_audits table.
@@ -133,24 +135,32 @@ class PostgresLotoAuditRepository:
             async with self._pool.acquire() as conn:
                 await conn.execute(
                     sql,
-                    report.audit_id, report.timestamp, report.procedure_id,
-                    report.target_component_id, report.cet_on_duty,
+                    report.audit_id,
+                    report.timestamp,
+                    report.procedure_id,
+                    report.target_component_id,
+                    report.cet_on_duty,
                     report.facility,
-                    report.overall_outcome.value, report.hard_fail_count,
-                    report.warn_count, report.pass_count,
+                    report.overall_outcome.value,
+                    report.hard_fail_count,
+                    report.warn_count,
+                    report.pass_count,
                     report.not_applicable_count,
-                    report.status.value, report.rejection_reason,
+                    report.status.value,
+                    report.rejection_reason,
                     report.approver_cet,
-                    report_json_str, report.decision_time_ms,
+                    report_json_str,
+                    report.decision_time_ms,
                     report.api_version,
                 )
-            log.info("Persisted LOTO audit %s (outcome=%s)",
-                     report.audit_id, report.overall_outcome.value)
+            log.info(
+                "Persisted LOTO audit %s (outcome=%s)",
+                report.audit_id,
+                report.overall_outcome.value,
+            )
         except Exception as e:
             log.exception("Failed to persist audit %s: %s", report.audit_id, e)
-            raise RepositoryError(
-                f"Failed to save audit {report.audit_id}: {e}"
-            ) from e
+            raise RepositoryError(f"Failed to save audit {report.audit_id}: {e}") from e
 
     async def get_by_id_async(self, audit_id: str) -> LotoAuditReport:
         """Fetch a report by audit_id (async)."""
@@ -159,14 +169,10 @@ class PostgresLotoAuditRepository:
             async with self._pool.acquire() as conn:
                 row = await conn.fetchrow(sql, audit_id)
         except Exception as e:
-            raise RepositoryError(
-                f"Query failed for audit {audit_id}: {e}"
-            ) from e
+            raise RepositoryError(f"Query failed for audit {audit_id}: {e}") from e
 
         if row is None:
-            raise AuditNotFoundError(
-                f"Audit '{audit_id}' not found in repository"
-            )
+            raise AuditNotFoundError(f"Audit '{audit_id}' not found in repository")
 
         report_json = row["report_json"]
         # asyncpg returns JSONB as string in some configs, dict in others
@@ -210,6 +216,7 @@ class PostgresLotoAuditRepository:
 #  Mock implementation (tests)
 # =============================================================================
 
+
 class MockLotoAuditRepository:
     """In-memory dict-backed repository for tests.
 
@@ -232,9 +239,7 @@ class MockLotoAuditRepository:
 
     async def get_by_id_async(self, audit_id: str) -> LotoAuditReport:
         if audit_id not in self._store:
-            raise AuditNotFoundError(
-                f"Audit '{audit_id}' not found in mock repository"
-            )
+            raise AuditNotFoundError(f"Audit '{audit_id}' not found in mock repository")
         return self._store[audit_id]
 
     async def list_recent_async(

@@ -550,7 +550,7 @@ class HeatRejectionModule(PhysicsModule):
             if residual < 0:
                 interp = (
                     f"Chiller {chiller_num} measured COP {cop_measured:.2f} "
-                    f"vs expected {cop_expected:.2f} (PLR {plr*100:.0f}%, "
+                    f"vs expected {cop_expected:.2f} (PLR {plr * 100:.0f}%, "
                     f"ECWT {ecwt_c:.1f} C). Deficit {-residual:.2f} suggests "
                     f"condenser fouling, refrigerant charge loss, or "
                     f"magnetic-bearing issue."

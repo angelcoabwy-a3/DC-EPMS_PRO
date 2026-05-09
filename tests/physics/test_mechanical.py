@@ -186,9 +186,9 @@ class TestSimulate:
         )
         # Under pump trip, return temp should rise significantly
         final = traj[-1]
-        assert (
-            final.state["loop_return_c"] > 45.0
-        ), f"Expected temp rise, got {final.state['loop_return_c']:.1f}"
+        assert final.state["loop_return_c"] > 45.0, (
+            f"Expected temp rise, got {final.state['loop_return_c']:.1f}"
+        )
         # Overtemp event should fire
         all_events = [e for snap in traj for e in snap.events]
         assert "secondary_loop_overtemp" in all_events

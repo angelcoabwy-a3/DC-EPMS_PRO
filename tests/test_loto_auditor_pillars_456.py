@@ -17,16 +17,13 @@ Strategy:
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
-
-import pytest
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
 from loto_auditor_agent import (  # noqa: E402
     LotoAuditorAgent,
-    LotoAuditorError,
     ProcedureSpec,
 )
 from loto_auditor_models import (  # noqa: E402
@@ -37,10 +34,10 @@ from loto_auditor_models import (  # noqa: E402
     PPECategory,
 )
 
-
 # =============================================================================
 #  Mock fixtures (extended from Batch 4.B with Levels 1-4 components)
 # =============================================================================
+
 
 @dataclass
 class MockComponentInfo:
@@ -122,55 +119,73 @@ class MockSiteModel:
         }
         self._impacts = {
             ("ats_a", "power"): MockImpactSet(
-                failed_node="ats_a", chain_type="power",
-                immediate=["rpp_a_1"], transitive=[],
+                failed_node="ats_a",
+                chain_type="power",
+                immediate=["rpp_a_1"],
+                transitive=[],
             ),
             ("ats_a", "cooling"): MockImpactSet(
-                failed_node="ats_a", chain_type="cooling",
+                failed_node="ats_a",
+                chain_type="cooling",
             ),
             ("ups_a", "power"): MockImpactSet(
-                failed_node="ups_a", chain_type="power",
-                immediate=["ats_a"], transitive=["rpp_a_1"],
+                failed_node="ups_a",
+                chain_type="power",
+                immediate=["ats_a"],
+                transitive=["rpp_a_1"],
             ),
             ("ups_a", "cooling"): MockImpactSet(
-                failed_node="ups_a", chain_type="cooling",
+                failed_node="ups_a",
+                chain_type="cooling",
             ),
             ("rectifier_d1", "power"): MockImpactSet(
-                failed_node="rectifier_d1", chain_type="power",
+                failed_node="rectifier_d1",
+                chain_type="power",
             ),
             ("rectifier_d1", "cooling"): MockImpactSet(
-                failed_node="rectifier_d1", chain_type="cooling",
+                failed_node="rectifier_d1",
+                chain_type="cooling",
             ),
             ("chiller_1", "power"): MockImpactSet(
-                failed_node="chiller_1", chain_type="power",
+                failed_node="chiller_1",
+                chain_type="power",
             ),
             ("chiller_1", "cooling"): MockImpactSet(
-                failed_node="chiller_1", chain_type="cooling",
+                failed_node="chiller_1",
+                chain_type="cooling",
                 immediate=["cdu_a_01"],
             ),
             ("cdu_a_01", "power"): MockImpactSet(
-                failed_node="cdu_a_01", chain_type="power",
+                failed_node="cdu_a_01",
+                chain_type="power",
             ),
             ("cdu_a_01", "cooling"): MockImpactSet(
-                failed_node="cdu_a_01", chain_type="cooling",
+                failed_node="cdu_a_01",
+                chain_type="cooling",
             ),
             ("sensor_temp_01", "power"): MockImpactSet(
-                failed_node="sensor_temp_01", chain_type="power",
+                failed_node="sensor_temp_01",
+                chain_type="power",
             ),
             ("sensor_temp_01", "cooling"): MockImpactSet(
-                failed_node="sensor_temp_01", chain_type="cooling",
+                failed_node="sensor_temp_01",
+                chain_type="cooling",
             ),
             ("xfmr_mv", "power"): MockImpactSet(
-                failed_node="xfmr_mv", chain_type="power",
+                failed_node="xfmr_mv",
+                chain_type="power",
             ),
             ("xfmr_mv", "cooling"): MockImpactSet(
-                failed_node="xfmr_mv", chain_type="cooling",
+                failed_node="xfmr_mv",
+                chain_type="cooling",
             ),
             ("rpp_a_1", "power"): MockImpactSet(
-                failed_node="rpp_a_1", chain_type="power",
+                failed_node="rpp_a_1",
+                chain_type="power",
             ),
             ("rpp_a_1", "cooling"): MockImpactSet(
-                failed_node="rpp_a_1", chain_type="cooling",
+                failed_node="rpp_a_1",
+                chain_type="cooling",
             ),
         }
 
@@ -214,18 +229,18 @@ class MockWitnessEngineWithProtection:
 
 class MockWitnessEngineNoProtection:
     """Witness engine without protection methods (Pillar 4 will WARN)."""
-    pass
 
 
 # =============================================================================
 #  Test helpers
 # =============================================================================
 
+
 def make_agent(
-    site_model: Optional[Any] = None,
-    graphrag: Optional[Any] = None,
-    physics: Optional[Any] = None,
-    witness: Optional[Any] = None,
+    site_model: Any | None = None,
+    graphrag: Any | None = None,
+    physics: Any | None = None,
+    witness: Any | None = None,
 ) -> LotoAuditorAgent:
     return LotoAuditorAgent(
         site_model=site_model or MockSiteModel(),
@@ -244,8 +259,8 @@ def make_request(target: str, procedure: str = "MOP-TEST") -> LotoAuditRequest:
 
 
 def make_procedure(
-    steps: Optional[list[dict]] = None,
-    metadata: Optional[dict] = None,
+    steps: list[dict] | None = None,
+    metadata: dict | None = None,
     procedure_id: str = "MOP-TEST",
 ) -> ProcedureSpec:
     raw = {"steps": steps or []}
@@ -258,6 +273,7 @@ def make_procedure(
 #  Pillar 4 tests (4)
 # =============================================================================
 
+
 class TestPillar4WitnessGate:
     """Pillar 4: witness gate compliance for LOTO Level 3+."""
 
@@ -265,9 +281,11 @@ class TestPillar4WitnessGate:
         """Sensor at 24V is Level 1, no witness required, PASS."""
         agent = make_agent()
         request = make_request(target="sensor_temp_01")
-        procedure = make_procedure(steps=[
-            {"description": "Disconnect sensor lead"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Disconnect sensor lead"},
+            ]
+        )
 
         result = agent._check_pillar_4_witness_gate(request, procedure, {})
 
@@ -280,10 +298,12 @@ class TestPillar4WitnessGate:
         """UPS is Level 3 (cap discharge), no witness in procedure -> HARD_FAIL."""
         agent = make_agent()
         request = make_request(target="ups_a")
-        procedure = make_procedure(steps=[
-            {"description": "Open breaker"},
-            {"description": "Wait 90s for capacitor discharge"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open breaker"},
+                {"description": "Wait 90s for capacitor discharge"},
+            ]
+        )
 
         result = agent._check_pillar_4_witness_gate(request, procedure, {})
 
@@ -296,15 +316,17 @@ class TestPillar4WitnessGate:
         """800VDC is Level 4 (arc flash), procedure has witness step -> PASS."""
         agent = make_agent()
         request = make_request(target="rectifier_d1")
-        procedure = make_procedure(steps=[
-            {
-                "id": "step_open_dc_breaker",
-                "description": "Open 800VDC main breaker",
-                "requires_witness": True,
-            },
-            {"description": "Wait 120s for capacitor discharge"},
-            {"description": "Verify zero voltage with CAT IV voltmeter"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {
+                    "id": "step_open_dc_breaker",
+                    "description": "Open 800VDC main breaker",
+                    "requires_witness": True,
+                },
+                {"description": "Wait 120s for capacitor discharge"},
+                {"description": "Verify zero voltage with CAT IV voltmeter"},
+            ]
+        )
 
         result = agent._check_pillar_4_witness_gate(request, procedure, {})
 
@@ -318,14 +340,16 @@ class TestPillar4WitnessGate:
         """Witness steps present but engine has no protection method -> WARN."""
         agent = make_agent(witness=MockWitnessEngineNoProtection())
         request = make_request(target="ups_a")
-        procedure = make_procedure(steps=[
-            {
-                "id": "step_witness_open",
-                "description": "Open UPS breaker (witness required)",
-                "requires_witness": "true",
-            },
-            {"description": "Wait 90s for capacitor discharge"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {
+                    "id": "step_witness_open",
+                    "description": "Open UPS breaker (witness required)",
+                    "requires_witness": "true",
+                },
+                {"description": "Wait 90s for capacitor discharge"},
+            ]
+        )
 
         result = agent._check_pillar_4_witness_gate(request, procedure, {})
 
@@ -339,6 +363,7 @@ class TestPillar4WitnessGate:
 #  Pillar 5 tests (5)
 # =============================================================================
 
+
 class TestPillar5SequentialOrder:
     """Pillar 5: hybrid sequential order ELECTRICAL to HYDRAULIC to PURGE."""
 
@@ -346,11 +371,13 @@ class TestPillar5SequentialOrder:
         """ATS LOTO with electrical-only steps in order -> PASS."""
         agent = make_agent()
         request = make_request(target="ats_a")
-        procedure = make_procedure(steps=[
-            {"description": "Open breaker upstream"},
-            {"description": "Lockout breaker handle"},
-            {"description": "Verify zero voltage with voltmeter"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open breaker upstream"},
+                {"description": "Lockout breaker handle"},
+                {"description": "Verify zero voltage with voltmeter"},
+            ]
+        )
 
         result = agent._check_pillar_5_sequential_order(request, procedure, {})
 
@@ -363,11 +390,13 @@ class TestPillar5SequentialOrder:
         """Procedure with PURGE before HYDRAULIC -> WARN (no HARD_FAIL alone)."""
         agent = make_agent()
         request = make_request(target="ats_a")
-        procedure = make_procedure(steps=[
-            {"description": "Open breaker upstream"},
-            {"description": "Purge nitrogen from line"},
-            {"description": "Close coolant valve to isolate cooling"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open breaker upstream"},
+                {"description": "Purge nitrogen from line"},
+                {"description": "Close coolant valve to isolate cooling"},
+            ]
+        )
 
         result = agent._check_pillar_5_sequential_order(request, procedure, {})
 
@@ -379,34 +408,35 @@ class TestPillar5SequentialOrder:
         """Chiller LOTO without purge step -> HARD_FAIL (cooling involved)."""
         agent = make_agent()
         request = make_request(target="chiller_1")
-        procedure = make_procedure(steps=[
-            {"description": "Open electrical breaker"},
-            {"description": "Stop pump"},
-            {"description": "Close coolant valve"},
-            # Note: no purge step
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open electrical breaker"},
+                {"description": "Stop pump"},
+                {"description": "Close coolant valve"},
+                # Note: no purge step
+            ]
+        )
 
         result = agent._check_pillar_5_sequential_order(request, procedure, {})
 
         assert result.purge_required is True
         assert result.purge_present is False
         assert result.outcome == PillarOutcome.HARD_FAIL
-        assert any(
-            "purge" in r.lower()
-            for r in result.hard_fail_reasons
-        )
+        assert any("purge" in r.lower() for r in result.hard_fail_reasons)
 
     def test_pillar5_cooling_target_with_purge_passes(self):
         """CDU LOTO with full sequential order -> PASS."""
         agent = make_agent()
         request = make_request(target="cdu_a_01")
-        procedure = make_procedure(steps=[
-            {"description": "Open electrical breaker upstream of CDU"},
-            {"description": "Stop secondary pump"},
-            {"description": "Close manifold valve"},
-            {"description": "Purge coolant from CDU loop"},
-            {"description": "Verify zero pressure"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open electrical breaker upstream of CDU"},
+                {"description": "Stop secondary pump"},
+                {"description": "Close manifold valve"},
+                {"description": "Purge coolant from CDU loop"},
+                {"description": "Verify zero pressure"},
+            ]
+        )
 
         result = agent._check_pillar_5_sequential_order(request, procedure, {})
 
@@ -419,12 +449,14 @@ class TestPillar5SequentialOrder:
         """Verify each step is classified into correct LotoPhase."""
         agent = make_agent()
         request = make_request(target="cdu_a_01")
-        procedure = make_procedure(steps=[
-            {"description": "Open breaker upstream"},
-            {"description": "Close coolant valve to isolate"},
-            {"description": "Vent the line and release pressure"},
-            {"description": "Verify zero with voltmeter"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open breaker upstream"},
+                {"description": "Close coolant valve to isolate"},
+                {"description": "Vent the line and release pressure"},
+                {"description": "Verify zero with voltmeter"},
+            ]
+        )
 
         result = agent._check_pillar_5_sequential_order(request, procedure, {})
 
@@ -438,6 +470,7 @@ class TestPillar5SequentialOrder:
 #  Pillar 6 tests (5)
 # =============================================================================
 
+
 class TestPillar6PPECategory:
     """Pillar 6: PPE category per NFPA 70E section 130."""
 
@@ -445,9 +478,11 @@ class TestPillar6PPECategory:
         """24V sensor with no PPE specified - CAT 0 required, no PPE -> WARN."""
         agent = make_agent()
         request = make_request(target="sensor_temp_01")
-        procedure = make_procedure(steps=[
-            {"description": "Disconnect sensor lead"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Disconnect sensor lead"},
+            ]
+        )
 
         result = agent._check_pillar_6_ppe_category(request, procedure, {})
 
@@ -459,9 +494,11 @@ class TestPillar6PPECategory:
         """480V ATS with no PPE specified -> CAT 2 required, WARN."""
         agent = make_agent()
         request = make_request(target="ats_a")
-        procedure = make_procedure(steps=[
-            {"description": "Open breaker"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open breaker"},
+            ]
+        )
 
         result = agent._check_pillar_6_ppe_category(request, procedure, {})
 
@@ -506,19 +543,18 @@ class TestPillar6PPECategory:
         assert result.computed_category == PPECategory.CAT_3
         assert result.procedure_specified_category == PPECategory.CAT_1
         assert result.outcome == PillarOutcome.HARD_FAIL
-        assert any(
-            "CAT 1" in r and "CAT 3" in r
-            for r in result.hard_fail_reasons
-        )
+        assert any("CAT 1" in r and "CAT 3" in r for r in result.hard_fail_reasons)
 
     def test_pillar6_mv_transformer_cat4_required(self):
         """13.8 kV transformer requires CAT 4."""
         agent = make_agent()
         request = make_request(target="xfmr_mv")
-        procedure = make_procedure(steps=[
-            {"description": "Cat-IV PPE arc flash suit"},
-            {"description": "Open MV breaker"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Cat-IV PPE arc flash suit"},
+                {"description": "Open MV breaker"},
+            ]
+        )
 
         result = agent._check_pillar_6_ppe_category(request, procedure, {})
 

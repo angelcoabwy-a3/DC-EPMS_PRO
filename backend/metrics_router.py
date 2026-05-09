@@ -233,4 +233,4 @@ def setup_metrics(app: FastAPI) -> bool:
 
 # --- Public API -------------------------------------------------------------
 
-__all__ = ["setup_metrics", "LATENCY_BUCKETS", "EXCLUDED_PATHS"]
+__all__ = ["EXCLUDED_PATHS", "LATENCY_BUCKETS", "setup_metrics"]

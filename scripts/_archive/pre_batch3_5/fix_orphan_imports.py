@@ -57,10 +57,20 @@ class C:
     END = "\033[0m"
 
 
-def info(m): print(f"{C.B}[INFO]{C.END} {m}")
-def ok(m):   print(f"{C.G}[ OK ]{C.END} {m}")
-def warn(m): print(f"{C.Y}[WARN]{C.END} {m}")
-def err(m):  print(f"{C.R}[FAIL]{C.END} {m}")
+def info(m):
+    print(f"{C.B}[INFO]{C.END} {m}")
+
+
+def ok(m):
+    print(f"{C.G}[ OK ]{C.END} {m}")
+
+
+def warn(m):
+    print(f"{C.Y}[WARN]{C.END} {m}")
+
+
+def err(m):
+    print(f"{C.R}[FAIL]{C.END} {m}")
 
 
 # ============================================================
@@ -68,7 +78,7 @@ def err(m):  print(f"{C.R}[FAIL]{C.END} {m}")
 # ============================================================
 
 CYBER_PHYS_FILE = "backend/cyber_physical_tools.py"
-CYBER_PHYS_IMPORTS = '''from __future__ import annotations
+CYBER_PHYS_IMPORTS = """from __future__ import annotations
 
 import numpy as np
 
@@ -86,7 +96,7 @@ except ImportError:
             return fn
         return decorator
 
-'''
+"""
 
 CYBER_PHYS_MARKER = "import numpy as np"
 
@@ -115,9 +125,12 @@ def fix_dc_epms_012(apply: bool) -> bool:
         return False
 
     insert_line = 0
-    if (tree.body and isinstance(tree.body[0], ast.Expr)
-            and isinstance(tree.body[0].value, ast.Constant)
-            and isinstance(tree.body[0].value.value, str)):
+    if (
+        tree.body
+        and isinstance(tree.body[0], ast.Expr)
+        and isinstance(tree.body[0].value, ast.Constant)
+        and isinstance(tree.body[0].value.value, str)
+    ):
         # Module docstring exists; insert after it
         insert_line = tree.body[0].end_lineno or 1
     else:
@@ -153,7 +166,7 @@ def fix_dc_epms_012(apply: bool) -> bool:
 
 DPO_FILE = "backend/dpo_edge_healing.py"
 
-DPO_IMPORTS = '''from __future__ import annotations
+DPO_IMPORTS = """from __future__ import annotations
 
 import json
 import time
@@ -175,7 +188,7 @@ except ImportError:
     TaskType = None  # type: ignore[assignment, misc]
     TrainingArguments = None  # type: ignore[assignment, misc]
 
-'''
+"""
 
 DPO_LAZY_FACTORY = '''
 
@@ -263,9 +276,12 @@ def fix_dc_epms_013(apply: bool) -> bool:
         return False
 
     insert_line = 0
-    if (tree.body and isinstance(tree.body[0], ast.Expr)
-            and isinstance(tree.body[0].value, ast.Constant)
-            and isinstance(tree.body[0].value.value, str)):
+    if (
+        tree.body
+        and isinstance(tree.body[0], ast.Expr)
+        and isinstance(tree.body[0].value, ast.Constant)
+        and isinstance(tree.body[0].value.value, str)
+    ):
         insert_line = tree.body[0].end_lineno or 1
     else:
         insert_line = 0
@@ -290,7 +306,9 @@ def fix_dc_epms_013(apply: bool) -> bool:
             skipping = True
             paren_depth = line.count("(") - line.count(")")
             out_lines.append("# DC-EPMS-013: original module-level construction disabled\n")
-            out_lines.append("# Use get_lora_config_edge() / get_dpo_training_args_edge() factories instead.\n")
+            out_lines.append(
+                "# Use get_lora_config_edge() / get_dpo_training_args_edge() factories instead.\n"
+            )
             out_lines.append("# " + line)
             if paren_depth <= 0:
                 skipping = False
@@ -319,8 +337,8 @@ def fix_dc_epms_013(apply: bool) -> bool:
         ok(f"DC-EPMS-013 fixed: {DPO_FILE} (backup: {backup.name})")
     else:
         info(f"Would insert imports at line {insert_line + 1}")
-        info(f"Would comment out original LORA_CONFIG_EDGE and DPO_TRAINING_ARGS_EDGE blocks")
-        info(f"Would append lazy factory functions at end of file")
+        info("Would comment out original LORA_CONFIG_EDGE and DPO_TRAINING_ARGS_EDGE blocks")
+        info("Would append lazy factory functions at end of file")
         info(f"Would back up as: {path.name}.bak_pre_dc013_{TIMESTAMP}")
 
     return True
@@ -329,6 +347,7 @@ def fix_dc_epms_013(apply: bool) -> bool:
 # ============================================================
 # Verification step
 # ============================================================
+
 
 def verify_imports(apply: bool) -> bool:
     """Try to import both files programmatically (only in apply mode).
@@ -344,9 +363,9 @@ def verify_imports(apply: bool) -> bool:
         # Reload-safe import test via importlib
         import importlib
         import importlib.util
+
         spec = importlib.util.spec_from_file_location(
-            "_test_cyber_phys",
-            PROJECT_ROOT / CYBER_PHYS_FILE
+            "_test_cyber_phys", PROJECT_ROOT / CYBER_PHYS_FILE
         )
         if spec is None or spec.loader is None:
             err("Could not create import spec for cyber_physical_tools")
@@ -360,10 +379,7 @@ def verify_imports(apply: bool) -> bool:
 
     info("Verifying dpo_edge_healing imports clean...")
     try:
-        spec = importlib.util.spec_from_file_location(
-            "_test_dpo",
-            PROJECT_ROOT / DPO_FILE
-        )
+        spec = importlib.util.spec_from_file_location("_test_dpo", PROJECT_ROOT / DPO_FILE)
         if spec is None or spec.loader is None:
             err("Could not create import spec for dpo_edge_healing")
             return False
@@ -389,6 +405,7 @@ def verify_imports(apply: bool) -> bool:
 # ============================================================
 # Main
 # ============================================================
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fix DC-EPMS-012 and DC-EPMS-013")

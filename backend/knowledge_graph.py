@@ -322,10 +322,8 @@ def filter_by_jurisdiction(
         kj = kn.get("jurisdiction", "international")
         if (
             kj == "international"
-            or kj == "canada"
-            and "canada" in component_jurisdiction
-            or kj == "ontario_canada"
-            and component_jurisdiction == "ontario_canada"
+            or (kj == "canada" and "canada" in component_jurisdiction)
+            or (kj == "ontario_canada" and component_jurisdiction == "ontario_canada")
         ):
             keep.append(kn)
     return keep

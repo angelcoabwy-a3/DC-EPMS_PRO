@@ -24,16 +24,13 @@ These tests do NOT exercise:
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
-
-import pytest
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
 from loto_auditor_agent import (  # noqa: E402
     LotoAuditorAgent,
-    LotoAuditorError,
     ProcedureSpec,
 )
 from loto_auditor_models import (  # noqa: E402
@@ -41,14 +38,15 @@ from loto_auditor_models import (  # noqa: E402
     PillarOutcome,
 )
 
-
 # =============================================================================
 #  Mock fixtures (in-memory deterministic stand-ins for real subsystems)
 # =============================================================================
 
+
 @dataclass
 class MockComponentInfo:
     """Mirror of site_model.ComponentInfo for tests."""
+
     canonical_id: str
     type: str
     metadata: dict = field(default_factory=dict)
@@ -58,6 +56,7 @@ class MockComponentInfo:
 @dataclass
 class MockImpactSet:
     """Mirror of site_model.ImpactSet for tests."""
+
     failed_node: str
     chain_type: str = "power"
     immediate: list = field(default_factory=list)
@@ -165,16 +164,20 @@ class MockSiteModel:
                 },
             ),
             ("ups_a", "cooling"): MockImpactSet(
-                failed_node="ups_a", chain_type="cooling",
+                failed_node="ups_a",
+                chain_type="cooling",
             ),
             ("ups_b", "power"): MockImpactSet(
-                failed_node="ups_b", chain_type="power",
+                failed_node="ups_b",
+                chain_type="power",
             ),
             ("ups_b", "cooling"): MockImpactSet(
-                failed_node="ups_b", chain_type="cooling",
+                failed_node="ups_b",
+                chain_type="cooling",
             ),
             ("chiller_1", "power"): MockImpactSet(
-                failed_node="chiller_1", chain_type="power",
+                failed_node="chiller_1",
+                chain_type="power",
             ),
             ("chiller_1", "cooling"): MockImpactSet(
                 failed_node="chiller_1",
@@ -182,10 +185,12 @@ class MockSiteModel:
                 immediate=["rack_a_001", "rack_a_002"],
             ),
             ("isolated_node", "power"): MockImpactSet(
-                failed_node="isolated_node", chain_type="power",
+                failed_node="isolated_node",
+                chain_type="power",
             ),
             ("isolated_node", "cooling"): MockImpactSet(
-                failed_node="isolated_node", chain_type="cooling",
+                failed_node="isolated_node",
+                chain_type="cooling",
             ),
             ("rectifier_d1", "power"): MockImpactSet(
                 failed_node="rectifier_d1",
@@ -193,7 +198,8 @@ class MockSiteModel:
                 immediate=["rack_a_001"],
             ),
             ("rectifier_d1", "cooling"): MockImpactSet(
-                failed_node="rectifier_d1", chain_type="cooling",
+                failed_node="rectifier_d1",
+                chain_type="cooling",
             ),
             ("ats_a", "power"): MockImpactSet(
                 failed_node="ats_a",
@@ -202,7 +208,8 @@ class MockSiteModel:
                 transitive=["rack_a_001", "rack_a_002"],
             ),
             ("ats_a", "cooling"): MockImpactSet(
-                failed_node="ats_a", chain_type="cooling",
+                failed_node="ats_a",
+                chain_type="cooling",
             ),
         }
         if impacts_override:
@@ -259,18 +266,18 @@ class MockPhysicsEngine:
 
 class MockWitnessEngine:
     """Placeholder for witness_engine dependency in agent constructor."""
-    pass
 
 
 # =============================================================================
 #  Helpers
 # =============================================================================
 
+
 def make_agent(
-    site_model: Optional[Any] = None,
-    graphrag: Optional[Any] = None,
-    physics: Optional[Any] = None,
-    witness: Optional[Any] = None,
+    site_model: Any | None = None,
+    graphrag: Any | None = None,
+    physics: Any | None = None,
+    witness: Any | None = None,
 ) -> LotoAuditorAgent:
     """Construct an agent with default mocks unless overridden."""
     return LotoAuditorAgent(
@@ -293,7 +300,7 @@ def make_request(
 
 
 def make_procedure(
-    steps: Optional[list[dict]] = None,
+    steps: list[dict] | None = None,
     procedure_id: str = "MOP-TEST",
 ) -> ProcedureSpec:
     return ProcedureSpec(procedure_id, {"steps": steps or []})
@@ -302,6 +309,7 @@ def make_procedure(
 # =============================================================================
 #  Pillar 1 tests (5)
 # =============================================================================
+
 
 class TestPillar1Topology:
     """Pillar 1: topological impact radius."""
@@ -337,18 +345,17 @@ class TestPillar1Topology:
         assert result.affected_components == []
         assert result.blast_radius_racks == 0
         assert result.blast_radius_kw == 0.0
-        assert any(
-            "isolated" in n.lower() or "leaf" in n.lower()
-            for n in result.notes
-        )
+        assert any("isolated" in n.lower() or "leaf" in n.lower() for n in result.notes)
 
     def test_pillar1_graphrag_inconsistency_noted_not_failed(self):
         """GraphRAG mentions phantom component absent in site_model."""
-        graphrag = MockGraphRAG(topology_responses={
-            "ups_a": {
-                "affected_components": ["ats_a", "rack_phantom_999"],
+        graphrag = MockGraphRAG(
+            topology_responses={
+                "ups_a": {
+                    "affected_components": ["ats_a", "rack_phantom_999"],
+                }
             }
-        })
+        )
         agent = make_agent(graphrag=graphrag)
         request = make_request(target="ups_a")
         procedure = make_procedure()
@@ -390,6 +397,7 @@ class TestPillar1Topology:
 #  Pillar 2 tests (6)
 # =============================================================================
 
+
 class TestPillar2Redundancy:
     """Pillar 2: 2N redundancy survival via physics_engine simulation."""
 
@@ -421,10 +429,7 @@ class TestPillar2Redundancy:
         result = agent._check_pillar_2_redundancy(request, procedure, {})
 
         assert result.outcome == PillarOutcome.HARD_FAIL
-        assert any(
-            "SHI" in r and "below threshold" in r
-            for r in result.hard_fail_reasons
-        )
+        assert any("SHI" in r and "below threshold" in r for r in result.hard_fail_reasons)
         assert result.path_b_state == "degraded"
 
     def test_pillar2_chiller_spof_with_strict_threshold(self):
@@ -440,10 +445,7 @@ class TestPillar2Redundancy:
 
         assert result.outcome == PillarOutcome.HARD_FAIL
         assert len(result.single_points_of_failure) > 0
-        assert any(
-            "chiller" in spof.lower()
-            for spof in result.single_points_of_failure
-        )
+        assert any("chiller" in spof.lower() for spof in result.single_points_of_failure)
 
     def test_pillar2_no_path_metadata_unknown_states(self):
         """Component without path metadata returns unknown path states."""
@@ -487,6 +489,7 @@ class TestPillar2Redundancy:
 #  Pillar 3 tests (7)
 # =============================================================================
 
+
 class TestPillar3CapacitorDischarge:
     """Pillar 3: capacitor discharge verification per NEC 460.6."""
 
@@ -506,10 +509,12 @@ class TestPillar3CapacitorDischarge:
         """UPS target requires discharge but procedure has none."""
         agent = make_agent()
         request = make_request(target="ups_a")
-        procedure = make_procedure(steps=[
-            {"description": "Open breaker", "action": "open_breaker"},
-            {"description": "Tag out", "action": "tag_out"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open breaker", "action": "open_breaker"},
+                {"description": "Tag out", "action": "tag_out"},
+            ]
+        )
 
         result = agent._check_pillar_3_capacitor_discharge(request, procedure, {})
 
@@ -522,9 +527,11 @@ class TestPillar3CapacitorDischarge:
         """800VDC rectifier requires discharge per Building D mandate."""
         agent = make_agent()
         request = make_request(target="rectifier_d1")
-        procedure = make_procedure(steps=[
-            {"description": "Open breaker", "action": "open"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open breaker", "action": "open"},
+            ]
+        )
 
         result = agent._check_pillar_3_capacitor_discharge(request, procedure, {})
 
@@ -537,14 +544,16 @@ class TestPillar3CapacitorDischarge:
         """30s wait violates NEC 460.6 minimum 60s."""
         agent = make_agent()
         request = make_request(target="ups_a")
-        procedure = make_procedure(steps=[
-            {"description": "Open breaker", "action": "open"},
-            {
-                "description": "Wait 30 seconds for capacitor discharge",
-                "action": "wait",
-                "duration_s": 30,
-            },
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open breaker", "action": "open"},
+                {
+                    "description": "Wait 30 seconds for capacitor discharge",
+                    "action": "wait",
+                    "duration_s": 30,
+                },
+            ]
+        )
 
         result = agent._check_pillar_3_capacitor_discharge(request, procedure, {})
 
@@ -561,13 +570,15 @@ class TestPillar3CapacitorDischarge:
         """90s wait without voltmeter verification -> WARN not HARD_FAIL."""
         agent = make_agent()
         request = make_request(target="ups_a")
-        procedure = make_procedure(steps=[
-            {"description": "Open breaker", "action": "open"},
-            {
-                "description": "Wait 90 seconds for capacitor discharge",
-                "duration_s": 90,
-            },
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open breaker", "action": "open"},
+                {
+                    "description": "Wait 90 seconds for capacitor discharge",
+                    "duration_s": 90,
+                },
+            ]
+        )
 
         result = agent._check_pillar_3_capacitor_discharge(request, procedure, {})
 
@@ -581,17 +592,19 @@ class TestPillar3CapacitorDischarge:
         """All elements present: discharge step + 120s wait + voltmeter."""
         agent = make_agent()
         request = make_request(target="ups_a")
-        procedure = make_procedure(steps=[
-            {"description": "Open breaker", "action": "open"},
-            {
-                "description": "Wait 120 seconds for capacitor discharge",
-                "duration_s": 120,
-            },
-            {
-                "description": "Verify zero voltage with CAT IV voltmeter",
-                "action": "verify_voltage",
-            },
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Open breaker", "action": "open"},
+                {
+                    "description": "Wait 120 seconds for capacitor discharge",
+                    "duration_s": 120,
+                },
+                {
+                    "description": "Verify zero voltage with CAT IV voltmeter",
+                    "action": "verify_voltage",
+                },
+            ]
+        )
 
         result = agent._check_pillar_3_capacitor_discharge(request, procedure, {})
 
@@ -605,10 +618,12 @@ class TestPillar3CapacitorDischarge:
         """Wait duration extracted from text without explicit duration_s field."""
         agent = make_agent()
         request = make_request(target="ups_a")
-        procedure = make_procedure(steps=[
-            {"description": "Wait 60 seconds for capacitor discharge to complete"},
-            {"description": "Verify with Fluke voltmeter that voltage is zero"},
-        ])
+        procedure = make_procedure(
+            steps=[
+                {"description": "Wait 60 seconds for capacitor discharge to complete"},
+                {"description": "Verify with Fluke voltmeter that voltage is zero"},
+            ]
+        )
 
         result = agent._check_pillar_3_capacitor_discharge(request, procedure, {})
 

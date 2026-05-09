@@ -1,10 +1,10 @@
 # ADR-008: GO-OPTION-C — Accept 1.54 GB CPU-Only Container Image (Phase 1)
 
-* Status: ACCEPTED
-* Date: 2026-05-06 (decision taken during Batch 2 DevOps Quick Wins, formally documented in Batch 3)
-* Decision-maker: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-* Sprint: DevOps Quick Wins Batch 2
-* MADR template: https://adr.github.io/madr/
+- Status: ACCEPTED
+- Date: 2026-05-06 (decision taken during Batch 2 DevOps Quick Wins, formally documented in Batch 3)
+- Decision-maker: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
+- Sprint: DevOps Quick Wins Batch 2
+- MADR template: https://adr.github.io/madr/
 
 ## Context
 

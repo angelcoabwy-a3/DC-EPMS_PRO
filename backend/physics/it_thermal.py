@@ -235,7 +235,7 @@ class ITThermalModule(PhysicsModule):
                 interp = (
                     f"DLC loop is removing {Q_removed_total_kw:.0f} kW but "
                     f"IT is dissipating {Q_expected_dlc_kw:.0f} kW. Missing "
-                    f"{residual_kw:.0f} kW ({residual_kw/Q_it_total_kw*100:.1f}% "
+                    f"{residual_kw:.0f} kW ({residual_kw / Q_it_total_kw * 100:.1f}% "
                     f"of IT load). Possible causes: DLC flow meter "
                     f"under-reading, partial leak, sensor drift on return "
                     f"temperature, or un-metered bypass."
@@ -300,7 +300,7 @@ class ITThermalModule(PhysicsModule):
                     f"automatic throttling. Immediate cooling capacity "
                     f"review required."
                 )
-                action = "Activate EOP-003 (emergency cooling reduction). " "See T4-EOP-COOL-003."
+                action = "Activate EOP-003 (emergency cooling reduction). See T4-EOP-COOL-003."
                 result.escalate(Severity.CRITICAL)
             else:
                 interp = (
@@ -308,7 +308,7 @@ class ITThermalModule(PhysicsModule):
                     f"limit ({A2_INLET_MIN_C:.0f} C). Condensation risk on "
                     f"any surface cooler than dew point."
                 )
-                action = "Increase chilled water setpoint. Verify dehumidification " "status."
+                action = "Increase chilled water setpoint. Verify dehumidification status."
                 result.escalate(Severity.WARNING)
 
             result.add_justification(

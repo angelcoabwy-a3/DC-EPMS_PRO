@@ -1,10 +1,10 @@
 # ADR-006: Deterministic Sandbox — AI Has Zero Write-Action Authority
 
-* Status: ACCEPTED
-* Date: 2026-03 (foundational decision, retroactively documented 2026-05-06 in Batch 3)
-* Decision-maker: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-* Sprint: S0 (foundational, predates V9 phase numbering)
-* MADR template: https://adr.github.io/madr/
+- Status: ACCEPTED
+- Date: 2026-03 (foundational decision, retroactively documented 2026-05-06 in Batch 3)
+- Decision-maker: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
+- Sprint: S0 (foundational, predates V9 phase numbering)
+- MADR template: https://adr.github.io/madr/
 
 ## Context
 

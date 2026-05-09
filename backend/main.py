@@ -679,7 +679,7 @@ async def generate_shift_report(req: ShiftReportRequest):
             log.warning("shift_report DB fetch failed: %s", e)
 
     open_items = [
-        f"{inc.get('incident_id')} ({inc.get('severity','').upper()}): {inc.get('title','')}"
+        f"{inc.get('incident_id')} ({inc.get('severity', '').upper()}): {inc.get('title', '')}"
         for inc in incidents
         if inc.get("status") not in ("CLOSED", "RESOLVED")
     ][:10]

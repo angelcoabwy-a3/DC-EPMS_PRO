@@ -30,11 +30,10 @@ Per ADR-006 Deterministic Sandbox:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse
-
 from loto_auditor_agent import (
     LotoAuditorAgent,
     LotoAuditorError,
@@ -65,6 +64,7 @@ router = APIRouter(
 #  Dependency injection helpers
 # =============================================================================
 
+
 def get_auditor(request: Request) -> LotoAuditorAgent:
     """Retrieve the LotoAuditorAgent instance from app.state.
 
@@ -94,6 +94,7 @@ def get_repository(request: Request) -> Any:
 #  POST /api/loto/audit  - Run a new audit
 # =============================================================================
 
+
 @router.post(
     "/audit",
     response_model=LotoAuditReport,
@@ -114,7 +115,9 @@ async def post_audit(
     """Run audit + persist report."""
     log.info(
         "POST /api/loto/audit procedure=%s target=%s cet=%s",
-        body.procedure_id, body.target_component_id, body.cet_on_duty,
+        body.procedure_id,
+        body.target_component_id,
+        body.cet_on_duty,
     )
 
     # Run audit (sync, deterministic logic)
@@ -145,7 +148,8 @@ async def post_audit(
         except RepositoryError as e:
             log.warning(
                 "Failed to persist audit %s: %s. Returning report anyway.",
-                report.audit_id, e,
+                report.audit_id,
+                e,
             )
             # Don't fail the request just because persistence failed.
             # The audit verdict is still valid; CET can re-trigger to retry persist.
@@ -161,6 +165,7 @@ async def post_audit(
 # =============================================================================
 #  GET /api/loto/audit/{audit_id}  - Fetch persisted audit (JSON)
 # =============================================================================
+
 
 @router.get(
     "/audit/{audit_id}",
@@ -195,6 +200,7 @@ async def get_audit(
 # =============================================================================
 #  GET /api/loto/audit/{audit_id}/markdown  - Fetch as markdown
 # =============================================================================
+
 
 @router.get(
     "/audit/{audit_id}/markdown",
@@ -231,6 +237,7 @@ async def get_audit_markdown(
 #  GET /api/loto/audits/recent  - List recent audits
 # =============================================================================
 
+
 @router.get(
     "/audits/recent",
     response_model=list[LotoAuditReport],
@@ -265,6 +272,7 @@ async def list_recent_audits(
 #  register_loto_auditor() - 1-line integration helper for main.py
 # =============================================================================
 
+
 def register_loto_auditor(
     app: FastAPI,
     *,
@@ -272,9 +280,9 @@ def register_loto_auditor(
     graphrag_service: Any,
     physics_engine: Any,
     witness_engine: Any,
-    repository: Optional[Any] = None,
-    cmms_service: Optional[Any] = None,
-    procedures_dir: Optional[Any] = None,
+    repository: Any | None = None,
+    cmms_service: Any | None = None,
+    procedures_dir: Any | None = None,
 ) -> LotoAuditorAgent:
     """Register the LOTO Auditor agent and route on a FastAPI app.
 
@@ -325,8 +333,8 @@ def register_loto_auditor(
 
 
 __all__ = [
-    "router",
-    "register_loto_auditor",
     "get_auditor",
     "get_repository",
+    "register_loto_auditor",
+    "router",
 ]

@@ -22,14 +22,14 @@ Strategy:
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
+
+from datetime import UTC
 
 from loto_auditor_agent import LotoAuditorAgent, ProcedureSpec  # noqa: E402
 from loto_auditor_models import (  # noqa: E402
@@ -37,14 +37,14 @@ from loto_auditor_models import (  # noqa: E402
     LotoAuditReport,
     PillarOutcome,
 )
-from loto_auditor_repository import MockLotoAuditRepository  # noqa: E402
-from loto_auditor_routes import register_loto_auditor, router  # noqa: E402
 from loto_auditor_report_renderer import render_audit_report_markdown  # noqa: E402
-
+from loto_auditor_repository import MockLotoAuditRepository  # noqa: E402
+from loto_auditor_routes import router  # noqa: E402
 
 # =============================================================================
 #  Mock fixtures (simplified subset of Batch 4.B+4.C mocks)
 # =============================================================================
+
 
 @dataclass
 class MockComponentInfo:
@@ -138,6 +138,7 @@ class MockWitnessEngine:
 #  Patched LotoAuditorAgent that bypasses procedure YAML loading for tests
 # =============================================================================
 
+
 class TestableLotoAuditorAgent(LotoAuditorAgent):
     """LotoAuditorAgent that uses an in-memory procedure registry.
 
@@ -155,15 +156,15 @@ class TestableLotoAuditorAgent(LotoAuditorAgent):
     def _load_procedure(self, procedure_id: str) -> ProcedureSpec:
         if procedure_id not in self._procedures:
             from loto_auditor_agent import ProcedureNotFoundError
-            raise ProcedureNotFoundError(
-                f"Procedure '{procedure_id}' not in test registry"
-            )
+
+            raise ProcedureNotFoundError(f"Procedure '{procedure_id}' not in test registry")
         return ProcedureSpec(procedure_id, self._procedures[procedure_id])
 
 
 # =============================================================================
 #  Test app builder
 # =============================================================================
+
 
 def build_test_app() -> tuple[FastAPI, MockLotoAuditRepository, TestableLotoAuditorAgent]:
     """Construct a FastAPI app wired with mocks. Returns (app, repo, agent)."""
@@ -223,6 +224,7 @@ def build_test_app() -> tuple[FastAPI, MockLotoAuditRepository, TestableLotoAudi
 #  Test 1: POST /api/loto/audit happy path
 # =============================================================================
 
+
 class TestE2EPostAudit:
     def test_e2e_post_audit_returns_pending_approval(self):
         """Full request-response cycle, audit returned with pending_approval status."""
@@ -261,6 +263,7 @@ class TestE2EPostAudit:
 #  Test 2: GET retrieves persisted audit
 # =============================================================================
 
+
 class TestE2EGetAudit:
     def test_e2e_get_audit_returns_persisted_report(self):
         """POST then GET retrieves the same audit."""
@@ -290,6 +293,7 @@ class TestE2EGetAudit:
 #  Test 3: 404 on unknown audit_id
 # =============================================================================
 
+
 class TestE2EGetAudit404:
     def test_e2e_get_audit_404_for_unknown_id(self):
         """GET with unknown audit_id returns 404."""
@@ -305,6 +309,7 @@ class TestE2EGetAudit404:
 # =============================================================================
 #  Test 4: Invalid target component returns 404
 # =============================================================================
+
 
 class TestE2EInvalidTarget:
     def test_e2e_post_with_unknown_target_returns_404(self):
@@ -344,6 +349,7 @@ class TestE2EInvalidTarget:
 # =============================================================================
 #  Test 5: Markdown renderer integration
 # =============================================================================
+
 
 class TestE2EMarkdownRenderer:
     def test_e2e_markdown_endpoint_renders_all_pillars(self):
@@ -386,11 +392,13 @@ class TestE2EMarkdownRenderer:
 #  Pure-function tests for markdown renderer (no FastAPI needed)
 # =============================================================================
 
+
 class TestMarkdownRenderer:
     def test_markdown_renderer_handles_all_pillar_outcomes(self):
         """Renderer produces well-formed output regardless of pillar outcomes."""
         # Build a synthetic report with mixed outcomes
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         from loto_auditor_models import (
             CapacitorDischargeCheck,
             ImpactRadius,
@@ -406,7 +414,7 @@ class TestMarkdownRenderer:
             procedure_id="MOP-TEST",
             target_component_id="ups_a",
             cet_on_duty="wilmer",
-            as_of_timestamp=datetime.now(timezone.utc),
+            as_of_timestamp=datetime.now(UTC),
             impact_radius=ImpactRadius(
                 affected_components=["ats_a", "rack_a_001"],
                 blast_radius_racks=1,

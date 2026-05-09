@@ -1,0 +1,43 @@
+# DEMO-UPS-MISSING-DISCHARGE
+# A defective LOTO procedure: missing the capacitor discharge step.
+# Pillar 3 should HARD_FAIL with NEC 460.6 citation.
+# This is the kind of subtle defect that can kill a CET. The breaker is
+# open, the lockout is on, but there are hundreds of joules sitting in
+# the DC bus capacitors.
+procedure_id: DEMO-UPS-MISSING-DISCHARGE
+title: UPS Path A - LOTO (Defective - missing discharge)
+target_component_id: ups_a
+ppe_category: 2
+loto_level: 3
+metadata:
+  version: 1.0
+  author: wilmer
+  reviewed_by: "[CET pending]"
+  jurisdiction: Ontario
+  estimated_duration_minutes: 30
+  defect_type: "Missing capacitor discharge step (NEC 460.6 violation)"
+
+steps:
+  - id: step_1
+    description: "Don PPE Category 2."
+    phase: PPE_DON
+    estimated_duration_s: 180
+
+  - id: step_2
+    description: "Open upstream breaker BKR-A-UPS-01."
+    phase: ELECTRICAL
+    requires_witness: true
+    estimated_duration_s: 60
+
+  - id: step_3
+    description: "Apply lockout device on BKR-A-UPS-01 handle."
+    phase: ELECTRICAL
+    estimated_duration_s: 120
+
+  # NOTE: capacitor discharge step is INTENTIONALLY MISSING here.
+  # No 60-second wait. No CAT IV voltmeter verification.
+
+  - id: step_4
+    description: "Place equipment-out-of-service tag on UPS-A control panel."
+    phase: SIGNOFF
+    estimated_duration_s: 60

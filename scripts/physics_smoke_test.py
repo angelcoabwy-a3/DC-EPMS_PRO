@@ -72,10 +72,7 @@ def print_result(label: str, r) -> None:
             thr = c["threshold"]
             unit = c.get("unit", "")
             thr_str = f"{thr:.2f}" if thr is not None else "n/a"
-            print(
-                f"    [FAIL] {c['name']:<40} "
-                f"value={val:+.2f} {unit}  threshold={thr_str} {unit}"
-            )
+            print(f"    [FAIL] {c['name']:<40} value={val:+.2f} {unit}  threshold={thr_str} {unit}")
 
 
 def print_justification(j) -> None:

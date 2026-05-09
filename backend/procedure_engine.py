@@ -121,8 +121,7 @@ class ProcedureExecution:
         valid_next = _VALID_TRANSITIONS.get(self.state, set())
         if new_state not in valid_next:
             raise InvalidTransitionError(
-                f"Cannot transition {self.state} -> {new_state}. "
-                f"Valid next states: {valid_next}"
+                f"Cannot transition {self.state} -> {new_state}. Valid next states: {valid_next}"
             )
         log.info(
             "[procedure_engine] %s: %s -> %s",
@@ -444,7 +443,7 @@ class StepExecutor:
         ok, observed = await adapter.verify_state(target, expected)
         if not ok:
             raise RuntimeError(
-                f"verify_state failed for {target}: observed={observed}, " f"expected={expected}"
+                f"verify_state failed for {target}: observed={observed}, expected={expected}"
             )
         return {"verify": "OK", "observed": observed}
 
@@ -619,7 +618,7 @@ class ProcedureOrchestrator:
                         status="FAILED",
                         error=(
                             f"witness_gate: status={witness_req.status.value}"
-                            f"{' reason='+witness_req.rejection_reason if witness_req.rejection_reason else ''}"
+                            f"{' reason=' + witness_req.rejection_reason if witness_req.rejection_reason else ''}"
                         ),
                     )
                     execution.execution_log.append(fake_result)

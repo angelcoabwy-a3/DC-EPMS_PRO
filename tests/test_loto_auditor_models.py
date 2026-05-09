@@ -16,7 +16,7 @@ These tests do NOT exercise pillar logic (deferred to Batch 4.B/C tests).
 """
 
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -40,10 +40,10 @@ from loto_auditor_models import (  # noqa: E402
     WitnessGateCheck,
 )
 
-
 # =============================================================================
 #  LotoAuditRequest tests
 # =============================================================================
+
 
 class TestLotoAuditRequest:
     def test_minimal_request_valid(self):
@@ -84,7 +84,7 @@ class TestLotoAuditRequest:
             )
 
     def test_explicit_timestamp_preserved(self):
-        ts = datetime(2026, 5, 6, 12, 0, 0, tzinfo=timezone.utc)
+        ts = datetime(2026, 5, 6, 12, 0, 0, tzinfo=UTC)
         req = LotoAuditRequest(
             procedure_id="MOP-001",
             target_component_id="ats_a",
@@ -97,6 +97,7 @@ class TestLotoAuditRequest:
 # =============================================================================
 #  Pillar models default value tests
 # =============================================================================
+
 
 class TestPillarDefaults:
     def test_impact_radius_defaults(self):
@@ -146,13 +147,14 @@ class TestPillarDefaults:
 #  LotoAuditReport aggregate logic tests
 # =============================================================================
 
+
 class TestLotoAuditReportAggregation:
     def _build_report(self, overrides=None) -> LotoAuditReport:
         report = LotoAuditReport(
             procedure_id="MOP-ATS-MONTHLY-001",
             target_component_id="ats_a",
             cet_on_duty="wilmer",
-            as_of_timestamp=datetime.now(timezone.utc),
+            as_of_timestamp=datetime.now(UTC),
             impact_radius=ImpactRadius(),
             redundancy=RedundancyAssessment(),
             capacitor_discharge=CapacitorDischargeCheck(),
@@ -197,28 +199,34 @@ class TestLotoAuditReportAggregation:
         assert report.warn_count == 0
 
     def test_aggregate_one_warning_promotes_to_warn(self):
-        report = self._build_report({
-            "ppe_category.outcome": PillarOutcome.WARN,
-        })
+        report = self._build_report(
+            {
+                "ppe_category.outcome": PillarOutcome.WARN,
+            }
+        )
         report.aggregate_outcomes()
         assert report.overall_outcome == PillarOutcome.WARN
         assert report.warn_count == 1
         assert report.pass_count == 5
 
     def test_aggregate_one_hard_fail_promotes_to_hard_fail(self):
-        report = self._build_report({
-            "redundancy.outcome": PillarOutcome.HARD_FAIL,
-        })
+        report = self._build_report(
+            {
+                "redundancy.outcome": PillarOutcome.HARD_FAIL,
+            }
+        )
         report.aggregate_outcomes()
         assert report.overall_outcome == PillarOutcome.HARD_FAIL
         assert report.hard_fail_count == 1
         assert report.pass_count == 5
 
     def test_aggregate_hard_fail_dominates_warn(self):
-        report = self._build_report({
-            "redundancy.outcome": PillarOutcome.HARD_FAIL,
-            "ppe_category.outcome": PillarOutcome.WARN,
-        })
+        report = self._build_report(
+            {
+                "redundancy.outcome": PillarOutcome.HARD_FAIL,
+                "ppe_category.outcome": PillarOutcome.WARN,
+            }
+        )
         report.aggregate_outcomes()
         # Hard fail wins even if warns also present
         assert report.overall_outcome == PillarOutcome.HARD_FAIL
@@ -226,9 +234,11 @@ class TestLotoAuditReportAggregation:
         assert report.warn_count == 1
 
     def test_aggregate_not_applicable_counted_separately(self):
-        report = self._build_report({
-            "capacitor_discharge.outcome": PillarOutcome.NOT_APPLICABLE,
-        })
+        report = self._build_report(
+            {
+                "capacitor_discharge.outcome": PillarOutcome.NOT_APPLICABLE,
+            }
+        )
         report.aggregate_outcomes()
         # NOT_APPLICABLE does not trigger HARD_FAIL or WARN promotion
         assert report.overall_outcome == PillarOutcome.PASS
@@ -255,13 +265,14 @@ class TestLotoAuditReportAggregation:
 #  Standards citation defaults
 # =============================================================================
 
+
 class TestStandardsCitations:
     def test_default_standards_include_nfpa_70e(self):
         report = LotoAuditReport(
             procedure_id="MOP-001",
             target_component_id="ups_a",
             cet_on_duty="wilmer",
-            as_of_timestamp=datetime.now(timezone.utc),
+            as_of_timestamp=datetime.now(UTC),
             impact_radius=ImpactRadius(),
             redundancy=RedundancyAssessment(),
             capacitor_discharge=CapacitorDischargeCheck(),

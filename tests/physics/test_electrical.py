@@ -198,9 +198,9 @@ class TestSimulate:
         )
         # After 15 min at full load, battery should be near empty
         final = traj[-1]
-        assert (
-            final.state["battery_soc"] < 0.1
-        ), f"SOC should be depleted, got {final.state['battery_soc']:.2f}"
+        assert final.state["battery_soc"] < 0.1, (
+            f"SOC should be depleted, got {final.state['battery_soc']:.2f}"
+        )
         events = [e for snap in traj for e in snap.events]
         assert "battery_low_warning" in events
 

@@ -190,14 +190,14 @@ from .cummins_adapter import CumminsAdapter, MockModbusBackend
 from .russelectric_adapter import MockBypassBackend, RusselectricAdapter
 
 __all__ = [
-    "FailureMode",
-    "HardwareAdapter",
-    "ModbusBackend",
+    "AscoAdapter",
     "BACnetBackend",
     "CumminsAdapter",
-    "MockModbusBackend",
-    "AscoAdapter",
+    "FailureMode",
+    "HardwareAdapter",
     "MockBACnetBackend",
-    "RusselectricAdapter",
     "MockBypassBackend",
+    "MockModbusBackend",
+    "ModbusBackend",
+    "RusselectricAdapter",
 ]

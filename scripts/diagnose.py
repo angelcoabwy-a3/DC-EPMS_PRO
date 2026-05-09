@@ -37,7 +37,7 @@ _load_env()
 
 
 def hdr(txt):
-    print(f"\n{'='*60}\n  {txt}\n{'='*60}")
+    print(f"\n{'=' * 60}\n  {txt}\n{'=' * 60}")
 
 
 def ok(m):

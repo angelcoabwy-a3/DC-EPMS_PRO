@@ -27,20 +27,20 @@ References cited in audit reports:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
-
 
 # =============================================================================
 #  Enums
 # =============================================================================
 
+
 class AuditStatus(str, Enum):
     """LOTO audit state. Per ADR-006, always starts pending_approval."""
+
     PENDING_APPROVAL = "pending_approval"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -49,6 +49,7 @@ class AuditStatus(str, Enum):
 
 class PillarOutcome(str, Enum):
     """Result of an individual pillar check."""
+
     PASS = "PASS"
     WARN = "WARN"
     HARD_FAIL = "HARD_FAIL"
@@ -57,14 +58,16 @@ class PillarOutcome(str, Enum):
 
 class LotoLevel(int, Enum):
     """LOTO Level per a3semi doctrine."""
-    LEVEL_1_BASIC = 1                    # Single-source isolation, low voltage
-    LEVEL_2_INTERMEDIATE = 2             # Multi-source isolation, no caps
-    LEVEL_3_CAP_DISCHARGE = 3            # UPS or capacitor banks present
-    LEVEL_4_ARC_FLASH = 4                # 800 VDC or HV equipment
+
+    LEVEL_1_BASIC = 1  # Single-source isolation, low voltage
+    LEVEL_2_INTERMEDIATE = 2  # Multi-source isolation, no caps
+    LEVEL_3_CAP_DISCHARGE = 3  # UPS or capacitor banks present
+    LEVEL_4_ARC_FLASH = 4  # 800 VDC or HV equipment
 
 
 class LotoPhase(str, Enum):
     """Sequential phase per A3-Alpha hybrid LOTO doctrine."""
+
     ELECTRICAL_ISOLATION = "electrical_isolation"
     HYDRAULIC_ISOLATION = "hydraulic_isolation"
     PURGE = "purge"
@@ -74,16 +77,18 @@ class LotoPhase(str, Enum):
 
 class PPECategory(int, Enum):
     """NFPA 70E PPE Category levels."""
-    CAT_0 = 0   # < 50V, no PPE
-    CAT_1 = 1   # 4 cal/cm2 minimum
-    CAT_2 = 2   # 8 cal/cm2
-    CAT_3 = 3   # 25 cal/cm2
-    CAT_4 = 4   # 40 cal/cm2 (mandatory for 800VDC)
+
+    CAT_0 = 0  # < 50V, no PPE
+    CAT_1 = 1  # 4 cal/cm2 minimum
+    CAT_2 = 2  # 8 cal/cm2
+    CAT_3 = 3  # 25 cal/cm2
+    CAT_4 = 4  # 40 cal/cm2 (mandatory for 800VDC)
 
 
 # =============================================================================
 #  Input model
 # =============================================================================
+
 
 class LotoAuditRequest(BaseModel):
     """Request to audit a LOTO procedure against a target component."""
@@ -106,7 +111,7 @@ class LotoAuditRequest(BaseModel):
         min_length=1,
         max_length=128,
     )
-    as_of_timestamp: Optional[datetime] = Field(
+    as_of_timestamp: datetime | None = Field(
         default=None,
         description=(
             "Snapshot timestamp for telemetry. If None, uses current time. "
@@ -135,6 +140,7 @@ class LotoAuditRequest(BaseModel):
 # =============================================================================
 #  Pillar output models
 # =============================================================================
+
 
 class ImpactRadius(BaseModel):
     """Pillar 1: topological impact analysis."""
@@ -174,7 +180,7 @@ class ImpactRadius(BaseModel):
 class RedundancyAssessment(BaseModel):
     """Pillar 2: 2N redundancy survival check."""
 
-    target_path: Optional[str] = Field(
+    target_path: str | None = Field(
         default=None,
         description="Path A or Path B that target belongs to (None if not 2N protected)",
     )
@@ -217,7 +223,7 @@ class CapacitorDischargeCheck(BaseModel):
         default=False,
         description="True if discharge step is mandatory for this target",
     )
-    required_reason: Optional[str] = Field(
+    required_reason: str | None = Field(
         default=None,
         description="Why discharge is required (voltage threshold, UPS, DC link)",
     )
@@ -292,8 +298,8 @@ class PPECategoryCheck(BaseModel):
         ge=0.0,
     )
     computed_category: PPECategory = PPECategory.CAT_0
-    procedure_specified_category: Optional[PPECategory] = None
-    incident_energy_cal_cm2: Optional[float] = Field(
+    procedure_specified_category: PPECategory | None = None
+    incident_energy_cal_cm2: float | None = Field(
         default=None,
         description=(
             "Calculated incident energy if available (cal/cm2). "
@@ -301,7 +307,7 @@ class PPECategoryCheck(BaseModel):
         ),
         ge=0.0,
     )
-    arc_flash_boundary_mm: Optional[float] = Field(
+    arc_flash_boundary_mm: float | None = Field(
         default=None,
         description="Arc flash boundary distance in mm. None if not calculated.",
         ge=0.0,
@@ -318,6 +324,7 @@ class PPECategoryCheck(BaseModel):
 #  Aggregate report model
 # =============================================================================
 
+
 class LotoAuditReport(BaseModel):
     """Aggregate LOTO audit report.
 
@@ -327,10 +334,10 @@ class LotoAuditReport(BaseModel):
     """
 
     audit_id: str = Field(
-        default_factory=lambda: f"LOTO-AUDIT-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:8]}",
+        default_factory=lambda: f"LOTO-AUDIT-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:8]}",
         description="Unique audit identifier (timestamp + uuid suffix)",
     )
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     procedure_id: str
     target_component_id: str
     cet_on_duty: str
@@ -354,8 +361,8 @@ class LotoAuditReport(BaseModel):
 
     # State per ADR-006
     status: AuditStatus = AuditStatus.PENDING_APPROVAL
-    rejection_reason: Optional[str] = None
-    approver_cet: Optional[str] = None
+    rejection_reason: str | None = None
+    approver_cet: str | None = None
 
     # Provenance trace
     sources_consulted: dict[str, str] = Field(
@@ -370,7 +377,7 @@ class LotoAuditReport(BaseModel):
     api_version: str = Field(default="1.0")
 
     # Optional LLM summary
-    llm_summary: Optional[str] = Field(
+    llm_summary: str | None = Field(
         default=None,
         description="Human-readable executive summary if include_llm_summary=true in request",
     )
@@ -402,9 +409,7 @@ class LotoAuditReport(BaseModel):
         self.hard_fail_count = sum(1 for p in pillars if p == PillarOutcome.HARD_FAIL)
         self.warn_count = sum(1 for p in pillars if p == PillarOutcome.WARN)
         self.pass_count = sum(1 for p in pillars if p == PillarOutcome.PASS)
-        self.not_applicable_count = sum(
-            1 for p in pillars if p == PillarOutcome.NOT_APPLICABLE
-        )
+        self.not_applicable_count = sum(1 for p in pillars if p == PillarOutcome.NOT_APPLICABLE)
 
         if self.hard_fail_count > 0:
             self.overall_outcome = PillarOutcome.HARD_FAIL
@@ -417,6 +422,7 @@ class LotoAuditReport(BaseModel):
 # =============================================================================
 #  Storage models (persistence helpers)
 # =============================================================================
+
 
 class LotoAuditDBRecord(BaseModel):
     """Mirror of the loto_audits PostgreSQL row.

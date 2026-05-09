@@ -362,8 +362,7 @@ async def tool_analyze_rul_and_supply(args: dict) -> dict:
     elif days_buffer < 21:
         action = "order_now"
         rationale = (
-            f"Buffer {days_buffer:.1f} d. Order now to maintain margin "
-            f"against RUL confidence band."
+            f"Buffer {days_buffer:.1f} d. Order now to maintain margin against RUL confidence band."
         )
     else:
         action = "watch"
@@ -385,7 +384,7 @@ async def tool_analyze_rul_and_supply(args: dict) -> dict:
             "part_number": placeholder_part_number,
             "in_stock": placeholder_in_stock,
             "lead_time_days": placeholder_lead_time_days,
-            "_source": "PLACEHOLDER  -  Wesco partnership pending. " "Stub catalog entry returned.",
+            "_source": "PLACEHOLDER  -  Wesco partnership pending. Stub catalog entry returned.",
         },
         "recommended_action": action,
         "rationale": rationale,

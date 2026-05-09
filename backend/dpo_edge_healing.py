@@ -454,7 +454,7 @@ def get_lora_config_edge():
     """Construct LoRA config for edge training. Requires peft installed."""
     if not _TORCH_AVAILABLE:
         raise RuntimeError(
-            "peft/transformers/torch not installed. " "Install with: pip install -e .[ml]"
+            "peft/transformers/torch not installed. Install with: pip install -e .[ml]"
         )
     return LoraConfig(
         r=8,
@@ -470,9 +470,7 @@ def get_dpo_training_args_edge(output_dir: str = "./lora_edge_run"):
     """Construct DPO training args for edge nightly compute.
     Requires transformers installed."""
     if not _TORCH_AVAILABLE:
-        raise RuntimeError(
-            "transformers/torch not installed. " "Install with: pip install -e .[ml]"
-        )
+        raise RuntimeError("transformers/torch not installed. Install with: pip install -e .[ml]")
     return TrainingArguments(
         output_dir=output_dir,
         per_device_train_batch_size=1,

@@ -1,0 +1,67 @@
+# DEMO-UPS-COMPLIANT
+# A fully compliant LOTO procedure for a UPS unit on path A.
+# All 6 pillars should PASS for this procedure.
+procedure_id: DEMO-UPS-COMPLIANT
+title: UPS Path A - Monthly LOTO (Compliant Demo)
+target_component_id: ups_a
+ppe_category: 2
+loto_level: 3
+metadata:
+  version: 1.0
+  author: wilmer
+  reviewed_by: "[CET pending]"
+  jurisdiction: Ontario
+  standards:
+    - "NFPA 70E Section 130"
+    - "NEC 460.6"
+    - "CSA Z462-24"
+  estimated_duration_minutes: 45
+
+steps:
+  - id: step_1
+    description: "Notify CMMS of upcoming LOTO. Confirm path B is fully online."
+    phase: PREP
+    estimated_duration_s: 60
+
+  - id: step_2
+    description: "Don PPE Category 2: arc-rated coverall, hood, gloves, voltage-rated boots."
+    phase: PPE_DON
+    estimated_duration_s: 180
+
+  - id: step_3
+    description: "Open upstream breaker BKR-A-UPS-01 with witness present. Verify visually."
+    phase: ELECTRICAL
+    requires_witness: true
+    estimated_duration_s: 60
+
+  - id: step_4
+    description: "Apply lockout device on BKR-A-UPS-01 handle. Apply personal danger tag."
+    phase: ELECTRICAL
+    estimated_duration_s: 120
+
+  - id: step_5
+    description: "Wait 120 seconds for capacitor discharge per NEC 460.6."
+    phase: ELECTRICAL
+    duration_s: 120
+    estimated_duration_s: 120
+
+  - id: step_6
+    description: "Verify zero voltage with CAT IV voltmeter on all three phases."
+    phase: ELECTRICAL
+    requires_voltmeter: true
+    estimated_duration_s: 90
+
+  - id: step_7
+    description: "Close coolant supply isolation valve VLV-A-UPS-01-CLG."
+    phase: HYDRAULIC
+    estimated_duration_s: 60
+
+  - id: step_8
+    description: "Purge cooling lines through drain port DRN-A-UPS-01."
+    phase: PURGE
+    estimated_duration_s: 300
+
+  - id: step_9
+    description: "Place equipment-out-of-service tag on UPS-A control panel."
+    phase: SIGNOFF
+    estimated_duration_s: 60

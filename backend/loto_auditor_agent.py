@@ -26,9 +26,9 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from loto_auditor_models import (
     AuditStatus,
@@ -38,7 +38,6 @@ from loto_auditor_models import (
     LotoAuditRequest,
     LotoLevel,
     PillarOutcome,
-    PPECategory,
     PPECategoryCheck,
     RedundancyAssessment,
     SequentialOrderCheck,
@@ -73,6 +72,7 @@ log = logging.getLogger(__name__)
 #  Exceptions
 # =============================================================================
 
+
 class LotoAuditorError(RuntimeError):
     """Base exception for LOTO auditor failures."""
 
@@ -88,6 +88,7 @@ class TargetComponentNotFoundError(LotoAuditorError):
 # =============================================================================
 #  Procedure parser
 # =============================================================================
+
 
 class ProcedureSpec:
     """Lightweight wrapper around procedure YAML.
@@ -105,11 +106,13 @@ class ProcedureSpec:
         """Return True if any step description or action contains the keyword."""
         keyword_lower = keyword.lower()
         for step in self.steps:
-            text_blob = " ".join([
-                str(step.get("description", "")),
-                str(step.get("action", "")),
-                str(step.get("title", "")),
-            ]).lower()
+            text_blob = " ".join(
+                [
+                    str(step.get("description", "")),
+                    str(step.get("action", "")),
+                    str(step.get("title", "")),
+                ]
+            ).lower()
             if keyword_lower in text_blob:
                 return True
         return False
@@ -118,6 +121,7 @@ class ProcedureSpec:
 # =============================================================================
 #  LotoAuditorAgent main class
 # =============================================================================
+
 
 class LotoAuditorAgent:
     """Paranoid LOTO procedure validator (Batch 4.B).
@@ -135,8 +139,8 @@ class LotoAuditorAgent:
         graphrag_service: Any,
         physics_engine: Any,
         witness_engine: Any,
-        procedures_dir: Optional[Path] = None,
-        cmms_service: Optional[Any] = None,
+        procedures_dir: Path | None = None,
+        cmms_service: Any | None = None,
     ) -> None:
         self.site_model = site_model
         self.graphrag_service = graphrag_service
@@ -152,7 +156,7 @@ class LotoAuditorAgent:
     def audit(self, request: LotoAuditRequest) -> LotoAuditReport:
         """Run the full 6-pillar audit. Returns pending_approval report."""
         t0 = time.perf_counter()
-        as_of = request.as_of_timestamp or datetime.now(timezone.utc)
+        as_of = request.as_of_timestamp or datetime.now(UTC)
 
         self._validate_target_exists(request.target_component_id)
         procedure = self._load_procedure(request.procedure_id)
@@ -175,22 +179,16 @@ class LotoAuditorAgent:
 
         # Pillar 1
         try:
-            report.impact_radius = self._check_pillar_1_topology(
-                request, procedure, sources
-            )
+            report.impact_radius = self._check_pillar_1_topology(request, procedure, sources)
         except Exception as e:
             log.exception("Pillar 1 failed: %s", e)
             report.impact_radius.outcome = PillarOutcome.HARD_FAIL
-            report.impact_radius.notes.append(
-                f"Pillar 1 exception: {type(e).__name__}: {e}"
-            )
+            report.impact_radius.notes.append(f"Pillar 1 exception: {type(e).__name__}: {e}")
             sources["pillar_1_topology"] = f"error: {e}"
 
         # Pillar 2
         try:
-            report.redundancy = self._check_pillar_2_redundancy(
-                request, procedure, sources
-            )
+            report.redundancy = self._check_pillar_2_redundancy(request, procedure, sources)
         except Exception as e:
             log.exception("Pillar 2 failed: %s", e)
             report.redundancy.outcome = PillarOutcome.HARD_FAIL
@@ -207,22 +205,16 @@ class LotoAuditorAgent:
         except Exception as e:
             log.exception("Pillar 3 failed: %s", e)
             report.capacitor_discharge.outcome = PillarOutcome.HARD_FAIL
-            report.capacitor_discharge.notes.append(
-                f"Pillar 3 exception: {type(e).__name__}: {e}"
-            )
+            report.capacitor_discharge.notes.append(f"Pillar 3 exception: {type(e).__name__}: {e}")
             sources["pillar_3_caps"] = f"error: {e}"
 
         # Pillar 4 (stub)
         try:
-            report.witness_gate = self._check_pillar_4_witness_gate(
-                request, procedure, sources
-            )
+            report.witness_gate = self._check_pillar_4_witness_gate(request, procedure, sources)
         except Exception as e:
             log.exception("Pillar 4 failed: %s", e)
             report.witness_gate.outcome = PillarOutcome.HARD_FAIL
-            report.witness_gate.notes.append(
-                f"Pillar 4 exception: {type(e).__name__}: {e}"
-            )
+            report.witness_gate.notes.append(f"Pillar 4 exception: {type(e).__name__}: {e}")
             sources["pillar_4_witness"] = f"error: {e}"
 
         # Pillar 5 (stub)
@@ -240,9 +232,7 @@ class LotoAuditorAgent:
 
         # Pillar 6 (stub)
         try:
-            report.ppe_category = self._check_pillar_6_ppe_category(
-                request, procedure, sources
-            )
+            report.ppe_category = self._check_pillar_6_ppe_category(request, procedure, sources)
         except Exception as e:
             log.exception("Pillar 6 failed: %s", e)
             report.ppe_category.outcome = PillarOutcome.HARD_FAIL
@@ -285,9 +275,7 @@ class LotoAuditorAgent:
     def _validate_target_exists(self, target_id: str) -> None:
         """Raise TargetComponentNotFoundError if target is not in site_model."""
         if not hasattr(self.site_model, "get_component"):
-            raise LotoAuditorError(
-                "site_model dependency does not expose get_component()."
-            )
+            raise LotoAuditorError("site_model dependency does not expose get_component().")
         try:
             self.site_model.get_component(target_id)
         except Exception as e:
@@ -306,6 +294,7 @@ class LotoAuditorAgent:
             if path.is_file():
                 try:
                     import yaml  # type: ignore[import-untyped]
+
                     with open(path, encoding="utf-8") as f:
                         raw = yaml.safe_load(f) or {}
                     return ProcedureSpec(procedure_id, raw)
@@ -342,9 +331,7 @@ class LotoAuditorAgent:
             sources["site_model_power_chain"] = "OK"
         except Exception as e:
             sources["site_model_power_chain"] = f"error: {e}"
-            raise LotoAuditorError(
-                f"Cannot walk power chain for {target_id}: {e}"
-            ) from e
+            raise LotoAuditorError(f"Cannot walk power chain for {target_id}: {e}") from e
 
         # 2. Walk site_model cooling chain (graceful skip if not applicable)
         cooling_chain_affected: list[str] = []
@@ -442,9 +429,7 @@ class LotoAuditorAgent:
             sources["site_model_target_metadata"] = "OK"
         except Exception as e:
             sources["site_model_target_metadata"] = f"error: {e}"
-            raise LotoAuditorError(
-                f"Cannot read target metadata for {target_id}: {e}"
-            ) from e
+            raise LotoAuditorError(f"Cannot read target metadata for {target_id}: {e}") from e
 
         # 2. Build pre-LOTO measurements (Batch 4.D will replace with TimescaleDB)
         pre_measurements = build_steady_state_measurements()
@@ -480,9 +465,13 @@ class LotoAuditorAgent:
         # 6. Determine path states from post-LOTO measurements
         if target_path == "A":
             path_a_state = "loto_in_progress"
-            path_b_state = "carrying_full_load" if shi_post >= self.SHI_DEFAULT_THRESHOLD else "degraded"
+            path_b_state = (
+                "carrying_full_load" if shi_post >= self.SHI_DEFAULT_THRESHOLD else "degraded"
+            )
         elif target_path == "B":
-            path_a_state = "carrying_full_load" if shi_post >= self.SHI_DEFAULT_THRESHOLD else "degraded"
+            path_a_state = (
+                "carrying_full_load" if shi_post >= self.SHI_DEFAULT_THRESHOLD else "degraded"
+            )
             path_b_state = "loto_in_progress"
         else:
             path_a_state = "unknown_no_path_metadata"
@@ -508,9 +497,7 @@ class LotoAuditorAgent:
             spofs.append(ups_spof)
 
         # 8. Overlapping maintenance check (Batch 4.D adds CMMS integration)
-        overlapping_maintenance = self._check_overlapping_maintenance(
-            target_path, sources
-        )
+        overlapping_maintenance = self._check_overlapping_maintenance(target_path, sources)
 
         # 9. Verdict
         hard_fail_reasons: list[str] = []
@@ -518,8 +505,7 @@ class LotoAuditorAgent:
 
         if shi_post < self.SHI_DEFAULT_THRESHOLD:
             hard_fail_reasons.append(
-                f"Post-LOTO SHI {shi_post:.3f} below threshold "
-                f"{self.SHI_DEFAULT_THRESHOLD:.3f}"
+                f"Post-LOTO SHI {shi_post:.3f} below threshold {self.SHI_DEFAULT_THRESHOLD:.3f}"
             )
             outcome = PillarOutcome.HARD_FAIL
 
@@ -548,7 +534,7 @@ class LotoAuditorAgent:
 
     def _check_overlapping_maintenance(
         self,
-        target_path: Optional[str],
+        target_path: str | None,
         sources: dict[str, str],
     ) -> bool:
         """Check if opposite path is also in maintenance window.
@@ -572,9 +558,7 @@ class LotoAuditorAgent:
             return False
 
         if target_path not in ("A", "B"):
-            sources["cmms_overlapping_maintenance_check"] = (
-                "n/a (target has no path metadata)"
-            )
+            sources["cmms_overlapping_maintenance_check"] = "n/a (target has no path metadata)"
             return False
 
         opposite_path = "B" if target_path == "A" else "A"
@@ -593,8 +577,8 @@ class LotoAuditorAgent:
                 return False
         except Exception as e:
             log.warning(
-                "cmms_service.query_active_loto failed: %s. "
-                "Returning False (safe default).", e,
+                "cmms_service.query_active_loto failed: %s. Returning False (safe default).",
+                e,
             )
             sources["cmms_overlapping_maintenance_check"] = f"error: {type(e).__name__}"
             return False
@@ -653,9 +637,7 @@ class LotoAuditorAgent:
             )
 
         # 4. Parse procedure for discharge step
-        found, wait_seconds, has_voltmeter = parse_discharge_compliance(
-            procedure.steps
-        )
+        found, wait_seconds, has_voltmeter = parse_discharge_compliance(procedure.steps)
         sources["procedure_discharge_parse"] = "OK"
 
         # 5. Verdict
@@ -760,9 +742,7 @@ class LotoAuditorAgent:
                 "no self-witness occurs."
             )
         elif not witness_required:
-            notes.append(
-                f"Witness gate not required for LOTO Level {loto_level.value}"
-            )
+            notes.append(f"Witness gate not required for LOTO Level {loto_level.value}")
 
         return WitnessGateCheck(
             loto_level=loto_level,
@@ -828,6 +808,7 @@ class LotoAuditorAgent:
 
         # 4. Check purge presence
         from loto_auditor_models import LotoPhase
+
         purge_present = LotoPhase.PURGE in phases_detected
 
         # 5. Verdict
@@ -885,10 +866,13 @@ class LotoAuditorAgent:
         # Check 2: cooling chain has affected components
         try:
             cooling_impact = self.site_model.cooling_chain_for(target_id)
-            affected = list(getattr(cooling_impact, "immediate", []) or []) + \
-                       list(getattr(cooling_impact, "transitive", []) or [])
+            affected = list(getattr(cooling_impact, "immediate", []) or []) + list(
+                getattr(cooling_impact, "transitive", []) or []
+            )
             if affected:
-                sources["cooling_chain_check"] = f"target has {len(affected)} downstream cooling components"
+                sources["cooling_chain_check"] = (
+                    f"target has {len(affected)} downstream cooling components"
+                )
                 return True
         except Exception as e:
             log.debug("Cooling chain walk failed: %s", e)
@@ -916,9 +900,7 @@ class LotoAuditorAgent:
             sources["site_model_target_ppe_voltage"] = "OK"
         except Exception as e:
             sources["site_model_target_ppe_voltage"] = f"error: {e}"
-            raise LotoAuditorError(
-                f"Cannot read voltage for PPE classification: {e}"
-            ) from e
+            raise LotoAuditorError(f"Cannot read voltage for PPE classification: {e}") from e
 
         # 2. Compute required PPE category from voltage matrix
         computed_cat = compute_ppe_category(voltage_nominal)
@@ -1033,9 +1015,7 @@ class LotoAuditorAgent:
                     f"LM Studio connection refused at {self.LM_STUDIO_URL}: {e}"
                 ) from e
             except httpx.HTTPStatusError as e:
-                raise LotoAuditorError(
-                    f"LM Studio returned status {e.response.status_code}"
-                ) from e
+                raise LotoAuditorError(f"LM Studio returned status {e.response.status_code}") from e
 
         try:
             data = response.json()

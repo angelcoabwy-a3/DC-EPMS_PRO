@@ -241,8 +241,8 @@ class ElectricalModule(PhysicsModule):
         if not eff_ok:
             if eff_residual < 0:
                 interp = (
-                    f"UPS efficiency {eta_measured*100:.2f}% below expected "
-                    f"{eta_expected*100:.2f}% at {load_fraction*100:.0f}% "
+                    f"UPS efficiency {eta_measured * 100:.2f}% below expected "
+                    f"{eta_expected * 100:.2f}% at {load_fraction * 100:.0f}% "
                     f"load. Excess dissipation "
                     f"{(ups_input_kw - expected_input_kw):.1f} kW; typically "
                     f"indicates cooling-fan degradation, capacitor ESR rise, "
@@ -250,8 +250,8 @@ class ElectricalModule(PhysicsModule):
                 )
             else:
                 interp = (
-                    f"UPS efficiency {eta_measured*100:.2f}% above expected "
-                    f"{eta_expected*100:.2f}% - likely meter-calibration "
+                    f"UPS efficiency {eta_measured * 100:.2f}% above expected "
+                    f"{eta_expected * 100:.2f}% - likely meter-calibration "
                     f"issue rather than genuine improvement."
                 )
             action = (
@@ -358,7 +358,7 @@ class ElectricalModule(PhysicsModule):
         if not batt_v_ok:
             interp = (
                 f"Battery DC bus {batt_vdc_meas:.1f} V at reported SOC "
-                f"{batt_soc*100:.0f}%, expected {batt_vdc_expected:.1f} V. "
+                f"{batt_soc * 100:.0f}%, expected {batt_vdc_expected:.1f} V. "
                 f"Residual {batt_v_residual:+.1f} V indicates SOC estimate "
                 f"drift or a failing cell in one string."
             )

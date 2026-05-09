@@ -154,9 +154,9 @@ class TestInstrumentation:
 
         metrics = instrumented_client.get("/metrics").text
         # Look for the API path in metric output
-        assert (
-            "/api/health" in metrics or "api_health" in metrics
-        ), "API path should be captured by histogram labels"
+        assert "/api/health" in metrics or "api_health" in metrics, (
+            "API path should be captured by histogram labels"
+        )
 
     def test_static_paths_excluded(self, instrumented_client: TestClient):
         """Static paths must NOT pollute the metric series."""

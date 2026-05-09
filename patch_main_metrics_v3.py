@@ -182,8 +182,7 @@ if not already_called:
     close_paren_pos = find_balanced_paren_end(content, open_paren_pos)
     if close_paren_pos == -1:
         print(
-            f"ERROR: Could not find balanced ')' for FastAPI(...) "
-            f"opened at offset {open_paren_pos}"
+            f"ERROR: Could not find balanced ')' for FastAPI(...) opened at offset {open_paren_pos}"
         )
         sys.exit(4)
 

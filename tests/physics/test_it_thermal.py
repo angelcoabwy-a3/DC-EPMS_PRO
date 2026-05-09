@@ -274,9 +274,9 @@ class TestSimulateTrajectory:
         )
         # After 15 min with no cooling, hall temp should have risen materially
         final = traj[-1]
-        assert (
-            final.state["hall_air_c"] > 25.0
-        ), f"Expected rise, got {final.state['hall_air_c']:.1f} C"
+        assert final.state["hall_air_c"] > 25.0, (
+            f"Expected rise, got {final.state['hall_air_c']:.1f} C"
+        )
 
     def test_a2_exceeded_event_appears(self):
         """When temperature crosses 35 C we should emit an event."""

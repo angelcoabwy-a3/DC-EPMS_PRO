@@ -510,7 +510,7 @@ def build_tier_section(tier, docs, styles):
             standard = ", ".join(str(s) for s in standard)
 
         flowables.append(Paragraph(doc_id, styles["h1"]))
-        header_meta = f"<b>Tier {tier}</b> &middot; " f"Priority: <b>{priority.upper()}</b>"
+        header_meta = f"<b>Tier {tier}</b> &middot; Priority: <b>{priority.upper()}</b>"
         if standard:
             header_meta += f" &middot; Standard: <b>{escape_html(standard)}</b>"
         flowables.append(Paragraph(header_meta, styles["meta"]))

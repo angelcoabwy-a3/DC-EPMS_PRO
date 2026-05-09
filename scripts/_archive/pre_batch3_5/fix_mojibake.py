@@ -58,10 +58,20 @@ class C:
     END = "\033[0m"
 
 
-def info(m): print(f"{C.B}[INFO]{C.END} {m}")
-def ok(m):   print(f"{C.G}[ OK ]{C.END} {m}")
-def warn(m): print(f"{C.Y}[WARN]{C.END} {m}")
-def err(m):  print(f"{C.R}[FAIL]{C.END} {m}")
+def info(m):
+    print(f"{C.B}[INFO]{C.END} {m}")
+
+
+def ok(m):
+    print(f"{C.G}[ OK ]{C.END} {m}")
+
+
+def warn(m):
+    print(f"{C.Y}[WARN]{C.END} {m}")
+
+
+def err(m):
+    print(f"{C.R}[FAIL]{C.END} {m}")
 
 
 # ============================================================
@@ -77,13 +87,11 @@ MOJIBAKE_MAP = [
     # These come from cp1252 misencoding of UTF-8; if the file has been
     # round-tripped already, single Unicode chars are present instead.
     # We handle BOTH cases.
-
     # Composed mojibake (cp1252 corruption of UTF-8 bytes):
     ("\u00e2\u20ac\u201d", " - ", "em-dash mojibake -> spaced hyphen"),
     ("\u00e2\u20ac\u201c", " - ", "en-dash mojibake -> spaced hyphen"),
     ("\u00e2\u20ac\u2122", "'", "right-quote mojibake -> apostrophe"),
     ("\u00e2\u020c\u00a0\u2122", "->", "arrow mojibake -> ASCII arrow"),
-
     # ---- Single-character ambiguous unicode (RUF001/002/003) ----
     # Math operators that cause RUF*** in strings/comments/docstrings.
     ("\u00d7", "x", "multiplication sign U+00D7 -> ASCII x"),
@@ -99,14 +107,12 @@ MOJIBAKE_MAP = [
     ("\u2248", "~", "approximately U+2248 -> tilde"),
     ("\u2192", "->", "right arrow U+2192 -> ASCII arrow"),
     ("\u00b7", "-", "middle dot U+00B7 -> hyphen-minus"),
-
     # Degree sign with adjacent C/F deserves to keep meaning explicit.
     # We replace standalone degree sign with "deg" but keep "degC"/"degF"
     # patterns where C or F follows immediately.
     ("\u00b0C", "degC", "degree sign + C -> degC"),
     ("\u00b0F", "degF", "degree sign + F -> degF"),
     ("\u00b0", "deg", "degree sign U+00B0 -> deg"),
-
     # Greek letters in comments/docstrings - replace with ASCII names
     # to avoid reader confusion. These are usually inside math notation.
     ("\u0394P", "dP", "Delta P U+0394 P -> dP (pressure differential)"),
@@ -115,14 +121,12 @@ MOJIBAKE_MAP = [
     ("\u03c4", "tau", "tau U+03C4 -> ASCII tau"),
     ("\u03b5", "epsilon", "epsilon U+03B5 -> ASCII epsilon"),
     ("\u03c3", "sigma", "sigma U+03C3 -> ASCII sigma"),
-
     # Box drawing characters used as separators
     ("\u2500", "-", "box horizontal U+2500 -> hyphen"),
     ("\u2550", "=", "double horizontal U+2550 -> equals"),
     ("\u2502", "|", "box vertical U+2502 -> pipe"),
     ("\u2551", "|", "double vertical U+2551 -> pipe"),
     ("\u2588", "#", "block U+2588 -> hash"),
-
     # Arrows in comments
     ("\u21d2", "=>", "rightwards double arrow -> =>"),
     ("\u21d0", "<=", "leftwards double arrow -> <="),
@@ -206,6 +210,7 @@ def fix_file(filepath: Path, apply: bool) -> dict:
 # Main
 # ============================================================
 
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fix DC-EPMS-015 mojibake")
     parser.add_argument("--dry-run", action="store_true", help="Preview only")
@@ -271,7 +276,9 @@ def main() -> int:
     else:
         print(f"\n{C.G}DC-EPMS-015 RESOLVED.{C.END}")
         print(f"{C.G}Next: run pytest --tb=no -q to confirm no regression.{C.END}")
-        print(f"{C.G}Then: run ruff check backend/ scripts/ to confirm zero RUF001/002/003.{C.END}\n")
+        print(
+            f"{C.G}Then: run ruff check backend/ scripts/ to confirm zero RUF001/002/003.{C.END}\n"
+        )
 
     return 0
 

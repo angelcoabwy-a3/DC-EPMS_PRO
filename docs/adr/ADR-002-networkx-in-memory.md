@@ -1,10 +1,10 @@
 # ADR-002: NetworkX MultiDiGraph In-Memory (vs Neo4j Persistent Server)
 
-* Status: ACCEPTED
-* Date: 2026-04 (decision originally taken during S2 Sprint, retroactively documented 2026-05-06 in Batch 3)
-* Decision-maker: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-* Sprint: S2 GraphRAG completion
-* MADR template: https://adr.github.io/madr/
+- Status: ACCEPTED
+- Date: 2026-04 (decision originally taken during S2 Sprint, retroactively documented 2026-05-06 in Batch 3)
+- Decision-maker: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
+- Sprint: S2 GraphRAG completion
+- MADR template: https://adr.github.io/madr/
 
 ## Context
 
