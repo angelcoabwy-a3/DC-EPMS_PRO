@@ -48,6 +48,12 @@ const _initial = {
     incidentSource: null,
     lastTelemetryAtMs: 0,
     schemaVersion: null,
+    // Sprint 5.5 hybrid Bite A2/A3 — activity strip counters
+    messageCount: 0,
+    reconnectCount: 0,
+    serverClientLagMs: null,
+    anomalyCount60min: 0,
+    _apiBase: null,
 };
 
 const _listeners = new Map();

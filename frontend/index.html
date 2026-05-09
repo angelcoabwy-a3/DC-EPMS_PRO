@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DC-EPMS PRO · a3semi Edge Operations</title>
-    <link rel="stylesheet" href="/assets/app.css?v=8.1.0-s5h1">
+    <link rel="stylesheet" href="/assets/app.css?v=8.1.0-s5h2">
     <!-- Chart.js 4.4.1 served locally per ADR-006 edge-first autonomy.
          Origin: https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js
          SHA-256: 74401D738DD3E03EE5DFB3B6841210FE2C4EAD8A960C4011CA4BA0B78A9FD8F3 -->
@@ -28,6 +28,37 @@
         <div class="status-pill" id="health-gpu" data-label="GPU"><span class="dot"></span><span class="lbl">GPU</span></div>
         <div class="status-pill" id="health-stream" data-label="Stream" data-staleness="unknown"><span class="dot"></span><span class="lbl">Stream —</span></div>
     </header>
+
+    <!-- Sprint 5.5 hybrid pivot Bite A3: telemetry activity strip.
+         Driven by frontend/assets/js/core/activity_strip.js.
+         Forward-compatible with C2 (Schema flips to channel_innovations
+         and Anomalies counter activates when Sprint 5 backend lands). -->
+    <section class="activity-strip" id="activity-strip" role="status" aria-label="Telemetry activity">
+        <div class="strip-cell">
+            <span class="strip-label">Last update</span>
+            <span class="strip-value" data-field="last-update">—</span>
+        </div>
+        <div class="strip-cell">
+            <span class="strip-label">Messages</span>
+            <span class="strip-value" data-field="message-count">0</span>
+        </div>
+        <div class="strip-cell">
+            <span class="strip-label">Schema</span>
+            <span class="strip-value" data-field="schema" data-value="unknown">—</span>
+        </div>
+        <div class="strip-cell">
+            <span class="strip-label">Lag</span>
+            <span class="strip-value" data-field="lag">—</span>
+        </div>
+        <div class="strip-cell">
+            <span class="strip-label">Anomalies (60m)</span>
+            <span class="strip-value" data-field="anomalies" data-severity="low">0</span>
+        </div>
+        <div class="strip-cell">
+            <span class="strip-label">Reconnects</span>
+            <span class="strip-value" data-field="reconnects" data-severity="low">0</span>
+        </div>
+    </section>
 
     <main class="app-main">
 
@@ -1540,8 +1571,8 @@
 <!-- Sprint 5.5 hybrid pivot: ES module bootstrap loads BEFORE app.js IIFE.
      Both scripts deferred so they run in document order after parsing,
      ensuring window.__epms bridge is available when app.js evaluates. -->
-<script type="module" src="/assets/js/main.js?v=s5h1"></script>
-<script defer src="/assets/app.js?v=8.1.0-s5h1"></script>
+<script type="module" src="/assets/js/main.js?v=s5h2"></script>
+<script defer src="/assets/app.js?v=8.1.0-s5h2"></script>
 
 </body>
 </html>

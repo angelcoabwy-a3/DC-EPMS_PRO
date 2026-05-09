@@ -67,9 +67,11 @@ body {
 }
 
 /* ── Layout shell ─────────────────────────────────────────── */
+/* Sprint 5.5 hybrid Bite A3: 4-row grid adds 32px activity-strip
+   between header (56px) and main (1fr). Footer stays at 28px. */
 .app-shell {
     display: grid;
-    grid-template-rows: 56px 1fr 28px;
+    grid-template-rows: 56px 32px 1fr 28px;
     height: 100vh;
 }
 
@@ -163,6 +165,58 @@ body {
 @keyframes stream-pulse-stale {
     0%, 100% { opacity: 1.0; transform: scale(1.0); }
     50%      { opacity: 0.40; transform: scale(0.75); }
+}
+
+/* ── Activity strip (Sprint 5.5 hybrid Bite A3) ─────────────
+   Driven by frontend/assets/js/core/activity_strip.js. Provides
+   global situational awareness of the SSE telemetry channel:
+   freshness, throughput, schema, lag, anomalies, reconnects. */
+.activity-strip {
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 24px;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: thin;
+}
+.activity-strip .strip-cell {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.activity-strip .strip-label {
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-size: 9.5px;
+    color: var(--text-dim);
+    font-weight: 500;
+}
+.activity-strip .strip-value {
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    transition: color 0.2s ease;
+}
+.activity-strip .strip-value[data-severity="low"]  { color: var(--text); }
+.activity-strip .strip-value[data-severity="med"]  { color: var(--warn); }
+.activity-strip .strip-value[data-severity="high"] {
+    color: var(--crit);
+    font-weight: 600;
+}
+.activity-strip .strip-value[data-value="legacy_kpi"] {
+    color: var(--text-muted);
+}
+.activity-strip .strip-value[data-value="channel_innovations"] {
+    color: var(--neon-cyan);
+    font-weight: 600;
+    text-shadow: 0 0 6px rgba(0, 229, 255, 0.35);
+}
+.activity-strip .strip-value[data-value="unknown"] {
+    color: var(--text-dim);
 }
 
 /* ── Main grid ────────────────────────────────────────────── */

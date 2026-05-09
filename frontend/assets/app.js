@@ -119,18 +119,34 @@
     }
 
     // ── SSE: Telemetry stream ──────────────────────────────
+    // Sprint 5.5 hybrid pivot Bite A2: delegate SSE ownership to
+    // frontend/assets/js/core/telemetry_engine.js when the new module
+    // is loaded. Legacy path retained as fallback for browsers without
+    // ES module support OR when window.__epms.useNewEngine === false.
+    //
+    // Flow when new engine is ON:
+    //   telemetry_engine._onMessage  ->  setState('latestTelemetry', point)
+    //   ->  Proxy notify  ->  this subscriber  ->  handleTelemetry(point)
+    //
+    // The legacy fallback below is byte-identical to the pre-Bite-A2
+    // code so behaviour is unchanged when the feature flag is off.
     function startTelemetryStream() {
+        if (window.__epms && window.__epms.useNewEngine !== false) {
+            // New path: subscribe to the reactive store; SSE is owned
+            // by telemetry_engine.js and was started from main.js.
+            window.__epms.subscribe('latestTelemetry', (point) => {
+                if (point) handleTelemetry(point);
+            });
+            return;
+        }
+
+        // Legacy fallback (feature flag off or module load failed)
         if (state.telemetrySource) state.telemetrySource.close();
         state.telemetrySource = new EventSource(`${API_BASE}/api/telemetry/stream`);
 
         state.telemetrySource.onmessage = (e) => {
             try {
                 const data = JSON.parse(e.data);
-                // Sprint 5.5 hybrid bridge: publish freshness timestamp to
-                // the new reactive store BEFORE local handling, so the
-                // staleness badge updates even if the payload is empty
-                // (e.g. DB unavailable -> data.latest === null but stream
-                // is alive). See frontend/assets/js/core/staleness.js.
                 if (window.__epms) window.__epms.setState('lastTelemetryAtMs', performance.now());
                 if (data.latest) handleTelemetry(data.latest);
             } catch (err) {

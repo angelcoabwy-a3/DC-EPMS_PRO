@@ -81,11 +81,20 @@ function _onMessage(e) {
     handler(data);
     setState('schemaVersion', schema);
     setState('lastTelemetryAtMs', performance.now());
+
+    // counters + lag for activity strip (Bite A3)
+    setState('messageCount', (getState('messageCount') || 0) + 1);
+    if (typeof data.ts === 'number') {
+        // backend ts is unix seconds (main.py:471); compare to client ms
+        setState('serverClientLagMs', Date.now() - data.ts * 1000);
+    }
+
     _reconnectMs = RECONNECT_INITIAL_MS;
 }
 
 function _onError() {
     console.warn(`[telemetry] SSE disconnected, reconnect in ${_reconnectMs}ms...`);
+    setState('reconnectCount', (getState('reconnectCount') || 0) + 1);
     if (_source) {
         try { _source.close(); } catch (_) { /* noop */ }
         _source = null;

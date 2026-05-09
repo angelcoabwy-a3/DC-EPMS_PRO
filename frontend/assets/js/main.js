@@ -23,12 +23,30 @@
 
 import { setState, getState, subscribe } from './core/state.js';
 import { initStaleness } from './core/staleness.js';
+import { initActivityStrip } from './core/activity_strip.js';
+import { startTelemetry } from './core/telemetry_engine.js';
 
-window.__epms = Object.freeze({ setState, getState, subscribe });
+// Feature flag — when false the legacy IIFE in app.js owns the SSE.
+// Toggle in browser console for emergency rollback:
+//     window.__epms.useNewEngine = false; location.reload();
+const USE_NEW_TELEMETRY_ENGINE = true;
+
+window.__epms = Object.freeze({
+    setState,
+    getState,
+    subscribe,
+    useNewEngine: USE_NEW_TELEMETRY_ENGINE,
+});
 
 initStaleness();
+initActivityStrip();
+
+if (USE_NEW_TELEMETRY_ENGINE) {
+    startTelemetry(window.location.origin);
+}
 
 console.log(
     '%c DC-EPMS hybrid bridge ready ',
     'background:#00B8D4;color:#0B0D10;font-weight:700;padding:2px 6px;border-radius:2px;',
+    USE_NEW_TELEMETRY_ENGINE ? '(new engine: ON)' : '(new engine: OFF — legacy SSE)',
 );
