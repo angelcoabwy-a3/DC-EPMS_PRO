@@ -316,10 +316,40 @@ C:\dev\DC-EPMS_PRO\
 
 ### Open / Deferred
 
-**DC-EPMS-029b** (MED) - DEFERRED post-C3 (prediction of natural resolution was WRONG)
-- Symptom: `simulate_loto_measurements` produces `shi_pre == shi_post` (no delta)
-- Root cause hypothesis: `physics_engine.validate_site()` uses thermal fields (hall_inlet_temp_c, chiller_supply_temp_c, cdu_pressure_bar) that simulate_loto doesn't modify
-- Sprint 5 C2 closure 2026-05-09: prediction that C2 would resolve this naturally was WRONG. simulate_loto is independent of the simulator/pipeline path. Resolution requires a translation layer mapping simulator channel-level output to physics_engine measurements dict format. Deferred to dedicated bite post-C3 or V10.
+**DC-EPMS-029b** (MED) - RESOLVED 2026-05-09 (Sprint 5 follow-up, commit pending)
+- Symptom: `simulate_loto_measurements` produced `shi_pre == shi_post` (no delta).
+- Root cause: `build_steady_state_measurements` and `simulate_loto_measurements`
+  operated on virtual fields (chiller_count_online, ups_a_online,
+  hall_inlet_temp_c) that physics modules did NOT read. Physics modules
+  consume canonical fields like chiller_X_load_kw, ups_mode, dlc_supply_c,
+  loop_flow_m3_s. The two namespaces were disjoint.
+- Fix: build_steady_state_measurements now also includes physics-canonical
+  fields (electrical, mechanical, heat_rejection inputs). simulate_loto_
+  measurements modifies BOTH legacy redundancy fields (Pillar 2 SPOF
+  detection) AND canonical physics fields per LOTO type. Verified by
+  14/14 tests/test_dc_epms_029b_resolution.py — at least 2 LOTO types
+  (UPS, CDU) produce SHI delta > 0.05.
+
+**DC-EPMS-029c** (LOW) - NEW (opened 2026-05-09 during DC-EPMS-029b closure)
+- Symptom: physics_engine.validate_site() pass/fail thresholds insensitive
+  to several LOTO scenarios. Even when simulate_loto correctly modifies
+  physics-canonical fields per chiller/cooling_tower/chw_pump/RPP LOTO,
+  the per-module health does not move because the modifications stay
+  inside the broad acceptance band of the module's checks.
+- Examples: chiller LOTO zeros chiller_1_load_kw and doubles chiller_2,
+  but heat_rejection.cop_vs_curve still passes because COP=load/power
+  is recomputed from the doubled values and stays in spec.
+  cooling_tower LOTO raises ECWT +6 C but heat_rejection accepts a wide
+  ECWT range. RPP LOTO halves utility_kw + ups_input_kw + xfmr_load_kva
+  but electrical's checks evaluate ratios that stay in spec.
+- Runtime impact: NONE. simulate_loto output is structurally correct;
+  only the SHI rollup is unreactive for some LOTO types. UPS and CDU
+  LOTO scenarios DO produce SHI delta, sufficient for demo and audit.
+- Resolution path: tune physics_engine module checks to be more sensitive
+  to LOTO-relevant deltas. Either (a) lower the pass thresholds, (b) add
+  new checks specifically for LOTO scenarios, or (c) introduce a "loto_
+  mode" multiplier in validate(). Effort: 2-3h surgical work in each of
+  the 4 physics modules. Target: V10 or dedicated bite post-Sprint 5.
 
 **DC-EPMS-034** (LOW) - RESOLVED 2026-05-09 (commit pending Phase B closure)
 - Symptom: `witness_engine_protection: "engine present but interface unknown"` in Pillar 4

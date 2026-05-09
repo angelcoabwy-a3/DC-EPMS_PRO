@@ -225,30 +225,56 @@ def build_steady_state_measurements(
     physics_engine still produces a valid baseline SHI for comparison.
     """
     base = {
-        # Electrical
-        "utility_kw": 17400.0,
-        "facility_it_kw": 16756.0,
-        "ups_load_kw": 16756.0,
-        "ups_mode": "online",
+        # ─── Pillar 2 redundancy-state fields (legacy) ─────────────────
+        # Used by SPOF detection, NOT by physics_engine modules.
         "ups_a_online": True,
         "ups_b_online": True,
         "ats_position": "primary",
-        # Cooling
         "chiller_count_online": 3,
         "chiller_supply_temp_c": 7.0,
         "chiller_return_temp_c": 12.0,
         "cooling_tower_count_online": 2,
         "chw_pump_count_online": 3,
         "cdu_pressure_bar": 2.0,
-        # Thermal
         "hall_inlet_temp_c": 22.0,
         "hall_outlet_temp_c": 27.0,
         "hall_dewpoint_c": 8.0,
+
+        # ─── Physics-engine canonical fields (DC-EPMS-029b fix) ────────
+        # These ARE consumed by physics/*.py validate(measurements).
+        # IMPORTANT: we deliberately DO NOT override fields that physics
+        # already has good defaults for (dlc_supply_c, dlc_flow_l_min,
+        # dlc_return_c, hall_inlet_c, gpu_tj_max_c, loop_supply_c,
+        # loop_return_c, cdu_primary_in_c, cdu_primary_out_c). Custom
+        # values would need to satisfy first-law energy balance
+        # (Q_dlc = mass * c * deltaT == rack_tdp_kw * rack_count) and
+        # cross-module consistency, which is beyond this fix's scope.
+        # Falling back to module defaults keeps the baseline self-
+        # consistent (it_thermal health = 1.0).
+
+        # Electrical (consumed by physics/electrical.py)
+        "utility_kw": 17400.0,
+        "facility_it_kw": 16756.0,
+        "ups_load_kw": 16756.0,
+        "ups_input_kw": 17450.0,
+        "ups_mode": "online",
+        "battery_soc": 1.0,
+        "battery_on_load": False,
+
+        # Mechanical (consumed by physics/mechanical.py)
         "rack_count": 118,
         "rack_tdp_kw": 142.0,
-        # Mechanical
-        "pump_suction_bar": 1.8,
+        "loop_flow_m3_s": 0.45,
+        "cdu_primary_flow_m3_s": 0.08,
         "pump_power_kw": 45.0,
+
+        # Heat rejection (consumed by physics/heat_rejection.py)
+        "chiller_1_load_kw": 2500.0,
+        "chiller_1_power_kw": 350.0,
+        "chiller_1_ecwt_c": 29.0,
+        "chiller_2_load_kw": 2500.0,
+        "chiller_2_power_kw": 350.0,
+        "chiller_2_ecwt_c": 29.0,
     }
 
     if overrides:
@@ -285,37 +311,87 @@ def simulate_loto_measurements(
     type_lower = target_type.lower()
 
     if type_lower == "ups":
+        # Pillar 2 redundancy fields
         if "_a" in target_lower:
             sim["ups_a_online"] = False
         elif "_b" in target_lower:
             sim["ups_b_online"] = False
-        sim["ups_mode"] = "single_path"
-        # Approximate: lose half the UPS-served load capacity
-        # (real physics would rebalance, this is conservative for SHI)
+        sim["ups_mode"] = "battery"
         sim["ups_load_kw"] = base.get("ups_load_kw", 16756.0) * 0.95
+        # Physics impact (DC-EPMS-029b fix): UPS path loss + on-battery
+        # condition. battery_soc heavily reduced to flag battery_voltage_soc
+        # consistency check; battery_on_load triggers the
+        # utility_loss_with_it_thermal_stress cascade pattern.
+        sim["battery_on_load"] = True
+        sim["battery_soc"] = 0.4
+        sim["ups_input_kw"] = base.get("ups_input_kw", 17450.0) * 0.5  # one path
 
     elif type_lower == "chiller":
+        # Pillar 2 redundancy field
         sim["chiller_count_online"] = max(0, int(base.get("chiller_count_online", 3)) - 1)
+        # Physics impact (DC-EPMS-029b fix): zero the offline chiller.
+        # heat_rejection module reads chiller_X_{load,power,ecwt}_kw per
+        # chiller and runs cop_vs_curve checks. Carrying chiller doubles
+        # load (~5000 kW), and entering condenser water rises 5 C because
+        # the carrying chiller's heat rejection load doubled while cooling
+        # tower capacity is unchanged.
+        if "1" in target_lower:
+            offline_key = "chiller_1"
+            carrying_key = "chiller_2"
+        elif "2" in target_lower:
+            offline_key = "chiller_2"
+            carrying_key = "chiller_1"
+        else:
+            offline_key = "chiller_1"
+            carrying_key = "chiller_2"
+        sim[f"{offline_key}_load_kw"] = 0.0
+        sim[f"{offline_key}_power_kw"] = 0.0
+        sim[f"{carrying_key}_load_kw"] = base.get(f"{carrying_key}_load_kw", 2500.0) * 2.0
+        sim[f"{carrying_key}_power_kw"] = base.get(f"{carrying_key}_power_kw", 350.0) * 2.2
+        sim[f"{carrying_key}_ecwt_c"] = base.get(f"{carrying_key}_ecwt_c", 29.0) + 5.0
 
     elif type_lower == "ats":
         sim["ats_position"] = "alternate"
 
     elif type_lower == "cooling_tower":
+        # Pillar 2 redundancy field
         sim["cooling_tower_count_online"] = max(
             0, int(base.get("cooling_tower_count_online", 2)) - 1
         )
+        # Physics impact (DC-EPMS-029b fix): N -> N-1 cooling tower halves
+        # condenser cooling capacity. Both chillers' ECWT rises sharply
+        # (+6 C) which fails heat_rejection's COP-vs-curve check.
+        sim["chiller_1_ecwt_c"] = base.get("chiller_1_ecwt_c", 29.0) + 6.0
+        sim["chiller_2_ecwt_c"] = base.get("chiller_2_ecwt_c", 29.0) + 6.0
 
     elif type_lower == "chw_pump":
+        # Pillar 2 redundancy field
         sim["chw_pump_count_online"] = max(0, int(base.get("chw_pump_count_online", 3)) - 1)
+        # Physics impact (DC-EPMS-029b fix): 3 -> 2 pumps cuts secondary
+        # loop flow by 33%. Pump power drops proportionally because the
+        # offline pump consumes nothing. mechanical reads loop_flow_m3_s.
+        sim["loop_flow_m3_s"] = base.get("loop_flow_m3_s", 0.45) * 0.50
+        sim["pump_power_kw"] = base.get("pump_power_kw", 45.0) * 0.50
 
     elif type_lower == "cdu":
-        # CDU loss reduces secondary loop capacity
+        # Pillar 2 redundancy field
         sim["cdu_offline_count"] = int(base.get("cdu_offline_count", 0)) + 1
+        # Physics impact (DC-EPMS-029b fix): 1 of 6 CDUs offline = ~17%
+        # primary flow reduction. The IT-side DLC return rises because
+        # less primary flow means less heat removal at fixed load. This
+        # propagates as it_thermal first_law violation.
+        sim["cdu_primary_flow_m3_s"] = base.get("cdu_primary_flow_m3_s", 0.08) * 0.83
+        sim["dlc_return_c"] = base.get("dlc_return_c", 45.0) + 2.0
 
     elif type_lower in ("rpp", "busway", "xfmr", "transformer"):
-        # Path-level loss reduces facility IT capacity
+        # Path-level loss halves facility IT capacity AND utility input
+        # (one of two utility feeds is now isolated). Both are physics-
+        # canonical fields read by physics/electrical.py.
         if target_path == "A" or target_path == "B":
             sim["facility_it_kw"] = base.get("facility_it_kw", 16756.0) * 0.5
+            sim["utility_kw"] = base.get("utility_kw", 17400.0) * 0.5
+            sim["ups_input_kw"] = base.get("ups_input_kw", 17450.0) * 0.5
+            sim["xfmr_load_kva"] = base.get("xfmr_load_kva", 18500.0) * 0.5
 
     return sim
 
