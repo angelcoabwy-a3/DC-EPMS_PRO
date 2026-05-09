@@ -222,6 +222,29 @@ async def lifespan(app: FastAPI):
             log.warning("Agent engine init failed: %s", e)
             agent = None
 
+    # ─── Sprint 6: CMMS Core v1.0 init (Fase 2 + 3) ───────────────────
+    # Requires db_manager.pool (asyncpg). Seeds assets from site_model.yml
+    # then registers /api/cmms/* router.
+    try:
+        if db_manager is not None and db_manager.pool is not None:
+            from backend.cmms_repository import PostgresCMMSRepository
+            from backend.cmms_routes import register_cmms_routes
+            from backend.cmms_seeder import seed_assets_from_site_model
+
+            _cmms_repo_instance = PostgresCMMSRepository(db_manager.pool)
+            register_cmms_routes(app, _cmms_repo_instance)
+
+            sm = globals().get("_site_model")
+            if sm is not None:
+                seed_result = await seed_assets_from_site_model(_cmms_repo_instance, sm)
+                log.info("[BOOT] CMMS asset seeding: %s", seed_result)
+            else:
+                log.warning("[BOOT] CMMS seeder skipped: _site_model not available at lifespan time")
+        else:
+            log.warning("[BOOT] CMMS skipped: db_manager pool unavailable")
+    except Exception as e:
+        log.error("[BOOT] CMMS init failed: %s", e, exc_info=True)
+
     # ─── Eager warmup of all audit-path lazy services (CET directive) ─
     # In critical infrastructure, availability is immediate. Lazy init of
     # GraphRAG (sentence-transformers all-MiniLM-L6-v2 + FAISS + NetworkX)
@@ -2336,6 +2359,22 @@ try:
         log.warning("LOTO Auditor NOT registered: physics_engine unavailable")
 except Exception as e:
     log.error("LOTO Auditor registration failed: %s", e, exc_info=True)
+
+
+# Sprint 6 Fase 3 - CMMS Core v1.0 router registration
+# Defensive: requires DB pool (db_manager); falls back gracefully.
+try:
+    from backend.cmms_repository import PostgresCMMSRepository
+    from backend.cmms_routes import register_cmms_routes
+
+    _cmms_repo: PostgresCMMSRepository | None = None
+    # Pool will be injected during lifespan after db_manager.connect().
+    # We register the router here so the import-time path is clean;
+    # repo gets attached in lifespan body.
+    log.info("CMMS routes module loaded (router activates in lifespan)")
+except Exception as e:
+    log.error("CMMS router import failed: %s", e, exc_info=True)
+
 
 if __name__ == "__main__":
     import uvicorn

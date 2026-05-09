@@ -1,0 +1,339 @@
+"""
+backend/cmms_routes.py
+======================
+FastAPI router for CMMS Core v1.0.
+
+Endpoints (Sprint 6 Fase 3):
+  GET  /api/cmms/assets                          List assets (filters)
+  GET  /api/cmms/assets/{asset_id}               Single asset detail
+  GET  /api/cmms/assets/health-aggregate         Per-path/pillar/type rollup
+  GET  /api/cmms/work-orders                     List WOs (filters)
+  GET  /api/cmms/work-orders/{wo_id}             Single WO detail
+  POST /api/cmms/work-orders                     Create WO from manual draft
+  POST /api/cmms/work-orders/{wo_id}/approve     CET approval transition
+  POST /api/cmms/work-orders/{wo_id}/reject      CET rejection transition
+  POST /api/cmms/trigger-maintenance             Convenience: WO from one call
+  GET  /api/cmms/health                          Router health probe
+
+The router uses app.state.cmms_repo (set in main.py lifespan) for the
+backing repository. Routes never touch SQL directly.
+
+Per ADR-006 Deterministic Sandbox: WO creation always lands in
+'pending_approval'. Approval requires explicit POST.
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
+
+from backend.cmms_models import (
+    ApproveRejectRequest,
+    Asset,
+    AssetHealthAggregate,
+    CreateWorkOrderRequest,
+    WorkOrder,
+)
+from backend.cmms_repository import (
+    AssetNotFoundError,
+    CMMSRepositoryError,
+    PostgresCMMSRepository,
+    WorkOrderNotFoundError,
+)
+from backend.cmms_seeder import ASSET_TYPE_TO_MOP
+
+log = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/cmms", tags=["cmms"])
+
+
+# ─── Internal helpers ────────────────────────────────────────────────
+def _get_repo(request: Request) -> PostgresCMMSRepository:
+    repo = getattr(request.app.state, "cmms_repo", None)
+    if repo is None:
+        raise HTTPException(status_code=503, detail="CMMS repository not initialized")
+    return repo
+
+
+def _wo_id() -> str:
+    """Format: WO-YYYYMMDD-uuid8"""
+    return f"WO-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
+
+
+def _compute_lor(likelihood_idx: int, consequence_idx: int) -> int:
+    """LOR = L * C, capped 1..25. Mirrors cmms_mcp.compute_lor minimal form."""
+    return max(1, min(25, likelihood_idx * consequence_idx))
+
+
+def _derive_priority(lor: int, criticality: str) -> str:
+    """Priority from LOR x asset.criticality. Critical assets escalate."""
+    base = "P3"
+    if lor >= 20:
+        base = "P1"
+    elif lor >= 12:
+        base = "P2"
+    elif lor >= 6:
+        base = "P3"
+    else:
+        base = "P4"
+    if criticality == "critical" and base in ("P3", "P4"):
+        base = "P2"
+    if criticality == "critical" and base == "P2" and lor >= 15:
+        base = "P1"
+    return base
+
+
+def _derive_procedure_class(work_class: str, requires_loto: bool) -> str:
+    if work_class == "EM":
+        return "EOP"
+    if requires_loto:
+        return "DMOP"
+    if work_class == "CM":
+        return "MOP"
+    return "SOP"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Health
+# ═══════════════════════════════════════════════════════════════════════
+@router.get("/health")
+async def cmms_health(request: Request) -> dict[str, Any]:
+    """Router liveness probe. Counts assets and open WOs."""
+    repo = _get_repo(request)
+    try:
+        assets = await repo.list_assets_async(limit=10000)
+        open_wos = await repo.list_work_orders_async(only_open=True, limit=10000)
+        return {
+            "status": "up",
+            "asset_count": len(assets),
+            "open_work_order_count": len(open_wos),
+            "facility": "A3-Alpha Toronto Area",
+        }
+    except CMMSRepositoryError as e:
+        return {"status": "degraded", "error": str(e)[:200]}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Assets
+# ═══════════════════════════════════════════════════════════════════════
+@router.get("/assets")
+async def list_assets(
+    request: Request,
+    asset_type: str | None = Query(default=None),
+    path: str | None = Query(default=None),
+    criticality_class: str | None = Query(default=None),
+    health_state: str | None = Query(default=None),
+    limit: int = Query(default=1000, ge=1, le=10000),
+) -> dict[str, Any]:
+    repo = _get_repo(request)
+    try:
+        assets = await repo.list_assets_async(
+            asset_type=asset_type,
+            path=path,
+            criticality_class=criticality_class,
+            health_state=health_state,
+            limit=limit,
+        )
+    except CMMSRepositoryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"count": len(assets), "assets": [a.model_dump(mode="json") for a in assets]}
+
+
+@router.get("/assets/health-aggregate")
+async def health_aggregate(request: Request) -> dict[str, Any]:
+    """Per-path / pillar / asset_type health rollup. Drives HMI grid + SHI."""
+    repo = _get_repo(request)
+    try:
+        rows = await repo.get_health_aggregate_async()
+    except CMMSRepositoryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"rows": [r.model_dump(mode="json") for r in rows]}
+
+
+@router.get("/assets/{asset_id}")
+async def get_asset(request: Request, asset_id: str) -> dict[str, Any]:
+    repo = _get_repo(request)
+    try:
+        asset = await repo.get_asset_async(asset_id)
+    except AssetNotFoundError:
+        raise HTTPException(status_code=404, detail=f"asset '{asset_id}' not found")
+    except CMMSRepositoryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    open_wos = await repo.list_work_orders_async(asset_id=asset_id, only_open=True, limit=20)
+    return {
+        "asset": asset.model_dump(mode="json"),
+        "open_work_orders": [w.model_dump(mode="json") for w in open_wos],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Work Orders
+# ═══════════════════════════════════════════════════════════════════════
+@router.get("/work-orders")
+async def list_work_orders(
+    request: Request,
+    status: str | None = Query(default=None),
+    asset_id: str | None = Query(default=None),
+    trigger_source: str | None = Query(default=None),
+    priority: str | None = Query(default=None),
+    lor_min: int | None = Query(default=None, ge=1, le=25),
+    only_open: bool = Query(default=False),
+    limit: int = Query(default=100, ge=1, le=1000),
+) -> dict[str, Any]:
+    repo = _get_repo(request)
+    try:
+        wos = await repo.list_work_orders_async(
+            status=status,
+            asset_id=asset_id,
+            trigger_source=trigger_source,
+            priority=priority,
+            lor_min=lor_min,
+            only_open=only_open,
+            limit=limit,
+        )
+    except CMMSRepositoryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"count": len(wos), "work_orders": [w.model_dump(mode="json") for w in wos]}
+
+
+@router.get("/work-orders/{wo_id}")
+async def get_work_order(request: Request, wo_id: str) -> dict[str, Any]:
+    repo = _get_repo(request)
+    try:
+        wo = await repo.get_work_order_async(wo_id)
+    except WorkOrderNotFoundError:
+        raise HTTPException(status_code=404, detail=f"work_order '{wo_id}' not found")
+    except CMMSRepositoryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return wo.model_dump(mode="json")
+
+
+@router.post("/work-orders")
+async def create_work_order(request: Request, body: CreateWorkOrderRequest) -> dict[str, Any]:
+    """Create a new WO. Always lands in pending_approval (ADR-006)."""
+    repo = _get_repo(request)
+
+    # Resolve asset (validates asset_id exists)
+    try:
+        asset = await repo.get_asset_async(body.asset_id)
+    except AssetNotFoundError:
+        raise HTTPException(status_code=404, detail=f"asset '{body.asset_id}' not found")
+
+    lor = _compute_lor(body.likelihood_idx, body.consequence_idx)
+    priority = _derive_priority(lor, asset.criticality_class)
+    proc_class = _derive_procedure_class(body.work_class_hint, body.requires_loto)
+    linked_mop = asset.linked_mop_id or ASSET_TYPE_TO_MOP.get(asset.asset_type)
+    mop_method = "hardcoded" if linked_mop else None
+
+    now = datetime.now(timezone.utc)
+    wo = WorkOrder(
+        work_order_id=_wo_id(),
+        timestamp=now,
+        asset_id=body.asset_id,
+        asset_type_at_creation=asset.asset_type,
+        work_class=body.work_class_hint,
+        lor=lor,
+        procedure_class=proc_class,
+        linked_mop_id=linked_mop,
+        linked_loto_audit_id=None,
+        trigger_source=body.trigger_source,
+        predictive_metadata=body.predictive_metadata,
+        issue_summary=body.issue_summary,
+        estimated_cost_usd=body.estimated_cost_usd,
+        requires_loto=body.requires_loto,
+        requires_oem_specialist=body.requires_oem_specialist,
+        status="pending_approval",
+        priority=priority,
+        telemetry_snapshot_json=body.telemetry_snapshot_json,
+        mop_resolution_method=mop_method,
+        requested_by=body.requested_by,
+        due_at=body.due_at,
+        draft_json={
+            "lor": lor,
+            "lor_breakdown": {
+                "likelihood_idx": body.likelihood_idx,
+                "consequence_idx": body.consequence_idx,
+                "asset_criticality": asset.criticality_class,
+            },
+            "linked_mop_id": linked_mop,
+            "procedure_class": proc_class,
+            "issue_summary": body.issue_summary,
+        },
+    )
+    try:
+        await repo.save_work_order_async(wo)
+    except CMMSRepositoryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    log.info("Created WO %s for %s (priority=%s, lor=%d)",
+             wo.work_order_id, body.asset_id, priority, lor)
+    return wo.model_dump(mode="json")
+
+
+@router.post("/work-orders/{wo_id}/approve")
+async def approve_wo(
+    request: Request, wo_id: str, body: ApproveRejectRequest,
+) -> dict[str, Any]:
+    repo = _get_repo(request)
+    try:
+        wo = await repo.transition_status_async(wo_id, "approved", body.cet_id)
+    except WorkOrderNotFoundError:
+        raise HTTPException(status_code=404, detail=f"work_order '{wo_id}' not found")
+    except CMMSRepositoryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return wo.model_dump(mode="json")
+
+
+@router.post("/work-orders/{wo_id}/reject")
+async def reject_wo(
+    request: Request, wo_id: str, body: ApproveRejectRequest,
+) -> dict[str, Any]:
+    if not body.rejection_reason:
+        raise HTTPException(status_code=400, detail="rejection_reason required for reject")
+    repo = _get_repo(request)
+    try:
+        wo = await repo.transition_status_async(
+            wo_id, "rejected", body.cet_id, rejection_reason=body.rejection_reason,
+        )
+    except WorkOrderNotFoundError:
+        raise HTTPException(status_code=404, detail=f"work_order '{wo_id}' not found")
+    except CMMSRepositoryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return wo.model_dump(mode="json")
+
+
+@router.post("/trigger-maintenance")
+async def trigger_maintenance(
+    request: Request, body: CreateWorkOrderRequest,
+) -> dict[str, Any]:
+    """Convenience endpoint: same as POST /work-orders but defaults to
+    work_class=CM if user did not specify and the asset shows degraded
+    health. Otherwise PM."""
+    repo = _get_repo(request)
+    try:
+        asset = await repo.get_asset_async(body.asset_id)
+    except AssetNotFoundError:
+        raise HTTPException(status_code=404, detail=f"asset '{body.asset_id}' not found")
+
+    if body.work_class_hint == "PM" and asset.health_state == "degraded":
+        body = body.model_copy(update={"work_class_hint": "CM"})
+
+    return await create_work_order(request, body)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Registration
+# ═══════════════════════════════════════════════════════════════════════
+def register_cmms_routes(
+    app: FastAPI,
+    repository: PostgresCMMSRepository,
+) -> None:
+    """Mount the router and stash the repo on app.state. Idempotent."""
+    app.state.cmms_repo = repository
+    if not getattr(app.state, "_cmms_router_registered", False):
+        app.include_router(router)
+        app.state._cmms_router_registered = True
+    log.info("CMMS routes registered: 9 endpoints active under /api/cmms")

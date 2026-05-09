@@ -30,6 +30,7 @@ Tags chronological:
   v0.7.5-telemetry-stream   ← Sprint 5 C1: synthetic telemetry simulator + SSE wired
   v0.7.6-kalman-pipeline    ← Sprint 5 C2: Kalman + SoD pipeline + 60-min anomaly counter
   v0.8.0-sprint5-kalman     ← Sprint 5 C3: per-channel YAML calibration + perf-verified
+  v0.8.5-cmms-core-v1       ← Sprint 6: CMMS Core v1.0 (Tesla/SpaceX vision, 91 assets seeded)
 
 System completion:
   Backend:   91% (Sprint 5 closed, telemetry_channels.yml replaces hardcoded R/Q)
@@ -683,6 +684,89 @@ When making changes that need to coordinate with external services:
 - **Defensive**: `Test-Path -PathType Container` MUST verify destination is a directory BEFORE bulk `Move-Item`. `Move-Item -Force` to a non-existent directory creates a FILE; subsequent moves overwrite it.
 - **Filtering**: `Select-String` (not `findstr` / `grep`).
 - **Heredocs**: NO `python -c '...'` heredocs — write a `.py` file and invoke it (Rule 5 PowerShell Pre-Delivery).
+
+## 📜 VISION DECK v1.0 — appendix de diseños arquitecturales (Wilmer #1..#7)
+
+> Persistido por directiva 2026-05-09: "Commitea todos los diseños y visiones para que no se pierda la brújula." Estos prompts fueron procesados como design exercises sin implementar literalmente todo. Sprint 6 (CMMS Core v1.0) ES la primera materialización de Wilmer #1+#2.
+
+### #1 — CMMS Engine Integration (base directive)
+- Asset Registry con telemetry_mapping + linked_mop_id
+- Predictive Work Orders desde Kalman C2 anomalies
+- MOP linking automático (hardcoded heuristic Sprint 6, GraphRAG fallback Sprint 7)
+- REST router /api/cmms con CRUD + state machine
+- SHI degradación por overdue WOs (Sprint 6 Fase 5 deferred)
+
+### #2 — Tesla/SpaceX Vision (Sprint 6 schema enrichment)
+- assets.path (A / B / C2-P1 / C2-P2)
+- assets.redundancy_pillar (2N / N+1 / N / single)
+- assets.telemetry_channels JSONB array de "<asset_id>:<metric>" simulator IDs
+- assets.criticality_class para escalation de WO priority
+- work_orders.priority (P1..P4) auto-derived from LOR × criticality
+- work_orders.telemetry_snapshot_json (forensic snapshot del trigger)
+- work_orders.mop_resolution_method (hardcoded / graphrag / manual)
+- View asset_health_aggregate per path + pillar + asset_type
+
+### #3 — Asistencia Técnica Aumentada (MaintainX-AI clone, Sprint 7 deferred)
+- Document ingestion (PDFs, diagrams, P&IDs) → ChromaDB vectors
+- Photo → AI-generated SOP YAML (procedure_engine compatible)
+- Real-time troubleshoot QA combinando manual chunks + WO history
+- Diagram parser CV (LOTO point + Arc Flash zone extraction) — V2 cloud or LLaVA local
+- Smart Time Estimates basado en complexity heuristic + historical p50/p90
+- AI Order Closure: voice (Whisper) → LLM-normalized professional report
+
+### #4 — Real-time CoPilot + NLP (Sprint 9 deferred)
+- In-line WO step suggestions
+- Photo upload → component identification + past-WO photo similarity (CLIP)
+- Voice-to-summary auto-generates follow-up WO if degradation detected
+- NLP-to-SQL dashboards (manager queries: "chillers with most failures last 3 months")
+- CapEx vs OpEx priorization (replace vs repair recommendation)
+
+### #5 — Equinix Edge-AI Integration (Sprint 11 design-only)
+- Local-first inference: gemma-2b primary, Claude fallback
+- Multi-IBX confederation pattern (msgpack over private link)
+- AI Labs distributed training (sovereign data, NO leak)
+- Cross-DC KB sync (eventual consistency)
+- Honest reality: single-laptop demonstrable = local-first only; multi-DC is design pattern
+
+### #6 — Multi-Agent Orchestration (Sprint 10 deferred)
+- 4 specialized agents:
+  - Architect (vision/engineering, parses diagrams + photos)
+  - Safety Officer (CSA Z462 / NFPA 70E veto power, mandatory LOTO insertion)
+  - Diagnostician (history + KB cross-reference, recurrence detection)
+  - Analyst (KPIs, NLP-to-SQL, CapEx vs OpEx)
+- Consensus protocol: Safety Officer HARD_STOP outranks all
+- Manual-vs-history conflict surfaces both options to technician
+- agent_performance_log table for SLO tracking + accuracy KPIs
+
+### #7 — Agent AI OS + Self-Healing (Sprint 12 design-only)
+- CodeAuditor: vulture + ruff + AST walk for orphan/dead code
+- Dependency graph (NetworkX) for agent relationships, FAILSAFE_MODE on agent silence
+- SLM lifecycle pool with VRAM-budget LRU eviction
+- compliance_failsafe.yml preloaded rules survive total LLM failure
+
+### Sprint trajectory mapping
+
+| Sprint | Vision deck items | Status |
+|---|---|---|
+| 5 (DONE) | telemetry simulator + Kalman + frontend | ✅ v0.8.0 |
+| **6 (DONE)** | **#1 CMMS Core + #2 Tesla/SpaceX Vision** | **✅ this commit** |
+| 7 | #3 Tech Assist V1 (text + voice + nameplate) | deferred |
+| 8 | #3 Tech Assist V2 (diagram CV) | deferred |
+| 9 | #4 Real-time CoPilot + NLP dashboards | deferred |
+| 10 | #6 Multi-Agent Orchestration | deferred |
+| 11 | #5 Equinix multi-IBX | design-only (single-laptop) |
+| 12 | #7 Agent AI OS Self-Healing | deferred |
+
+### CO+I demo killer subset (target: early August 2026)
+
+Items for the "demonstrable" minimum:
+- ✅ Sprint 5 (DONE)
+- ✅ Sprint 6 (DONE this commit)
+- 🟡 Sprint 7.1-7.5 Tech Assist MVP (~10-12h)
+- 🟡 Sprint 9.1 In-line CoPilot simplified (~6-8h)
+- 🟡 Sprint 10.1 Multi-Agent básico façade (~4-5h)
+
+Total to MVP demo: ~30-35h remaining. Polish budget: ~30-50h. Realistic.
 
 ## 🚨 DO NOT TOUCH
 
