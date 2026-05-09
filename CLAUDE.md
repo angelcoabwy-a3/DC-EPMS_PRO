@@ -116,7 +116,7 @@ C:\dev\DC-EPMS_PRO\
 | 1 | Topology + GraphRAG impact radius | ✅ FIXED (DC-EPMS-030/031/032) |
 | 2 | Redundancy 2N validation | ✅ FIXED (DC-EPMS-029) |
 | 3 | Capacitor discharge per NEC 460.6 | ✅ Working |
-| 4 | Witness Gate per CSA Z462 | 🟡 Warning (DC-EPMS-034 NEW) |
+| 4 | Witness Gate per CSA Z462 | ✅ FIXED (DC-EPMS-034) |
 | 5 | Cooling chain check | ✅ Working |
 | 6 | PPE matrix per NFPA 70E | ✅ FIXED (DC-EPMS-033) |
 
@@ -140,11 +140,38 @@ C:\dev\DC-EPMS_PRO\
 - Why deferred: requires physics_engine.py code review; bandaid risky without it
 - Will resolve naturally during Sprint 5 Telemetry integration
 
-**DC-EPMS-034** (LOW) - NEW (discovered 2026-05-09)
+**DC-EPMS-034** (LOW) - RESOLVED 2026-05-09 (commit pending Phase B closure)
 - Symptom: `witness_engine_protection: "engine present but interface unknown"` in Pillar 4
-- Root cause: helper detects witness_engine injected but cannot determine call interface
-- Estimated effort: 30 min - read witness_engine.py interface, fix call site
-- Target: Sprint 5.5a or V10
+- Root cause: helper in `backend/loto_auditor_agent.py:_check_witness_engine_protection`
+  looked for 3 method names (`get_protection_status`, `is_identity_collision_protected`,
+  `validate_signer_identity`) that do not exist on the canonical `WitnessStore` instance
+  injected by `backend/main.py:2218`.
+- Fix: extended helper to recognize WitnessStore canonical interface (triple-attr
+  duck-type `sign + create + reject` with `inspect.signature(sign)` parameter
+  verification to guard against false positives) and WitnessGate interface
+  (`await_witness + store`). Legacy named methods preserved for forward compat.
+- Verified: 5/5 smoke tests pass (real WitnessStore, None, unknown, false-positive
+  guard, legacy method). Pillar 4-5-6 test suite: 14/14 GREEN.
+
+**DC-EPMS-036** (MED) - NEW (opened 2026-05-09, test-fixture drift)
+- Symptom: 4 tests in `tests/test_loto_auditor_pillars.py` fail on HEAD:
+  - `TestPillar1Topology::test_pillar1_graphrag_inconsistency_noted_not_failed`
+  - `TestPillar1Topology::test_pillar1_cooling_chain_integration`
+  - `TestPillar2Redundancy::test_pillar2_happy_path_path_a`
+  - `TestPillar2Redundancy::test_pillar2_shi_below_threshold_hard_fail`
+- Root cause: test fixtures expect pre-fix behavior of Pillar 1 (calling nonexistent
+  `query_topology()`) and Pillar 2 (treating physics result as `dict.get('site_health')`).
+  When DC-EPMS-029, DC-EPMS-030, DC-EPMS-031 fixed production code in commits 160be89,
+  da995e1, 324d87f, the test mocks were not updated. Verified pre-existing (failures
+  reproduce on clean HEAD 17dfded without DC-EPMS-034 patch via stash test).
+- Runtime impact: NONE. Production code is correct; only test mocks are stale.
+- CI impact: pytest aggregate fails on these 4 cases.
+- Resolution path: update Pillar 1 mocks to match `loto_with_knowledge` payload
+  (returns `{edges, evidence_chunks}` not `{topology}`), and update Pillar 2 mocks
+  to return `SiteValidation` object (with `.site_health` attribute) not bare dict.
+  Estimated effort: 1-2h surgical mock refactor + re-run aggregate.
+- Target: Sprint 5 Telemetry sprint (covered by DC-EPMS-029b natural resolution
+  of physics_engine surface area).
 
 **DC-EPMS-035** (LOW) - NEW (opened 2026-05-09, recovery-loss-tooling)
 - Symptom: 13 untracked session helpers (.ps1 + diagnose_output.txt) lost during

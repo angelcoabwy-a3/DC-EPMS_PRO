@@ -24,6 +24,7 @@ Standards cited in audit reports:
 
 from __future__ import annotations
 
+import inspect
 import logging
 import time
 from datetime import UTC, datetime
@@ -769,26 +770,68 @@ class LotoAuditorAgent:
         self,
         sources: dict[str, str],
     ) -> bool:
-        """Check if witness_engine exposes identity collision protection.
+        """Check if witness_engine exposes IEC 62443 SR 6.1 identity collision
+        protection.
 
-        Defensive: if witness_engine doesn't have the expected interface,
+        Recognized engine interfaces (DC-EPMS-034 fix, 2026-05-09):
+
+        - witness_engine.WitnessStore: canonical SR 6.1 enforcement via
+          .sign(request_id, witness) which raises IdentityCollisionError when
+          witness == initiator (witness_engine.py:211-215). Triple-attr
+          duck-type signature: sign + create + reject, with inspect of
+          .sign parameter names to guard against false positives from
+          unrelated objects exposing a single sign() method.
+        - witness_engine.WitnessGate: wraps a WitnessStore via
+          .await_witness() with the same enforcement contract.
+        - Legacy / future engines: any of the explicit named protection
+          methods listed below.
+
+        Defensive: if witness_engine doesn't match any known interface,
         return False but do not raise. Pillar 4 will WARN rather than fail.
         """
         if self.witness_engine is None:
             sources["witness_engine_protection"] = "no engine injected"
             return False
 
-        # Check for any of these protection-confirming methods
-        protection_attrs = (
+        # Legacy / future explicit-named protection methods
+        legacy_attrs = (
             "get_protection_status",
             "is_identity_collision_protected",
             "validate_signer_identity",
         )
-
-        for attr in protection_attrs:
+        for attr in legacy_attrs:
             if hasattr(self.witness_engine, attr):
                 sources["witness_engine_protection"] = f"confirmed via {attr}"
                 return True
+
+        # WitnessStore canonical interface: sign + create + reject triple,
+        # with .sign(request_id, witness) signature verification.
+        if all(
+            callable(getattr(self.witness_engine, m, None))
+            for m in ("sign", "create", "reject")
+        ):
+            try:
+                sig = inspect.signature(self.witness_engine.sign)
+                params = [p for p in sig.parameters if p != "self"]
+                if "request_id" in params and "witness" in params:
+                    sources["witness_engine_protection"] = (
+                        "confirmed via WitnessStore.sign + "
+                        "IdentityCollisionError (IEC 62443 SR 6.1)"
+                    )
+                    return True
+            except (TypeError, ValueError):
+                # inspect.signature can fail on built-ins or C-extensions.
+                pass
+
+        # WitnessGate interface: wraps a WitnessStore via .await_witness()
+        if hasattr(self.witness_engine, "await_witness") and hasattr(
+            self.witness_engine, "store"
+        ):
+            sources["witness_engine_protection"] = (
+                "confirmed via WitnessGate.await_witness "
+                "(IEC 62443 SR 6.1 via wrapped WitnessStore)"
+            )
+            return True
 
         # Soft fallback: presence of the engine alone is weak evidence
         sources["witness_engine_protection"] = "engine present but interface unknown"
