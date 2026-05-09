@@ -622,3 +622,55 @@ pyproject.toml. Better: only install via extras mechanism.
 - Decision time 4-12ms in browser
 - WARN vs HARD_FAIL color coding visible
 
+## [v0.7.3-sprint5-patches] - 2026-05-09 (LOTO Auditor 6-pillar fixes + smoke verification)
+
+### Fixed
+- **DC-EPMS-033** (MED, commit 00caff1): voltage_v fallback in get_voltage_nominal.
+  config/site_model.yml uses voltage_v field for switchgear/transformer canonical
+  components; helper now reads voltage_v with graceful fallback to legacy keys.
+- **DC-EPMS-030** (MED, commit da995e1): cooling_chain_for() called by Pillar 5 did
+  not exist in site_model.py. Replaced call with impact_set(component_id,
+  chain="cooling") which returns the equivalent downstream cooling DAG.
+- **DC-EPMS-031** (MED, commit 324d87f): query_topology() called by Pillar 1 did
+  not exist in graphrag_service.py. Replaced with loto_with_knowledge(target_id)
+  returning {edges, evidence_chunks} payload Pillar 1 already expected.
+- **DC-EPMS-032** (LOW, commit d853907): inline comment block clarifying walk
+  direction polarity (downstream from disconnect to load) in Pillar 1 helper.
+  No code change.
+
+### Verified (browser smoke 2026-05-09 03:00)
+- LOTO Auditor end-to-end on `MOP-ATS-MONTHLY-001` + `ups_a` target.
+- 16 sources_consulted: 14 OK + 1 ADR-009 deferral + 1 DC-EPMS-034 warning.
+- decision_time_ms ~12 ms maintained.
+- Pillars 1, 2, 3, 5, 6 report OK; Pillar 4 reports the DC-EPMS-034 warning.
+- Real-world demo capability: NEC 460.6 capacitor discharge violation surfaced
+  in 12 ms on `MOP-ATS-MONTHLY-001` against `ups_a` target.
+
+### Tech debt opened
+- **DC-EPMS-034** (LOW, opened 2026-05-09): Pillar 4 reports
+  `witness_engine_protection: "engine present but interface unknown"`. Witness
+  engine is injected via dependency, but the helper cannot determine the call
+  interface. Estimated effort: 30 min reading `backend/witness_engine.py` and
+  fixing call site. Target: Sprint 5.5a or V10.
+
+### Tech debt deferred
+- **DC-EPMS-029b** (MED, deferred to Sprint 5 Telemetry):
+  `simulate_loto_measurements` produces `shi_pre == shi_post` (no SHI delta).
+  Hypothesis: `physics_engine.validate_site()` reads thermal fields
+  (`hall_inlet_temp_c`, `chiller_supply_temp_c`, `cdu_pressure_bar`) that
+  `simulate_loto` does not modify. Will resolve naturally during Kalman /
+  telemetry stream integration in Sprint 5 (`v0.8.0-sprint5-kalman` target).
+
+### Documentation
+- CLAUDE.md endpoint listing for LOTO Auditor corrected to match runtime
+  OpenAPI: `POST /api/loto/audit`, `GET /api/loto/audit/{id}`,
+  `GET /api/loto/audit/{id}/markdown`, `GET /api/loto/audits/recent`.
+  Previous listing erroneously included `/api/loto/procedures` and
+  `/api/loto/health` (never registered).
+
+### Session helpers archived
+- 15 PowerShell orchestrators (`apply_*.ps1`, `diagnose_encoding.ps1`),
+  `diagnose_output.txt`, and `frontend_pre_camino1_20260508_215625.zip` moved
+  to `scripts/_archive/sesion_sprint5/` per Atomic Batches discipline
+  (B3-2c precedent).
+
