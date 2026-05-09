@@ -4,11 +4,12 @@ backend/tech_assist/routes.py
 FastAPI router for /api/tech-assist/*.
 
 Endpoints:
-  GET  /health                  status + rag/cmms availability flags
-  POST /troubleshoot            Sprint 7.1a real-time QA
-  POST /ingest-pdf              Sprint 7.1b PDF -> chunks -> ChromaDB
-  GET  /documents               Sprint 7.1b list ingested docs
-  DELETE /documents/{id}        Sprint 7.1b remove doc + chunks
+  GET  /health                            status + availability flags
+  POST /troubleshoot                      Sprint 7.1a real-time QA
+  POST /ingest-pdf                        Sprint 7.1b PDF -> ChromaDB
+  GET  /documents                         Sprint 7.1b list ingested docs
+  DELETE /documents/{id}                  Sprint 7.1b remove doc + chunks
+  POST /closure/{wo_id}/dictate           Sprint 7.1c voice/text closure
 """
 
 from __future__ import annotations
@@ -26,13 +27,22 @@ from fastapi import (
     Request,
     UploadFile,
 )
+from pydantic import BaseModel, ConfigDict, Field
 
+from backend.cmms_repository import (
+    PostgresCMMSRepository,
+    WorkOrderNotFoundError,
+)
 from backend.tech_assist.document_ingest import (
     DocumentIngester,
     DocumentIngestError,
 )
 from backend.tech_assist.models import TroubleshootRequest, TroubleshootResponse
 from backend.tech_assist.troubleshoot import TroubleshootAgent
+from backend.tech_assist.voice_closure import (
+    ClosureProcessor,
+    ClosureNormalizer,
+)
 
 log = logging.getLogger(__name__)
 
@@ -186,13 +196,72 @@ async def delete_document(request: Request, document_id: str) -> dict[str, Any]:
     return {"document_id": document_id, "chunks_deleted": deleted}
 
 
+# ─── Sprint 7.1c: Voice / dictation closure ───────────────────────────
+class DictateClosureRequest(BaseModel):
+    """Body for POST /closure/{wo_id}/dictate (text-mode MVP)."""
+    model_config = ConfigDict(extra="forbid")
+    cet_id: str = Field(..., min_length=1, max_length=120)
+    notes_text: str = Field(..., min_length=10, max_length=8000)
+    complete_wo: bool = Field(default=False,
+                              description="If true, transition WO status to 'completed'.")
+    auto_create_follow_ups: bool = Field(
+        default=True,
+        description="If false, follow-up suggestions are returned but no WOs created.",
+    )
+
+
+def _get_closure_processor(request: Request) -> ClosureProcessor:
+    cp = getattr(request.app.state, "tech_assist_closure_processor", None)
+    if cp is None:
+        raise HTTPException(status_code=503, detail="Closure processor not initialized")
+    return cp
+
+
+@router.post("/closure/{work_order_id}/dictate")
+async def dictate_closure(
+    request: Request,
+    work_order_id: str,
+    body: DictateClosureRequest,
+) -> dict[str, Any]:
+    """Voice/text dictation of WO closure notes.
+
+    LLM normalizes free-form notes into a structured professional
+    report, detects degradation patterns, and (per ADR-006) creates
+    follow-up WOs in pending_approval if auto_create_follow_ups=true.
+
+    Audio mode (multipart/form-data with audio/wav) is reserved for
+    Sprint 7.1c-vox when faster-whisper is installed.
+    """
+    cp = _get_closure_processor(request)
+    try:
+        result = await cp.process(
+            wo_id=work_order_id,
+            cet_id=body.cet_id,
+            notes_text=body.notes_text,
+            audio_bytes=None,
+            complete_wo=body.complete_wo,
+            auto_create_follow_ups=body.auto_create_follow_ups,
+        )
+        return result
+    except WorkOrderNotFoundError:
+        raise HTTPException(status_code=404,
+                            detail=f"work_order '{work_order_id}' not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except Exception as e:
+        log.exception("dictate_closure failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"closure error: {e}")
+
+
 def register_tech_assist_routes(
     app: FastAPI,
     rag_service: Any | None,
-    cmms_repo: Any | None,
+    cmms_repo: PostgresCMMSRepository | None,
     upload_dir: Path | None = None,
 ) -> None:
-    """Mount the router + initialize agent + ingester on app.state."""
+    """Mount the router + initialize agent + ingester + closure processor."""
     agent = TroubleshootAgent(rag_service=rag_service, cmms_repo=cmms_repo)
     app.state.tech_assist_agent = agent
 
@@ -203,7 +272,18 @@ def register_tech_assist_routes(
     else:
         log.warning("Tech Assist ingester NOT registered: rag_service unavailable")
 
+    if cmms_repo is not None:
+        closure_processor = ClosureProcessor(
+            cmms_repo=cmms_repo,
+            normalizer=ClosureNormalizer(),
+            transcriber=None,  # MVP: text-only; faster-whisper in 7.1c-vox
+        )
+        app.state.tech_assist_closure_processor = closure_processor
+        log.info("Tech Assist closure processor ready (text-mode)")
+    else:
+        log.warning("Tech Assist closure processor NOT registered: cmms_repo unavailable")
+
     if not getattr(app.state, "_tech_assist_router_registered", False):
         app.include_router(router)
         app.state._tech_assist_router_registered = True
-    log.info("Tech Assist routes registered: 5 endpoints active under /api/tech-assist")
+    log.info("Tech Assist routes registered: 6 endpoints active under /api/tech-assist")
