@@ -43,6 +43,10 @@ from backend.tech_assist.voice_closure import (
     ClosureProcessor,
     ClosureNormalizer,
 )
+from backend.tech_assist.nameplate_ocr import (
+    LLMNameplateFallback,
+    NameplateProcessor,
+)
 
 log = logging.getLogger(__name__)
 
@@ -255,13 +259,67 @@ async def dictate_closure(
         raise HTTPException(status_code=500, detail=f"closure error: {e}")
 
 
+# ─── Sprint 7.1d: Nameplate OCR ───────────────────────────────────────
+class NameplateExtractRequest(BaseModel):
+    """Body for POST /nameplate/extract (text-mode MVP)."""
+    model_config = ConfigDict(extra="forbid")
+    ocr_text: str = Field(..., min_length=5, max_length=4000,
+                          description="Raw OCR text from a nameplate photo. "
+                                      "Browser-side OCR or pre-OCR'd manually.")
+    asset_type_hint: str | None = Field(default=None,
+                                        description="Optional asset_type filter "
+                                                    "(ups/chiller/cdu/...) to "
+                                                    "narrow candidate pool.")
+
+
+def _get_nameplate_processor(request: Request) -> NameplateProcessor:
+    np = getattr(request.app.state, "tech_assist_nameplate_processor", None)
+    if np is None:
+        raise HTTPException(status_code=503, detail="Nameplate processor not initialized")
+    return np
+
+
+@router.post("/nameplate/extract")
+async def nameplate_extract(
+    request: Request,
+    body: NameplateExtractRequest,
+) -> dict[str, Any]:
+    """Extract structured fields from nameplate OCR text + match assets.
+
+    MVP text-mode contract: caller supplies pre-OCR'd text. Browser
+    can use the Web FileReader API + a JS OCR library, OR an admin
+    pre-OCR's via easyocr/tesseract on a workstation, OR pastes the
+    text directly in the demo. Image-mode upload is reserved for
+    Sprint 7.1d-vision.
+
+    Pipeline:
+      regex extraction (fast, deterministic)  ->
+      LLM fallback if confidence < 0.4 (LM Studio gemma)  ->
+      fuzzy match against assets registry (difflib, no new deps)  ->
+      suggested_action: link_to_existing | operator_confirm | seed_new_asset
+    """
+    np = _get_nameplate_processor(request)
+    try:
+        return await np.process(
+            ocr_text=body.ocr_text,
+            asset_type_hint=body.asset_type_hint,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except Exception as e:
+        log.exception("nameplate_extract failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"nameplate error: {e}")
+
+
 def register_tech_assist_routes(
     app: FastAPI,
     rag_service: Any | None,
     cmms_repo: PostgresCMMSRepository | None,
     upload_dir: Path | None = None,
 ) -> None:
-    """Mount the router + initialize agent + ingester + closure processor."""
+    """Mount the router + initialize agent + ingester + closure + nameplate."""
     agent = TroubleshootAgent(rag_service=rag_service, cmms_repo=cmms_repo)
     app.state.tech_assist_agent = agent
 
@@ -276,14 +334,22 @@ def register_tech_assist_routes(
         closure_processor = ClosureProcessor(
             cmms_repo=cmms_repo,
             normalizer=ClosureNormalizer(),
-            transcriber=None,  # MVP: text-only; faster-whisper in 7.1c-vox
+            transcriber=None,
         )
         app.state.tech_assist_closure_processor = closure_processor
         log.info("Tech Assist closure processor ready (text-mode)")
+
+        nameplate_processor = NameplateProcessor(
+            cmms_repo=cmms_repo,
+            ocr_engine=None,
+            llm_fallback=LLMNameplateFallback(),
+        )
+        app.state.tech_assist_nameplate_processor = nameplate_processor
+        log.info("Tech Assist nameplate processor ready (regex + LLM fallback)")
     else:
-        log.warning("Tech Assist closure processor NOT registered: cmms_repo unavailable")
+        log.warning("Tech Assist closure / nameplate NOT registered: cmms_repo unavailable")
 
     if not getattr(app.state, "_tech_assist_router_registered", False):
         app.include_router(router)
         app.state._tech_assist_router_registered = True
-    log.info("Tech Assist routes registered: 6 endpoints active under /api/tech-assist")
+    log.info("Tech Assist routes registered: 7 endpoints active under /api/tech-assist")
