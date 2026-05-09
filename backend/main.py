@@ -2202,6 +2202,27 @@ except Exception as _s2_e:
 # ==============================================================
 #  Entrypoint
 # ==============================================================
+
+
+# Batch 4.D - LOTO Auditor activation (V9 Pillar 4 deliverable)
+# Defensive: handles physics factory + witness_store subset interface.
+try:
+    from backend.loto_auditor_routes import register_loto_auditor
+    _loto_physics = get_physics_engine() if PHYSICS_AVAILABLE else None
+    if _loto_physics is not None:
+        register_loto_auditor(
+            app,
+            site_model=_site_model,
+            graphrag_service=_s2_service,
+            physics_engine=_loto_physics,
+            witness_engine=_witness_store,
+        )
+        log.info("LOTO Auditor registered: 4 endpoints active under /api/loto")
+    else:
+        log.warning("LOTO Auditor NOT registered: physics_engine unavailable")
+except Exception as e:
+    log.error("LOTO Auditor registration failed: %s", e, exc_info=True)
+
 if __name__ == "__main__":
     import uvicorn
 
