@@ -61,7 +61,14 @@ let _reconnectTimer = null;
 
 const _dispatchTable = {
     [SCHEMA_LEGACY_KPI]: (data) => setState('latestTelemetry', data.latest ?? null),
-    [SCHEMA_CHANNEL_INNOVATIONS]: (data) => setState('channels', data.channels ?? {}),
+    [SCHEMA_CHANNEL_INNOVATIONS]: (data) => {
+        setState('channels', data.channels ?? {});
+        // Sprint 5 C2: backend pipeline reports rolling 60-min anomaly count.
+        // Frontend Activity Strip subscribes to this for the Anomalies cell.
+        if (typeof data.anomaly_count_60min === 'number') {
+            setState('anomalyCount60min', data.anomaly_count_60min);
+        }
+    },
 };
 
 function _onMessage(e) {

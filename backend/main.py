@@ -475,32 +475,36 @@ async def telemetry_stream(request: Request):
     use_simulator = os.environ.get("DC_EPMS_USE_SIMULATOR", "1").strip() == "1"
 
     sim = None
-    build_payload = None
+    pipeline = None
     if use_simulator:
         try:
-            from telemetry_simulator import build_placeholder_payload, get_simulator
+            from telemetry_simulator import get_simulator
+            from telemetry_pipeline import get_pipeline
             from site_model import get_site_model as _sm_get
             sim = get_simulator(_sm_get())
-            build_payload = build_placeholder_payload
+            pipeline = get_pipeline(dt_seconds=1.0)
             log.info(
-                "[telemetry/stream] simulator active: %d components, %d channels",
+                "[telemetry/stream] simulator + Kalman pipeline active: "
+                "%d components, %d channels",
                 sim.component_count, sim.channel_count,
             )
         except Exception as e:
             log.warning("[telemetry/stream] simulator init failed, falling back to legacy: %s", e)
             sim = None
+            pipeline = None
 
     async def gen() -> AsyncIterator[str]:
         while True:
             if await request.is_disconnected():
                 break
             try:
-                if sim is not None:
+                if sim is not None and pipeline is not None:
                     window = sim.get_window(dt_seconds=1.0, n_samples=5)
-                    channels = build_payload(window)
+                    channels = pipeline.compute(window)
                     payload = json.dumps({
                         "schema": "channel_innovations",
                         "channels": channels,
+                        "anomaly_count_60min": pipeline.count_anomalies_60min(),
                         "ts": time.time(),
                     })
                 else:

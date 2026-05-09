@@ -28,15 +28,17 @@ Tags chronological:
   v0.7.3-sprint5-patches
   v0.7.4-frontend-pivot     ← Sprint 5.5 hybrid frontend pivot (browser milestone)
   v0.7.5-telemetry-stream   ← Sprint 5 C1: synthetic telemetry simulator + SSE wired
+  v0.7.6-kalman-pipeline    ← Sprint 5 C2: Kalman + SoD pipeline + 60-min anomaly counter
 
 System completion:
-  Backend:   84% (Sprint 5 C1 wired, simulator emits 238 channels)
-  Frontend:  88% (4 reactive layers + sparkline; Activity Strip C2-ready)
-  Total V9:  85%
+  Backend:   88% (Sprint 5 C1+C2 wired, real Kalman z-scores in SSE payload)
+  Frontend:  88% (Activity Strip Anomalies cell now driven by backend)
+  Total V9:  88%
 
-Tests:   429+ passing
+Tests:   441+ passing
          - 412 baseline
-         - 17 NEW telemetry_simulator tests (Sprint 5 C1)
+         - 17 telemetry_simulator (Sprint 5 C1)
+         - 12 telemetry_pipeline (Sprint 5 C2)
          - Pillar 4-5-6: 14/14 GREEN
          - 4 pre-existing failures in test_loto_auditor_pillars.py
            (DC-EPMS-036 fixture drift, non-regressive)
@@ -155,13 +157,37 @@ HMI heat map + agent_copilot anomaly tools
 |---|---|---|---|---|
 | C0 (DONE 2026-05-09) | 15 min | 1-pager architecture. No code. | — | — |
 | C1 (DONE 2026-05-09) | 1.5 h | `telemetry_simulator.py` (354 LOC) + 17 tests + SSE wiring with feature flag `DC_EPMS_USE_SIMULATOR` | `v0.7.5-telemetry-stream` | — |
-| C2 | 1.5-2 h | `telemetry_pipeline.py` + 6-8 tests + DC-EPMS-029b reproducer | `v0.7.6-kalman-pipeline` | DC-EPMS-029b (natural) |
+| C2 (DONE 2026-05-09) | 2 h | `telemetry_pipeline.py` (172 LOC) + 12 tests + per-channel R/Q calibration + F=1 random-walk model + 60-min anomaly counter wired to frontend Activity Strip | `v0.7.6-kalman-pipeline` | DC-EPMS-029b (deferred, see notes below) |
 | C3 | 1-1.5 h | `telemetry_channels.yml` + perf tests + 2 MOPs MD→YAML (T4-MOP-CHI-001, T4-MOP-UPS-001) | `v0.8.0-sprint5-kalman` | (Decision 4-B closure) |
 
 **Note**: tag scheme renamed mid-flight to avoid `v0.7.4-*` namespace
 collision with `v0.7.4-frontend-pivot` (Sprint 5.5 hybrid milestone,
 shipped 2026-05-09 between C0 and C1). C1 closure is now `v0.7.5-*`,
 C2 is `v0.7.6-*`, C3 final stays at `v0.8.0-*`.
+
+**C2 surfaced TWO design issues in cyber_physical_tools.py orphan that
+required pipeline-side overrides** (documented as DC-EPMS-037 in bugs
+registry):
+
+1. Cold-start R = 0.05^2 K^2 was calibrated only for PT100 thermal
+   sensors. Voltage / pressure / flow channels with native std orders
+   of magnitude larger were producing 92% false-positive anomaly rate.
+   Pipeline pre-initializes filter_state with R = std^2 read from
+   `telemetry_simulator.PHASE1_BASELINES`.
+
+2. Default F = exp(-dt/60) modeled exponential decay toward zero, but
+   simulator emits stationary signals around constant baselines. With
+   F<1 the Kalman x_hat converged to non-physical equilibrium between
+   decay and observation (e.g. tracking 480V UPS as 401). Pipeline
+   pre-initializes F=1.0 (random-walk tracker) for stationary signals.
+
+DC-EPMS-029b (SHI delta in simulate_loto_measurements) was originally
+predicted to resolve naturally during C2. It does NOT — simulate_loto
+is independent of the simulator/pipeline path. Resolution requires a
+new translation layer (channel-level samples -> physics_engine
+measurements format) that maps simulator output to the thermal fields
+physics_engine.validate_site() expects. Deferred to a dedicated bite
+post-C3 or to V10.
 
 ### Risks + countermeasures
 
@@ -280,11 +306,10 @@ C:\dev\DC-EPMS_PRO\
 
 ### Open / Deferred
 
-**DC-EPMS-029b** (MED) - DEFERRED to Sprint 5 Telemetry sprint
+**DC-EPMS-029b** (MED) - DEFERRED post-C3 (prediction of natural resolution was WRONG)
 - Symptom: `simulate_loto_measurements` produces `shi_pre == shi_post` (no delta)
 - Root cause hypothesis: `physics_engine.validate_site()` uses thermal fields (hall_inlet_temp_c, chiller_supply_temp_c, cdu_pressure_bar) that simulate_loto doesn't modify
-- Why deferred: requires physics_engine.py code review; bandaid risky without it
-- Will resolve naturally during Sprint 5 Telemetry integration
+- Sprint 5 C2 closure 2026-05-09: prediction that C2 would resolve this naturally was WRONG. simulate_loto is independent of the simulator/pipeline path. Resolution requires a translation layer mapping simulator channel-level output to physics_engine measurements dict format. Deferred to dedicated bite post-C3 or V10.
 
 **DC-EPMS-034** (LOW) - RESOLVED 2026-05-09 (commit pending Phase B closure)
 - Symptom: `witness_engine_protection: "engine present but interface unknown"` in Pillar 4
@@ -318,6 +343,24 @@ C:\dev\DC-EPMS_PRO\
   Estimated effort: 1-2h surgical mock refactor + re-run aggregate.
 - Target: Sprint 5 Telemetry sprint (covered by DC-EPMS-029b natural resolution
   of physics_engine surface area).
+
+**DC-EPMS-037** (LOW) - NEW (opened 2026-05-09 during Sprint 5 C2)
+- Symptom: cyber_physical_tools.py defaults (R=0.05^2 K^2, F=exp(-dt/60))
+  miscalibrated for non-thermal channels and stationary signals.
+- Root cause:
+  1. Hard-coded cold-start R was tuned for PT100 thermal sensors only.
+     Voltage / pressure / flow channels with native std orders of magnitude
+     larger produced 92% false-positive anomaly rate.
+  2. F<1 modeled exponential decay toward zero, but simulator emits
+     stationary signals around constant baselines (e.g. UPS at 480V is
+     not decaying). x_hat converged to ~401V instead of 480V.
+- Mitigation: telemetry_pipeline.py pre-initializes filter_state per
+  channel with R = std^2 from PHASE1_BASELINES and F = 1.0 (random walk).
+  False-positive rate now ~2% (matches 3-sigma rule). x_hat tracks
+  baselines correctly.
+- Target resolution: Sprint 5 C3 introduces config/telemetry_channels.yml
+  for full per-channel calibration including SoD threshold. The pipeline
+  override is a pragmatic interim, not the final design.
 
 **DC-EPMS-035** (LOW) - NEW (opened 2026-05-09, recovery-loss-tooling)
 - Symptom: 13 untracked session helpers (.ps1 + diagnose_output.txt) lost during
