@@ -421,7 +421,13 @@ def get_voltage_nominal(component: Any) -> float:
     """Read voltage_nominal from component metadata, default 0.0 if missing."""
     try:
         meta = getattr(component, "metadata", {}) or {}
-        return float(meta.get("voltage_nominal", 0.0))
+        # DC-EPMS-033 fix: site_model.yml uses "voltage_v" for some components
+        # (switchgear_b, transformer entries). Fallback to voltage_v when
+        # voltage_nominal is absent or zero.
+        v = meta.get("voltage_nominal", 0.0)
+        if not v:
+            v = meta.get("voltage_v", 0.0)
+        return float(v or 0.0)
     except (TypeError, ValueError):
         return 0.0
 
