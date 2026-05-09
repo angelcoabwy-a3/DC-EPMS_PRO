@@ -79,6 +79,7 @@
                 <div class="nav-item" data-route="site_topology"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="building-2"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span>Site Topology</div>
                 <div class="nav-item" data-route="loto"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="shield-alert"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>LOTO Auditor</div>
                 <div class="nav-item" data-route="maintenance"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="wrench"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>Maintenance</div>
+                <div class="nav-item" data-route="tech-assist"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="life-buoy"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/></svg></span>Tech Assist</div>
             </div>
 
             <div class="nav-section">
@@ -1654,6 +1655,137 @@
                     </section>
 
                 </div>
+            </div>
+
+            <!-- ══════════ View: Tech Assist (Sprint 7.1a–d) ══════════
+                 Field assistance + asset onboarding surface.
+                 Three panels backed by /api/tech-assist/*:
+                   TOP-LEFT  = Nameplate OCR + asset fuzzy matcher (7.1d)
+                   TOP-RIGHT = Troubleshoot QA (RAG + WO history + LLM) (7.1a)
+                   BOTTOM    = Knowledge Library (PDF docs + upload)   (7.1b)
+                 Driven by frontend/assets/js/views/tech_assist.js.
+                 No polling — every panel is event-driven on user action. -->
+            <div class="view" id="view-tech-assist" hidden>
+                <div class="view-hdr">
+                    <h2>Tech Assist — Field assistance + asset onboarding</h2>
+                    <div class="view-sub">RAG corpus + asset history + LM Studio gemma. ADR-006 advisory: no autonomous action; operator confirms every link or work order.</div>
+                </div>
+
+                <div class="ta-split-top">
+
+                    <!-- ── Nameplate OCR (Sprint 7.1d) ──────────────── -->
+                    <section class="ta-panel">
+                        <div class="ta-panel-header">
+                            <div class="ta-panel-title">Nameplate OCR</div>
+                            <div class="ta-panel-meta" id="ta-nameplate-meta">—</div>
+                        </div>
+                        <div class="ta-panel-body">
+                            <label class="ta-field-label">OCR text (from photo of equipment nameplate)</label>
+                            <textarea id="ta-nameplate-text" class="ta-textarea" rows="6"
+                                placeholder="Paste OCR'd nameplate text. Example:&#10;SCHNEIDER ELECTRIC GALAXY VX UPS&#10;Model: GVX750-N480&#10;Serial: SVX-2024-008812&#10;Rated 750 kVA / 675 kW&#10;Voltage: 480 VAC, 60 Hz&#10;MFG 2024-03"></textarea>
+                            <div class="ta-controls-row">
+                                <select id="ta-nameplate-hint" class="ta-select">
+                                    <option value="">All asset types</option>
+                                    <option value="ups">UPS</option>
+                                    <option value="chiller">Chiller</option>
+                                    <option value="cdu">CDU</option>
+                                    <option value="pump">Pump</option>
+                                    <option value="genset">Genset</option>
+                                    <option value="transformer">Transformer</option>
+                                    <option value="switchgear">Switchgear</option>
+                                    <option value="ats">ATS</option>
+                                    <option value="rpp">RPP</option>
+                                    <option value="busway">Busway</option>
+                                    <option value="cooling_tower">Cooling tower</option>
+                                    <option value="it_rack">IT rack</option>
+                                </select>
+                                <button id="ta-nameplate-extract" class="btn btn-primary" type="button">Extract + match</button>
+                                <button id="ta-nameplate-sample" class="btn btn-secondary" type="button">Load sample</button>
+                            </div>
+                            <div class="ta-nameplate-result" id="ta-nameplate-result">
+                                <div class="ta-empty">Paste nameplate text and click Extract.</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- ── Troubleshoot QA (Sprint 7.1a) ────────────── -->
+                    <section class="ta-panel">
+                        <div class="ta-panel-header">
+                            <div class="ta-panel-title">Troubleshoot QA</div>
+                            <div class="ta-panel-meta" id="ta-troubleshoot-meta">—</div>
+                        </div>
+                        <div class="ta-panel-body">
+                            <label class="ta-field-label">Technician question</label>
+                            <textarea id="ta-troubleshoot-query" class="ta-textarea" rows="4"
+                                placeholder="Describe the symptom or ask a procedure question. Example:&#10;chiller_1 is showing E-204 surge alarm at 60% load. What's the safe restart sequence?"></textarea>
+                            <div class="ta-controls-row">
+                                <input id="ta-troubleshoot-asset" class="ta-input" type="text"
+                                    placeholder="asset_id (optional, e.g. chiller_1)" maxlength="64">
+                                <input id="ta-troubleshoot-error" class="ta-input ta-input-narrow" type="text"
+                                    placeholder="error code (optional)" maxlength="64">
+                                <button id="ta-troubleshoot-ask" class="btn btn-primary" type="button">Ask gemma</button>
+                            </div>
+                            <div class="ta-troubleshoot-result" id="ta-troubleshoot-result">
+                                <div class="ta-empty">Ask a question to retrieve corpus chunks + WO history + LLM synthesis.</div>
+                            </div>
+                        </div>
+                    </section>
+
+                </div>
+
+                <!-- ── Knowledge Library (Sprint 7.1b) ──────────────── -->
+                <section class="ta-panel ta-library-panel">
+                    <div class="ta-panel-header">
+                        <div class="ta-panel-title">Knowledge Library</div>
+                        <div class="ta-panel-meta">
+                            <span id="ta-library-count">—</span>
+                            <button id="ta-library-refresh" class="btn btn-secondary" style="font-size:11px;padding:4px 10px;">↻ Refresh</button>
+                        </div>
+                    </div>
+                    <div class="ta-panel-body">
+                        <div class="ta-upload-row">
+                            <input id="ta-upload-file" type="file" accept="application/pdf" hidden>
+                            <button id="ta-upload-btn" class="btn btn-primary" type="button">Upload PDF…</button>
+                            <input id="ta-upload-title" class="ta-input" type="text" placeholder="title (optional)" maxlength="200">
+                            <select id="ta-upload-tier" class="ta-select">
+                                <option value="1">Tier 1 — Safety</option>
+                                <option value="2">Tier 2 — Vendor</option>
+                                <option value="3">Tier 3 — Standard</option>
+                                <option value="4" selected>Tier 4 — a3semi MOP</option>
+                            </select>
+                            <select id="ta-upload-priority" class="ta-select">
+                                <option value="critical">critical</option>
+                                <option value="high">high</option>
+                                <option value="medium" selected>medium</option>
+                                <option value="low">low</option>
+                            </select>
+                            <input id="ta-upload-asset" class="ta-input" type="text" placeholder="asset_id (optional)" maxlength="64">
+                            <input id="ta-upload-vendor" class="ta-input" type="text" placeholder="vendor (optional)" maxlength="80">
+                        </div>
+                        <div id="ta-upload-status" class="ta-upload-status"></div>
+
+                        <div class="ta-library-table-wrap">
+                            <table class="ta-library-table">
+                                <thead>
+                                    <tr>
+                                        <th>Doc ID</th>
+                                        <th>Title</th>
+                                        <th>Tier</th>
+                                        <th>Priority</th>
+                                        <th>Asset</th>
+                                        <th>Vendor</th>
+                                        <th>Chunks</th>
+                                        <th>Uploaded</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ta-library-tbody">
+                                    <tr><td colspan="9" class="ta-empty">Loading…</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
             </div>
 </section>
 

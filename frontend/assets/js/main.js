@@ -27,6 +27,7 @@ import { initActivityStrip } from './core/activity_strip.js';
 import { initShiSparkline } from './core/shi_sparkline.js';
 import { startTelemetry } from './core/telemetry_engine.js';
 import { initMaintenanceView } from './views/maintenance.js';
+import { initTechAssistView } from './views/tech_assist.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -44,6 +45,7 @@ initStaleness();
 initActivityStrip();
 initShiSparkline();
 initMaintenanceView();
+initTechAssistView();
 
 if (USE_NEW_TELEMETRY_ENGINE) {
     startTelemetry(window.location.origin);
