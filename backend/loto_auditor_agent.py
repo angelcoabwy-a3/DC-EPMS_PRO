@@ -336,6 +336,11 @@ class LotoAuditorAgent:
         # 2. Walk site_model cooling chain (graceful skip if not applicable)
         cooling_chain_affected: list[str] = []
         try:
+            # DC-EPMS-032: impact_set traverses downstream from target_id by default.
+            # For source-type targets (ups/switchgear/transformer), this correctly
+            # identifies affected loads (racks losing power). For load-type targets
+            # (rack), the walk reports the rack itself plus any cascading loads.
+            # Polarity is correct as-is; this comment documents the contract.
             cooling_impact = self.site_model.impact_set(target_id, chain="cooling")
             cooling_chain_affected = list(
                 set(getattr(cooling_impact, "immediate", []) or [])
