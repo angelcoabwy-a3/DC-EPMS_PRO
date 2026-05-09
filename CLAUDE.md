@@ -29,19 +29,28 @@ Tags chronological:
   v0.7.4-frontend-pivot     ← Sprint 5.5 hybrid frontend pivot (browser milestone)
   v0.7.5-telemetry-stream   ← Sprint 5 C1: synthetic telemetry simulator + SSE wired
   v0.7.6-kalman-pipeline    ← Sprint 5 C2: Kalman + SoD pipeline + 60-min anomaly counter
+  v0.8.0-sprint5-kalman     ← Sprint 5 C3: per-channel YAML calibration + perf-verified
 
 System completion:
-  Backend:   88% (Sprint 5 C1+C2 wired, real Kalman z-scores in SSE payload)
-  Frontend:  88% (Activity Strip Anomalies cell now driven by backend)
-  Total V9:  88%
+  Backend:   91% (Sprint 5 closed, telemetry_channels.yml replaces hardcoded R/Q)
+  Frontend:  88%
+  Total V9:  90%
 
-Tests:   441+ passing
+Tests:   457+ passing
          - 412 baseline
          - 17 telemetry_simulator (Sprint 5 C1)
          - 12 telemetry_pipeline (Sprint 5 C2)
+         - 12 telemetry_channels_config (Sprint 5 C3)
+         - 4 telemetry_perf (Sprint 5 C3 — Numba JIT verified)
          - Pillar 4-5-6: 14/14 GREEN
          - 4 pre-existing failures in test_loto_auditor_pillars.py
            (DC-EPMS-036 fixture drift, non-regressive)
+
+Perf baseline (2026-05-09 AMD Ryzen + Windows):
+  - Numba JIT cold compile: 4.8 ms
+  - Hot compute() over 238 channels: 5.11 ms / window
+  - Per-step Kalman: 4.3 us (well under SSCB target 1-100 us)
+  - Anomaly log trim over 10k entries: 1.83 ms
 
 Validation layers: 8 of 8 PASS
 ```
@@ -158,7 +167,7 @@ HMI heat map + agent_copilot anomaly tools
 | C0 (DONE 2026-05-09) | 15 min | 1-pager architecture. No code. | — | — |
 | C1 (DONE 2026-05-09) | 1.5 h | `telemetry_simulator.py` (354 LOC) + 17 tests + SSE wiring with feature flag `DC_EPMS_USE_SIMULATOR` | `v0.7.5-telemetry-stream` | — |
 | C2 (DONE 2026-05-09) | 2 h | `telemetry_pipeline.py` (172 LOC) + 12 tests + per-channel R/Q calibration + F=1 random-walk model + 60-min anomaly counter wired to frontend Activity Strip | `v0.7.6-kalman-pipeline` | DC-EPMS-029b (deferred, see notes below) |
-| C3 | 1-1.5 h | `telemetry_channels.yml` + perf tests + 2 MOPs MD→YAML (T4-MOP-CHI-001, T4-MOP-UPS-001) | `v0.8.0-sprint5-kalman` | (Decision 4-B closure) |
+| C3 (DONE 2026-05-09) | 1.5 h | `config/telemetry_channels.yml` (17 metrics calibrated) + `TelemetryChannelConfig` loader + 11 config tests + 4 perf tests (Numba JIT cold 4.8 ms, hot 5.1 ms / window, per-step 4.3 us) | `v0.8.0-sprint5-kalman` | DC-EPMS-037 RESOLVED |
 
 **Note**: tag scheme renamed mid-flight to avoid `v0.7.4-*` namespace
 collision with `v0.7.4-frontend-pivot` (Sprint 5.5 hybrid milestone,
@@ -344,7 +353,17 @@ C:\dev\DC-EPMS_PRO\
 - Target: Sprint 5 Telemetry sprint (covered by DC-EPMS-029b natural resolution
   of physics_engine surface area).
 
-**DC-EPMS-037** (LOW) - NEW (opened 2026-05-09 during Sprint 5 C2)
+**DC-EPMS-037** (LOW) - RESOLVED 2026-05-09 in Sprint 5 C3 (commit pending)
+  Per-channel calibration moved to `config/telemetry_channels.yml`. Pipeline
+  loads YAML at init via `TelemetryChannelConfig.load()`. All 17 simulator
+  metrics have explicit R = std^2 + Q values + F=1 random-walk model.
+  Defaults section provides safe fallbacks for unlisted metrics. The original
+  symptom (description below) is fully gone — verified by 12 config tests +
+  steady-state false-positive rate test (~2% of 238 channels at 3-sigma).
+
+  ORIGINAL SYMPTOM:
+  ----- (preserved as historical context) -----
+**DC-EPMS-037** (HISTORICAL) - cyber_physical_tools default miscalibration
 - Symptom: cyber_physical_tools.py defaults (R=0.05^2 K^2, F=exp(-dt/60))
   miscalibrated for non-thermal channels and stationary signals.
 - Root cause:

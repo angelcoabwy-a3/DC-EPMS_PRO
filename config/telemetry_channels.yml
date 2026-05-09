@@ -1,0 +1,146 @@
+# ════════════════════════════════════════════════════════════════════════
+#  Per-channel Kalman + Send-on-Delta calibration
+#
+#  Sprint 5 Bite C3 — Decision 4-B closure (per-channel YAML config).
+#  Replaces hardcoded R/Q overrides in backend/telemetry_pipeline.py and
+#  the calibration logic that was previously embedded across
+#  backend/telemetry_simulator.PHASE1_BASELINES (for std/R derivation)
+#  and backend/telemetry_pipeline._PROCESS_NOISE_Q (for Q).
+#
+#  Loader: backend/telemetry_pipeline.TelemetryChannelConfig.load(...)
+#  YAML root keys:
+#    defaults.{R, Q, F, sod_threshold_k}
+#    channels.<metric>.{R, Q, F?, rationale}
+#
+#  Channels not listed here fall back to defaults. The simulator metric
+#  name (e.g. "gpu_Tj_c") is the key, NOT the scoped channel id
+#  ("rack_a_01_05:gpu_Tj_c") — calibration is per metric type, shared
+#  across all components emitting that metric.
+#
+#  R = measurement noise variance (std^2) for the Kalman observation model.
+#  Q = process noise variance (state model uncertainty per timestep).
+#  F = state transition coefficient. 1.0 = random walk (track baseline).
+#      cyber_physical_tools default exp(-dt/60) was for thermal decay
+#      models, NOT stationary signals — fixed at 1.0 across the board.
+#
+#  sod_threshold_k:
+#    Currently informational only — cyber_physical_tools.py applies its
+#    module-level constant SEND_ON_DELTA_K=0.5 globally to all channels.
+#    Per-channel SoD enforcement deferred to DC-EPMS-038 (V10), since
+#    it would require either monkey-patching the orphan or duplicating
+#    the SoD+Kalman pipeline locally.
+# ════════════════════════════════════════════════════════════════════════
+
+defaults:
+  R: 0.0025      # PT100 noise variance fallback (0.05 K)^2
+  Q: 0.0001      # slow thermal mass default
+  F: 1.0         # random-walk tracker for stationary signals
+  sod_threshold_k: 0.5
+
+channels:
+
+  # ── IT thermal ────────────────────────────────────────────────────
+  rack_inlet_T_c:
+    R: 0.16
+    Q: 0.001
+    sod_threshold_k: 0.5
+    rationale: "PT100 in stable enclosure, ASHRAE A2 envelope (10-35 C). std=0.4 K."
+
+  gpu_Tj_c:
+    R: 16.0
+    Q: 0.01
+    sod_threshold_k: 1.0
+    rationale: "Thermistor at GPU silicon, NVIDIA GB200 NVL72 thermal envelope 60-75 C nominal. Workload-driven transients. std=4.0 K."
+
+  dlc_supply_T_c:
+    R: 0.09
+    Q: 0.0001
+    sod_threshold_k: 0.3
+    rationale: "Pump-stabilized direct-liquid-cooling supply loop, std=0.3 K. Tighter envelope than rack inlet (closed loop)."
+
+  dlc_return_T_c:
+    R: 0.25
+    Q: 0.0001
+    sod_threshold_k: 0.5
+    rationale: "DLC return temp, std=0.5 K. Larger variance than supply due to load-coupling."
+
+  # ── Electrical (Phase 1: 480 VAC trifásico) ───────────────────────
+  voltage_v_phase_ab:
+    R: 5.76
+    Q: 0.001
+    sod_threshold_k: 1.0
+    rationale: "Schneider Galaxy VX UPS A-B phase voltage, 0.5% regulation. Baseline 480 V, std=2.4 V."
+
+  voltage_v_phase_bc:
+    R: 5.76
+    Q: 0.001
+    sod_threshold_k: 1.0
+    rationale: "B-C phase voltage, same regulation as A-B."
+
+  voltage_v_phase_ca:
+    R: 5.76
+    Q: 0.001
+    sod_threshold_k: 1.0
+    rationale: "C-A phase voltage, same regulation as A-B."
+
+  ups_soc_pct:
+    R: 0.25
+    Q: 0.001
+    sod_threshold_k: 0.5
+    rationale: "UPS battery state of charge (Schneider Galaxy VX). Baseline 98.5%, std=0.5%."
+
+  batt_runtime_min:
+    R: 0.09
+    Q: 0.001
+    sod_threshold_k: 0.5
+    rationale: "Battery runtime estimate at full load, baseline 15 min, std=0.3 min."
+
+  # ── Mechanical (chiller, CDU, pump) ───────────────────────────────
+  chiller_LWT_c:
+    R: 0.0225
+    Q: 0.0001
+    sod_threshold_k: 0.2
+    rationale: "York YZ chiller leaving water temp setpoint band 6.7-7.2 C. std=0.15 K. Tight control loop."
+
+  chiller_cop:
+    R: 0.04
+    Q: 0.0001
+    sod_threshold_k: 0.2
+    rationale: "York YZ chiller coefficient of performance, baseline 5.8, std=0.2."
+
+  cdu_supply_T_c:
+    R: 0.0625
+    Q: 0.0001
+    sod_threshold_k: 0.3
+    rationale: "Coolant distribution unit supply temp, baseline 30.5 C, std=0.25 K."
+
+  cdu_flow_lpm:
+    R: 25.0
+    Q: 0.001
+    sod_threshold_k: 5.0
+    rationale: "CDU coolant flow, baseline 180 LPM, std=5 LPM."
+
+  pump_NPSH_margin_m:
+    R: 0.0225
+    Q: 0.0001
+    sod_threshold_k: 0.2
+    rationale: "Chilled-water pump net positive suction head margin, baseline 3.5 m, std=0.15 m. Cavitation risk if margin drops below ~1 m."
+
+  pump_flow_gpm:
+    R: 2500.0
+    Q: 0.001
+    sod_threshold_k: 50.0
+    rationale: "Pump flow rate, baseline 4500 GPM, std=50 GPM."
+
+  # ── Heat rejection ────────────────────────────────────────────────
+  ecwt_c:
+    R: 0.25
+    Q: 0.0001
+    sod_threshold_k: 0.5
+    rationale: "Entering condenser water temp (cooling tower outlet to chiller). Baseline 24 C, std=0.5 K. Tracks outdoor wet bulb with offset."
+
+  outdoor_wet_bulb_c:
+    R: 2.25
+    Q: 0.01
+    sod_threshold_k: 1.0
+    rationale: "Outdoor wet-bulb temperature, weather-driven. Baseline 15 C, std=1.5 K. Larger Q reflects rapid weather swings."

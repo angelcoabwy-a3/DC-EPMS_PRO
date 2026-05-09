@@ -367,6 +367,7 @@ markers = [
   "rag: ChromaDB tier-aware RAG tests",
   "agent: agent_copilot or MCP server tests",
   "loto: LOTO-related procedure tests",
+  "perf: performance regression tests (loose bounds)",
 ]
 asyncio_mode = "auto"
 filterwarnings = [

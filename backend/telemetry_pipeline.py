@@ -40,9 +40,11 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
 import numpy as np
+import yaml
 
 from backend.cyber_physical_tools import get_telemetry_payload
 
@@ -51,35 +53,103 @@ log = logging.getLogger(__name__)
 DEFAULT_DT_SECONDS = 1.0
 ANOMALY_WINDOW_SECONDS = 3600  # 60 minutes
 
-# Per-metric process noise Q. Mirrors cyber_physical_tools tuning notes
-# (lines 287-313). Channels not listed here use DEFAULT_Q. C3 replaces
-# this with config/telemetry_channels.yml.
-_PROCESS_NOISE_Q: dict[str, float] = {
-    "gpu_Tj_c":            1e-2,   # workload-driven spikes
-    "outdoor_wet_bulb_c":  1e-2,   # weather-driven
-    "rack_inlet_T_c":      1e-3,
-    "ups_soc_pct":         1e-3,
-    "batt_runtime_min":    1e-3,
-    "voltage_v_phase_ab":  1e-3,
-    "voltage_v_phase_bc":  1e-3,
-    "voltage_v_phase_ca":  1e-3,
-    "cdu_flow_lpm":        1e-3,
-    "pump_flow_gpm":       1e-3,
+# Channel calibration is loaded from config/telemetry_channels.yml at
+# pipeline init. Hardcoded fallbacks below are used ONLY when the YAML
+# is missing or malformed (defensive — Sprint 5 C3 made the YAML the
+# canonical source of truth).
+_FALLBACK_DEFAULTS: dict[str, float] = {
+    "R": 0.0025,
+    "Q": 0.0001,
+    "F": 1.0,
+    "sod_threshold_k": 0.5,
 }
-_DEFAULT_Q = 1e-4
-_FALLBACK_R = 0.05 ** 2  # PT100 noise variance, used when metric not in baselines
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Channel calibration config (Sprint 5 C3)
+# ─────────────────────────────────────────────────────────────────────
+class TelemetryChannelConfig:
+    """YAML-backed per-channel R, Q, F, sod_threshold_k calibration.
+
+    Public:
+        TelemetryChannelConfig.load(path) -> TelemetryChannelConfig
+        config.get(metric, "R", fallback=...) -> float
+        config.metrics_with_calibration() -> set[str]
+
+    The metric key is the simulator metric name (e.g. "gpu_Tj_c"), NOT
+    the scoped channel id. Calibration is shared across all components
+    emitting that metric type.
+    """
+
+    def __init__(self, defaults: dict[str, float], channels: dict[str, dict]):
+        self._defaults = {**_FALLBACK_DEFAULTS, **defaults}
+        self._channels = channels
+
+    @classmethod
+    def load(cls, yaml_path: Path) -> "TelemetryChannelConfig":
+        if not yaml_path.exists():
+            log.warning(
+                "[telemetry_pipeline] config %s not found; using fallback defaults",
+                yaml_path,
+            )
+            return cls(defaults={}, channels={})
+        try:
+            with open(yaml_path, encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+        except yaml.YAMLError as e:
+            log.error("[telemetry_pipeline] YAML parse error in %s: %s", yaml_path, e)
+            return cls(defaults={}, channels={})
+
+        defaults = data.get("defaults", {}) or {}
+        channels = data.get("channels", {}) or {}
+        if not isinstance(defaults, dict) or not isinstance(channels, dict):
+            log.error("[telemetry_pipeline] %s schema invalid (defaults/channels not mappings)", yaml_path)
+            return cls(defaults={}, channels={})
+        log.info(
+            "[telemetry_pipeline] loaded calibration: %d explicit channels, defaults=%s",
+            len(channels),
+            {k: defaults.get(k, _FALLBACK_DEFAULTS[k]) for k in ("R", "Q", "F")},
+        )
+        return cls(defaults=defaults, channels=channels)
+
+    def get(self, metric: str, key: str, fallback: float | None = None) -> float:
+        ch = self._channels.get(metric, {})
+        if isinstance(ch, dict) and key in ch:
+            return float(ch[key])
+        if key in self._defaults:
+            return float(self._defaults[key])
+        if fallback is not None:
+            return float(fallback)
+        return float(_FALLBACK_DEFAULTS[key])
+
+    def metrics_with_calibration(self) -> set[str]:
+        return set(self._channels.keys())
 
 
 class TelemetryPipeline:
     """Owns the Kalman filter state across SSE ticks + anomaly log."""
 
-    def __init__(self, dt_seconds: float = DEFAULT_DT_SECONDS):
+    def __init__(
+        self,
+        dt_seconds: float = DEFAULT_DT_SECONDS,
+        config: TelemetryChannelConfig | None = None,
+    ):
         self.dt_seconds = float(dt_seconds)
         # filter_state is mutated in place by get_telemetry_payload
         self._filter_state: dict[str, Any] = {}
         # anomaly_log entries: (timestamp_unix, channel_id)
         self._anomaly_log: list[tuple[float, str]] = []
         self._anomaly_window_s = ANOMALY_WINDOW_SECONDS
+        # Per-channel calibration. If not supplied, auto-load the default
+        # config/telemetry_channels.yml so direct instantiation in tests
+        # gets proper R/Q/F calibration (not bare _FALLBACK_DEFAULTS).
+        if config is None:
+            try:
+                config = TelemetryChannelConfig.load(_resolve_default_config_path())
+            except Exception as e:
+                log.warning("[telemetry_pipeline] auto-load failed: %s; using fallbacks", e)
+                config = TelemetryChannelConfig(defaults={}, channels={})
+        self._config = config
 
     # ── compute ────────────────────────────────────────────────────────
     def compute(self, window: dict[str, np.ndarray]) -> dict[str, dict]:
@@ -111,41 +181,33 @@ class TelemetryPipeline:
         self._trim_anomaly_log(now)
         return payload
 
-    # ── filter state pre-init (channel-aware R/Q, F=1 stationary) ──────
+    # ── filter state pre-init (Sprint 5 C3 — YAML-driven calibration) ──
     def _init_filter_state_for_new_channels(self, window: dict[str, np.ndarray]) -> None:
-        """Cold-start each channel using simulator baseline std as R.
+        """Cold-start each new channel using config/telemetry_channels.yml.
 
-        Model choice F=1.0 (random walk): cyber_physical_tools defaults
-        to F=exp(-dt/60) which expects exponential decay toward zero.
-        Our simulator emits STATIONARY signals around a constant
-        baseline (UPS at 480 V is not decaying). With F<1 the Kalman
-        x_hat converges to a non-physical equilibrium between decay
-        and observation, producing huge spurious z-scores. F=1 makes
-        the filter a random walk tracker that follows the observed
-        baseline correctly.
+        Config supplies R (measurement noise variance), Q (process noise),
+        and F (state transition coefficient, default 1.0 = random walk
+        for stationary signals). cyber_physical_tools defaults are
+        bypassed because they were calibrated only for PT100 thermal
+        channels with exponential decay models — wrong shape for our
+        mixed simulator (voltage / pressure / flow / weather).
         """
-        # Lazy import to avoid circular dep at module load time
-        from backend.telemetry_simulator import PHASE1_BASELINES
-
         for ch_id, samples in window.items():
             if ch_id in self._filter_state:
                 continue
             if samples.size == 0:
                 continue
             metric = ch_id.split(":", 1)[-1] if ":" in ch_id else ch_id
-            if metric in PHASE1_BASELINES:
-                _, std = PHASE1_BASELINES[metric]
-                R = float(std) ** 2
-            else:
-                R = _FALLBACK_R
-            Q = _PROCESS_NOISE_Q.get(metric, _DEFAULT_Q)
+            R = self._config.get(metric, "R")
+            Q = self._config.get(metric, "Q")
+            F = self._config.get(metric, "F")
             first = float(samples[0])
             self._filter_state[ch_id] = {
                 "x_hat":        np.array([first], dtype=np.float64),
                 "P":            np.array([10.0 * R], dtype=np.float64),
                 "Q":            Q,
                 "R":            R,
-                "F":            1.0,   # random-walk tracker for stationary signals
+                "F":            F,
                 "H":            1.0,
                 "last_emitted": np.array([first], dtype=np.float64),
             }
@@ -185,13 +247,27 @@ class TelemetryPipeline:
 # ─────────────────────────────────────────────────────────────────────
 _pipeline: TelemetryPipeline | None = None
 
+# Default config path resolves relative to project root. Callers can
+# pass an explicit path to get_pipeline() or load it themselves.
+_DEFAULT_CONFIG_PATH_PARTS = ("config", "telemetry_channels.yml")
 
-def get_pipeline(dt_seconds: float = DEFAULT_DT_SECONDS) -> TelemetryPipeline:
-    """Lazy singleton. Subsequent calls ignore dt_seconds (use first call's)."""
+
+def _resolve_default_config_path() -> Path:
+    # backend/telemetry_pipeline.py -> project root is parent.parent
+    return Path(__file__).resolve().parent.parent.joinpath(*_DEFAULT_CONFIG_PATH_PARTS)
+
+
+def get_pipeline(
+    dt_seconds: float = DEFAULT_DT_SECONDS,
+    config_path: Path | None = None,
+) -> TelemetryPipeline:
+    """Lazy singleton. Subsequent calls ignore parameters (use first call's)."""
     global _pipeline
     if _pipeline is None:
-        _pipeline = TelemetryPipeline(dt_seconds=dt_seconds)
-        log.info("[telemetry_pipeline] initialized (dt=%.2fs)", dt_seconds)
+        path = config_path or _resolve_default_config_path()
+        config = TelemetryChannelConfig.load(path)
+        _pipeline = TelemetryPipeline(dt_seconds=dt_seconds, config=config)
+        log.info("[telemetry_pipeline] initialized (dt=%.2fs, config=%s)", dt_seconds, path)
     return _pipeline
 
 
