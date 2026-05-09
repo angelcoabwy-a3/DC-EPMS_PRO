@@ -20,6 +20,19 @@ Three predictive_kalman P1 work orders — one per critical subsystem — all au
 
 Plus 3 manual / incident / voice-closure follow-up WOs and 3 rejected probe artifacts in the audit history.
 
+## After replay: 4 fresh pending WOs (post-`replay_demo.ps1`)
+
+The replay script wipes work_orders, restores the snapshot, drops the rejected probe artifacts and the historical predictive approvals, then injects 4 fresh `pending_approval` rows so the Maintenance view starts every demo with a known baseline:
+
+| Asset | Trigger | LOR / Pri | LOTO | MOP linked? | Demo purpose |
+|---|---|---|---|---|---|
+| `rpp_a_01` | predictive_kalman | 20 / **P1** | YES | yes | Act 2 demo killer 1 — THDi excursion |
+| `cdu_a_01` | predictive_kalman | 20 / **P1** | YES | yes | Act 2 demo killer 2 — DLC flow drift |
+| `genset_a_01` | predictive_kalman | 20 / **P1** | YES | yes | Act 2 demo killer 3 — oil pressure drop |
+| `genset_b_01` | manual (shift handover) | 12 / P2 | YES | **NO** | **Act 3 Multi-Agent VETO target** — Safety Officer fires HARD STOP |
+
+The 4th row exists so the operator can demo the Safety Officer veto without ever leaving the browser: copy the WO id from the Maintenance grid → paste into the Multi-Agent `work_order_id` input → Consult → consensus banner flips to red `HARD STOP` with the blinking VETO chip. Per ADR-006 narrative.
+
 ## Replay
 
 Same db, idempotent (every INSERT carries `ON CONFLICT DO NOTHING`):

@@ -18,18 +18,20 @@ This script is the canonical 12-min walkthrough. Anything outside this list of a
 .\scripts\_demo\replay_demo.ps1
 ```
 
-The script wipes work_orders, replays the postgres snapshot, then injects three fresh predictive_kalman P1 LOTO targets in `pending_approval`:
+The script wipes work_orders, replays the postgres snapshot, then injects four fresh `pending_approval` LOTO targets:
 
-| Subsystem | Asset | Channel | Kalman z | Standard reference |
-|---|---|---|---|---|
-| Power Distribution | `rpp_a_01` | `thd_i_pct` | 12.8 | IEEE 519-2014 §5.1 |
-| DLC Cooling | `cdu_a_01` | `loop_flow_lpm` | 15.6 | ASHRAE TC 9.9 W17 |
-| Backup Power | `genset_a_01` | `oil_pressure_psi` | 19.2 | NFPA 110-2022 §8.4 |
+| Asset | Trigger | LOR / Pri | LOTO | MOP | Used in |
+|---|---|---|---|---|---|
+| `rpp_a_01` | predictive_kalman (THDi z=12.8) | 20 / **P1** | YES | yes | Act 2 + Act 3 Part A |
+| `cdu_a_01` | predictive_kalman (flow z=15.6) | 20 / **P1** | YES | yes | Act 2 |
+| `genset_a_01` | predictive_kalman (oil z=19.2) | 20 / **P1** | YES | yes | Act 2 |
+| **`genset_b_01`** | **manual (shift handover)** | **12 / P2** | **YES** | **NO** | **Act 3 Part B — VETO target** |
 
 **Browser pre-checks** (Ctrl+Shift+R hard reload first):
 - `http://127.0.0.1:8080/api/health` returns `postgres=up`, `gemma=up`
-- `http://127.0.0.1:8080/#maintenance` shows 6 open WOs (3 pending P1 + 3 approved P2/P3 historical)
+- `http://127.0.0.1:8080/#maintenance` shows 7 open WOs (3 predictive P1 + 1 manual P2 VETO target + 3 approved historical)
 - `http://127.0.0.1:8080/#tech-assist` renders with all 3 panels
+- `http://127.0.0.1:8080/#multi-agent` renders with empty grid + 3 scenario buttons
 
 ---
 
@@ -80,9 +82,11 @@ curl -X POST http://127.0.0.1:8080/api/cmms/work-orders/<the-wo-id>/approve `
 
 ---
 
-## Act 3 — Multi-Agent consultation (1:30) — *deterministic 4-perspective evaluation*
+## Act 3 — Multi-Agent consultation (1:30) — *deterministic 4-perspective evaluation + VETO*
 
 > *"Before approving any of these predictive work orders, an experienced CET would consult colleagues — the architect for redundancy impact, the safety officer for LOTO compliance, a diagnostician for recurrence patterns, an analyst for cost framing. The platform formalizes that pattern."*
+
+### Part A — The 3-perspective consultation (45s)
 
 **Navigate** `http://127.0.0.1:8080/#multi-agent`.
 
@@ -92,22 +96,50 @@ curl -X POST http://127.0.0.1:8080/api/cmms/work-orders/<the-wo-id>/approve `
 
 > *"Eight to fourteen milliseconds. Four agents in parallel. Watch the cards."*
 
-**Walk through the 4 cards left-to-right, top-to-bottom**:
+**Walk through the 4 cards left-to-right, top-to-bottom** (consensus is `CAUTION` here, not hard_stop — that's Part B):
 
-> **Architect** — *"`Path A 2N (high)` — caution. The reasoning bullets cite the redundancy pillar pulled directly from the CMMS asset row, plus the GraphRAG impact set if a procedure is supplied. Taking rpp_a_01 offline drops Path A from 2N to 1N for the duration of the LOTO; acceptable only if Path B is healthy."*
+> **Architect** — *"`Path A 2N (high)` — approve with caveat. The reasoning bullets cite the redundancy pillar pulled directly from the CMMS asset row. Taking rpp_a_01 offline drops Path A from 2N to 1N for the duration of the LOTO; acceptable only if Path B is healthy."*
 >
-> **Safety Officer** — *"Caution. This agent has VETO power. If the work order requires LOTO and no MOP is linked, this card lights up red — `HARD STOP`, blinking — and the consensus banner switches to red regardless of what the other three say. CSA Z462-24 plus NFPA 70E §130. The Safety Officer never auto-approves; CET signature is mandatory."*
+> **Safety Officer** — *"Caution. The agent never auto-approves any LOTO-eligible work; CET signature is mandatory by design."*
 >
-> **Diagnostician** — *"Caution because of recurrence. The agent queried the CMMS work-order history and found five prior incidents on rpp_a_01 in the lookback window. That's the threshold for accelerated wear. The recommendation isn't 'fix it again' — it's investigate the root cause."*
+> **Diagnostician** — *"Caution because of recurrence. Five prior WOs on rpp_a_01 in the lookback window — that's accelerated wear. The recommendation isn't 'fix it again' — it's investigate the root cause."*
 >
-> **Analyst** — *"OpEx repair $3,200 vs CapEx replace $42,000. With five prior repairs the cumulative OpEx is approaching 40% of replacement cost; the Analyst recommends escalating to capital planning review. This is the framing that turns reactive maintenance into informed lifecycle decisions."*
+> **Analyst** — *"OpEx repair $3,200 vs CapEx replace $42,000. The framing that turns reactive maintenance into informed lifecycle decisions."*
 
-**Point at the consensus banner**:
+> *"Consensus: caution. Two agents flagged it, the operator decides. Pure Python critical path, four agents fanned out via `asyncio.gather`, sub-15ms decision. This is structured reasoning defensible to an auditor."*
 
-> *"Consensus rule is deterministic: Safety Officer hard_stop outranks all; otherwise any agent caution forces caution; otherwise approve. Pure Python in the critical path — no LLM in the consensus rule, per ADR-006. The whole consultation is sub-15ms because the four agents fanned out via `asyncio.gather`. This is the kind of structured reasoning that makes Tier IV operations decisions defensible to an auditor."*
+### Part B — The VETO trigger (45s) — *the demo killer for Act 3*
 
-**Optional 30s deep cut** (if pacing allows): show a VETO scenario.
-> *"Watch what happens with a non-compliant work order."* — paste a `work_order_id` known to have `requires_loto=true` with no `linked_mop_id` → Consult → consensus flips to red, Safety Officer card has the blinking VETO chip, rationale cites ADR-006.
+**Switch to Maintenance** (`/#maintenance`). Point at the **4th** pending row in the backlog:
+
+```
+WO-...                  genset_b_01    P2  pending_approval   src=manual         loto=YES  mop=null
+```
+
+> *"Look at the 4th row. Genset B-01, manual draft from yesterday's shift, requires LOTO — but the `MOP` column is empty. Someone drafted this without attaching the procedure. Caught during shift handover review. Watch what happens when I run it through the Multi-Agent."*
+
+**Click the row's WO id** to highlight it → **Ctrl+C** to copy.
+
+**Switch back to Multi-Agent** (`/#multi-agent`).
+
+1. Clear the textarea, type:
+   > `Approve this work order? Found during shift handover, no MOP linked.`
+2. Paste the WO id into **`work_order_id`** field.
+3. Leave `asset_id` and `procedure_id` empty.
+4. Click **Consult all 4 agents**.
+
+> *"Four milliseconds."*
+
+**Visual checkpoint** (point at the screen):
+- ✅ Banner **red** with `HARD STOP`
+- ✅ Chip on the right blinking — `SAFETY OFFICER VETO`
+- ✅ Safety Officer card: **red border + glow + `HARD STOP` pill**
+- ✅ Other three cards: gray dim, `APPROVE` (because the query has no asset/procedure to evaluate against)
+- ✅ Rationale: *"Safety Officer VETO: LOTO required but no MOP linked. Per ADR-006, this outranks all other agents."*
+
+> *"This is the integrity guarantee. ONE agent — only the Safety Officer — has veto power. If LOTO is required and no MOP is linked, it doesn't matter what the other three say. The work order is gated until a CET attaches the MOP. CSA Z462 §4.2 plus NFPA 70E §130. ADR-006 enforced in Python, not in process."*
+
+> *"The VETO sample WO is permanent in the demo baseline — re-runnable from `replay_demo.ps1`. No terminal needed during the walkthrough; everything you saw was operator UI. That's the maturity bar for Tier IV."*
 
 ---
 
@@ -179,7 +211,7 @@ pytest -m "not slow" -q --tb=short 2>&1 | tail -5
 
 ## Act 7 — Wrap (30 seconds)
 
-> *"To recap. The platform predicts subsystem failures before alarms fire — three Kalman triggers across three subsystems. It surfaces those triggers to a 4-agent panel that reasons in parallel from architectural, safety, diagnostic and financial perspectives in under 15 ms, with the Safety Officer holding veto power per ADR-006. It validates LOTO procedures against six engineering pillars in 12 milliseconds. It gives operators a nameplate-to-asset matcher, a corpus-grounded troubleshooter, and a managed knowledge library. The audit trail is locked — original CET signatures cannot be silently overwritten. NEC, NFPA, CSA, ASHRAE, IEEE cited by section, not paraphrased."*
+> *"To recap. The platform predicts subsystem failures before alarms fire — three Kalman triggers across three subsystems. It surfaces those triggers to a 4-agent panel that reasons in parallel from architectural, safety, diagnostic and financial perspectives in under 15 ms, with the Safety Officer holding veto power per ADR-006 — and we saw that veto fire on a non-compliant work order in 4 ms. It validates LOTO procedures against six engineering pillars in 12 milliseconds. It gives operators a nameplate-to-asset matcher, a corpus-grounded troubleshooter, and a managed knowledge library. The audit trail is locked — original CET signatures cannot be silently overwritten. NEC, NFPA, CSA, ASHRAE, IEEE cited by section, not paraphrased."*
 >
 > *"This is what V9 AI-Factory speed plus Tier IV doctrine looks like in practice on a single laptop. I'd be grateful for the chance to bring this discipline to your team."*
 

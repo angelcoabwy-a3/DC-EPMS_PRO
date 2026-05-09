@@ -13,7 +13,12 @@
 #          cdu_a_01    -> coolant flow drift     (DLC manifold)
 #          genset_a_01 -> oil pressure drop      (NFPA 110)
 #       (rejected probe artifacts from the snapshot are dropped)
-#    5. Prints the resulting backlog so you can confirm the state
+#    5. Injects a 4th sample WO for the Multi-Agent VETO demo:
+#          genset_b_01 -> manual draft, requires_loto=true, NO MOP
+#       The Safety Officer agent VETOes this on consult - used in
+#       Act 3 of the canonical walkthrough. Permanent baseline so
+#       the operator never has to use a terminal mid-demo.
+#    6. Prints the resulting backlog so you can confirm the state
 #       matches what the Maintenance view will render after F5.
 #
 #  Usage:
@@ -196,6 +201,43 @@ function Reset-PredictiveTargets {
         -LinkedMop    $null
 }
 
+function Inject-VetoSampleWO {
+    # Manual draft, requires_loto=true, linked_mop_id=null. The
+    # Multi-Agent Safety Officer will VETO this on consult - the
+    # demo-killer "shift handover review" narrative. Permanent
+    # baseline so the operator never has to touch a terminal mid-demo.
+    Write-Section "Inject VETO sample WO (Multi-Agent Safety Officer trigger)"
+
+    $payload = @{
+        asset_id              = 'genset_b_01'
+        issue_summary         = 'Manual draft from prior shift: genset_b_01 quarterly inspection + oil sample. Tech submitted without linking the MOP - caught during shift handover review. Multi-Agent Safety Officer should VETO until MOP T4-MOP-GEN-001 is attached.'
+        work_class_hint       = 'PM'
+        likelihood_idx        = 3
+        consequence_idx       = 4
+        requires_loto         = $true
+        requires_oem_specialist = $false
+        trigger_source        = 'manual'
+        requested_by          = 'shift_handover_audit'
+        # NOTE: linked_mop_id intentionally omitted -> null. This is
+        # what triggers the Safety Officer veto in multi_agent.py.
+    }
+    $json = $payload | ConvertTo-Json -Depth 4 -Compress
+    if ($DryRun) {
+        Write-Host "  [DRY] inject genset_b_01 manual draft (no MOP, requires_loto=true)"
+        return
+    }
+    try {
+        $resp = Invoke-RestMethod -Uri "$API/cmms/work-orders" `
+            -Method POST -ContentType 'application/json' -Body $json -TimeoutSec 10
+        Write-Host ("  [OK] {0,-12} -> {1}  P{2} LOR={3}  status={4}  loto=YES  mop=null" -f `
+            'genset_b_01', $resp.work_order_id, $resp.priority.Substring(1), $resp.lor, $resp.status) -ForegroundColor Yellow
+        Write-Host "       ^ this WO is the live VETO target - paste its id into Multi-Agent during the demo"
+    } catch {
+        Write-Host "  [FAIL] genset_b_01 VETO sample injection: $_" -ForegroundColor Red
+        throw
+    }
+}
+
 function Show-Backlog {
     Write-Section "Resulting open-WO backlog (what the Maintenance view will render)"
     if ($DryRun) { Write-Host "  [DRY] skipped"; return }
@@ -229,6 +271,7 @@ try {
     Wipe-WorkOrders
     Replay-Snapshot
     Reset-PredictiveTargets
+    Inject-VetoSampleWO
     Show-Backlog
 
     $elapsed = ((Get-Date) - $start).TotalSeconds
