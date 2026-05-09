@@ -16,18 +16,19 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 
 **Vocabulary discipline (CRITICAL)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is unipolar (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in panel review.
 
-## 📊 CURRENT STATE (verified 2026-05-09 03:00)
+## 📊 CURRENT STATE (verified 2026-05-09 ~04:00)
 
 ```
-HEAD:    d853907  docs(loto): DC-EPMS-032 walk direction polarity comment (LOW)
-Tag:     v0.7.3-sprint5-patches  ← LATEST
-Tests:   412+ passing
+HEAD:    509be04  fix(loto): DC-EPMS-034 witness_engine call site (LOW)
+Tag:     v0.7.3-sprint5-patches (at d853907, 2 commits behind HEAD)
+Tests:   412+ passing (Pillar 4-5-6 14/14 GREEN; 4 pre-existing failures
+         in pillars.py = DC-EPMS-036 test-fixture drift, NON-regressive)
 Validation layers: 8 of 8 PASS
 
 System completion:
   Backend:   80%
   Frontend:  82%
-  Total V9:  79%
+  Total V9:  80% (DC-EPMS-034 closed, +1%)
 
 Tags chronological:
   v0.5.0
@@ -35,17 +36,151 @@ Tags chronological:
   v0.6.1-batch3.5
   v0.7.0-batch4
   v0.7.2-camino1
-  v0.7.3-sprint5-patches  ← HEAD
+  v0.7.3-sprint5-patches    ← previous HEAD
+  (Sprint 5 C0 locked; v0.8.0-sprint5-kalman pending C1+C2+C3)
 ```
 
 **Last 5 commits**:
 ```
-d853907 (HEAD, tag: v0.7.3-sprint5-patches) docs(loto): DC-EPMS-032 polarity comment
-324d87f fix(loto): DC-EPMS-031 graphrag loto_with_knowledge (MED)
-da995e1 fix(loto): DC-EPMS-030 cooling_chain via impact_set (MED)
-00caff1 fix(loto): DC-EPMS-033 voltage_v fallback (MED)
-9f138ab docs(camino1): CHANGELOG entry for v0.7.2-camino1
+509be04 (HEAD)                       fix(loto): DC-EPMS-034 witness_engine call site (LOW)
+17dfded                              chore(sprint5): close session 7+8 + recovery [DC-EPMS-035]
+d853907 (tag: v0.7.3-sprint5-patches) docs(loto): DC-EPMS-032 walk direction polarity (LOW)
+324d87f                              fix(loto): DC-EPMS-031 graphrag loto_with_knowledge (MED)
+da995e1                              fix(loto): DC-EPMS-030 cooling_chain via impact_set (MED)
 ```
+
+## 🛰 ROADMAP_V9_NEXT_STEPS — Sprint 5 C0 Architecture (locked 2026-05-09)
+
+> **1-pager produced during C0 read-only phase 2026-05-09 ~04:00 by Claude Opus 4.7 (1M ctx).**
+> Source files read: `backend/cyber_physical_tools.py` (248 LOC, orphan), `backend/physics_engine.py` (369 LOC, live), `backend/main.py:459-491` (current `/api/telemetry/stream` placeholder).
+> When resuming Sprint 5: re-read this section first, then `git status` + `docker ps` + `curl /api/health`.
+
+### Architectural intent
+
+DC-EPMS PRO Sprint 5 wires the dormant `cyber_physical_tools.py` orphan into a live telemetry pipeline that:
+- emits synthetic 67 MW Path C2 measurements distinguishing Phase 1 (480 VAC trifásico, 118 GB200 racks) from Phase 2 (800 VDC unipolar TN-S, 250 GB300 racks).
+- compresses 12x at steady state via Send-on-Delta (ASHRAE TC 9.9 ±1 K tolerance).
+- forwards only Kalman innovation residuals to the LLM agent (information-theoretic minimality: ODE-explained behaviour is filtered locally).
+- completes µs-grade per-channel decision via Numba `@njit` native compile, with pure-Python fallback already wired for AMD Ryzen + Windows hardware quirks.
+
+### What `cyber_physical_tools.py` already provides (orphan, ready to wire)
+
+| Symbol | Type | Behaviour |
+|---|---|---|
+| `send_on_delta_mask()` | `@njit` | Lebesgue temporal compression. Mutable `last_emitted[0]` anchor across batches. `SEND_ON_DELTA_K=0.5` K (ASHRAE-justified, sits below 1 K SLA breach, above 0.05 K PT100 noise floor). |
+| `kalman_innovation_step()` | `@njit` | Scalar discrete Kalman per channel. Returns `(innovation, innovation_var, normalized_z)`. Mutates `x_hat[0]`, `P[0]` in place. Standard short-form P-update. |
+| `get_telemetry_payload()` | composed | Cold-start init: `R=0.05² K²` (PT100), `F=exp(-dt/60)` (tau=60s default), `P_0=10R`. Returns per-channel `{n_emissions, max_z, mean_z, is_anomalous, last_emission}`. NO raw arrays leak to LLM. |
+| `ANOMALY_Z_THRESHOLD` | constant | 3.0 (3-sigma rule). |
+| Numba fallback | guarded | `try: from numba import njit; except: noop_decorator`. Module imports clean even on hardware where Numba misbehaves. |
+
+### What's MISSING (Sprint 5 to build)
+
+1. **Synthetic stream generator** — no equivalent exists. Must produce raw samples per channel, baselined on Path C2 spec.
+2. **Process-singleton `filter_state` persistence** across SSE ticks (currently only documented in `cyber_physical_tools` tuning notes).
+3. **Endpoint replacement** of `/api/telemetry/stream` (currently a 5-second DB-poll placeholder at `main.py:459-491`).
+4. **Per-channel Q/R/F YAML config** (currently hard-coded in tuning notes lines 287-313 of `cyber_physical_tools.py`).
+
+### Channel inventory (Path C2 fidelity — vocabulary fence enforced)
+
+| Domain | Phase 1 channels (deployed Buildings A/B) | Phase 2 channels (Building D Q2 2026) |
+|---|---|---|
+| IT thermal | `rack_inlet_T` (118× GB200), `gpu_Tj` (118×), `dlc_supply_T`, `dlc_return_T` | `rack_inlet_T` (250× GB300), `gpu_Tj` (250×), `dlc_supply_T_12vdc` (DLC retrofit) |
+| Mechanical | `chiller_LWT` (3-4× York YZ N+1), `pump_NPSH_margin`, `q_secondary_kW` per hall, `q_primary_kW` | same + Building D DLC pumps |
+| Electrical | `ups_a_soc`, `ups_b_soc`, `ats_state`, `voltage_v_phase_ab`/`bc`/`ca` (480 VAC trifásico, balanced ±1%), per-rack `voltage_v`, `batt_runtime_min` | `voltage_v_dc_bus` (800 VDC unipolar — **SINGLE channel, NO phases**), `mv_rectifier_output_v`, `bess_soc` (2.5 MWh), `sscb_clearing_us` |
+| Heat rejection | `ecwt_c`, `outdoor_wet_bulb_c`, `cop_per_chiller` | same |
+
+**Vocabulary fence (CRITICAL for CO+I panel credibility)**: Phase 1 voltage telemetry uses 3-channel AC schema (V_AB / V_BC / V_CA). Phase 2 voltage telemetry uses 1-channel DC schema (V_dc_bus). NEVER label Phase 2 fields as "trifásico" — the 800 VDC bus is unipolar TN-S. Schema names must encode polarity.
+
+### Pipeline flow (Sprint 5 end state)
+
+```
+site_model.yml inventory
+    ↓
+telemetry_simulator.py (NEW C1, ~250 LOC)
+    ├─ steady-state baselines per Path C2 spec
+    │     - GB200 rack inlet 22-24 °C, gpu_Tj 60-75 °C
+    │     - GB300 rack inlet 22-24 °C, gpu_Tj 70-80 °C (DLC retrofit)
+    │     - DLC supply 30-32 °C, chiller LWT 6-8 °C rated
+    │     - 480 VAC trifásico: V phase ≈ 480 V ± 1%, balanced
+    │     - 800 VDC unipolar: V_dc_bus ≈ 800 V ± 0.5% (tighter regulation by design)
+    │     - SSCB clearing target ∈ [1, 100] µs per IEC 60947-2 + IEC TR 63282 §5.2
+    ├─ bounded noise (PT100 R=0.05²K², thermistor R=0.5²K²)
+    └─ injectable anomalies (thermal runaway / pump cavitation / phase imbalance / DC bus drop / SSCB event)
+    ↓
+channel_window: dict[ch_id, np.ndarray]  (per tick)
+    ↓
+get_telemetry_payload()  in cyber_physical_tools.py  (orphan→live)
+    ├─ Stage 1: send_on_delta_mask    → ~12x compression at steady state
+    └─ Stage 2: kalman_innovation_step → per surviving emission, scalar Kalman
+    ↓
+compact payload {ch_id: {n_emissions, max_z, mean_z, is_anomalous, last_emission}}
+    ↓
+SSE /api/telemetry/stream  (REPLACE main.py:459-491 placeholder; legacy DB fallback retained)
+    ↓
+HMI heat map + agent_copilot anomaly tools
+```
+
+### Module layout
+
+| File | Status | Purpose |
+|---|---|---|
+| `backend/cyber_physical_tools.py` | EXISTS (orphan) | `@njit` hot path: SoD + Kalman. Untouched in C1; integrated in C2. |
+| `backend/telemetry_simulator.py` | NEW (C1, ~250 LOC) | Synthetic stream from `site_model.yml`. NO physics dependency — just baselines + noise + anomaly injection. |
+| `backend/telemetry_pipeline.py` | NEW (C2, ~180 LOC) | Glue: simulator ⊕ `cyber_physical_tools`. Persists `filter_state` singleton. Exposes `get_payload_async()`. |
+| `backend/main.py:459-491` | REWRITE (C2/C3) | `/api/telemetry/stream` now drives from pipeline. Legacy DB-fallback path retained behind feature flag. |
+| `config/telemetry_channels.yml` | NEW (C3) | Per-channel `Q`, `R`, `F` (tau) calibration. Replaces hard-coded defaults. |
+| `tests/test_telemetry_simulator.py` | NEW (C1, ~6-8 tests) | Inventory coverage, anomaly injection, deterministic seed. |
+| `tests/test_telemetry_pipeline.py` | NEW (C2, ~6-8 tests) | Cold start, steady-state suppression, anomaly detection, multi-channel state isolation. |
+| `tests/test_telemetry_perf.py` | NEW (C3, 1-2 tests) | Numba JIT cold→hot timing. Target: cold <500 ms, hot <100 µs/step. |
+| `tests/test_dc_epms_029b_resolution.py` | NEW (C2 closure) | Re-run `simulate_loto_measurements` with simulator-driven physics input. Assert SHI delta. |
+
+### Equinix-scale + Orbital fidelity considerations
+
+- **Per-channel state isolation**: each channel owns `(x_hat, P, Q, R, F, last_emitted)`. Memory cost ~40 bytes per channel. Scales to 10K+ channels (Equinix-class fleet) without quadratic blowup.
+- **Send-on-Delta as orbital uplink discipline**: 12x bandwidth reduction at steady state is critical for LEO satellite telemetry windows (limited contact time, high latency to ground). The same compression that saves API tokens here saves spectrum on orbital downlinks.
+- **Innovation residual as cross-orbit anomaly signal**: ODE-explained behaviour is filtered locally; only anomalies traverse the network. ADR-006 Deterministic Sandbox compatible (edge-local explanation, no cloud round-trip required for normal operation).
+- **Numerical stability for long-running orbital nodes**: current Kalman P-update form `(1.0 - K*H) * P_predict` is the standard short-form. For multi-month uninterrupted runs, the Joseph form `(I - K*H) P (I - K*H)^T + K R K^T` would preserve symmetry / positive-definiteness more robustly. Defer to V10 unless precision drift observed during C3 perf testing.
+- **Bus polarity awareness**: simulator must encode 480 VAC trifásico (3 phases, 120° apart, balanced ±1%) DISTINCTLY from 800 VDC unipolar (1 channel, ±0.5% tighter regulation by design). Schema names: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. CO+I panel credibility hinges on this fence.
+- **SSCB µs decision metric (Phase 2)**: synthetic clearing events with latency ∈ [1, 100] µs band per IEC 60947-2 + IEC TR 63282 §5.2. Phase 2 simulator emits these as discrete µs samples, not 1 Hz rolling.
+
+### Atomic batch ladder (C1 → C2 → C3)
+
+| Batch | Effort | Output | Tag (optional) | Bug resolved |
+|---|---|---|---|---|
+| C0 (DONE 2026-05-09) | 15 min | This 1-pager. No code. | — | — |
+| C1 | 1-1.5 h | `telemetry_simulator.py` + 6-8 tests + SSE wiring | `v0.7.4-telemetry-stream` | — |
+| C2 | 1.5-2 h | `telemetry_pipeline.py` + 6-8 tests + DC-EPMS-029b reproducer | `v0.7.5-kalman-pipeline` | DC-EPMS-029b (natural) |
+| C3 | 1-1.5 h | `telemetry_channels.yml` + perf tests + 2 MOPs MD→YAML (T4-MOP-CHI-001, T4-MOP-UPS-001) | `v0.8.0-sprint5-kalman` | (Decision 4-B closure) |
+
+### Risks + countermeasures
+
+- **Numba `@njit` fails on AMD Ryzen + Windows** (FAISS-style hardware bug DC-EPMS-001 lineage). Counter: orphan already has `try/except` fallback to pure Python; functionality preserved, performance degraded. Detect at C3 perf test; document as DC-EPMS-NNN if fired.
+- **Synthetic stream drift from real Path C2 specs erodes credibility**. Counter: cite NVIDIA GB200 / GB300 thermal specs, Schneider Galaxy VX datasheet, York YZ chiller curves in module docstrings. Reviewable.
+- **DC-EPMS-029b doesn't actually resolve naturally**. Counter: explicit reproducer test in C2 closure. If not resolved, opens DC-EPMS-029c targeted at `simulate_loto_measurements` specifically.
+- **DC-EPMS-036** (4 pre-existing pillar mock failures) blocks pytest aggregate. Counter: out of Sprint 5 scope; resolved separately. C2 may incidentally align mocks if simulator surface matches `SiteValidationResult` shape, but not guaranteed.
+
+### Entry conditions for C1 (when resuming next session)
+
+1. Working tree clean (`git status` shows only `.claude/`, `DEMO_SCRIPT.md`, `PRIMER_PROMPT.md` untracked — these are intentional).
+2. `epms-db` Docker container healthy (`docker ps`).
+3. Backend uvicorn accessible at http://127.0.0.1:8080 — **restart needed** if stale (B2 `loto_auditor_agent.py` patch not yet active in running process).
+4. `.venv` activated: `.\.venv\Scripts\Activate.ps1`.
+5. This section reread; no shortcuts.
+
+### Success criteria for C2 closure (DC-EPMS-029b natural resolution proof)
+
+- Test `tests/test_dc_epms_029b_resolution.py` exists.
+- It instantiates `LotoAuditorAgent` with simulator-driven `physics_engine` input populating thermal fields (`hall_inlet_temp_c`, `chiller_supply_temp_c`, `cdu_pressure_bar`).
+- Asserts `shi_pre != shi_post` (delta > 0.01 for a non-trivial LOTO event on `ups_a` or equivalent target).
+- Pillar 4-5-6 tests remain GREEN (no regression on B2 fix).
+
+### Out of scope (explicitly deferred)
+
+- Real PostgreSQL TimescaleDB persistence of innovation history → Sprint 6+.
+- HMI heat map UI for `is_anomalous` flag rendering → Sprint 5.5a.
+- Joseph-form Kalman P-update → V10 if precision drift observed.
+- Physical I/O (BACnet / Modbus) ingest → Phase 2 hardware integration.
+- Resolving DC-EPMS-036 mock drift in `tests/test_loto_auditor_pillars.py` → separate surgical batch.
 
 ## 🏗️ ARCHITECTURE
 
@@ -209,19 +344,11 @@ C:\dev\DC-EPMS_PRO\
 
 ### Sprint 5 Telemetry + Kalman (W5-6, 1.5 sem) ⭐ IMMEDIATE NEXT
 
-**Backend goal**: integrate `cyber_physical_tools.py` orphan (248 lines, Kalman + Numba @njit + Send-on-Delta)
+> **Locked architecture**: see `## 🛰 ROADMAP_V9_NEXT_STEPS — Sprint 5 C0 Architecture` above for the full 1-pager (C0 done 2026-05-09). Atomic ladder C1 → C2 → C3.
 
-| Component | Effort | Output |
-|---|---|---|
-| Synthetic telemetry stream generator | 1 day | `/api/telemetry/stream` real (no SSE placeholder) |
-| Kalman innovation residual integration | 2 days | Sensor fusion for anomaly detection |
-| Numba @njit JIT compile validation | 0.5 day | Performance test, microsecond decision target |
-| Send-on-Delta dispatcher | 1 day | Bandwidth-efficient updates |
-| Unit tests (~6-8) | 1 day | Coverage |
-| 2 MOPs markdown to YAML conversion (D4 decision) | 1 day | T4-MOP-CHI-001 + T4-MOP-UPS-001 executable |
-| **Resolves naturally**: DC-EPMS-029b | -- | -- |
+**Backend goal**: integrate `cyber_physical_tools.py` orphan (248 lines, Kalman + Numba `@njit` + Send-on-Delta) via two new modules (`telemetry_simulator.py`, `telemetry_pipeline.py`) and rewrite `/api/telemetry/stream`. Resolves DC-EPMS-029b naturally during C2.
 
-**Tag target**: `v0.8.0-sprint5-kalman`
+**Tag target**: `v0.8.0-sprint5-kalman` (C3 closure).
 
 ### Sprint 5.5a Pre-Operational Briefing Orchestrator (W6.5, 6-8h)
 
@@ -378,10 +505,55 @@ When making changes that need to coordinate with external services:
 
 ## 🎯 IMMEDIATE NEXT STEPS (when resuming)
 
-1. **Smoke test pending** (3 min): browser verify v0.7.3-sprint5-patches at http://127.0.0.1:8080/ - audit MOP-ATS-MONTHLY-001 + ups_a, confirm sources_consulted shows 14 OK + 1 deferred + 1 warning
-2. **CHANGELOG entry pending** (5 min): append v0.7.3 details (smoke verified results) + DC-EPMS-034 registration
-3. **Archive helpers pending** (1 min): scripts/_archive/sesion_sprint5/ for Camino 1 + Sprint 5 PowerShell artifacts
-4. **Then**: Sprint 5 Telemetry kickoff. Read cyber_physical_tools.py orphan, plan integration, atomic batches.
+1. **Read `## 🛰 ROADMAP_V9_NEXT_STEPS`** — Sprint 5 architecture is locked there (C0 done 2026-05-09 ~04:00).
+2. **Verify state**: `git log --oneline -n 6` (HEAD must be `509be04` or descendant), `git status` (only `.claude/` + `DEMO_SCRIPT.md` + `PRIMER_PROMPT.md` untracked), `docker ps` (`epms-db` healthy), `curl http://127.0.0.1:8080/api/health` (200).
+3. **Restart uvicorn** if backend health check shows stale code (DC-EPMS-034 fix in `backend/loto_auditor_agent.py` not yet active in running process). Browser smoke optional but recommended before C1.
+4. **Activate venv**: `.\.venv\Scripts\Activate.ps1`.
+5. **Wait for explicit GO** from Wilmer before starting C1 (`telemetry_simulator.py`).
+
+## ⏸ PAUSE_STATE (2026-05-09 ~04:00)
+
+> Pause invoked PROACTIVELY by Wilmer (Lead Architect) per Zero-Incidents discipline. Token budget healthy; pause is design-driven, not constraint-driven. "Heroísmo de madrugada es el enemigo de la Zero-Incidents goal."
+
+### What was accomplished this session (commits beyond v0.7.3-sprint5-patches)
+
+| Commit | Phase | Bugs touched |
+|---|---|---|
+| `17dfded` chore(sprint5): close session 7+8 + recovery from shell friction [DC-EPMS-035] | A | DC-EPMS-035 opened+closed |
+| `509be04` fix(loto): DC-EPMS-034 witness_engine call site (LOW) | B | DC-EPMS-034 RESOLVED, DC-EPMS-036 opened |
+| (no commit) C0 read-only architecture 1-pager | C0 | — |
+
+### Pending from this session (NOT blocking next session)
+
+- **Browser smoke verification of DC-EPMS-034 fix**: requires uvicorn restart. User to verify at `http://127.0.0.1:8080/` when convenient — audit on `MOP-ATS-MONTHLY-001` + `ups_a`, confirm `sources_consulted.witness_engine_protection = "confirmed via WitnessStore.sign + IdentityCollisionError (IEC 62443 SR 6.1)"`.
+- **Optional tag** `v0.7.4-loto-witness-fix` on commit `509be04`. Deferred for bundling with Sprint 5 `v0.8.0-sprint5-kalman`.
+
+### Resumption protocol (next session entry)
+
+1. Read this `PAUSE_STATE` section.
+2. Read `## 🛰 ROADMAP_V9_NEXT_STEPS` for Sprint 5 architecture (above).
+3. Verify state per `IMMEDIATE NEXT STEPS` step 2.
+4. Restart uvicorn if needed.
+5. Activate `.venv`.
+6. Wait for Wilmer's explicit GO before starting C1.
+
+### Open bugs at pause time
+
+- DC-EPMS-019 (LOW, deferred): logging file handle on shutdown.
+- DC-EPMS-021 (MED, deferred): 90 ruff legacy errors.
+- DC-EPMS-022 (LOW, deferred): 6 ADRs MD004 asterisks.
+- DC-EPMS-029b (MED, deferred to Sprint 5 C2): SHI delta in `simulate_loto_measurements`. Natural resolution expected during C2.
+- DC-EPMS-035 (LOW, closed): shell-friction recovery (V9.1 PowerShell Native Mandate adopted).
+- DC-EPMS-036 (MED, deferred to Sprint 5): 4 test-fixture drifts in `tests/test_loto_auditor_pillars.py` from DC-EPMS-029/030/031 production fixes that did not propagate to mocks. NON-regressive (verified pre-existing on clean HEAD `17dfded` via `git stash`).
+- DC-EPMS-034 (LOW): RESOLVED 2026-05-09 in commit `509be04`. Stays in registry as historical record.
+
+### V9.1 PowerShell Native Mandate (in force after DC-EPMS-035)
+
+- **Filesystem ops on Windows**: PowerShell-native ONLY. NEVER `mkdir scripts\path` via Bash (backslash collapse).
+- **Use**: `New-Item -ItemType Directory -Path 'a/b/c' -Force` (forward slashes), `Get-ChildItem`, `Move-Item`, `Remove-Item`, `Test-Path`.
+- **Defensive**: `Test-Path -PathType Container` MUST verify destination is a directory BEFORE bulk `Move-Item`. `Move-Item -Force` to a non-existent directory creates a FILE; subsequent moves overwrite it.
+- **Filtering**: `Select-String` (not `findstr` / `grep`).
+- **Heredocs**: NO `python -c '...'` heredocs — write a `.py` file and invoke it (Rule 5 PowerShell Pre-Delivery).
 
 ## 🚨 DO NOT TOUCH
 
