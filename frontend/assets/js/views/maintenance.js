@@ -432,6 +432,25 @@ function _wireActionButtons() {
     tbody.addEventListener('click', _onActionClick);
 }
 
+// LOTO-pattern self-routing: legacy IIFE router in app.js has no
+// `maintenance` branch in MODULES, so navigateTo falls through to the
+// overview fallback. We override that decision after a setTimeout(0)
+// so this view actually becomes visible when its nav-item is clicked.
+function _wireRouting() {
+    document.addEventListener('click', (e) => {
+        const navItem = e.target.closest('[data-route="maintenance"]');
+        if (!navItem) return;
+        setTimeout(() => {
+            document.querySelectorAll('.view').forEach(v => v.setAttribute('hidden', ''));
+            const v = document.getElementById('view-maintenance');
+            if (v) v.removeAttribute('hidden');
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            navItem.classList.add('active');
+            // MutationObserver picks up the un-hide and triggers _refresh.
+        }, 0);
+    });
+}
+
 // ─── Public API ───────────────────────────────────────────────────
 export function initMaintenanceView() {
     _container = document.getElementById('view-maintenance');
@@ -441,6 +460,7 @@ export function initMaintenanceView() {
     }
     _wireFilters();
     _wireActionButtons();
+    _wireRouting();
 
     // Observe show/hide via mutation observer on the hidden attribute.
     const observer = new MutationObserver(_onVisibilityChange);
