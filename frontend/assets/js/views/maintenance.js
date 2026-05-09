@@ -32,6 +32,12 @@ let _filters = {
     only_open: true,
 };
 
+// Sprint Consolidation Mission 3: per-row expand/collapse for
+// predictive WOs. Cached so that a refresh tick doesn't collapse a
+// detail panel the operator just opened.
+const _expandedWOs = new Set();
+const _wosById = new Map();
+
 // ─── Fetch helpers ────────────────────────────────────────────────
 async function _fetchAssets() {
     const r = await fetch(`${API_BASE}/api/cmms/assets?limit=500`);
@@ -139,6 +145,12 @@ async function _onActionClick(e) {
     const action = btn.dataset.cmmsAction;
     const woId = btn.dataset.woId;
     if (!action || !woId) return;
+
+    // Mission 3: drill-down toggle is local-only, no API call.
+    if (action === 'toggle-detail') {
+        _onToggleDetail(woId);
+        return;
+    }
 
     // Build context from the row's data attributes
     const tr = btn.closest('tr');
@@ -312,6 +324,10 @@ function _renderWOBacklog(workOrders) {
 
     if (meta) meta.textContent = `${workOrders.length} shown`;
 
+    // Refresh cache for the drill-down click handler.
+    _wosById.clear();
+    workOrders.forEach(w => _wosById.set(w.work_order_id, w));
+
     if (workOrders.length === 0) {
         tbody.innerHTML = '<tr><td colspan="10" class="m-empty">No work orders match the current filters.</td></tr>';
         return;
@@ -333,7 +349,6 @@ function _renderWOBacklog(workOrders) {
         const requiresLoto = w.requires_loto ? 'true' : 'false';
 
         // Sprint 6.6: inline approve/reject ONLY when pending_approval.
-        // Other statuses show a dim "—" placeholder to preserve column width.
         const actionsCell = w.status === 'pending_approval'
             ? `
                 <td class="m-wo-actions">
@@ -343,14 +358,26 @@ function _renderWOBacklog(workOrders) {
             `
             : `<td class="m-wo-actions m-wo-actions-disabled">—</td>`;
 
-        return `
-            <tr ${isOverdue ? 'data-overdue="true"' : ''}
+        // Mission 3: drill-down chevron only on rows that carry rich
+        // forensic data — predictive_kalman or any WO with a
+        // telemetry_snapshot. Plain manual WOs stay flat to keep the
+        // table scannable.
+        const hasDrillDown = !!(w.predictive_metadata || w.telemetry_snapshot_json);
+        const isExpanded = _expandedWOs.has(w.work_order_id);
+        const chevron = hasDrillDown
+            ? `<button class="m-wo-toggle" data-cmms-action="toggle-detail" data-wo-id="${wid}" title="${isExpanded ? 'Collapse' : 'Expand predictive metadata + telemetry snapshot'}" aria-expanded="${isExpanded}">${isExpanded ? '▼' : '▶'}</button>`
+            : `<span class="m-wo-toggle-placeholder">·</span>`;
+
+        const mainRow = `
+            <tr class="m-wo-row${isExpanded ? ' m-wo-row-expanded' : ''}"
+                ${isOverdue ? 'data-overdue="true"' : ''}
+                data-wo-id="${wid}"
                 data-asset-id="${asset}"
                 data-priority="${pri}"
                 data-work-class="${wclass}"
                 data-procedure-class="${procClass}"
                 data-requires-loto="${requiresLoto}">
-                <td class="m-wo-id" title="${wid}">${wid.slice(-12)}</td>
+                <td class="m-wo-id" title="${wid}">${chevron}${wid.slice(-12)}</td>
                 <td class="m-wo-asset">${asset}</td>
                 <td><span class="m-pri-badge m-pri-${pri.toLowerCase()}">${pri}</span></td>
                 <td><span class="m-wclass-badge m-wclass-${wclass.toLowerCase()}">${wclass}</span></td>
@@ -360,11 +387,117 @@ function _renderWOBacklog(workOrders) {
                 <td class="m-wo-mop">${mop}</td>
                 <td class="m-wo-age">${age}</td>
                 ${actionsCell}
-            </tr>
-        `;
+            </tr>`;
+
+        const detailRow = hasDrillDown
+            ? `<tr class="m-wo-detail-row" data-wo-id="${wid}" ${isExpanded ? '' : 'hidden'}>
+                <td colspan="10" class="m-wo-detail-cell">${_renderWODetail(w)}</td>
+               </tr>`
+            : '';
+
+        return mainRow + detailRow;
     }).join('');
 
     tbody.innerHTML = rows;
+}
+
+// ─── Mission 3: drill-down detail panel ───────────────────────────
+function _renderWODetail(w) {
+    const sections = [];
+
+    // Issue summary in full (the table cell truncates).
+    if (w.issue_summary) {
+        sections.push(`
+            <div class="m-wo-detail-section">
+                <div class="m-wo-detail-title">Issue summary</div>
+                <div class="m-wo-detail-text">${_escape(w.issue_summary)}</div>
+            </div>`);
+    }
+
+    // Predictive metadata: the math behind the alert.
+    if (w.predictive_metadata) {
+        const pm = w.predictive_metadata;
+        const kvRows = Object.entries(pm).map(([k, v]) => {
+            let cls = 'm-detail-kv-value';
+            // Highlight the load-bearing fields the demo narrative needs.
+            if (['max_z', 'mean_z'].includes(k)) cls += ' m-detail-kv-z';
+            if (['metric', 'channel_id', 'standard_reference', 'trigger_basis'].includes(k)) cls += ' m-detail-kv-mono';
+            return `
+                <div class="m-detail-kv">
+                    <span class="m-detail-kv-key">${_escape(k)}</span>
+                    <span class="${cls}">${_fmtDetailValue(v)}</span>
+                </div>`;
+        }).join('');
+        sections.push(`
+            <div class="m-wo-detail-section">
+                <div class="m-wo-detail-title">Predictive metadata <span class="m-wo-detail-sub">(Kalman trigger basis)</span></div>
+                <div class="m-detail-kv-grid">${kvRows}</div>
+            </div>`);
+    }
+
+    // Telemetry snapshot: the moment-of-anomaly state.
+    if (w.telemetry_snapshot_json) {
+        const ts = w.telemetry_snapshot_json;
+        const items = Object.entries(ts).map(([k, v]) => `
+            <div class="m-detail-kv">
+                <span class="m-detail-kv-key m-detail-kv-mono">${_escape(k)}</span>
+                <span class="m-detail-kv-value m-detail-kv-mono">${_fmtDetailValue(v)}</span>
+            </div>`).join('');
+        sections.push(`
+            <div class="m-wo-detail-section">
+                <div class="m-wo-detail-title">Telemetry snapshot <span class="m-wo-detail-sub">(captured at trigger time)</span></div>
+                <div class="m-detail-kv-grid">${items}</div>
+            </div>`);
+    }
+
+    // Provenance (small footer): who/when/state.
+    const fmtDate = (iso) => {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return isNaN(d) ? iso : d.toISOString().slice(0, 19).replace('T', ' ') + 'Z';
+    };
+    sections.push(`
+        <div class="m-wo-detail-section m-wo-detail-provenance">
+            <span><span class="m-detail-kv-key">requested_by</span> ${_escape(w.requested_by || '—')}</span>
+            <span><span class="m-detail-kv-key">approved_by_cet</span> ${_escape(w.approved_by_cet || '—')}</span>
+            <span><span class="m-detail-kv-key">approved_at</span> <span class="m-detail-kv-mono">${fmtDate(w.approved_at)}</span></span>
+            <span><span class="m-detail-kv-key">created_at</span> <span class="m-detail-kv-mono">${fmtDate(w.timestamp)}</span></span>
+        </div>`);
+
+    return sections.join('');
+}
+
+function _fmtDetailValue(v) {
+    if (v === null || v === undefined) return '—';
+    if (typeof v === 'number') {
+        return Number.isInteger(v) ? String(v) : v.toFixed(3).replace(/\.?0+$/, '') || '0';
+    }
+    if (typeof v === 'boolean') return v ? 'true' : 'false';
+    if (typeof v === 'object') return _escape(JSON.stringify(v));
+    return _escape(String(v));
+}
+
+function _onToggleDetail(woId) {
+    const detailRow = document.querySelector(`#view-maintenance .m-wo-detail-row[data-wo-id="${CSS.escape(woId)}"]`);
+    const mainRow   = document.querySelector(`#view-maintenance .m-wo-row[data-wo-id="${CSS.escape(woId)}"]`);
+    const toggleBtn = mainRow?.querySelector('.m-wo-toggle');
+    if (!detailRow || !mainRow || !toggleBtn) return;
+
+    if (_expandedWOs.has(woId)) {
+        _expandedWOs.delete(woId);
+        detailRow.setAttribute('hidden', '');
+        mainRow.classList.remove('m-wo-row-expanded');
+        toggleBtn.textContent = '▶';
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        toggleBtn.title = 'Expand predictive metadata + telemetry snapshot';
+    } else {
+        _expandedWOs.add(woId);
+        detailRow.removeAttribute('hidden');
+        mainRow.classList.add('m-wo-row-expanded');
+        toggleBtn.textContent = '▼';
+        toggleBtn.setAttribute('aria-expanded', 'true');
+        toggleBtn.title = 'Collapse';
+    }
 }
 
 // ─── Refresh cycle ────────────────────────────────────────────────

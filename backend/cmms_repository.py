@@ -50,6 +50,29 @@ class WorkOrderNotFoundError(CMMSRepositoryError):
     pass
 
 
+class WorkOrderStateConflictError(CMMSRepositoryError):
+    """ADR-006 audit-trail integrity guard.
+
+    A WO state transition was attempted from a state where it is not
+    legal — for example, re-approving an already-approved WO would
+    overwrite the original CET signature, breaking single-signature
+    auditability. The route handler maps this to HTTP 409 Conflict.
+    """
+
+    def __init__(self, wo_id: str, current_status: str, attempted: str,
+                 current_cet: str | None = None):
+        self.wo_id = wo_id
+        self.current_status = current_status
+        self.attempted = attempted
+        self.current_cet = current_cet
+        msg = (
+            f"work_order '{wo_id}' is already '{current_status}'"
+            + (f" (signed by '{current_cet}')" if current_cet else "")
+            + f"; cannot transition to '{attempted}'."
+        )
+        super().__init__(msg)
+
+
 # =====================================================================
 #  Helpers
 # =====================================================================
@@ -365,26 +388,72 @@ class PostgresCMMSRepository:
         cet_id: str,
         rejection_reason: str | None = None,
     ) -> WorkOrder:
-        """Perform a state-machine transition and return the updated WO."""
+        """Perform a state-machine transition and return the updated WO.
+
+        ADR-006 audit-trail integrity (DC-EPMS-040 fix):
+          * approve  is only valid from 'pending_approval'.
+          * reject   is only valid from 'pending_approval'.
+        Re-approving an already-approved WO would silently overwrite
+        the original `approved_by_cet`, breaking single-signature
+        auditability — so we raise WorkOrderStateConflictError (HTTP
+        409) instead.
+
+        Other transitions (approved -> scheduled -> in_progress ->
+        completed) preserve approved_by_cet and rejection_reason via
+        the WHERE-clause; existing assigned_to_cet is set on the first
+        in_progress transition only.
+        """
+        # Atomic guarded UPDATE: only succeeds if the source state is
+        # legal for the requested target state. We drive that via a
+        # WHERE clause; if no row matches, we re-fetch to determine
+        # whether the WO doesn't exist (-> 404) vs is in the wrong
+        # state (-> 409).
         update_sql = """
         UPDATE work_orders
         SET status = $2,
-            approved_by_cet = CASE WHEN $2 = 'approved' THEN $3
-                                   ELSE approved_by_cet END,
-            assigned_to_cet = CASE WHEN $2 = 'in_progress' AND assigned_to_cet IS NULL
-                                   THEN $3 ELSE assigned_to_cet END,
-            rejection_reason = CASE WHEN $2 = 'rejected' THEN $4
-                                    ELSE rejection_reason END
+            approved_by_cet = CASE
+                WHEN $2 = 'approved' AND approved_by_cet IS NULL THEN $3
+                ELSE approved_by_cet
+            END,
+            assigned_to_cet = CASE
+                WHEN $2 = 'in_progress' AND assigned_to_cet IS NULL THEN $3
+                ELSE assigned_to_cet
+            END,
+            rejection_reason = CASE
+                WHEN $2 = 'rejected' THEN $4
+                ELSE rejection_reason
+            END
         WHERE work_order_id = $1
+          AND CASE
+                WHEN $2 = 'approved' THEN status = 'pending_approval'
+                WHEN $2 = 'rejected' THEN status = 'pending_approval'
+                ELSE TRUE
+              END
         RETURNING *;
         """
         try:
             async with self._pool.acquire() as conn:
-                row = await conn.fetchrow(update_sql, wo_id, new_status, cet_id, rejection_reason)
+                row = await conn.fetchrow(
+                    update_sql, wo_id, new_status, cet_id, rejection_reason,
+                )
+                if row is None:
+                    # Either WO doesn't exist or it's in the wrong state.
+                    current = await conn.fetchrow(
+                        "SELECT status, approved_by_cet FROM work_orders "
+                        "WHERE work_order_id = $1",
+                        wo_id,
+                    )
         except Exception as e:
             raise CMMSRepositoryError(f"transition_status {wo_id} failed: {e}") from e
         if row is None:
-            raise WorkOrderNotFoundError(f"work_order '{wo_id}' not found")
+            if current is None:
+                raise WorkOrderNotFoundError(f"work_order '{wo_id}' not found")
+            raise WorkOrderStateConflictError(
+                wo_id=wo_id,
+                current_status=current["status"],
+                attempted=new_status,
+                current_cet=current["approved_by_cet"],
+            )
         return _row_to_wo(row)
 
 
@@ -499,13 +568,31 @@ class MockCMMSRepository:
         cet_id: str,
         rejection_reason: str | None = None,
     ) -> WorkOrder:
+        """Same ADR-006 audit-trail guard as PostgresCMMSRepository.
+
+        approve / reject only legal from 'pending_approval'; otherwise
+        WorkOrderStateConflictError (HTTP 409). Other transitions are
+        permissive — the production state machine lives in postgres.
+        """
         if wo_id not in self._work_orders:
             raise WorkOrderNotFoundError(f"work_order '{wo_id}' not found")
         wo = self._work_orders[wo_id]
-        updated = wo.model_copy(update={
-            "status": new_status,
-            "approved_by_cet": cet_id if new_status == "approved" else wo.approved_by_cet,
-            "rejection_reason": rejection_reason if new_status == "rejected" else wo.rejection_reason,
-        })
+        if new_status in ("approved", "rejected") and wo.status != "pending_approval":
+            raise WorkOrderStateConflictError(
+                wo_id=wo_id,
+                current_status=wo.status,
+                attempted=new_status,
+                current_cet=wo.approved_by_cet,
+            )
+        updates: dict[str, Any] = {"status": new_status}
+        # Approved: write CET only on first transition (already guarded above).
+        if new_status == "approved":
+            updates["approved_by_cet"] = cet_id
+        # In-progress: latch assigned_to_cet on first transition.
+        if new_status == "in_progress" and wo.assigned_to_cet is None:
+            updates["assigned_to_cet"] = cet_id
+        if new_status == "rejected":
+            updates["rejection_reason"] = rejection_reason
+        updated = wo.model_copy(update=updates)
         self._work_orders[wo_id] = updated
         return updated

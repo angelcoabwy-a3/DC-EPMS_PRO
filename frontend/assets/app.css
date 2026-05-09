@@ -599,6 +599,122 @@ body {
     box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.4);
 }
 
+/* ── Sprint Consolidation Mission 3: predictive WO drill-down ── */
+.m-wo-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1;
+    padding: 2px 5px;
+    margin-right: 6px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.m-wo-toggle:hover {
+    background: rgba(0, 184, 212, 0.18);
+    border-color: var(--accent);
+}
+.m-wo-toggle-placeholder {
+    display: inline-block;
+    width: 17px;
+    color: var(--text-dim);
+    font-size: 10px;
+    margin-right: 6px;
+    text-align: center;
+}
+.m-wo-row-expanded > td:first-child {
+    border-left: 2px solid var(--accent);
+}
+.m-wo-detail-row > td {
+    background: var(--bg-elevated, #0F1115);
+    border-bottom: 1px solid var(--border);
+    border-left: 2px solid var(--accent);
+    padding: 12px 16px 14px 22px !important;
+}
+.m-wo-detail-cell {
+    font-size: 11px;
+}
+.m-wo-detail-section {
+    margin-bottom: 10px;
+}
+.m-wo-detail-section:last-child { margin-bottom: 0; }
+.m-wo-detail-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--accent);
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+.m-wo-detail-sub {
+    color: var(--text-dim);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    margin-left: 6px;
+}
+.m-wo-detail-text {
+    color: var(--text);
+    line-height: 1.5;
+    font-size: 11.5px;
+    padding: 6px 10px;
+    border-left: 2px solid var(--border);
+    background: var(--bg-surface);
+}
+.m-detail-kv-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 4px 16px;
+}
+.m-detail-kv {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 3px 8px;
+    border-bottom: 1px dotted var(--border);
+}
+.m-detail-kv-key {
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    flex-shrink: 0;
+    margin-right: 8px;
+}
+.m-detail-kv-value {
+    color: var(--text);
+    font-size: 11px;
+    text-align: right;
+    word-break: break-word;
+}
+.m-detail-kv-mono {
+    font-family: var(--font-mono) !important;
+    font-size: 10.5px !important;
+    color: var(--accent);
+}
+.m-detail-kv-z {
+    font-family: var(--font-mono) !important;
+    font-weight: 700;
+    color: var(--warn) !important;
+    font-size: 12px !important;
+}
+.m-wo-detail-provenance {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 10.5px;
+}
+.m-wo-detail-provenance > span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
 /* ── Tech Assist view (Sprint 7.1a/b/d) ───────────────────────────
    Three-panel field assistance surface backed by /api/tech-assist/*.
    Same instrument-grade discipline as Maintenance: anthracite + cyan,

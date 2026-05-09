@@ -43,6 +43,7 @@ from backend.cmms_repository import (
     CMMSRepositoryError,
     PostgresCMMSRepository,
     WorkOrderNotFoundError,
+    WorkOrderStateConflictError,
 )
 from backend.cmms_seeder import ASSET_TYPE_TO_MOP
 
@@ -282,6 +283,15 @@ async def approve_wo(
         wo = await repo.transition_status_async(wo_id, "approved", body.cet_id)
     except WorkOrderNotFoundError:
         raise HTTPException(status_code=404, detail=f"work_order '{wo_id}' not found")
+    except WorkOrderStateConflictError as e:
+        # ADR-006: refuse to overwrite an existing CET signature.
+        raise HTTPException(status_code=409, detail={
+            "error": "state_conflict",
+            "message": str(e),
+            "current_status": e.current_status,
+            "current_approved_by_cet": e.current_cet,
+            "attempted": e.attempted,
+        })
     except CMMSRepositoryError as e:
         raise HTTPException(status_code=500, detail=str(e))
     return wo.model_dump(mode="json")
@@ -300,6 +310,13 @@ async def reject_wo(
         )
     except WorkOrderNotFoundError:
         raise HTTPException(status_code=404, detail=f"work_order '{wo_id}' not found")
+    except WorkOrderStateConflictError as e:
+        raise HTTPException(status_code=409, detail={
+            "error": "state_conflict",
+            "message": str(e),
+            "current_status": e.current_status,
+            "attempted": e.attempted,
+        })
     except CMMSRepositoryError as e:
         raise HTTPException(status_code=500, detail=str(e))
     return wo.model_dump(mode="json")

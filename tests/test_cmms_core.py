@@ -28,6 +28,7 @@ from backend.cmms_repository import (
     AssetNotFoundError,
     MockCMMSRepository,
     WorkOrderNotFoundError,
+    WorkOrderStateConflictError,
 )
 from backend.cmms_seeder import (
     ASSET_TYPE_CRITICALITY,
@@ -235,6 +236,96 @@ async def test_work_order_reject_transition(repo):
     )
     assert updated.status == "rejected"
     assert updated.rejection_reason == "needs more info"
+
+
+# ─── DC-EPMS-040: ADR-006 audit-trail integrity (re-approve guard) ────
+@pytest.mark.asyncio
+async def test_reapprove_already_approved_raises_conflict(repo):
+    """ADR-006: re-approving a signed WO must NOT silently overwrite
+    approved_by_cet. The state machine refuses with 409 Conflict so a
+    second CET cannot hijack the audit trail."""
+    wo = WorkOrder(
+        work_order_id="WO-AT-1", timestamp=datetime.now(timezone.utc),
+        asset_id="ups_a", asset_type_at_creation="ups",
+        work_class="CM", lor=16, trigger_source="predictive_kalman",
+        issue_summary="audit-trail probe", draft_json={},
+    )
+    await repo.save_work_order_async(wo)
+    first = await repo.transition_status_async("WO-AT-1", "approved", "alice")
+    assert first.approved_by_cet == "alice"
+
+    with pytest.raises(WorkOrderStateConflictError) as excinfo:
+        await repo.transition_status_async("WO-AT-1", "approved", "mallory")
+    err = excinfo.value
+    assert err.wo_id == "WO-AT-1"
+    assert err.current_status == "approved"
+    assert err.current_cet == "alice"
+    assert err.attempted == "approved"
+
+    fetched = await repo.get_work_order_async("WO-AT-1")
+    assert fetched.approved_by_cet == "alice", \
+        "original CET signature must be preserved across the failed re-approve"
+
+
+@pytest.mark.asyncio
+async def test_reject_already_approved_raises_conflict(repo):
+    """Same guard for reject path — once a WO is approved, it cannot
+    be rejected. (Cancellation is a separate transition.)"""
+    wo = WorkOrder(
+        work_order_id="WO-AT-2", timestamp=datetime.now(timezone.utc),
+        asset_id="chiller_1", asset_type_at_creation="chiller",
+        work_class="CM", lor=12, trigger_source="manual",
+        issue_summary="audit-trail probe 2", draft_json={},
+    )
+    await repo.save_work_order_async(wo)
+    await repo.transition_status_async("WO-AT-2", "approved", "alice")
+
+    with pytest.raises(WorkOrderStateConflictError) as excinfo:
+        await repo.transition_status_async(
+            "WO-AT-2", "rejected", "mallory", rejection_reason="trying to undo",
+        )
+    assert excinfo.value.current_status == "approved"
+
+    fetched = await repo.get_work_order_async("WO-AT-2")
+    assert fetched.status == "approved"
+    assert fetched.rejection_reason is None
+
+
+@pytest.mark.asyncio
+async def test_reapprove_after_reject_raises_conflict(repo):
+    """A rejected WO is terminal — cannot be flipped back to approved."""
+    wo = WorkOrder(
+        work_order_id="WO-AT-3", timestamp=datetime.now(timezone.utc),
+        asset_id="ups_b", asset_type_at_creation="ups",
+        work_class="EM", lor=20, trigger_source="manual",
+        issue_summary="audit-trail probe 3", draft_json={},
+    )
+    await repo.save_work_order_async(wo)
+    await repo.transition_status_async(
+        "WO-AT-3", "rejected", "alice", rejection_reason="duplicate",
+    )
+
+    with pytest.raises(WorkOrderStateConflictError):
+        await repo.transition_status_async("WO-AT-3", "approved", "mallory")
+
+
+@pytest.mark.asyncio
+async def test_in_progress_does_not_overwrite_approved_cet(repo):
+    """Latching invariant: subsequent state transitions must not touch
+    approved_by_cet. Only the first 'approved' transition writes it."""
+    wo = WorkOrder(
+        work_order_id="WO-AT-4", timestamp=datetime.now(timezone.utc),
+        asset_id="rpp_a_01", asset_type_at_creation="rpp",
+        work_class="CM", lor=20, trigger_source="predictive_kalman",
+        issue_summary="audit-trail probe 4", draft_json={},
+    )
+    await repo.save_work_order_async(wo)
+    await repo.transition_status_async("WO-AT-4", "approved", "alice")
+    await repo.transition_status_async("WO-AT-4", "in_progress", "bob")
+    fetched = await repo.get_work_order_async("WO-AT-4")
+    assert fetched.status == "in_progress"
+    assert fetched.approved_by_cet == "alice"      # original approver preserved
+    assert fetched.assigned_to_cet == "bob"         # technician latched separately
 
 
 @pytest.mark.asyncio

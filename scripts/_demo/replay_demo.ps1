@@ -1,0 +1,242 @@
+# =====================================================================
+#  scripts/_demo/replay_demo.ps1
+#  =====================================================================
+#  One-click demo state reset for the CO+I panel walkthrough.
+#
+#  What it does (in order):
+#    1. Verifies prerequisites (epms-db running, uvicorn reachable on 8080)
+#    2. WIPES the work_orders table (assets are preserved)
+#    3. Replays the snapshot SQL to restore the post-demo state
+#    4. Resets three Path A predictive_kalman P1 LOTO WOs to
+#       pending_approval so you have fresh click-through targets:
+#          rpp_a_01    -> THDi excursion         (IEEE 519-2014 §5.1)
+#          cdu_a_01    -> coolant flow drift     (DLC manifold)
+#          genset_a_01 -> oil pressure drop      (NFPA 110)
+#       (rejected probe artifacts from the snapshot are dropped)
+#    5. Prints the resulting backlog so you can confirm the state
+#       matches what the Maintenance view will render after F5.
+#
+#  Usage:
+#    .\scripts\_demo\replay_demo.ps1                # default
+#    .\scripts\_demo\replay_demo.ps1 -SkipWipe      # keep current WOs
+#    .\scripts\_demo\replay_demo.ps1 -DryRun        # preview only
+#
+#  Idempotent: re-running brings state back to the same baseline.
+# =====================================================================
+
+param(
+    [switch]$SkipWipe,
+    [switch]$DryRun
+)
+
+$ErrorActionPreference = 'Stop'
+
+$REPO_ROOT   = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$SNAPSHOT    = Join-Path $PSScriptRoot 'postgres_demo_state_2026-05-09.sql'
+$API         = 'http://127.0.0.1:8080/api'
+$PG_CONTAINER = 'epms-db'
+$PG_USER     = 'epms'
+$PG_DB       = 'dcepms'
+
+function Write-Section($title) {
+    Write-Host ""
+    Write-Host "=== $title ===" -ForegroundColor Cyan
+}
+
+function Assert-Prereq {
+    Write-Section "Prereq checks"
+    $running = (docker ps --filter "name=$PG_CONTAINER" --format "{{.Names}}") -eq $PG_CONTAINER
+    if (-not $running) {
+        throw "Container '$PG_CONTAINER' is not running. Start with: docker compose up -d $PG_CONTAINER"
+    }
+    Write-Host "  [OK] container '$PG_CONTAINER' is running"
+
+    try {
+        $health = Invoke-RestMethod -Uri "$API/health" -TimeoutSec 5
+        if ($health.postgres.status -ne 'up') {
+            throw "API up but postgres status='$($health.postgres.status)'"
+        }
+        Write-Host "  [OK] uvicorn reachable, postgres=up ($($health.postgres.latency_ms) ms)"
+    } catch {
+        throw "uvicorn not reachable on 8080: $_"
+    }
+
+    if (-not (Test-Path $SNAPSHOT)) {
+        throw "Snapshot SQL not found: $SNAPSHOT"
+    }
+    Write-Host "  [OK] snapshot present: $SNAPSHOT"
+}
+
+function Invoke-Sql([string]$Sql) {
+    if ($DryRun) {
+        Write-Host "  [DRY] $Sql"
+        return $null
+    }
+    $Sql | docker exec -i $PG_CONTAINER psql -U $PG_USER -d $PG_DB -t -A 2>&1
+}
+
+function Wipe-WorkOrders {
+    Write-Section "Wipe work_orders table"
+    if ($SkipWipe) { Write-Host "  [SKIP] -SkipWipe set"; return }
+    $before = Invoke-Sql "SELECT count(*) FROM work_orders;"
+    Write-Host "  before: $before WOs"
+    Invoke-Sql "TRUNCATE TABLE work_orders;" | Out-Null
+    if (-not $DryRun) {
+        $after = Invoke-Sql "SELECT count(*) FROM work_orders;"
+        Write-Host "  after:  $after WOs"
+    }
+}
+
+function Replay-Snapshot {
+    Write-Section "Replay snapshot SQL"
+    if ($DryRun) {
+        Write-Host "  [DRY] would pipe $SNAPSHOT through psql"
+        return
+    }
+    Get-Content $SNAPSHOT -Raw | docker exec -i $PG_CONTAINER psql -U $PG_USER -d $PG_DB 2>&1 |
+        Select-String -Pattern '^INSERT|^ERROR' -Context 0,0 |
+        Group-Object Line |
+        ForEach-Object { Write-Host "  $($_.Count)x $($_.Name.Substring(0, [Math]::Min(40, $_.Name.Length)))" }
+
+    # The snapshot left rejected probe rows from the original session;
+    # drop them so the demo backlog stays clean (six-row narrative arc).
+    $dropped = Invoke-Sql "DELETE FROM work_orders WHERE status = 'rejected' RETURNING work_order_id;"
+    if ($dropped) {
+        Write-Host "  dropped rejected probe artifacts: $dropped"
+    }
+
+    # Drop the three predictive_kalman approvals from the snapshot —
+    # the Reset-PredictiveTargets step recreates them in pending_approval
+    # so the demo has fresh click-through buttons.
+    $cleared = Invoke-Sql "DELETE FROM work_orders WHERE trigger_source='predictive_kalman' RETURNING work_order_id;"
+    if ($cleared) {
+        Write-Host "  cleared predictive_kalman rows for fresh injection: $cleared"
+    }
+}
+
+function Inject-PredictiveWO {
+    param([string]$AssetId, [string]$Channel, [string]$Metric,
+          [double]$MaxZ, [double]$LastEmission, [string]$Rationale,
+          [string]$Standard, [string]$LinkedMop)
+
+    $payload = @{
+        asset_id              = $AssetId
+        issue_summary         = "Predictive anomaly: $Metric on $AssetId max_z=$MaxZ sustained 3 windows. Last emission: $LastEmission. $Rationale Reference: $Standard."
+        work_class_hint       = 'CM'
+        likelihood_idx        = 4
+        consequence_idx       = 5
+        requires_loto         = $true
+        trigger_source        = 'predictive_kalman'
+        requested_by          = 'predictive_trigger_kalman'
+        predictive_metadata   = @{
+            max_z              = $MaxZ
+            mean_z             = [Math]::Round($MaxZ * 0.74, 2)
+            metric             = $Metric
+            channel_id         = $Channel
+            last_emission      = $LastEmission
+            sustain_count      = 3
+            first_anomaly_at   = (Get-Date).ToUniversalTime().AddMinutes(-7).ToString("o")
+            trigger_basis      = 'kalman_innovation_3sigma_sustained'
+            asset_criticality  = 'high'
+            standard_reference = $Standard
+        }
+        telemetry_snapshot_json = @{
+            "${AssetId}:${Metric}" = $LastEmission
+            captured_at            = (Get-Date).ToUniversalTime().ToString("o")
+        }
+    }
+    $json = $payload | ConvertTo-Json -Depth 6 -Compress
+
+    if ($DryRun) {
+        Write-Host "  [DRY] inject $AssetId / $Metric (z=$MaxZ)"
+        return
+    }
+    try {
+        $resp = Invoke-RestMethod -Uri "$API/cmms/work-orders" `
+            -Method POST -ContentType 'application/json' -Body $json -TimeoutSec 10
+        Write-Host ("  [OK] {0,-12} -> {1}  P{2} LOR={3}  status={4}" -f `
+            $AssetId, $resp.work_order_id, $resp.priority.Substring(1), $resp.lor, $resp.status) -ForegroundColor Green
+    } catch {
+        Write-Host "  [FAIL] $AssetId injection: $_" -ForegroundColor Red
+        throw
+    }
+}
+
+function Reset-PredictiveTargets {
+    Write-Section "Inject 3 fresh predictive_kalman P1 LOTO targets"
+
+    Inject-PredictiveWO `
+        -AssetId      'rpp_a_01' `
+        -Channel      'rpp_a_01:thd_i_pct' `
+        -Metric       'thd_i_pct' `
+        -MaxZ         12.8 `
+        -LastEmission 18.4 `
+        -Rationale    'IEEE 519 limit 8% at V<69kV; rated baseline 5-7% for GB200 PSU load. Suggested: PQ analyzer scan + verify upstream UPS rectifier capacitor bank.' `
+        -Standard     'IEEE 519-2014 Section 5.1' `
+        -LinkedMop    $null
+
+    Inject-PredictiveWO `
+        -AssetId      'cdu_a_01' `
+        -Channel      'cdu_a_01:loop_flow_lpm' `
+        -Metric       'loop_flow_lpm' `
+        -MaxZ         15.6 `
+        -LastEmission 142.0 `
+        -Rationale    'DLC manifold flow drifted 22% below GB200 spec (rated 180 LPM). Risk: GPU Tj excursion at next training step burst. Suggested: pump curve check + filter dP scan.' `
+        -Standard     'ASHRAE TC 9.9 (2021) Class W17 spec' `
+        -LinkedMop    $null
+
+    Inject-PredictiveWO `
+        -AssetId      'genset_a_01' `
+        -Channel      'genset_a_01:oil_pressure_psi' `
+        -Metric       'oil_pressure_psi' `
+        -MaxZ         19.2 `
+        -LastEmission 38.0 `
+        -Rationale    'Oil pressure dropped to 38 psi during weekly load-bank exercise (rated 45-65 psi at 1800 RPM). Risk: failure to start during utility outage. Suggested: oil pump inspection + filter change.' `
+        -Standard     'NFPA 110-2022 Section 8.4 (Level 1 EPSS)' `
+        -LinkedMop    $null
+}
+
+function Show-Backlog {
+    Write-Section "Resulting open-WO backlog (what the Maintenance view will render)"
+    if ($DryRun) { Write-Host "  [DRY] skipped"; return }
+    try {
+        $wos = Invoke-RestMethod -Uri "$API/cmms/work-orders?only_open=true&limit=200" -TimeoutSec 5
+        Write-Host ("  open WO count: {0}" -f $wos.count) -ForegroundColor Yellow
+        $statuses = $wos.work_orders | Group-Object status |
+                    ForEach-Object { "$($_.Name)=$($_.Count)" }
+        Write-Host "  by status: $($statuses -join ', ')"
+        Write-Host ""
+        $wos.work_orders | ForEach-Object {
+            $loto = if ($_.requires_loto) { 'YES' } else { 'no ' }
+            $cet  = if ($_.approved_by_cet) { $_.approved_by_cet } else { '-' }
+            Write-Host ("  {0,-32} {1,-14} {2}  {3,-18}  src={4,-18} loto={5} cet={6}" -f `
+                $_.work_order_id, $_.asset_id, $_.priority, $_.status, $_.trigger_source, $loto, $cet)
+        }
+    } catch {
+        Write-Host "  [FAIL] could not fetch backlog: $_" -ForegroundColor Red
+    }
+}
+
+# ─── main ─────────────────────────────────────────────────────────────
+$start = Get-Date
+Write-Host ""
+Write-Host "DC-EPMS PRO demo state reset" -ForegroundColor Magenta
+Write-Host "(snapshot: $($SNAPSHOT | Split-Path -Leaf))"
+if ($DryRun) { Write-Host "[DRY-RUN MODE]" -ForegroundColor Yellow }
+
+try {
+    Assert-Prereq
+    Wipe-WorkOrders
+    Replay-Snapshot
+    Reset-PredictiveTargets
+    Show-Backlog
+
+    $elapsed = ((Get-Date) - $start).TotalSeconds
+    Write-Host ""
+    Write-Host ("[OK] demo reset complete in {0:N1}s" -f $elapsed) -ForegroundColor Green
+    Write-Host "Hard-reload the browser (Ctrl+Shift+R) at http://127.0.0.1:8080/#maintenance"
+} catch {
+    Write-Host ""
+    Write-Host "[FAIL] demo reset aborted: $_" -ForegroundColor Red
+    exit 1
+}
