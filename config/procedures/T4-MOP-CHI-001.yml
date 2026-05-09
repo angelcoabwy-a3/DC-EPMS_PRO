@@ -1,0 +1,308 @@
+# ════════════════════════════════════════════════════════════════════
+#  T4-MOP-CHI-001 - York YZ Chiller Quarterly Preventive Maintenance
+# ════════════════════════════════════════════════════════════════════
+# Source: data/corpus/tier4_a3semi_mops/T4-MOP-CHI-001_chiller_quarterly_pm.md
+# Decision 4-B closure (Sprint 5 follow-up):
+#   Markdown SOP -> executable YAML for procedure_engine.
+#
+# Standards: ASHRAE 147, AHRI 550/590, CSA Z462, a3semi OPS, IEEE 1188.
+#
+# Risk profile: HIGH (LOR=3). One of 3 N+1 chillers offline; the other
+# carries full facility cooling load during the 6-hour window. If the
+# carrying chiller fails, IT thermal stress propagates within minutes.
+# ════════════════════════════════════════════════════════════════════
+
+procedure_id: T4-MOP-CHI-001
+title: "Chiller Quarterly Preventive Maintenance (York YZ)"
+work_class: PM
+procedure_class: MOP
+default_lor: 3
+estimated_duration_min: 360
+applicable_standards:
+  - ASHRAE_147_refrigeration
+  - AHRI_550_590_chiller_performance
+  - CSA_Z462_electrical_safety
+  - NFPA_70E_arc_flash
+  - IEEE_1188_battery_maintenance
+  - a3semi_OPS
+
+pre_conditions:
+  - id: n_plus_1_cooling_available
+    description: "Other chillers must be fully operational (N+1 redundancy intact)"
+    check: chillers_healthy_count >= 2
+    failure_action: ABORT
+
+  - id: outdoor_temp_acceptable
+    description: "Outdoor dry-bulb < 30 C preferred (summer requires extra planning)"
+    check: outdoor_temp_c < 30
+    failure_action: WARN
+
+  - id: refrigeration_tech_certified
+    description: "Refrigeration technician certified for R-1233zd handling"
+    check: tech_cert_r1233zd == true
+    failure_action: ABORT
+
+  - id: water_chemistry_in_band
+    description: "Condenser water chemistry within band (pH 7.5-8.5, conductivity < 3000 uS/cm, biocide present)"
+    check: water_chem_in_band == true
+    failure_action: WARN
+
+steps:
+
+  # ── Phase 1: Shutdown and isolation (1 hour) ──────────────────────
+  - id: step_01_load_transfer_pre_check
+    title: "Verify load transferred to redundant chiller (EPMS read)"
+    type: read_verify
+    adapter: york
+    target: chiller_1
+    expected:
+      load_pct: { max: 25 }
+      mode: REDUCED
+    timeout_s: 60
+    requires_witness: false
+    abort_on_failure: true
+
+  - id: step_02_normal_shutdown
+    title: "Smart Panel: Menu > Shutdown > Normal Stop (compressor spin-down 2-3 min)"
+    type: write_verify
+    adapter: york
+    target: chiller_1
+    command: NORMAL_SHUTDOWN
+    verify_after:
+      status: STOPPED
+    timeout_s: 240
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_03_isolate_chilled_water_loop
+    title: "Close CWS-1 + CWR-1, verify pressure bleed, drain service line"
+    type: write_verify
+    adapter: york
+    target: chiller_1
+    command: ISOLATE_CHILLED_WATER
+    verify_after:
+      cws_valve_closed: true
+      cwr_valve_closed: true
+      pressure_bled: true
+    timeout_s: 300
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_04_isolate_condenser_water_loop
+    title: "Close CDWS-1 + CDWR-1, open air bleed at high point"
+    type: write_verify
+    adapter: york
+    target: chiller_1
+    command: ISOLATE_CONDENSER_WATER
+    verify_after:
+      cdws_valve_closed: true
+      cdwr_valve_closed: true
+    timeout_s: 300
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_05_electrical_isolation_loto
+    title: "Open VSD disconnect, open main feeder, verify zero voltage, apply LOTO per T1-SAF-LOTO-001"
+    type: write_verify
+    adapter: york
+    target: chiller_1_vsd
+    command: ELECTRICAL_LOTO
+    verify_after:
+      vsd_terminal_voltage_v: { max: 5 }
+      loto_applied: true
+      personal_locks_count: { min: 2 }
+    timeout_s: 600
+    requires_witness: true
+    abort_on_failure: true
+
+  # ── Phase 2: Inspections (3 hours) ────────────────────────────────
+  - id: step_06_smart_panel_log_review
+    title: "Download last 90 days operating data; review compressor speed, bearing gap drift, refrigerant pressure trends, approach temperature"
+    type: read_verify
+    adapter: york
+    target: chiller_1
+    expected:
+      anomaly_trends_documented: true
+    timeout_s: 600
+    requires_witness: false
+    abort_on_failure: false
+
+  - id: step_07_magnetic_bearing_inspection
+    title: "Verify de-levitation, inspect housings for contamination, measure bearing clearances within spec"
+    type: read_verify
+    adapter: york
+    target: chiller_1_bearings
+    expected:
+      delevitated: true
+      contamination: clean
+      clearance_within_spec: true
+    timeout_s: 1800
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_08_compressor_external_inspection
+    title: "Visual oil-residue check (none expected, magnetic bearings are oil-free), flange torque, cable integrity"
+    type: read_verify
+    adapter: york
+    target: chiller_1_compressor
+    expected:
+      oil_residue: none
+      flange_torque_within_spec: true
+      cables_intact: true
+    timeout_s: 1200
+    requires_witness: false
+    abort_on_failure: true
+
+  - id: step_09_refrigerant_leak_check
+    title: "Electronic leak check at compressor discharge, condenser flanges, evaporator flanges, all service valves. ZERO detection required."
+    type: read_verify
+    adapter: york
+    target: chiller_1_refrigerant
+    expected:
+      leak_detected: false
+      charge_within_2pct_of_historical: true
+    timeout_s: 1800
+    requires_witness: true
+    abort_on_failure: true
+    abort_sequence: [refrigerant_leak_response]
+
+  - id: step_10_evaporator_inspection
+    title: "Open access port (with isolation confirmed), inspect tube surfaces, ultrasonic thickness at 3 locations, close port with new gasket torqued to spec"
+    type: read_verify
+    adapter: york
+    target: chiller_1_evaporator
+    expected:
+      tube_fouling: acceptable
+      thickness_within_spec: true
+      gasket_replaced: true
+    timeout_s: 1800
+    requires_witness: false
+    abort_on_failure: true
+
+  - id: step_11_condenser_water_chemistry
+    title: "pH 7.5-8.5, conductivity < 3000 uS/cm, iron < 1 ppm, biocide residual present"
+    type: read_verify
+    adapter: york
+    target: chiller_1_condenser_water
+    expected:
+      ph: { min: 7.5, max: 8.5 }
+      conductivity_us_cm: { max: 3000 }
+      iron_ppm: { max: 1.0 }
+      biocide_residual_present: true
+    timeout_s: 600
+    requires_witness: false
+    abort_on_failure: false
+
+  - id: step_12_control_system_self_test
+    title: "Smart Panel self-test, sensor accuracy verification, VSD panel inspection, e-stop test"
+    type: read_verify
+    adapter: york
+    target: chiller_1_controls
+    expected:
+      self_test_pass: true
+      sensors_accurate: true
+      estop_responsive: true
+    timeout_s: 600
+    requires_witness: false
+    abort_on_failure: true
+
+  - id: step_13_dlc_filter_replacement
+    title: "Replace 50-micron cartridge in DLC loop, vent trapped air, log filter change"
+    type: write_verify
+    adapter: york
+    target: chiller_1_dlc_filter
+    command: REPLACE_FILTER
+    verify_after:
+      filter_replaced: true
+      air_vented: true
+    timeout_s: 900
+    requires_witness: false
+    abort_on_failure: false
+
+  # ── Phase 3: Startup and verification (1.5 hours) ─────────────────
+  - id: step_14_remove_loto
+    title: "Each technician removes personal lock; verify all tools cleared; final walk-around"
+    type: write_verify
+    adapter: york
+    target: chiller_1_vsd
+    command: REMOVE_LOTO
+    verify_after:
+      loto_removed: true
+      tools_cleared: true
+    timeout_s: 600
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_15_restore_water_loops
+    title: "Open CWS-1 + CWR-1 + CDWS-1 + CDWR-1, vent at high points, verify flow and no leaks"
+    type: write_verify
+    adapter: york
+    target: chiller_1
+    command: RESTORE_LOOPS
+    verify_after:
+      chilled_water_flow_lpm: { min: 100 }
+      condenser_water_flow_lpm: { min: 100 }
+      leaks_detected: false
+    timeout_s: 900
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_16_electrical_restoration
+    title: "Close main feeder + VSD disconnect, verify 480V +/-5%, wait 60s for VSD precharge"
+    type: write_verify
+    adapter: york
+    target: chiller_1_vsd
+    command: ENERGIZE
+    verify_after:
+      vsd_voltage_v: { min: 456, max: 504 }
+      precharge_complete: true
+    timeout_s: 180
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_17_chiller_startup_normal
+    title: "Smart Panel: Menu > Start > Normal. Pre-start self-test 10s, magnetic bearing levitation, VSD spin-up, compressor target speed in 3-5 min, LWT 6.5 C in 10 min."
+    type: write_verify
+    adapter: york
+    target: chiller_1
+    command: NORMAL_START
+    verify_after:
+      self_test_pass: true
+      bearings_levitated: true
+      compressor_at_speed: true
+      lwt_c: { min: 6.0, max: 7.5 }
+    timeout_s: 900
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_18_load_ramp_verification
+    title: "Ramp 20% -> 80% over 15 min. Verify compressor speed tracks, VSD current within spec, bearings stable, refrigerant pressures normal, all alarms clear."
+    type: read_dwell
+    adapter: york
+    target: chiller_1
+    duration_s: 900
+    expected_at_end:
+      load_pct: { min: 75, max: 85 }
+      vsd_current_within_spec: true
+      bearing_position_stable: true
+      refrigerant_pressure_normal: true
+      alarms_active: 0
+    abort_on_failure: true
+
+  # ── Phase 4: Documentation (30 min) ───────────────────────────────
+  - id: step_19_finalize_cmms
+    title: "Log MOP completion, post-PM metrics, water chemistry, leak test results to procedures table; update shift report; close work order; rebalance load with chiller_2 50/50."
+    type: cmms_finalize
+    target_procedure: T4-MOP-CHI-001
+
+# Abort sequence runs in reverse if any step with abort_on_failure=true fails.
+# Highest-priority abort step is the refrigerant leak response.
+abort_sequence:
+  - refrigerant_leak_response:
+      title: "STOP work, isolate leak source if safe, evacuate if leak > 0.5 kg estimated, contact Johnson Controls certified technician, report to environment compliance"
+      type: write_verify
+      adapter: york
+      target: chiller_1
+      command: EMERGENCY_STOP_AND_ISOLATE
+      timeout_s: 60
+      audit_severity: CRITICAL

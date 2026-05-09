@@ -168,6 +168,7 @@ HMI heat map + agent_copilot anomaly tools
 | C1 (DONE 2026-05-09) | 1.5 h | `telemetry_simulator.py` (354 LOC) + 17 tests + SSE wiring with feature flag `DC_EPMS_USE_SIMULATOR` | `v0.7.5-telemetry-stream` | — |
 | C2 (DONE 2026-05-09) | 2 h | `telemetry_pipeline.py` (172 LOC) + 12 tests + per-channel R/Q calibration + F=1 random-walk model + 60-min anomaly counter wired to frontend Activity Strip | `v0.7.6-kalman-pipeline` | DC-EPMS-029b (deferred, see notes below) |
 | C3 (DONE 2026-05-09) | 1.5 h | `config/telemetry_channels.yml` (17 metrics calibrated) + `TelemetryChannelConfig` loader + 11 config tests + 4 perf tests (Numba JIT cold 4.8 ms, hot 5.1 ms / window, per-step 4.3 us) | `v0.8.0-sprint5-kalman` | DC-EPMS-037 RESOLVED |
+| C3.5 MOPs (DONE 2026-05-09) | 1 h | `config/procedures/T4-MOP-CHI-001.yml` (19 steps, 6h chiller PM) + `config/procedures/T4-MOP-UPS-001.yml` (17 steps, 4h UPS PM) + 26 schema/provenance tests. Decision 4-B closed. | (no tag — bundled) | — |
 
 **Note**: tag scheme renamed mid-flight to avoid `v0.7.4-*` namespace
 collision with `v0.7.4-frontend-pivot` (Sprint 5.5 hybrid milestone,

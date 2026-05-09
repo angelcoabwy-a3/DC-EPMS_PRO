@@ -1,0 +1,298 @@
+# ════════════════════════════════════════════════════════════════════
+#  T4-MOP-UPS-001 - Schneider Galaxy VX 750 kVA Quarterly PM
+# ════════════════════════════════════════════════════════════════════
+# Source: data/corpus/tier4_a3semi_mops/T4-MOP-UPS-001_ups_quarterly_pm.md
+# Decision 4-B closure (Sprint 5 follow-up):
+#   Markdown SOP -> executable YAML for procedure_engine.
+#
+# Standards: CSA Z462, NFPA 70E (Cat 2 PPE, 8 cal/cm^2), IEEE 1188, IEC 62040.
+#
+# Risk profile: HIGH (LOR=3). One UPS in maintenance bypass; the other
+# carries full load. Loss of bypass-side UPS during the 4-hour window
+# = loss of all UPS protection. Arc flash hazard 800 A at 480 V.
+# ════════════════════════════════════════════════════════════════════
+
+procedure_id: T4-MOP-UPS-001
+title: "UPS Quarterly Preventive Maintenance (Schneider Galaxy VX)"
+work_class: PM
+procedure_class: MOP
+default_lor: 3
+estimated_duration_min: 240
+applicable_standards:
+  - CSA_Z462_electrical_safety
+  - NFPA_70E_arc_flash
+  - IEEE_1188_battery_maintenance
+  - IEC_62040_ups
+  - a3semi_OPS
+
+pre_conditions:
+  - id: ups_b_full_health
+    description: "Other UPS (B-side) showing ONLINE with full health, no active alarms"
+    check: ups_b_status == "ONLINE" AND ups_b_alarms == 0
+    failure_action: ABORT
+
+  - id: load_within_125pct_rating
+    description: "Combined load within 125% of single UPS rating before bypass"
+    check: facility_load_pct < 125
+    failure_action: ABORT
+
+  - id: low_load_window
+    description: "Maintenance window is low-load period (Sat 02:00-06:00 typical)"
+    check: load_window_low == true
+    failure_action: WARN
+
+  - id: ppe_category_2_available
+    description: "NFPA 70E Cat 2 (8 cal/cm^2) arc-rated PPE staged for both technicians"
+    check: ppe_category_2_count >= 2
+    failure_action: ABORT
+
+  - id: utility_power_quality
+    description: "Utility voltage and frequency within +/-5%"
+    check: utility_quality_in_band == true
+    failure_action: ABORT
+
+steps:
+
+  # ── Phase 1: Transfer to maintenance bypass (30 min) ──────────────
+  - id: step_01_pre_transfer_check
+    title: "Front panel check: load <125% rating, no active alarms, B-side ONLINE, utility quality verified"
+    type: read_verify
+    adapter: schneider
+    target: ups_a
+    expected:
+      load_pct: { max: 125 }
+      alarms_active: 0
+      bus_b_status: ONLINE
+    timeout_s: 60
+    requires_witness: false
+    abort_on_failure: true
+
+  - id: step_02_don_category_2_ppe
+    title: "Two-person check: arc-rated coverall, face shield, balaclava, Class 0 rubber gloves with leather protectors, dielectric boots"
+    type: read_verify
+    adapter: schneider
+    target: technicians
+    expected:
+      ppe_category_2_donned: true
+      two_person_check_pass: true
+    timeout_s: 300
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_03_transfer_to_static_bypass
+    title: "UPS Menu > Transfer > Manual Bypass; verify front panel STATIC BYPASS"
+    type: write_verify
+    adapter: schneider
+    target: ups_a
+    command: MANUAL_BYPASS
+    verify_after:
+      mode: STATIC_BYPASS
+    timeout_s: 60
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_04_close_maint_bypass_breaker
+    title: "Close maintenance bypass breaker (key interlock); open UPS A output breaker; verify MAINT BYPASS, load uninterrupted"
+    type: write_verify
+    adapter: schneider
+    target: ups_a
+    command: ENGAGE_MAINTENANCE_BYPASS
+    verify_after:
+      mode: MAINT_BYPASS
+      output_breaker_open: true
+      load_continuous: true
+    timeout_s: 120
+    requires_witness: true
+    abort_on_failure: true
+    abort_sequence: [emergency_return_online]
+
+  - id: step_05_loto_at_input
+    title: "Open UPS A input breaker at switchgear; apply personal lock + tag (each technician); verify zero voltage at all 3 phases; meter cross-check on known live source"
+    type: write_verify
+    adapter: schneider
+    target: ups_a_input
+    command: ELECTRICAL_LOTO
+    verify_after:
+      input_breaker_open: true
+      phase_voltage_a_to_ground_v: { max: 5 }
+      phase_voltage_b_to_ground_v: { max: 5 }
+      phase_voltage_c_to_ground_v: { max: 5 }
+      personal_locks_count: { min: 2 }
+      meter_cross_check_pass: true
+    timeout_s: 600
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_06_dc_bus_discharge_dwell
+    title: "Wait minimum 5 min for DC bus discharge; verify DC bus < 50 V at discharge terminals"
+    type: read_dwell
+    adapter: schneider
+    target: ups_a_dc_bus
+    duration_s: 300
+    expected_at_end:
+      dc_bus_voltage_v: { max: 50 }
+    abort_on_failure: true
+
+  # ── Phase 2: Inspection and maintenance (2.5 hours) ───────────────
+  - id: step_07_visual_inspection
+    title: "Covers secured, no burning odor, cable insulation intact, no liquid stains, dust < 1 mm"
+    type: read_verify
+    adapter: schneider
+    target: ups_a
+    expected:
+      covers_secured: true
+      odor_normal: true
+      cable_insulation_intact: true
+      no_liquid_stains: true
+      dust_acceptable: true
+    timeout_s: 600
+    requires_witness: false
+    abort_on_failure: true
+
+  - id: step_08_air_filter_replacement
+    title: "Replace Schneider PN 870-6023 filters; clean fan blades; verify airflow direction"
+    type: write_verify
+    adapter: schneider
+    target: ups_a_filters
+    command: REPLACE_AIR_FILTERS
+    verify_after:
+      filters_replaced: true
+      fan_blades_cleaned: true
+      airflow_orientation_correct: true
+    timeout_s: 600
+    requires_witness: false
+    abort_on_failure: false
+
+  - id: step_09_terminal_torque_verification
+    title: "Per-terminal: thermographic baseline, disconnect, inspect for oxidation, clean with NO-OX-ID A if needed, torque to spec (480V lugs 50 N.m, control 2.5 N.m, ground 35 N.m), 5-min settling re-torque"
+    type: write_verify
+    adapter: schneider
+    target: ups_a_terminals
+    command: TORQUE_VERIFICATION
+    verify_after:
+      input_lugs_torque_nm: { min: 49, max: 51 }
+      output_lugs_torque_nm: { min: 49, max: 51 }
+      ground_bus_torque_nm: { min: 34, max: 36 }
+      control_terminal_torque_nm: { min: 2.4, max: 2.6 }
+    timeout_s: 1800
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_10_capacitor_inspection
+    title: "DC link + output filter capacitors: visual bulging (none), no electrolyte leaks, temperature within 10 C of ambient, mounting torque verified"
+    type: read_verify
+    adapter: schneider
+    target: ups_a_capacitors
+    expected:
+      bulging_detected: false
+      electrolyte_leak: false
+      temp_delta_from_ambient_c: { max: 10 }
+      mounting_torque_within_spec: true
+    timeout_s: 600
+    requires_witness: false
+    abort_on_failure: true
+
+  - id: step_11_battery_string_maintenance
+    title: "Per 4 strings: terminal cleanliness + torque, cell float voltage 2.25V +/-0.03V, impedance test (strings match within 15%), ambient 25 C +/-5 C, no swelling/leaks"
+    type: read_verify
+    adapter: schneider
+    target: ups_a_batteries
+    expected:
+      string_count: 4
+      cell_float_voltage_v: { min: 2.22, max: 2.28 }
+      impedance_match_within_pct: { max: 15 }
+      ambient_temp_c: { min: 20, max: 30 }
+      swelling_or_leak: false
+    timeout_s: 1800
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_12_insulation_resistance_test
+    title: "Megger test phase-to-ground each phase (>= 100 MOhm), phase-to-phase all combinations (>= 100 MOhm). Below 50 MOhm escalates."
+    type: read_verify
+    adapter: schneider
+    target: ups_a_insulation
+    expected:
+      phase_a_to_ground_mohm: { min: 100 }
+      phase_b_to_ground_mohm: { min: 100 }
+      phase_c_to_ground_mohm: { min: 100 }
+      phase_a_to_b_mohm: { min: 100 }
+      phase_b_to_c_mohm: { min: 100 }
+      phase_a_to_c_mohm: { min: 100 }
+    timeout_s: 1200
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_13_thermographic_scan_internal
+    title: "Re-connect terminations, perform IR scan before re-energization, baseline temps recorded, no anomaly > 10 C differential between phases"
+    type: read_verify
+    adapter: schneider
+    target: ups_a_internal_bus
+    expected:
+      max_phase_differential_c: { max: 10 }
+      ir_baseline_recorded: true
+    timeout_s: 600
+    requires_witness: true
+    abort_on_failure: true
+
+  # ── Phase 3: Return to service (30 min) ───────────────────────────
+  - id: step_14_remove_loto
+    title: "Each technician removes personal lock; tools and personnel cleared; final visual"
+    type: write_verify
+    adapter: schneider
+    target: ups_a_input
+    command: REMOVE_LOTO
+    verify_after:
+      loto_removed: true
+      personnel_clear: true
+    timeout_s: 300
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_15_energize_input_and_self_test
+    title: "Close UPS A input breaker; wait 30s for rectifier DC bus build; Menu > Start > Self-Test; verify all parameters GREEN"
+    type: write_verify
+    adapter: schneider
+    target: ups_a
+    command: ENERGIZE_AND_SELFTEST
+    verify_after:
+      input_energized: true
+      self_test_pass: true
+      alarms_active: 0
+    timeout_s: 180
+    requires_witness: true
+    abort_on_failure: true
+
+  - id: step_16_return_to_online
+    title: "Close UPS A output breaker; open maintenance bypass breaker; Menu > Operating Mode > Online; verify ONLINE, load distribution UPS A and B at ~50% (2N)"
+    type: write_verify
+    adapter: schneider
+    target: ups_a
+    command: RETURN_TO_ONLINE
+    verify_after:
+      mode: ONLINE
+      maint_bypass_breaker_open: true
+      ups_a_load_pct: { min: 35, max: 65 }
+      ups_b_load_pct: { min: 35, max: 65 }
+      battery_charging: true
+    timeout_s: 300
+    requires_witness: true
+    abort_on_failure: true
+
+  # ── Phase 4: Documentation + 48-hour monitoring (30 min) ──────────
+  - id: step_17_finalize_cmms
+    title: "Log torque values, battery voltage/impedance, insulation resistance, IR images, anomalies + corrective actions to procedures table; restore fire suppression to AUTO; close work order; debrief; arm 48-hour NOC monitoring"
+    type: cmms_finalize
+    target_procedure: T4-MOP-UPS-001
+
+# Abort sequence runs in reverse if any step with abort_on_failure=true fails.
+# Highest-priority abort step is emergency return to online.
+abort_sequence:
+  - emergency_return_online:
+      title: "Emergency return UPS A to ONLINE if UPS B fails during maintenance (Priority 1 scenario)"
+      type: write_verify
+      adapter: schneider
+      target: ups_a
+      command: EMERGENCY_RETURN_ONLINE
+      timeout_s: 60
+      audit_severity: CRITICAL
