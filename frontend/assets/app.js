@@ -126,6 +126,12 @@
         state.telemetrySource.onmessage = (e) => {
             try {
                 const data = JSON.parse(e.data);
+                // Sprint 5.5 hybrid bridge: publish freshness timestamp to
+                // the new reactive store BEFORE local handling, so the
+                // staleness badge updates even if the payload is empty
+                // (e.g. DB unavailable -> data.latest === null but stream
+                // is alive). See frontend/assets/js/core/staleness.js.
+                if (window.__epms) window.__epms.setState('lastTelemetryAtMs', performance.now());
                 if (data.latest) handleTelemetry(data.latest);
             } catch (err) {
                 console.warn('SSE telemetry parse error:', err);

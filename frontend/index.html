@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DC-EPMS PRO · a3semi Edge Operations</title>
-    <link rel="stylesheet" href="/assets/app.css?v=8.1.0">
+    <link rel="stylesheet" href="/assets/app.css?v=8.1.0-s5h1">
     <!-- Chart.js 4.4.1 served locally per ADR-006 edge-first autonomy.
          Origin: https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js
          SHA-256: 74401D738DD3E03EE5DFB3B6841210FE2C4EAD8A960C4011CA4BA0B78A9FD8F3 -->
@@ -26,6 +26,7 @@
         <div class="status-pill" id="health-rag" data-label="RAG"><span class="dot"></span><span class="lbl">RAG</span></div>
         <div class="status-pill" id="health-gemma" data-label="Gemma 4"><span class="dot"></span><span class="lbl">Gemma 4</span></div>
         <div class="status-pill" id="health-gpu" data-label="GPU"><span class="dot"></span><span class="lbl">GPU</span></div>
+        <div class="status-pill" id="health-stream" data-label="Stream" data-staleness="unknown"><span class="dot"></span><span class="lbl">Stream —</span></div>
     </header>
 
     <main class="app-main">
@@ -1536,7 +1537,11 @@
 
 </div>
 
-<script src="/assets/app.js?v=8.1.0-s1b"></script>
+<!-- Sprint 5.5 hybrid pivot: ES module bootstrap loads BEFORE app.js IIFE.
+     Both scripts deferred so they run in document order after parsing,
+     ensuring window.__epms bridge is available when app.js evaluates. -->
+<script type="module" src="/assets/js/main.js?v=s5h1"></script>
+<script defer src="/assets/app.js?v=8.1.0-s5h1"></script>
 
 </body>
 </html>
