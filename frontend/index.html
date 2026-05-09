@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DC-EPMS PRO · a3semi Edge Operations</title>
-    <link rel="stylesheet" href="/assets/app.css?v=8.1.0-s5h3">
+    <link rel="stylesheet" href="/assets/app.css?v=8.1.0-s6f5">
     <!-- Chart.js 4.4.1 served locally per ADR-006 edge-first autonomy.
          Origin: https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js
          SHA-256: 74401D738DD3E03EE5DFB3B6841210FE2C4EAD8A960C4011CA4BA0B78A9FD8F3 -->
@@ -78,6 +78,7 @@
                 <div class="nav-item" data-route="omniverse"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="box"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></span>Omniverse 3D</div>
                 <div class="nav-item" data-route="site_topology"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="building-2"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span>Site Topology</div>
                 <div class="nav-item" data-route="loto"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="shield-alert"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>LOTO Auditor</div>
+                <div class="nav-item" data-route="maintenance"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="wrench"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>Maintenance</div>
             </div>
 
             <div class="nav-section">
@@ -1539,6 +1540,120 @@
                     #loto-overall-card.overall-hard-fail { border-color:rgba(255,80,80,0.5); background:rgba(255,80,80,0.06); }
                 </style>
             </div>
+
+            <!-- ══════════ View: Maintenance (Sprint 6 Fase 5) ══════════
+                 CMMS Core v1.0 operator interface. Two-column layout:
+                 LEFT  = asset health grid grouped by Path + Pillar + asset_type
+                 RIGHT = work order backlog with filters
+                 Driven by frontend/assets/js/views/maintenance.js
+                 Polling: /api/cmms/assets + /api/cmms/work-orders every 15s -->
+            <div class="view" id="view-maintenance" hidden>
+                <div class="view-hdr">
+                    <h2>Maintenance — CMMS Core v1.0</h2>
+                    <div class="view-sub">Asset registry + work order lifecycle. ADR-006 Deterministic Sandbox: all WOs land in pending_approval until CET signs.</div>
+                </div>
+
+                <div class="maintenance-kpi-row">
+                    <div class="m-kpi-card">
+                        <div class="m-kpi-label">Total assets</div>
+                        <div class="m-kpi-value" data-field="total-assets">—</div>
+                        <div class="m-kpi-sub" data-field="total-by-criticality">—</div>
+                    </div>
+                    <div class="m-kpi-card">
+                        <div class="m-kpi-label">Open work orders</div>
+                        <div class="m-kpi-value" data-field="total-open-wos">—</div>
+                        <div class="m-kpi-sub" data-field="open-by-priority">—</div>
+                    </div>
+                    <div class="m-kpi-card">
+                        <div class="m-kpi-label">Overdue</div>
+                        <div class="m-kpi-value" data-field="overdue-wos">0</div>
+                        <div class="m-kpi-sub">past due_at not closed</div>
+                    </div>
+                    <div class="m-kpi-card">
+                        <div class="m-kpi-label">Predictive (Kalman)</div>
+                        <div class="m-kpi-value" data-field="predictive-wos">0</div>
+                        <div class="m-kpi-sub">trigger_source = predictive_kalman</div>
+                    </div>
+                </div>
+
+                <div class="maintenance-split">
+
+                    <!-- ── LEFT: Asset health grid ───────────────── -->
+                    <section class="m-asset-panel">
+                        <div class="m-panel-header">
+                            <div class="m-panel-title">Asset Health Grid</div>
+                            <div class="m-panel-meta">
+                                <span data-field="last-refresh">—</span>
+                                <button id="m-refresh-btn" class="btn btn-secondary" style="font-size:11px;padding:4px 10px;">↻ Refresh</button>
+                            </div>
+                        </div>
+                        <div class="m-asset-grid" id="m-asset-grid">
+                            <div class="m-empty">Loading…</div>
+                        </div>
+                    </section>
+
+                    <!-- ── RIGHT: Work order backlog ─────────────── -->
+                    <section class="m-wo-panel">
+                        <div class="m-panel-header">
+                            <div class="m-panel-title">Work Order Backlog</div>
+                            <div class="m-panel-meta" data-field="wo-count-meta">—</div>
+                        </div>
+
+                        <div class="m-wo-filters">
+                            <select id="m-filter-status" class="m-filter-input">
+                                <option value="">All statuses</option>
+                                <option value="pending_approval">Pending approval</option>
+                                <option value="approved">Approved</option>
+                                <option value="scheduled">Scheduled</option>
+                                <option value="in_progress">In progress</option>
+                                <option value="completed">Completed</option>
+                                <option value="rejected">Rejected</option>
+                            </select>
+                            <select id="m-filter-priority" class="m-filter-input">
+                                <option value="">All priorities</option>
+                                <option value="P1">P1 (act now)</option>
+                                <option value="P2">P2 (within 24h)</option>
+                                <option value="P3">P3 (within 7d)</option>
+                                <option value="P4">P4 (backlog)</option>
+                            </select>
+                            <select id="m-filter-trigger" class="m-filter-input">
+                                <option value="">All triggers</option>
+                                <option value="manual">Manual</option>
+                                <option value="predictive_kalman">Predictive (Kalman)</option>
+                                <option value="scheduled_pm">Scheduled PM</option>
+                                <option value="incident">Incident</option>
+                                <option value="loto_audit">LOTO audit</option>
+                            </select>
+                            <label class="m-filter-check">
+                                <input type="checkbox" id="m-filter-only-open" checked>
+                                <span>Open only</span>
+                            </label>
+                        </div>
+
+                        <div class="m-wo-table-wrap">
+                            <table class="m-wo-table">
+                                <thead>
+                                    <tr>
+                                        <th>WO ID</th>
+                                        <th>Asset</th>
+                                        <th>Pri</th>
+                                        <th>Class</th>
+                                        <th>LOR</th>
+                                        <th>Status</th>
+                                        <th>Trigger</th>
+                                        <th>MOP</th>
+                                        <th>Age</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="m-wo-tbody">
+                                    <tr><td colspan="9" class="m-empty">Loading…</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                </div>
+            </div>
 </section>
 
         <aside class="panel-side">
@@ -1581,7 +1696,7 @@
 <!-- Sprint 5.5 hybrid pivot: ES module bootstrap loads BEFORE app.js IIFE.
      Both scripts deferred so they run in document order after parsing,
      ensuring window.__epms bridge is available when app.js evaluates. -->
-<script type="module" src="/assets/js/main.js?v=s5h4"></script>
+<script type="module" src="/assets/js/main.js?v=s6f5"></script>
 <script defer src="/assets/app.js?v=8.1.0-s5h3"></script>
 
 </body>

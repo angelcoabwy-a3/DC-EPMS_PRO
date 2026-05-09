@@ -274,6 +274,274 @@ body {
     opacity: 0.85;
 }
 
+/* ── Maintenance view (Sprint 6 Fase 5) ────────────────────────────
+   CMMS Core v1.0 frontend. Driven by /api/cmms/* endpoints + the
+   views/maintenance.js polling module. Match Activity Strip discipline:
+   monospace tabular numerics, anthracite + cyan, severity-coded only. */
+
+#view-maintenance .view-hdr h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 4px 0;
+}
+#view-maintenance .view-hdr .view-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+}
+
+.maintenance-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.m-kpi-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 16px;
+}
+.m-kpi-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+}
+.m-kpi-value {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+.m-kpi-value[data-severity="high"] { color: var(--crit); }
+.m-kpi-sub {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    margin-top: 6px;
+    font-variant-numeric: tabular-nums;
+}
+
+.maintenance-split {
+    display: grid;
+    grid-template-columns: 3fr 4fr;
+    gap: 12px;
+    height: calc(100% - 140px);
+    min-height: 400px;
+}
+
+.m-asset-panel,
+.m-wo-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.m-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+}
+.m-panel-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text);
+    font-weight: 600;
+}
+.m-panel-meta {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-dim);
+}
+
+/* ── Asset health grid (left panel) ─────────────────────────── */
+.m-asset-grid {
+    padding: 12px;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px;
+}
+.m-asset-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    transition: border-color 0.2s ease;
+}
+.m-asset-card[data-severity="warn"] { border-color: rgba(251, 191, 36, 0.45); }
+.m-asset-card[data-severity="crit"] { border-color: rgba(239, 68, 68, 0.55); }
+.m-asset-card-hdr {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 8px;
+}
+.m-asset-type {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+    font-weight: 600;
+}
+.m-asset-count {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.m-asset-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 8px;
+}
+.m-asset-meta {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+.m-meta-k { color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.4px; }
+.m-meta-v { color: var(--text); font-variant-numeric: tabular-nums; }
+.m-meta-v[data-severity="high"] { color: var(--crit); font-weight: 600; }
+.m-asset-card-foot {
+    display: flex;
+    gap: 4px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+}
+.m-health-pill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-variant-numeric: tabular-nums;
+    flex: 1;
+    text-align: center;
+}
+.m-health-healthy  { background: rgba(74, 222, 128, 0.12); color: var(--ok); }
+.m-health-degraded { background: rgba(251, 191, 36, 0.12); color: var(--warn); }
+.m-health-failed   { background: rgba(239, 68, 68, 0.12);  color: var(--crit); }
+
+/* ── Work order backlog (right panel) ───────────────────────── */
+.m-wo-filters {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+.m-filter-input {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 2px;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+}
+.m-filter-check {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.m-filter-check input[type="checkbox"] { accent-color: var(--accent); }
+
+.m-wo-table-wrap {
+    overflow: auto;
+    flex: 1;
+}
+.m-wo-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+.m-wo-table thead {
+    background: var(--bg-primary);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+.m-wo-table th {
+    text-align: left;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-dim);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+}
+.m-wo-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.06);
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.m-wo-table tr[data-overdue="true"] td {
+    background: rgba(239, 68, 68, 0.04);
+}
+.m-wo-id     { color: var(--text-muted); }
+.m-wo-asset  { color: var(--accent); }
+.m-wo-mop    { color: var(--text-muted); font-size: 10px; }
+.m-wo-age    { color: var(--text-muted); }
+
+.m-pri-badge,
+.m-wclass-badge,
+.m-status-pill {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 2px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+.m-pri-p1 { background: rgba(239, 68, 68, 0.18); color: var(--crit); }
+.m-pri-p2 { background: rgba(251, 191, 36, 0.18); color: var(--warn); }
+.m-pri-p3 { background: rgba(0, 184, 212, 0.12); color: var(--accent); }
+.m-pri-p4 { background: var(--bg-elevated); color: var(--text-muted); }
+
+.m-wclass-em { background: rgba(239, 68, 68, 0.18); color: var(--crit); }
+.m-wclass-cm { background: rgba(251, 191, 36, 0.18); color: var(--warn); }
+.m-wclass-pm { background: rgba(0, 184, 212, 0.12); color: var(--accent); }
+
+.m-status-pending-approval { background: rgba(251, 191, 36, 0.18); color: var(--warn); }
+.m-status-approved         { background: rgba(0, 184, 212, 0.12); color: var(--accent); }
+.m-status-scheduled        { background: rgba(74, 222, 128, 0.12); color: var(--ok); }
+.m-status-in-progress      { background: rgba(0, 229, 255, 0.18); color: var(--neon-cyan); }
+.m-status-completed        { background: rgba(74, 222, 128, 0.18); color: var(--ok); }
+.m-status-rejected         { background: rgba(239, 68, 68, 0.12); color: var(--crit); }
+
+.m-empty {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-family: var(--font-mono);
+}
+.m-error { color: var(--crit); }
+
 /* ── Main grid ────────────────────────────────────────────── */
 .app-main {
     display: grid;
