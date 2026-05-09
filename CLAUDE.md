@@ -364,25 +364,44 @@ C:\dev\DC-EPMS_PRO\
 - Verified: 5/5 smoke tests pass (real WitnessStore, None, unknown, false-positive
   guard, legacy method). Pillar 4-5-6 test suite: 14/14 GREEN.
 
-**DC-EPMS-036** (MED) - NEW (opened 2026-05-09, test-fixture drift)
-- Symptom: 4 tests in `tests/test_loto_auditor_pillars.py` fail on HEAD:
-  - `TestPillar1Topology::test_pillar1_graphrag_inconsistency_noted_not_failed`
-  - `TestPillar1Topology::test_pillar1_cooling_chain_integration`
-  - `TestPillar2Redundancy::test_pillar2_happy_path_path_a`
-  - `TestPillar2Redundancy::test_pillar2_shi_below_threshold_hard_fail`
-- Root cause: test fixtures expect pre-fix behavior of Pillar 1 (calling nonexistent
-  `query_topology()`) and Pillar 2 (treating physics result as `dict.get('site_health')`).
-  When DC-EPMS-029, DC-EPMS-030, DC-EPMS-031 fixed production code in commits 160be89,
-  da995e1, 324d87f, the test mocks were not updated. Verified pre-existing (failures
-  reproduce on clean HEAD 17dfded without DC-EPMS-034 patch via stash test).
-- Runtime impact: NONE. Production code is correct; only test mocks are stale.
-- CI impact: pytest aggregate fails on these 4 cases.
-- Resolution path: update Pillar 1 mocks to match `loto_with_knowledge` payload
-  (returns `{edges, evidence_chunks}` not `{topology}`), and update Pillar 2 mocks
-  to return `SiteValidation` object (with `.site_health` attribute) not bare dict.
-  Estimated effort: 1-2h surgical mock refactor + re-run aggregate.
-- Target: Sprint 5 Telemetry sprint (covered by DC-EPMS-029b natural resolution
-  of physics_engine surface area).
+**DC-EPMS-036** (MED) - RESOLVED 2026-05-09 (commit pending)
+- Original symptom: 4 tests in `tests/test_loto_auditor_pillars.py` failed on HEAD:
+  test_pillar1_graphrag_inconsistency_noted_not_failed,
+  test_pillar1_cooling_chain_integration,
+  test_pillar2_happy_path_path_a,
+  test_pillar2_shi_below_threshold_hard_fail.
+- Root cause: test fixtures expected pre-fix Pillar 1 / Pillar 2 behavior.
+  When DC-EPMS-029, DC-EPMS-030, DC-EPMS-031 fixed production code, the test
+  mocks were not updated.
+- Fix surfaces in mocks:
+  1. `MockSiteModel.impact_set(canonical_id, chain="cooling")` added (production
+     uses this since DC-EPMS-030).
+  2. `MockGraphRAG.loto_with_knowledge(target_id)` added; `query_topology` retained
+     as legacy alias (production uses loto_with_knowledge since DC-EPMS-031).
+  3. `MockPhysicsEngine.validate_site()` returns object with `.site_health` attribute
+     instead of `{"site_health_index": v}` dict (DC-EPMS-029 fix).
+  4. Test bound updates: `shi_threshold == 0.7` -> `== 0.5` (DC-EPMS-029a calibration);
+     `shi_post=0.5` -> `0.4` to be clearly below threshold for HARD_FAIL test.
+- Verified: 18/18 test_loto_auditor_pillars.py GREEN. Full pytest aggregate:
+  497 passed, 5 deselected (FAISS slow, DC-EPMS-001), 1 unrelated error in
+  test_smoke (DC-EPMS-039, pre-existing).
+
+**DC-EPMS-039** (LOW) - NEW (opened 2026-05-09, pre-existing pytest setup error)
+- Symptom: `tests/test_smoke.py::test_health_endpoint_reachable` errors during
+  fixture setup (NOT test logic). Captured logs show:
+  1. `[v8] Agent Copilot mount failed: Field "model_id" in ChatResponse has
+     conflict with protected namespace "model_"` (Pydantic v2 deprecation).
+  2. `PostgreSQL init failed: [WinError 1225] The remote computer refused the
+     network connection` (epms-db Docker reachability flaky during pytest bootstrap).
+  3. `chromadb.telemetry.posthog: capture() takes 1 positional argument but 3
+     were given` (chromadb version incompatibility with installed posthog).
+- Verified pre-existing on clean HEAD via `git stash` test — NOT caused by
+  DC-EPMS-036 fix.
+- Runtime impact: smoke endpoint is reachable in production; only test setup
+  pathway hits these errors due to import ordering.
+- Resolution: (a) add `model_config = ConfigDict(protected_namespaces=())` to
+  ChatResponse, (b) wrap PostgreSQL init in test fixture with retry/skip,
+  (c) suppress chromadb telemetry. Effort: 30 min surgical. Target: V10.
 
 **DC-EPMS-037** (LOW) - RESOLVED 2026-05-09 in Sprint 5 C3 (commit pending)
   Per-channel calibration moved to `config/telemetry_channels.yml`. Pipeline

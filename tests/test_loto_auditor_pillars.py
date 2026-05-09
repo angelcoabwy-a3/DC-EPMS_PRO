@@ -226,6 +226,16 @@ class MockSiteModel:
             MockImpactSet(failed_node=canonical_id, chain_type="power"),
         )
 
+    def impact_set(self, canonical_id, chain="power"):
+        """DC-EPMS-030 fix surface: production agent calls
+        site_model.impact_set(target, chain='cooling') instead of the
+        older cooling_chain_for. Mock dispatches to the same _impacts
+        dict so existing test setups keep working."""
+        return self._impacts.get(
+            (canonical_id, chain),
+            MockImpactSet(failed_node=canonical_id, chain_type=chain),
+        )
+
     def cooling_chain_for(self, canonical_id):
         return self._impacts.get(
             (canonical_id, "cooling"),
@@ -239,17 +249,35 @@ class MockGraphRAG:
     def __init__(self, topology_responses=None):
         self._responses = topology_responses or {}
 
-    def query_topology(self, component_id):
+    def loto_with_knowledge(self, component_id):
+        """DC-EPMS-031 fix surface: production agent now calls
+        loto_with_knowledge(target_id). Returns dict with at least
+        'affected_components'."""
         return self._responses.get(component_id, {"affected_components": []})
+
+    def query_topology(self, component_id):
+        """Legacy alias retained for any callers still on the old API."""
+        return self.loto_with_knowledge(component_id)
 
     def query(self, query_text):
         return []
+
+
+class _MockSiteValidationResult:
+    """DC-EPMS-029 fix surface: production agent reads
+    pre_validation.site_health (attribute), not dict['site_health_index'].
+    """
+
+    def __init__(self, site_health: float):
+        self.site_health = site_health
 
 
 class MockPhysicsEngine:
     """Returns configurable SHI for pre/post LOTO validation calls.
 
     First call returns shi_pre, all subsequent calls return shi_post.
+    Returns a SiteValidationResult-shaped object with .site_health
+    attribute (DC-EPMS-029 fix).
     """
 
     def __init__(self, shi_pre: float = 0.95, shi_post: float = 0.85):
@@ -260,8 +288,8 @@ class MockPhysicsEngine:
     def validate_site(self, measurements):
         self._call_count += 1
         if self._call_count == 1:
-            return {"site_health_index": self._shi_pre}
-        return {"site_health_index": self._shi_post}
+            return _MockSiteValidationResult(self._shi_pre)
+        return _MockSiteValidationResult(self._shi_post)
 
 
 class MockWitnessEngine:
@@ -416,12 +444,13 @@ class TestPillar2Redundancy:
         assert result.path_b_state == "carrying_full_load"
         assert abs(result.shi_pre_loto - 0.95) < 0.01
         assert abs(result.shi_post_loto - 0.85) < 0.01
-        assert result.shi_threshold == 0.7
+        # DC-EPMS-029a: threshold recalibrated 0.7 -> 0.5 for synthetic baseline
+        assert result.shi_threshold == 0.5
         assert result.hard_fail_reasons == []
 
     def test_pillar2_shi_below_threshold_hard_fail(self):
-        """Post-LOTO SHI dropping below 0.7 triggers HARD_FAIL."""
-        physics = MockPhysicsEngine(shi_pre=0.95, shi_post=0.5)
+        """Post-LOTO SHI dropping below 0.5 triggers HARD_FAIL (DC-EPMS-029a threshold)."""
+        physics = MockPhysicsEngine(shi_pre=0.95, shi_post=0.4)
         agent = make_agent(physics=physics)
         request = make_request(target="ups_a")
         procedure = make_procedure()
