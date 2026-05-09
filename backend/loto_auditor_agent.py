@@ -336,7 +336,7 @@ class LotoAuditorAgent:
         # 2. Walk site_model cooling chain (graceful skip if not applicable)
         cooling_chain_affected: list[str] = []
         try:
-            cooling_impact = self.site_model.cooling_chain_for(target_id)
+            cooling_impact = self.site_model.impact_set(target_id, chain="cooling")
             cooling_chain_affected = list(
                 set(getattr(cooling_impact, "immediate", []) or [])
                 | set(getattr(cooling_impact, "transitive", []) or [])
@@ -871,7 +871,7 @@ class LotoAuditorAgent:
 
         # Check 2: cooling chain has affected components
         try:
-            cooling_impact = self.site_model.cooling_chain_for(target_id)
+            cooling_impact = self.site_model.impact_set(target_id, chain="cooling")
             affected = list(getattr(cooling_impact, "immediate", []) or []) + list(
                 getattr(cooling_impact, "transitive", []) or []
             )
