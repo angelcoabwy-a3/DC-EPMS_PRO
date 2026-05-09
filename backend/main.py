@@ -240,6 +240,21 @@ async def lifespan(app: FastAPI):
                 log.info("[BOOT] CMMS asset seeding: %s", seed_result)
             else:
                 log.warning("[BOOT] CMMS seeder skipped: _site_model not available at lifespan time")
+
+            # ─── Sprint 9.1: Predictive WO trigger init ───────────────
+            # Single-instance state machine that converts Kalman anomalies
+            # into CMMS work orders. Hooked into the SSE generator below.
+            try:
+                from backend.cmms_predictive_trigger import get_predictive_trigger
+                _predictive_trigger = get_predictive_trigger(
+                    repository=_cmms_repo_instance,
+                    sustain_threshold=int(os.environ.get("DC_EPMS_PREDICTIVE_SUSTAIN", "3")),
+                )
+                app.state.cmms_predictive_trigger = _predictive_trigger
+                log.info("[BOOT] Predictive WO trigger ready (sustain_threshold=%d)",
+                         _predictive_trigger.sustain_threshold)
+            except Exception as e:
+                log.error("[BOOT] Predictive trigger init failed: %s", e, exc_info=True)
         else:
             log.warning("[BOOT] CMMS skipped: db_manager pool unavailable")
     except Exception as e:
@@ -578,6 +593,10 @@ async def telemetry_stream(request: Request):
             sim = None
             pipeline = None
 
+    # Predictive trigger handle (Sprint 9.1): None if CMMS not ready,
+    # otherwise the singleton instance. Captured once per SSE connection.
+    _predictive = getattr(request.app.state, "cmms_predictive_trigger", None)
+
     async def gen() -> AsyncIterator[str]:
         while True:
             if await request.is_disconnected():
@@ -586,6 +605,14 @@ async def telemetry_stream(request: Request):
                 if sim is not None and pipeline is not None:
                     window = sim.get_window(dt_seconds=1.0, n_samples=5)
                     channels = pipeline.compute(window)
+                    # Sprint 9.1: feed the channel_innovations payload to
+                    # the predictive trigger BEFORE shipping to client.
+                    # Defensive: any failure is logged but does NOT break SSE.
+                    if _predictive is not None:
+                        try:
+                            await _predictive.handle_payload(channels)
+                        except Exception as e:
+                            log.warning("[telemetry/stream] predictive trigger error: %s", e)
                     payload = json.dumps({
                         "schema": "channel_innovations",
                         "channels": channels,
