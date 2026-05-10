@@ -39,6 +39,7 @@ import { initTechAssistView } from './views/tech_assist.js';
 import { initMultiAgentView } from './views/multi_agent.js';
 import { initPowerUpsIso } from './views/power_ups_iso.js';
 import { initPowerGrid } from './core/power_grid.js';
+import { initPowerCam } from './core/power_cam.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -69,6 +70,8 @@ initMissionControlView();
 initTechAssistView();
 initMultiAgentView();
 initPowerUpsIso();
+// Camera controls AFTER iso stage is mounted (depends on .sld-iso-stage existing)
+initPowerCam();
 
 if (USE_NEW_TELEMETRY_ENGINE) {
     startTelemetry(window.location.origin);

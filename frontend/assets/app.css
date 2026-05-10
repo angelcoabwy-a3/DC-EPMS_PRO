@@ -6916,3 +6916,108 @@ body {
     .sld-iso-block.is-tripped { animation: none; }
     .sld-iso-block.is-tripped .iso-trip-pip { animation: none; }
 }
+
+/* ════════════════════════════════════════════════════════════════
+ * CAMERA TOOLBAR (v0.10.8) — bounded iso navigation
+ * ════════════════════════════════════════════════════════════════ */
+
+.sld-cam-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: linear-gradient(180deg, rgba(11, 13, 16, 0.85), rgba(17, 21, 26, 0.85));
+    border: 1px solid rgba(0, 184, 212, 0.18);
+    border-radius: 4px;
+    margin: 6px 0;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 11px;
+}
+
+.cam-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: rgba(0, 184, 212, 0.06);
+    border: 1px solid rgba(0, 184, 212, 0.18);
+    border-radius: 3px;
+}
+
+.cam-label {
+    color: #6b7280;
+    font-size: 9px;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    margin-right: 2px;
+}
+
+.cam-readout {
+    color: #00E5FF;
+    font-weight: 700;
+    font-size: 11px;
+    min-width: 38px;
+    text-align: center;
+    padding: 0 2px;
+}
+
+.cam-btn {
+    font-family: 'Roboto Mono', monospace;
+    font-size: 11px;
+    padding: 3px 10px;
+    border: 1px solid rgba(0, 184, 212, 0.4);
+    background: rgba(0, 184, 212, 0.08);
+    color: #80E5FF;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 120ms, color 120ms, box-shadow 120ms;
+}
+.cam-btn:hover {
+    background: rgba(0, 184, 212, 0.18);
+    color: #fff;
+    box-shadow: 0 0 6px rgba(0, 184, 212, 0.5);
+}
+.cam-btn:active {
+    background: rgba(0, 184, 212, 0.28);
+}
+
+.cam-btn.cam-icon {
+    padding: 2px 8px;
+    min-width: 24px;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.cam-hint {
+    margin-left: auto;
+    color: #6b7280;
+    font-size: 10px;
+    font-style: italic;
+    letter-spacing: 0.3px;
+}
+
+/* Mode-toggle button gets a slight emphasis */
+#cam-mode-toggle {
+    background: rgba(168, 85, 247, 0.08);
+    border-color: rgba(168, 85, 247, 0.45);
+    color: #d8b4fe;
+}
+#cam-mode-toggle:hover {
+    background: rgba(168, 85, 247, 0.20);
+    box-shadow: 0 0 8px rgba(168, 85, 247, 0.55);
+}
+
+/* Iso stage when interactive: grab cursor when not over a child target */
+.sld-iso-stage {
+    cursor: grab;
+}
+.sld-iso-stage:active { cursor: grabbing; }
+
+/* Compact responsive — collapse the cam-bar onto two rows on narrow screens */
+@media (max-width: 900px) {
+    .sld-cam-bar { font-size: 10px; gap: 5px; padding: 4px 8px; }
+    .cam-readout { min-width: 30px; }
+    .cam-hint { display: none; }
+}
