@@ -134,33 +134,38 @@ let _btnReset = null;
 let _statusEl = null;
 
 // ─── Apply state to the SLD DOM ───────────────────────────────────
+// Uses querySelectorAll so iso-blocks (HTML divs in views/power_ups_iso.js)
+// AND legacy SVG <g class="sld-node"> stay in sync, regardless of which
+// layer is currently visible.
 function _applyNodeState(nodeId, state) {
     // state is one of: 'energized-a' | 'energized-b' | 'battery' |
     //                  'cold' | 'fault' | 'nominal' | 'transferring'
-    const el = document.querySelector(`.sld-node[data-sld-node="${nodeId}"]`);
-    if (!el) return;
-    el.classList.remove(
-        'sld-node-energized-a', 'sld-node-energized-b',
-        'sld-node-battery', 'sld-node-cold', 'sld-node-fault',
-        'sld-node-transferring',
-    );
-    if (state) el.classList.add(`sld-node-${state}`);
+    const els = document.querySelectorAll(`.sld-node[data-sld-node="${nodeId}"]`);
+    els.forEach((el) => {
+        el.classList.remove(
+            'sld-node-energized-a', 'sld-node-energized-b',
+            'sld-node-battery', 'sld-node-cold', 'sld-node-fault',
+            'sld-node-transferring',
+        );
+        if (state) el.classList.add(`sld-node-${state}`);
+    });
 }
 
 function _applyLineState(lineId, state) {
     // state is one of: 'flow-a' | 'flow-b' | 'battery' | 'cold' | 'fault'
-    const el = document.querySelector(`.sld-line[data-sld-line="${lineId}"]`);
-    if (!el) return;
-    el.classList.remove(
-        'sld-line-flow-a', 'sld-line-flow-b',
-        'sld-line-battery', 'sld-line-cold', 'sld-line-fault',
-        'sld-line-flowing',
-    );
-    if (state === 'flow-a' || state === 'flow-b' || state === 'battery') {
-        el.classList.add(`sld-line-${state}`, 'sld-line-flowing');
-    } else if (state) {
-        el.classList.add(`sld-line-${state}`);
-    }
+    const els = document.querySelectorAll(`.sld-line[data-sld-line="${lineId}"]`);
+    els.forEach((el) => {
+        el.classList.remove(
+            'sld-line-flow-a', 'sld-line-flow-b',
+            'sld-line-battery', 'sld-line-cold', 'sld-line-fault',
+            'sld-line-flowing',
+        );
+        if (state === 'flow-a' || state === 'flow-b' || state === 'battery') {
+            el.classList.add(`sld-line-${state}`, 'sld-line-flowing');
+        } else if (state) {
+            el.classList.add(`sld-line-${state}`);
+        }
+    });
 }
 
 // ─── Apply nominal palette (default state, idempotent) ────────────
@@ -178,10 +183,9 @@ function _applyNominalState() {
         else _applyLineState(id, info.path === 'A' ? 'flow-a' : 'flow-b');
     }
     // Battery line stays as a static link, no flow animation
-    const battA = document.querySelector(`.sld-line[data-sld-line="batt_a-ups_a"]`);
-    const battB = document.querySelector(`.sld-line[data-sld-line="batt_b-ups_b"]`);
-    if (battA) battA.classList.remove('sld-line-flowing');
-    if (battB) battB.classList.remove('sld-line-flowing');
+    document.querySelectorAll(
+        `.sld-line[data-sld-line="batt_a-ups_a"], .sld-line[data-sld-line="batt_b-ups_b"]`
+    ).forEach((el) => el.classList.remove('sld-line-flowing'));
 }
 
 // ─── Click drill-down ─────────────────────────────────────────────
@@ -216,6 +220,8 @@ function _setSimStatus(text, tone) {
 
 function _subStage1_loss() {
     _setSimStatus(UTILITY_LOSS_A_TIMELINE[0].label, 'warn');
+    // Publish stage so iso layer (power_ups_iso.js) can react with ATS arm + genset fan
+    setState('powerSim', { active: true, scenario: SIM_STAGES.UTILITY_LOSS_A, stage: 'utility_loss_a', startTs: Date.now() });
     // Path A upstream goes cold
     _applyNodeState('util_a', 'fault');
     _applyNodeState('xfmr_a', 'cold');
@@ -246,11 +252,13 @@ function _subStage1_loss() {
 
 function _subStage2_genset_warmup() {
     _setSimStatus(UTILITY_LOSS_A_TIMELINE[1].label, 'warn');
+    setState('powerSim', { active: true, scenario: SIM_STAGES.UTILITY_LOSS_A, stage: 'genset_warming_a', startTs: Date.now() });
     _applyNodeState('genset_a', 'transferring');     // amber pulse
 }
 
 function _subStage3_genset_online() {
     _setSimStatus(UTILITY_LOSS_A_TIMELINE[2].label, 'warn');
+    setState('powerSim', { active: true, scenario: SIM_STAGES.UTILITY_LOSS_A, stage: 'genset_online_a', startTs: Date.now() });
     // Genset feeding ATS
     _applyNodeState('genset_a', 'battery');           // running on amber now
     _applyLineState('genset_a-ats_a', 'battery');
@@ -264,9 +272,11 @@ function _subStage3_genset_online() {
 }
 
 function _renderSocOnBatteryNode() {
-    // Best-effort: try to inline the SOC into ups_a's metric tag
-    const el = document.querySelector('[data-sld-metric="batt_a-soc"]');
-    if (el) el.textContent = `${_soc}%`;
+    // Best-effort: try to inline the SOC into both legacy SVG and iso-block
+    document.querySelectorAll('[data-sld-metric="batt_a-soc"]').forEach((el) => {
+        el.textContent = `${_soc}%`;
+        el.dataset.frozen = '1';   // tell iso jitter loop to leave SOC alone
+    });
 }
 
 function _runSimulation(scenario) {
@@ -288,9 +298,14 @@ function _runSimulation(scenario) {
 
 function _resetSimulation() {
     _clearTimers();
-    setState('powerSim', { active: false, scenario: SIM_STAGES.NOMINAL, startTs: Date.now() });
+    setState('powerSim', { active: false, scenario: SIM_STAGES.NOMINAL, stage: 'nominal', startTs: Date.now() });
     _soc = 100;
     setState('powerSim.soc_a', _soc);
+    // Unfreeze SOC for jitter loop now that sim is reset
+    document.querySelectorAll('[data-sld-metric="batt_a-soc"]').forEach((el) => {
+        delete el.dataset.frozen;
+        el.textContent = 'SOC 100%';
+    });
     _applyNominalState();
     _setSimStatus('Nominal · 2N redundancy intact', 'ok');
     setTimeout(() => { _statusEl?.setAttribute('hidden', ''); }, 1800);
@@ -308,9 +323,10 @@ function _wireEvents() {
     _btnSim?.addEventListener('click', () => _runSimulation(SIM_STAGES.UTILITY_LOSS_A));
     _btnReset?.addEventListener('click', _resetSimulation);
 
-    // Make the entire SLD canvas a click delegator for nodes
-    const svg = document.querySelector('#view-power .pid-svg');
-    svg?.addEventListener('click', _onSldClick);
+    // Make the entire SLD canvas a click delegator for nodes (covers both
+    // legacy SVG and the iso-block layer rendered by power_ups_iso.js).
+    const canvas = document.querySelector('#view-power .pid-canvas');
+    canvas?.addEventListener('click', _onSldClick);
 }
 
 // ─── Public init ────────────────────────────────────────────────

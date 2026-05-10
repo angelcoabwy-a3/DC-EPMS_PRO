@@ -37,6 +37,7 @@ import { initRackHeatmapView } from './views/rack_heatmap.js';
 import { initMissionControlView } from './views/mission_control.js';
 import { initTechAssistView } from './views/tech_assist.js';
 import { initMultiAgentView } from './views/multi_agent.js';
+import { initPowerUpsIso } from './views/power_ups_iso.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -64,6 +65,7 @@ initRackHeatmapView();
 initMissionControlView();
 initTechAssistView();
 initMultiAgentView();
+initPowerUpsIso();
 
 if (USE_NEW_TELEMETRY_ENGINE) {
     startTelemetry(window.location.origin);
