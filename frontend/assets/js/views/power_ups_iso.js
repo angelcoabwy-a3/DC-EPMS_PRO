@@ -46,6 +46,19 @@ const NODES = [
     { id: 'rpp_a1',   type: 'rpp',    path: 'A', x: 660, y: 60,  w: 70,  h: 50, label: 'RPP-A1',          metrics: [{ k: 'kw', t: '— kW',     jitter: true }] },
     { id: 'rpp_a2',   type: 'rpp',    path: 'A', x: 750, y: 60,  w: 70,  h: 50, label: 'RPP-A2',          metrics: [{ k: 'kw', t: '— kW',     jitter: true }] },
     { id: 'busway_a', type: 'busway', path: 'A', x: 840, y: 70,  w: 200, h: 18, label: 'Busway A',        metrics: [{ k: 'load', t: '— kW · — A', jitter: true }] },
+    // 6 DDUs hanging off Busway A — each = 1 GB200 NVL72 rack drop
+    { id: 'ddu_a1', type: 'ddu', path: 'A', x: 855,  y: 110, w: 22, h: 32, label: 'DDU-A1',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '23.0 °C', jitter: true } ] },
+    { id: 'ddu_a2', type: 'ddu', path: 'A', x: 885,  y: 110, w: 22, h: 32, label: 'DDU-A2',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '23.2 °C', jitter: true } ] },
+    { id: 'ddu_a3', type: 'ddu', path: 'A', x: 915,  y: 110, w: 22, h: 32, label: 'DDU-A3',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '22.8 °C', jitter: true } ] },
+    { id: 'ddu_a4', type: 'ddu', path: 'A', x: 945,  y: 110, w: 22, h: 32, label: 'DDU-A4',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '23.5 °C', jitter: true } ] },
+    { id: 'ddu_a5', type: 'ddu', path: 'A', x: 975,  y: 110, w: 22, h: 32, label: 'DDU-A5',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '23.1 °C', jitter: true } ] },
+    { id: 'ddu_a6', type: 'ddu', path: 'A', x: 1005, y: 110, w: 22, h: 32, label: 'DDU-A6',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '22.9 °C', jitter: true } ] },
     // Path B
     { id: 'util_b',   type: 'util',   path: 'B', x: 20,  y: 400, w: 80,  h: 60, label: 'Utility South',   metrics: [{ k: 'kv', t: '27.5 kV',  jitter: false }, { k: 'kw', t: '— kW',    jitter: true }] },
     { id: 'xfmr_b',   type: 'xfmr',   path: 'B', x: 160, y: 390, w: 60,  h: 80, label: 'XFMR B',          metrics: [{ k: 'c',  t: '— °C',    jitter: true  }, { k: 'load', t: '— kVA', jitter: true }] },
@@ -56,6 +69,19 @@ const NODES = [
     { id: 'rpp_b1',   type: 'rpp',    path: 'B', x: 660, y: 400, w: 70,  h: 50, label: 'RPP-B1',          metrics: [{ k: 'kw', t: '— kW',     jitter: true }] },
     { id: 'rpp_b2',   type: 'rpp',    path: 'B', x: 750, y: 400, w: 70,  h: 50, label: 'RPP-B2',          metrics: [{ k: 'kw', t: '— kW',     jitter: true }] },
     { id: 'busway_b', type: 'busway', path: 'B', x: 840, y: 410, w: 200, h: 18, label: 'Busway B',        metrics: [{ k: 'load', t: '— kW · — A', jitter: true }] },
+    // 6 DDUs on Busway B
+    { id: 'ddu_b1', type: 'ddu', path: 'B', x: 855,  y: 450, w: 22, h: 32, label: 'DDU-B1',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '23.0 °C', jitter: true } ] },
+    { id: 'ddu_b2', type: 'ddu', path: 'B', x: 885,  y: 450, w: 22, h: 32, label: 'DDU-B2',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '23.3 °C', jitter: true } ] },
+    { id: 'ddu_b3', type: 'ddu', path: 'B', x: 915,  y: 450, w: 22, h: 32, label: 'DDU-B3',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '23.0 °C', jitter: true } ] },
+    { id: 'ddu_b4', type: 'ddu', path: 'B', x: 945,  y: 450, w: 22, h: 32, label: 'DDU-B4',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '22.7 °C', jitter: true } ] },
+    { id: 'ddu_b5', type: 'ddu', path: 'B', x: 975,  y: 450, w: 22, h: 32, label: 'DDU-B5',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '23.4 °C', jitter: true } ] },
+    { id: 'ddu_b6', type: 'ddu', path: 'B', x: 1005, y: 450, w: 22, h: 32, label: 'DDU-B6',
+      metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '23.1 °C', jitter: true } ] },
 ];
 
 // ─── Catalogue: 16 lines with exact endpoints (x1,y1)→(x2,y2)
@@ -68,6 +94,13 @@ const LINES = [
     { id: 'ups_a-rpp_a1',     x1: 600, y1: 90,  x2: 660, y2: 85,  path: 'A', kind: 'flow'    },
     { id: 'rpp_a1-rpp_a2',    x1: 730, y1: 85,  x2: 750, y2: 85,  path: 'A', kind: 'flow'    },
     { id: 'rpp_a2-busway_a',  x1: 820, y1: 85,  x2: 840, y2: 79,  path: 'A', kind: 'flow'    },
+    // Busway A drops to 6 DDUs
+    { id: 'busway_a-ddu_a1',  x1: 866, y1: 88,  x2: 866, y2: 110, path: 'A', kind: 'flow'    },
+    { id: 'busway_a-ddu_a2',  x1: 896, y1: 88,  x2: 896, y2: 110, path: 'A', kind: 'flow'    },
+    { id: 'busway_a-ddu_a3',  x1: 926, y1: 88,  x2: 926, y2: 110, path: 'A', kind: 'flow'    },
+    { id: 'busway_a-ddu_a4',  x1: 956, y1: 88,  x2: 956, y2: 110, path: 'A', kind: 'flow'    },
+    { id: 'busway_a-ddu_a5',  x1: 986, y1: 88,  x2: 986, y2: 110, path: 'A', kind: 'flow'    },
+    { id: 'busway_a-ddu_a6',  x1: 1016, y1: 88, x2: 1016, y2: 110, path: 'A', kind: 'flow'   },
     { id: 'util_b-xfmr_b',    x1: 100, y1: 430, x2: 160, y2: 430, path: 'B', kind: 'flow'    },
     { id: 'xfmr_b-ats_b',     x1: 220, y1: 430, x2: 400, y2: 425, path: 'B', kind: 'flow'    },
     { id: 'genset_b-ats_b',   x1: 350, y1: 430, x2: 400, y2: 430, path: 'B', kind: 'cold'    },
@@ -76,6 +109,13 @@ const LINES = [
     { id: 'ups_b-rpp_b1',     x1: 600, y1: 430, x2: 660, y2: 425, path: 'B', kind: 'flow'    },
     { id: 'rpp_b1-rpp_b2',    x1: 730, y1: 425, x2: 750, y2: 425, path: 'B', kind: 'flow'    },
     { id: 'rpp_b2-busway_b',  x1: 820, y1: 425, x2: 840, y2: 419, path: 'B', kind: 'flow'    },
+    // Busway B drops to 6 DDUs
+    { id: 'busway_b-ddu_b1',  x1: 866, y1: 428, x2: 866, y2: 450, path: 'B', kind: 'flow'    },
+    { id: 'busway_b-ddu_b2',  x1: 896, y1: 428, x2: 896, y2: 450, path: 'B', kind: 'flow'    },
+    { id: 'busway_b-ddu_b3',  x1: 926, y1: 428, x2: 926, y2: 450, path: 'B', kind: 'flow'    },
+    { id: 'busway_b-ddu_b4',  x1: 956, y1: 428, x2: 956, y2: 450, path: 'B', kind: 'flow'    },
+    { id: 'busway_b-ddu_b5',  x1: 986, y1: 428, x2: 986, y2: 450, path: 'B', kind: 'flow'    },
+    { id: 'busway_b-ddu_b6',  x1: 1016, y1: 428, x2: 1016, y2: 450, path: 'B', kind: 'flow'  },
 ];
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -134,6 +174,12 @@ function _buildBlock(node) {
         cells.className = 'iso-batt-cells';
         cells.innerHTML = '<span></span><span></span><span></span><span></span>';
         el.appendChild(cells);
+    } else if (node.type === 'ddu') {
+        // GB200 NVL72 rack drop — combined power tap-off + DLC loop indicator
+        const rack = document.createElement('div');
+        rack.className = 'iso-ddu-rack';
+        rack.innerHTML = '<span class="iso-ddu-pwr"></span><span class="iso-ddu-cool"></span>';
+        el.appendChild(rack);
     }
 
     // Trip pip — always-visible breaker button (universal fault injection)

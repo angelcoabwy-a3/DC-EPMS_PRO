@@ -6795,6 +6795,55 @@ body {
     100% { background-position: 100% 50%; }
 }
 
+/* DDU — Rack drop unit with combined power tap + DLC cooling loop */
+.sld-iso-block.iso-ddu {
+    /* Smaller stack — DDU is a leaf, less prominent */
+    --shadow-color: rgba(0, 184, 212, 0.45);
+    box-shadow:
+        0 1px 0 var(--shadow-color),
+        0 2px 0 var(--shadow-color),
+        0 3px 0 var(--shadow-color),
+        0 4px 0 var(--shadow-color),
+        0 6px 14px var(--glow-color);
+}
+.iso-ddu-rack {
+    position: absolute;
+    inset: 12% 12% 32% 12%;
+    display: flex; flex-direction: column; gap: 1px;
+    pointer-events: none;
+}
+.iso-ddu-pwr {
+    flex: 1;
+    background: linear-gradient(90deg, transparent 25%, rgba(0, 229, 255, 0.65) 50%, transparent 75%);
+    border-radius: 1px;
+}
+.iso-ddu-cool {
+    flex: 1;
+    background: linear-gradient(90deg, transparent 25%, rgba(135, 206, 250, 0.55) 50%, transparent 75%);
+    border-radius: 1px;
+    animation: iso-ddu-coolant 2.4s ease-in-out infinite;
+}
+@keyframes iso-ddu-coolant {
+    0%, 100% { background-position: 0%   50%; }
+    50%      { background-position: 100% 50%; }
+}
+/* Tighter title for small block */
+.sld-iso-block.iso-ddu .iso-block-title {
+    font-size: 7.5px;
+    top: -16px;
+}
+.sld-iso-block.iso-ddu .iso-metric {
+    font-size: 6.5px;
+    padding: 0 3px;
+}
+/* DDU TRIP pip slightly smaller to fit */
+.sld-iso-block.iso-ddu .iso-trip-pip {
+    width: 22px; height: 11px; font-size: 6px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .iso-ddu-cool { animation: none; }
+}
+
 /* BATTERY — visible cells */
 .iso-batt-cells {
     position: absolute;

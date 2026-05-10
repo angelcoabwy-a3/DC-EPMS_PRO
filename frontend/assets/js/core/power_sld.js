@@ -76,6 +76,13 @@ const NODE_CATALOGUE = {
     busway_b:  { type: 'busway',   path: 'B' },
 };
 
+// 12 DDUs — extend NODE_CATALOGUE so click-selection resolves them too
+['a', 'b'].forEach((p) => {
+    [1, 2, 3, 4, 5, 6].forEach((n) => {
+        NODE_CATALOGUE[`ddu_${p}${n}`] = { type: 'ddu', path: p.toUpperCase() };
+    });
+});
+
 const DRILL_TARGETS = {
     ups:    'maintenance',
     ats:    'maintenance',
@@ -86,6 +93,7 @@ const DRILL_TARGETS = {
     util:   'tech-assist',
     genset: 'tech-assist',
     busway: 'maintenance',
+    ddu:    'rack-heatmap',
 };
 
 // All SLD lines by id ("src-dst") with their rest-state classification.

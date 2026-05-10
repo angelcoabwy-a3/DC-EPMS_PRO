@@ -254,6 +254,36 @@ export const ASSET_METADATA = {
     },
 };
 
+// 12 DDUs (Drop-Down Units) — combined 480V tap-off + DLC secondary loop
+// to one GB200 NVL72 rack each. Generated programmatically so all 12 share
+// the same rated specs but can carry per-DDU jittered metric values.
+['A', 'B'].forEach((path) => {
+    for (let n = 1; n <= 6; n++) {
+        const id = `ddu_${path.toLowerCase()}${n}`;
+        ASSET_METADATA[id] = {
+            type: 'Rack DDU + DLC Drop',
+            label: `DDU-${path}${n} · GB200 NVL72`,
+            model: 'Server Technology ePOD + Vertiv Liebert XDU',
+            rating: '480 V · 200 A · 142 kW IT load · DLC 2nd loop',
+            sparkline: { unit: '°C', baseline: 23, range: 0.4, color: '#FFB300', label: 'Inlet T' },
+            details: [
+                { k: 'Rack',                v: `GB200 NVL72 #${(n - 1) * 20 + (path === 'A' ? 1 : 11)}` },
+                { k: 'Rated Load',          v: '142 kW · 360 GPU + 72 BlueField' },
+                { k: 'Inlet Temp Setpoint', v: '22 - 24 °C (ASHRAE TC 9.9 A1)' },
+                { k: 'Loop ΔT',             v: '8 °C (return ~ 31 °C)' },
+                { k: 'Loop ΔP',             v: '35 kPa (CDU primary)' },
+                { k: 'Coolant',             v: 'PG25 · 25 % propylene glycol' },
+                { k: 'CDU',                 v: `Liebert XDU 1350 · ${path === 'A' ? '8' : '9'} on hall floor` },
+                { k: 'PSU Topology',        v: '3 + 3 redundant @ 1U each' },
+            ],
+            manuals: [
+                'MOP-DDU-001 — Quarterly torque check on busway tap',
+                'MOP-DLC-001 — CDU coolant sample (PG25 mix verify)',
+            ],
+        };
+    }
+});
+
 export function getAssetMeta(id) {
     return ASSET_METADATA[id] || null;
 }

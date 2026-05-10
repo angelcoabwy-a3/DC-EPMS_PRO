@@ -37,7 +37,16 @@ export const TOPOLOGY = {
     ups_a:    { type: 'ups',    path: 'A', sources: ['ats_a'],                targets: ['rpp_a1'],  battery: 'batt_a' },
     rpp_a1:   { type: 'rpp',    path: 'A', sources: ['ups_a'],                targets: ['rpp_a2'] },
     rpp_a2:   { type: 'rpp',    path: 'A', sources: ['rpp_a1'],               targets: ['busway_a'] },
-    busway_a: { type: 'busway', path: 'A', sources: ['rpp_a2'],               targets: [] },
+    busway_a: { type: 'busway', path: 'A', sources: ['rpp_a2'],               targets: ['ddu_a1', 'ddu_a2', 'ddu_a3', 'ddu_a4', 'ddu_a5', 'ddu_a6'] },
+    // 6 representative DDUs (Drop-Down Units) hanging off Busway A — each
+    // services one GB200 NVL72 rack with combined 480V power tap-off + DLC
+    // secondary loop hookup. 118 racks total per Path C2; we visualize 6.
+    ddu_a1:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
+    ddu_a2:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
+    ddu_a3:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
+    ddu_a4:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
+    ddu_a5:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
+    ddu_a6:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
     // Path B (mirrored)
     util_b:   { type: 'util',   path: 'B', sources: [],                       targets: ['xfmr_b'] },
     xfmr_b:   { type: 'xfmr',   path: 'B', sources: ['util_b'],               targets: ['ats_b'] },
@@ -48,7 +57,13 @@ export const TOPOLOGY = {
     ups_b:    { type: 'ups',    path: 'B', sources: ['ats_b'],                targets: ['rpp_b1'],  battery: 'batt_b' },
     rpp_b1:   { type: 'rpp',    path: 'B', sources: ['ups_b'],                targets: ['rpp_b2'] },
     rpp_b2:   { type: 'rpp',    path: 'B', sources: ['rpp_b1'],               targets: ['busway_b'] },
-    busway_b: { type: 'busway', path: 'B', sources: ['rpp_b2'],               targets: [] },
+    busway_b: { type: 'busway', path: 'B', sources: ['rpp_b2'],               targets: ['ddu_b1', 'ddu_b2', 'ddu_b3', 'ddu_b4', 'ddu_b5', 'ddu_b6'] },
+    ddu_b1:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
+    ddu_b2:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
+    ddu_b3:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
+    ddu_b4:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
+    ddu_b5:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
+    ddu_b6:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
 };
 
 // Topological order — utility roots, then conditional sources, then chain.
@@ -61,6 +76,9 @@ const TOPO_ORDER = [
     'rpp_a1', 'rpp_b1',
     'rpp_a2', 'rpp_b2',
     'busway_a', 'busway_b',
+    // Leaf DDUs propagate from busway alive state
+    'ddu_a1', 'ddu_a2', 'ddu_a3', 'ddu_a4', 'ddu_a5', 'ddu_a6',
+    'ddu_b1', 'ddu_b2', 'ddu_b3', 'ddu_b4', 'ddu_b5', 'ddu_b6',
 ];
 
 // Per-node mutable state (engine-private; published via setState)
