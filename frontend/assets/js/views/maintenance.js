@@ -169,8 +169,50 @@ async function _rejectWorkOrder(woId, woContext) {
     return true;
 }
 
-// ─── Sprint 7.1c: voice closure modal ─────────────────────────────
+// ─── Sprint 7.1c: voice closure modal (v0.10.13 hardened) ────────
 let _activeClosureWoId = null;
+let _escListenerAttached = false;
+
+// Light toast for closure success — reuses .sld-info-toast CSS class
+function _maintToast(msg, tone = 'ok') {
+    let host = document.getElementById('m-toast');
+    if (!host) {
+        host = document.createElement('div');
+        host.id = 'm-toast';
+        host.className = 'sld-info-toast';
+        document.body.appendChild(host);
+    }
+    host.textContent = msg;
+    host.dataset.tone = tone;
+    host.classList.add('is-visible');
+    clearTimeout(_maintToast._t);
+    _maintToast._t = setTimeout(() => host.classList.remove('is-visible'), 2800);
+}
+
+// Escape handler — attached only while modal is open (no permanent
+// global listener; clean lifecycle, no leak)
+function _onEscapeKey(e) {
+    if (e.key === 'Escape') _closeClosureModal();
+}
+
+function _attachEscape() {
+    if (_escListenerAttached) return;
+    document.addEventListener('keydown', _onEscapeKey);
+    _escListenerAttached = true;
+}
+function _detachEscape() {
+    if (!_escListenerAttached) return;
+    document.removeEventListener('keydown', _onEscapeKey);
+    _escListenerAttached = false;
+}
+
+// Reset validation styling — called on close + on input/focus
+function _clearValidation() {
+    document.querySelectorAll('#m-closure-overlay .is-invalid')
+        .forEach((el) => el.classList.remove('is-invalid'));
+    document.querySelectorAll('#m-closure-overlay .m-validation-hint.is-visible')
+        .forEach((el) => el.classList.remove('is-visible'));
+}
 
 function _openClosureModal(woId, woContext) {
     _activeClosureWoId = woId;
@@ -190,6 +232,7 @@ function _openClosureModal(woId, woContext) {
         resultBox.innerHTML = '';
     }
     if (formBody) formBody.removeAttribute('hidden');
+    _clearValidation();
 
     ctxEl.innerHTML = `<strong>${_escape(woId)}</strong> &middot; asset: <strong>${_escape(woContext.asset_id || '?')}</strong> &middot; priority: ${_escape(woContext.priority || '?')} &middot; LOTO: ${woContext.requires_loto ? 'YES' : 'no'}`;
 
@@ -201,12 +244,15 @@ function _openClosureModal(woId, woContext) {
     followupsEl.checked = true;
 
     overlay.removeAttribute('hidden');
+    _attachEscape();
     setTimeout(() => notesEl.focus(), 50);
 }
 
 function _closeClosureModal() {
     const overlay = document.getElementById('m-closure-overlay');
     if (overlay) overlay.setAttribute('hidden', '');
+    _detachEscape();
+    _clearValidation();
     _activeClosureWoId = null;
 }
 
@@ -216,21 +262,41 @@ async function _submitClosure() {
     const completeEl  = document.getElementById('m-closure-complete');
     const followupsEl = document.getElementById('m-closure-followups');
     const submitBtn   = document.getElementById('m-closure-submit');
-    const formBody    = document.getElementById('m-closure-form-body');
     const resultBox   = document.getElementById('m-closure-result');
     if (!_activeClosureWoId || !cetEl || !notesEl) return;
 
     const cetId = (cetEl.value || '').trim();
     const notes = (notesEl.value || '').trim();
-    if (!cetId) { alert('CET id is required.'); cetEl.focus(); return; }
-    if (notes.length < 10) { alert('Closure notes must be at least 10 characters.'); notesEl.focus(); return; }
+
+    // v0.10.13: visible validation — shake + red border, no more alert()
+    _clearValidation();
+    let invalid = false;
+    let firstInvalidEl = null;
+    if (!cetId) {
+        cetEl.classList.add('is-invalid');
+        firstInvalidEl = firstInvalidEl || cetEl;
+        invalid = true;
+    }
+    if (notes.length < 10) {
+        notesEl.classList.add('is-invalid');
+        const hint = document.getElementById('m-closure-notes-hint');
+        if (hint) hint.classList.add('is-visible');
+        firstInvalidEl = firstInvalidEl || notesEl;
+        invalid = true;
+    }
+    if (invalid) {
+        if (firstInvalidEl) firstInvalidEl.focus();
+        // Re-trigger animation each click by reflow-resetting
+        void cetEl.offsetWidth;
+        void notesEl.offsetWidth;
+        return;
+    }
 
     sessionStorage.setItem('cmms_cet_id', cetId);
 
     submitBtn.disabled = true;
     submitBtn.textContent = 'normalizing…';
 
-    // Show pending status above form
     if (resultBox) {
         resultBox.removeAttribute('hidden');
         resultBox.innerHTML = `<div class="m-closure-status m-closure-status-pending">Sending notes to gemma for normalization (typically 2&ndash;6 seconds)&hellip;</div>`;
@@ -255,14 +321,48 @@ async function _submitClosure() {
             if (resultBox) {
                 resultBox.innerHTML = `<div class="m-closure-status m-closure-status-err">HTTP ${r.status}: ${_escape(errText.slice(0, 400))}</div>`;
             }
+            // Re-enable submit so operator can retry; do NOT auto-close
+            // (error is informational and they may want to read it)
             return;
         }
         const data = await r.json();
-        // Hide form, show result
-        if (formBody) formBody.setAttribute('hidden', '');
-        _renderClosureResult(data);
-        // Refresh backlog so the row state updates (completed status,
-        // new follow-up WOs in pending_approval).
+        const followupsN = (data.follow_ups_created || []).length;
+
+        // v0.10.13 directive 3: persist normalized result to state.js
+        // so subscribers can react (a future toast feed, audit log, etc.)
+        try {
+            if (window.__epms && window.__epms.getState && window.__epms.setState) {
+                const history = window.__epms.getState('closureHistory') || [];
+                history.unshift({
+                    wo_id: _activeClosureWoId,
+                    ts: Date.now(),
+                    cet_id: cetId,
+                    status_after: data.status_after,
+                    normalized: data.normalized,
+                    follow_ups_created: data.follow_ups_created || [],
+                });
+                window.__epms.setState('closureHistory', history.slice(0, 50));
+            }
+        } catch (e) { /* state bridge optional */ }
+
+        console.log(
+            '[maintenance] closure submitted OK ·',
+            _activeClosureWoId,
+            '· status=' + data.status_after,
+            '· follow_ups=' + followupsN,
+            '· elapsed_ms=' + data.elapsed_ms,
+        );
+        _maintToast(
+            `Closure submitted · ${data.status_after}` +
+            (followupsN ? ` · ${followupsN} follow-up${followupsN > 1 ? 's' : ''} created` : ''),
+            'ok',
+        );
+
+        // v0.10.13 directive 3: force-close the modal post-success.
+        // The result panel was useful for debugging but operationally,
+        // the operator wants to keep moving — the toast + refreshed
+        // backlog row carry the same information.
+        _closeClosureModal();
         await _refresh();
     } catch (err) {
         if (resultBox) {
@@ -354,14 +454,29 @@ function _renderClosureResult(data) {
 }
 
 function _wireClosureModal() {
+    // Close affordances — all converge on _closeClosureModal()
     document.getElementById('m-closure-cancel')?.addEventListener('click', _closeClosureModal);
     document.getElementById('m-closure-cancel-2')?.addEventListener('click', _closeClosureModal);
     document.getElementById('m-closure-submit')?.addEventListener('click', _submitClosure);
     document.getElementById('m-closure-overlay')?.addEventListener('click', (e) => {
         if (e.target === e.currentTarget) _closeClosureModal();
     });
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && _activeClosureWoId) _closeClosureModal();
+    // Escape listener is attached/detached around the modal lifecycle
+    // in _attachEscape/_detachEscape — NOT permanent.
+
+    // Validation-feedback clearers — kill .is-invalid on focus/input so
+    // shake doesn't stick once user starts typing.
+    const cetEl   = document.getElementById('m-closure-cet');
+    const notesEl = document.getElementById('m-closure-notes');
+    const hintEl  = document.getElementById('m-closure-notes-hint');
+    [cetEl, notesEl].forEach((el) => {
+        if (!el) return;
+        const clear = () => {
+            el.classList.remove('is-invalid');
+            if (el === notesEl && hintEl) hintEl.classList.remove('is-visible');
+        };
+        el.addEventListener('focus', clear);
+        el.addEventListener('input', clear);
     });
 }
 

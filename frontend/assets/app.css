@@ -2077,6 +2077,35 @@ body {
     padding: 64px 16px 32px;
     overflow-y: auto;
 }
+/* v0.10.13 fix DC-EPMS-MAINT-003 — "zombie modal" bug:
+   The .m-modal-overlay rule above applies display:flex, which overrides
+   the UA stylesheet's [hidden] { display:none } default. Without this
+   selector, setAttribute('hidden','') leaves the overlay visible. */
+.m-modal-overlay[hidden] { display: none !important; }
+
+/* v0.10.13 — inline validation feedback (shake + red border) */
+@keyframes m-input-shake {
+    0%, 100% { transform: translateX(0); }
+    20%      { transform: translateX(-6px); }
+    40%      { transform: translateX(6px); }
+    60%      { transform: translateX(-4px); }
+    80%      { transform: translateX(4px); }
+}
+.m-modal-input.is-invalid,
+.m-modal-textarea.is-invalid {
+    border-color: var(--crit) !important;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
+    animation: m-input-shake 350ms ease;
+}
+.m-validation-hint {
+    color: var(--crit);
+    font-size: 10.5px;
+    margin: -6px 0 8px 0;
+    font-family: var(--font-mono);
+    letter-spacing: 0.3px;
+    display: none;
+}
+.m-validation-hint.is-visible { display: block; }
 .m-modal {
     width: min(720px, 100%);
     background: var(--bg-surface);
