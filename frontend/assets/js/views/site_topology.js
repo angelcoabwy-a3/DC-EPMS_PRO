@@ -71,6 +71,11 @@ let _panX = 0, _panY = 0;
 let _initialized = false;
 let _viewBox = { w: 1100, h: 620 };
 
+// Tier A+ / A1' state
+let _searchTerm = '';
+let _pathColorOn = false;
+let _pathByNode = new Map();      // node_id -> 'A' | 'B' | 'AB' | undefined
+
 // ─── HTML escape (defense-in-depth) ──────────────────────────────
 function _esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({
@@ -151,6 +156,43 @@ function _runSimulation(nodes, edges) {
     }
 }
 
+// ─── Tier A+ / A1': Path A vs Path B classifier ──────────────────
+// BFS forward from the two utility roots. Nodes reachable from both
+// are tagged 'AB' (true 2N redundancy); nodes reachable from one
+// only are 'A' or 'B'. Cooling roots (cooling_tower_field) are
+// classified the same way for the cooling chain.
+function _computePathClassification() {
+    _pathByNode.clear();
+    const ROOTS = [
+        { id: 'utility_feed_a', tag: 'A' },
+        { id: 'utility_feed_b', tag: 'B' },
+    ];
+    const reach = { A: new Set(), B: new Set() };
+    for (const root of ROOTS) {
+        if (!_byId.has(root.id)) continue;
+        const queue = [root.id];
+        const visited = reach[root.tag];
+        visited.add(root.id);
+        while (queue.length) {
+            const cur = queue.shift();
+            for (const e of _data.edges) {
+                if (e.chain !== 'power') continue;
+                if (e.src !== cur) continue;
+                if (visited.has(e.dst)) continue;
+                visited.add(e.dst);
+                queue.push(e.dst);
+            }
+        }
+    }
+    for (const n of _data.nodes) {
+        const inA = reach.A.has(n.id);
+        const inB = reach.B.has(n.id);
+        if (inA && inB) _pathByNode.set(n.id, 'AB');
+        else if (inA) _pathByNode.set(n.id, 'A');
+        else if (inB) _pathByNode.set(n.id, 'B');
+    }
+}
+
 // ─── Compute downstream impact set client-side ───────────────────
 // (Backend has /api/site/impact, but for the cascade highlight we
 // can BFS over the local edge index, sub-millisecond, no roundtrip.)
@@ -181,10 +223,19 @@ function _renderEdges() {
             const a = _byId.get(e.src);
             const b = _byId.get(e.dst);
             if (!a || !b) return '';
-            const cls = `topo-edge topo-edge-${e.chain}` +
+            // Tier A+ / A1': path-based edge colouring (when toggle is on)
+            let pathClass = '';
+            if (_pathColorOn && e.chain === 'power') {
+                const pa = _pathByNode.get(e.src);
+                const pb = _pathByNode.get(e.dst);
+                // Edge inherits its src node's path classification.
+                if (pa === 'A' || (pa === 'AB' && pb === 'A')) pathClass = ' topo-edge-path-a';
+                else if (pa === 'B' || (pa === 'AB' && pb === 'B')) pathClass = ' topo-edge-path-b';
+                else if (pa === 'AB') pathClass = ' topo-edge-path-ab';
+            }
+            const cls = `topo-edge topo-edge-${e.chain}` + pathClass +
                 (impact && (e.src === _selectedId || impact.has(e.src)) && impact.has(e.dst)
                     ? ' topo-edge-impact' : '') +
-                (_selectedId && !impact ? '' : '') +
                 (_selectedId && impact && !(e.src === _selectedId || impact.has(e.src))
                     ? ' topo-edge-dim' : '');
             return `<line class="${cls}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"
@@ -196,14 +247,22 @@ function _renderNodes() {
     const g = document.getElementById('topo-graph-nodes');
     if (!g) return;
     const impact = _selectedId ? _impactSet(_selectedId, _activeChain) : null;
+    const searchActive = _searchTerm.length > 0;
     g.innerHTML = _data.nodes.map(n => {
         const s = styleFor(n.type);
         const isSel = n.id === _selectedId;
         const inImpact = impact && impact.has(n.id);
-        const dim = _selectedId && !isSel && !inImpact;
+        const matchesSearch = searchActive && n.id.toLowerCase().includes(_searchTerm);
+        // Search dimming overrides selection dimming (looking for a node)
+        const dim = (_selectedId && !isSel && !inImpact) ||
+                    (searchActive && !matchesSearch);
         const klass = 'topo-node' +
             (isSel ? ' topo-node-selected' : '') +
             (inImpact ? ' topo-node-impact' : '') +
+            (matchesSearch ? ' topo-node-search-hit' : '') +
+            (_pathColorOn && _pathByNode.get(n.id) === 'A' ? ' topo-node-path-a' : '') +
+            (_pathColorOn && _pathByNode.get(n.id) === 'B' ? ' topo-node-path-b' : '') +
+            (_pathColorOn && _pathByNode.get(n.id) === 'AB' ? ' topo-node-path-ab' : '') +
             (dim ? ' topo-node-dim' : '');
         const r = isSel ? s.r + 3 : s.r;
         let shape;
@@ -379,6 +438,21 @@ function _onReseed() {
     _render();
 }
 
+// Tier A+ / A1' search + path coloring handlers
+function _onSearchInput(e) {
+    _searchTerm = (e.target.value || '').trim().toLowerCase();
+    _render();
+}
+function _onPathColorToggle() {
+    _pathColorOn = !_pathColorOn;
+    const btn = document.getElementById('topo-path-color-toggle');
+    if (btn) {
+        btn.setAttribute('data-on', _pathColorOn ? '1' : '0');
+        btn.classList.toggle('active', _pathColorOn);
+    }
+    _render();
+}
+
 function _onDetailClose() {
     _selectedId = null;
     _render();
@@ -396,6 +470,7 @@ async function _loadGraph() {
         _data.nodes = data.nodes || [];
         _data.edges = data.edges || [];
         _byId = new Map(_data.nodes.map(n => [n.id, n]));
+        _computePathClassification();
         _runSimulation(_data.nodes, _data.edges);
         _render();
         console.log('[site_topology] graph ready: %d nodes, %d edges',
@@ -419,6 +494,10 @@ function _wireEvents() {
     document.querySelector('.topo-graph-filters')?.addEventListener('click', _onFilterClick);
     document.getElementById('topo-graph-reseed')?.addEventListener('click', _onReseed);
     document.getElementById('topo-graph-detail-close')?.addEventListener('click', _onDetailClose);
+
+    // Tier A+ / A1'
+    document.getElementById('topo-graph-search')?.addEventListener('input', _onSearchInput);
+    document.getElementById('topo-path-color-toggle')?.addEventListener('click', _onPathColorToggle);
 }
 
 // LOTO-pattern: legacy router has site_topology branch but doesn't

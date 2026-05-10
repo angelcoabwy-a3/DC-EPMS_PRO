@@ -32,6 +32,7 @@ import { initHeatOverlay } from './core/heat_overlay.js';
 import { startTelemetry } from './core/telemetry_engine.js';
 import { initMaintenanceView } from './views/maintenance.js';
 import { initSiteTopologyView } from './views/site_topology.js';
+import { initRackHeatmapView } from './views/rack_heatmap.js';
 import { initTechAssistView } from './views/tech_assist.js';
 import { initMultiAgentView } from './views/multi_agent.js';
 
@@ -56,6 +57,7 @@ initKeyboard();
 initHeatOverlay();
 initMaintenanceView();
 initSiteTopologyView();
+initRackHeatmapView();
 initTechAssistView();
 initMultiAgentView();
 

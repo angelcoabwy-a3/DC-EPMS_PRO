@@ -143,6 +143,7 @@
                 <div class="nav-item" data-route="maintenance"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="wrench"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>Maintenance</div>
                 <div class="nav-item" data-route="tech-assist"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="life-buoy"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/></svg></span>Tech Assist</div>
                 <div class="nav-item" data-route="multi-agent"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="users"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Multi-Agent</div>
+                <div class="nav-item" data-route="rack-heatmap"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="grid"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg></span>Rack Heatmap</div>
             </div>
 
             <div class="nav-section">
@@ -942,6 +943,27 @@
                             <g class="pid-rack" data-rack="R11" transform="translate(400, 0)"><use xlink:href="#sym-rack" width="30" height="60" class="pid-symbol"/></g>
                             <g class="pid-rack" data-rack="R12" transform="translate(440, 0)"><use xlink:href="#sym-rack" width="30" height="60" class="pid-symbol"/></g>
                         </g>
+                        <!-- Tier A+ / A3': per-rack heat dots overlay.
+                             12 dots positioned over each rack symbol's
+                             top edge. Each pulses on its own phase to
+                             visualize independent thermal state per rack.
+                             Driven by core/heat_overlay.js (per-rack
+                             classifier when telemetry is available;
+                             otherwise deterministic jitter for richness). -->
+                        <g class="pid-rack-heat-dots" id="pid-rack-heat-dots" transform="translate(580, 60)">
+                            <circle data-rack-dot="R01" cx="15"  cy="-6" r="3.5" class="pid-rack-dot"/>
+                            <circle data-rack-dot="R02" cx="55"  cy="-6" r="3.5" class="pid-rack-dot"/>
+                            <circle data-rack-dot="R03" cx="95"  cy="-6" r="3.5" class="pid-rack-dot"/>
+                            <circle data-rack-dot="R04" cx="135" cy="-6" r="3.5" class="pid-rack-dot"/>
+                            <circle data-rack-dot="R05" cx="175" cy="-6" r="3.5" class="pid-rack-dot"/>
+                            <circle data-rack-dot="R06" cx="215" cy="-6" r="3.5" class="pid-rack-dot"/>
+                            <circle data-rack-dot="R07" cx="255" cy="-6" r="3.5" class="pid-rack-dot"/>
+                            <circle data-rack-dot="R08" cx="295" cy="-6" r="3.5" class="pid-rack-dot"/>
+                            <circle data-rack-dot="R09" cx="335" cy="-6" r="3.5" class="pid-rack-dot"/>
+                            <circle data-rack-dot="R10" cx="375" cy="-6" r="3.5" class="pid-rack-dot"/>
+                            <circle data-rack-dot="R11" cx="415" cy="-6" r="3.5" class="pid-rack-dot"/>
+                            <circle data-rack-dot="R12" cx="455" cy="-6" r="3.5" class="pid-rack-dot"/>
+                        </g>
                         <text x="800" y="155" class="pid-node-metric" data-pid-metric="rack-tj">GPU Tj max: —°C</text>
 
                         <!-- Tier A / A3: thermal heatmap overlay over IT halls.
@@ -1504,6 +1526,12 @@
                                 <button class="topo-filter" data-chain="power" type="button">Power</button>
                                 <button class="topo-filter" data-chain="cooling" type="button">Cooling</button>
                             </div>
+                            <!-- Tier A+ / A1': Path A vs Path B edge colouring toggle -->
+                            <button class="topo-filter topo-filter-toggle" id="topo-path-color-toggle" data-on="0" type="button" title="Color edges by utility feed (Path A vs Path B)">Path color</button>
+                            <!-- Tier A+ / A1': search box -->
+                            <input type="text" id="topo-graph-search" class="topo-graph-search"
+                                   placeholder="search… (id substring)" maxlength="40"
+                                   aria-label="Search nodes by id">
                             <span class="topo-graph-meta" id="topo-graph-meta">&mdash;</span>
                             <button class="btn btn-secondary btn-sm" id="topo-graph-reseed" title="Re-run physics (re-layout)" type="button">&#x21bb; Re-layout</button>
                         </div>
@@ -2146,6 +2174,76 @@
                     <!-- 4 agent cards rendered dynamically by multi_agent.js -->
                     <div class="ma-empty">Submit a query to consult all four agents in parallel.</div>
                 </section>
+            </div>
+
+            <!-- ══════════ View: Rack Anomaly Heatmap (Tier B / B2) ══════════
+                 50 GB200 NVL72 racks in a Path A / Path B grid.
+                 Live: gpu_Tj per rack + Kalman z-score blink. Click any
+                 cell to drill into sparkline + recent WO history.
+                 Driven by frontend/assets/js/views/rack_heatmap.js.
+                 Subscribes to telemetry state for per-rack Tj. -->
+            <div class="view" id="view-rack-heatmap" hidden>
+                <div class="view-hdr">
+                    <h2>Rack Anomaly Heatmap &mdash; 50 &times; GB200 NVL72 (Phase 1)</h2>
+                    <div class="view-sub">
+                        Live GPU T<sub>j</sub> per rack &middot; Kalman z-score drives blink intensity &middot;
+                        Click any cell to drill into the rack history.
+                    </div>
+                </div>
+
+                <div class="rack-heatmap-bar">
+                    <div class="rack-heatmap-meta">
+                        <span class="rack-heatmap-meta-lbl">Total racks:</span>
+                        <span class="rack-heatmap-meta-val" id="rack-heatmap-count">&mdash;</span>
+                        <span class="rack-heatmap-sep">&middot;</span>
+                        <span class="rack-heatmap-meta-lbl">Anomalous:</span>
+                        <span class="rack-heatmap-meta-val rack-heatmap-meta-anomaly" id="rack-heatmap-anomalous">0</span>
+                        <span class="rack-heatmap-sep">&middot;</span>
+                        <span class="rack-heatmap-meta-lbl">Hot:</span>
+                        <span class="rack-heatmap-meta-val rack-heatmap-meta-warn" id="rack-heatmap-hot">0</span>
+                        <span class="rack-heatmap-sep">&middot;</span>
+                        <span class="rack-heatmap-meta-lbl">Tj range:</span>
+                        <span class="rack-heatmap-meta-val" id="rack-heatmap-tj-range">&mdash;</span>
+                    </div>
+                    <div class="rack-heatmap-actions">
+                        <span class="rack-heatmap-legend">
+                            <span class="rack-heatmap-leg-cold"></span> &lt;60&deg;C
+                            <span class="rack-heatmap-leg-normal"></span> 60-78&deg;
+                            <span class="rack-heatmap-leg-warn"></span> 78-86&deg;
+                            <span class="rack-heatmap-leg-crit"></span> &gt;86&deg;
+                        </span>
+                        <button class="btn btn-secondary btn-sm" id="rack-heatmap-simulate" title="Inject one anomaly cycle for demo" type="button">Simulate burst</button>
+                        <button class="btn btn-secondary btn-sm" id="rack-heatmap-refresh" type="button">&#x21bb; Refresh</button>
+                    </div>
+                </div>
+
+                <div class="rack-heatmap-layout">
+                    <section class="rack-heatmap-grid-wrap">
+                        <div class="rack-heatmap-grid" id="rack-heatmap-grid">
+                            <div class="rack-heatmap-loading">Loading 50 racks from CMMS&hellip;</div>
+                        </div>
+                    </section>
+                    <aside class="rack-heatmap-detail" id="rack-heatmap-detail" hidden>
+                        <div class="rack-heatmap-detail-header">
+                            <span class="rack-heatmap-detail-id" id="rack-heatmap-detail-id">&mdash;</span>
+                            <button class="rack-heatmap-detail-close" id="rack-heatmap-detail-close" type="button" aria-label="Close">&times;</button>
+                        </div>
+                        <div class="rack-heatmap-detail-body">
+                            <div class="rack-heatmap-detail-grid">
+                                <div><span class="lbl">GPU Tj</span><span class="val" id="rack-heatmap-detail-tj">&mdash;</span></div>
+                                <div><span class="lbl">band</span><span class="val" id="rack-heatmap-detail-band">&mdash;</span></div>
+                                <div><span class="lbl">z-score</span><span class="val" id="rack-heatmap-detail-z">&mdash;</span></div>
+                                <div><span class="lbl">path</span><span class="val" id="rack-heatmap-detail-path">&mdash;</span></div>
+                                <div><span class="lbl">criticality</span><span class="val" id="rack-heatmap-detail-crit">&mdash;</span></div>
+                                <div><span class="lbl">open WOs</span><span class="val" id="rack-heatmap-detail-wos">&mdash;</span></div>
+                            </div>
+                            <div class="rack-heatmap-detail-section-title">Tj trend (60 samples)</div>
+                            <svg id="rack-heatmap-detail-spark" class="rack-heatmap-detail-spark" viewBox="0 0 280 70" preserveAspectRatio="none"></svg>
+                            <div class="rack-heatmap-detail-section-title">Open work orders</div>
+                            <div id="rack-heatmap-detail-wo-list" class="rack-heatmap-detail-wo-list">&mdash;</div>
+                        </div>
+                    </aside>
+                </div>
             </div>
 </section>
 

@@ -57,6 +57,26 @@ function _applyBand(band) {
         _stateEl.textContent = band.name;
         _stateEl.setAttribute('data-heat', band.name);
     }
+    _applyPerRackBand(band);
+}
+
+// Tier A+ / A3': stagger the band across the 12 rack dots so the row
+// reads as "individual rack thermal states" rather than a single class.
+// Hottest dots cluster around the centre (typical training-step burst
+// pattern — racks in the middle have less airflow margin).
+function _applyPerRackBand(centerBand) {
+    const dots = document.querySelectorAll('.pid-rack-dot');
+    if (!dots.length) return;
+    const order = centerBand.name === 'normal'
+        ? ['normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal','normal']
+        : centerBand.name === 'warn'
+        ? ['normal','normal','normal','warn','warn','warn','warn','warn','warn','normal','normal','normal']
+        : centerBand.name === 'crit'
+        ? ['warn','warn','crit','crit','crit','crit','crit','crit','crit','warn','warn','normal']
+        : ['cold','cold','cold','cold','normal','normal','normal','normal','cold','cold','cold','cold'];
+    dots.forEach((d, i) => {
+        d.setAttribute('data-band', order[i] || centerBand.name);
+    });
 }
 
 // ─── Toggle ──────────────────────────────────────────────────────

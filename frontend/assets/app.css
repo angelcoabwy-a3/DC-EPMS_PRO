@@ -127,6 +127,328 @@ body {
 .app-header .status-pill.up .dot  { background: var(--ok); }
 .app-header .status-pill.down .dot { background: var(--crit); }
 
+/* ── Tier B / B2: Rack Anomaly Heatmap ───────────────────────────
+   50 GB200 NVL72 racks rendered as a Path A / Path B grid. Each
+   cell color-codes Tj band; cells with z >= 3 blink at a rate
+   inversely proportional to z (higher anomaly = faster blink).
+   Click a cell to open the detail aside with sparkline + WOs.
+   Tesla Megapack / SpaceX Starlink fleet aesthetic — every cell
+   is one fleet element, the wall is the fleet, anomalies pop. */
+
+#view-rack-heatmap .view-hdr h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 4px 0;
+}
+#view-rack-heatmap .view-hdr .view-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+}
+
+.rack-heatmap-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--bg-elevated, #0F1115);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+.rack-heatmap-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+}
+.rack-heatmap-meta-lbl { color: var(--text-dim); }
+.rack-heatmap-meta-val {
+    color: var(--text);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.rack-heatmap-meta-val.rack-heatmap-meta-anomaly { color: var(--crit, #ef4444); }
+.rack-heatmap-meta-val.rack-heatmap-meta-warn    { color: var(--warn, #f59e0b); }
+.rack-heatmap-sep { color: var(--text-dim); margin: 0 4px; }
+
+.rack-heatmap-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+.rack-heatmap-legend {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.rack-heatmap-legend > span[class^="rack-heatmap-leg-"] {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    margin: 0 2px 0 6px;
+    vertical-align: middle;
+}
+.rack-heatmap-leg-cold   { background: #00B8D4; }
+.rack-heatmap-leg-normal { background: #10b981; }
+.rack-heatmap-leg-warn   { background: #f59e0b; }
+.rack-heatmap-leg-crit   { background: #ef4444; }
+
+.rack-heatmap-layout {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 10px;
+    align-items: stretch;
+}
+.rack-heatmap-grid-wrap {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px;
+    min-height: 480px;
+}
+.rack-heatmap-loading {
+    color: var(--text-dim);
+    font-style: italic;
+    text-align: center;
+    padding: 60px 20px;
+    font-size: 11.5px;
+}
+
+.rack-group { margin-bottom: 14px; }
+.rack-group-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    font-family: var(--font-mono);
+}
+.rack-group-a .rack-group-label { color: var(--accent, #00B8D4); }
+.rack-group-b .rack-group-label { color: var(--warn, #f59e0b); }
+.rack-group-count {
+    color: var(--text-dim);
+    font-size: 9.5px;
+    margin-left: 6px;
+}
+.rack-group-cells {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+    gap: 5px;
+}
+
+/* ── Cell ────────────────────────────────────────────────────────
+   The visual workhorse. Severity-coded by Tj band (cold/normal/warn/crit).
+   When in anomaly state (z >= 3), border + glow blinks at speed inversely
+   tied to z (set via inline --rack-blink-speed CSS variable). */
+.rack-cell {
+    background: rgba(15, 17, 21, 0.85);
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: 3px;
+    padding: 6px 5px 5px;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+    font-family: var(--font-mono);
+    transition: transform 0.1s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 52px;
+    position: relative;
+}
+.rack-cell:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.rack-cell-cold   { border-left-color: #00B8D4; }
+.rack-cell-normal { border-left-color: #10b981; }
+.rack-cell-warn   { border-left-color: #f59e0b; }
+.rack-cell-crit   { border-left-color: #ef4444; }
+
+.rack-cell-id {
+    font-size: 9.5px;
+    color: var(--text-dim);
+    letter-spacing: 0.4px;
+}
+.rack-cell-tj {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+.rack-cell-cold   .rack-cell-tj { color: #00B8D4; }
+.rack-cell-normal .rack-cell-tj { color: #10b981; }
+.rack-cell-warn   .rack-cell-tj { color: #f59e0b; }
+.rack-cell-crit   .rack-cell-tj { color: #ef4444; }
+
+.rack-cell-z {
+    font-size: 9.5px;
+    color: var(--text-dim);
+    margin-top: 1px;
+}
+
+.rack-cell-anomaly {
+    --rack-blink-speed: 0.9s;
+    animation: rack-cell-blink var(--rack-blink-speed) ease-in-out infinite;
+}
+@keyframes rack-cell-blink {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+    50%      { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.55),
+                          0 0 12px rgba(239, 68, 68, 0.4); }
+}
+.rack-cell-warn.rack-cell-anomaly { animation-name: rack-cell-blink-warn; }
+@keyframes rack-cell-blink-warn {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+    50%      { box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.5),
+                          0 0 10px rgba(245, 158, 11, 0.35); }
+}
+.rack-cell-selected {
+    border: 2px solid var(--accent, #00B8D4) !important;
+    background: rgba(0, 184, 212, 0.10);
+}
+@media (prefers-reduced-motion: reduce) {
+    .rack-cell-anomaly { animation: none; }
+}
+
+/* ── Detail aside ────────────────────────────────────────────── */
+.rack-heatmap-detail {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0;
+    align-self: flex-start;
+    position: sticky;
+    top: 12px;
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+.rack-heatmap-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elevated, #0F1115);
+}
+.rack-heatmap-detail-id {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--accent, #00B8D4);
+    font-weight: 600;
+}
+.rack-heatmap-detail-close {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 22px; height: 22px;
+    border-radius: 3px;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+.rack-heatmap-detail-close:hover { border-color: var(--accent); color: var(--accent); }
+.rack-heatmap-detail-body { padding: 12px 14px 14px; }
+.rack-heatmap-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 14px;
+    margin-bottom: 12px;
+}
+.rack-heatmap-detail-grid > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 3px 0;
+    border-bottom: 1px dotted var(--border);
+    font-size: 11px;
+}
+.rack-heatmap-detail-grid .lbl {
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 9.5px;
+}
+.rack-heatmap-detail-grid .val {
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+.rack-heatmap-detail-grid .val[data-band="cold"]   { color: #00B8D4; }
+.rack-heatmap-detail-grid .val[data-band="normal"] { color: #10b981; }
+.rack-heatmap-detail-grid .val[data-band="warn"]   { color: #f59e0b; }
+.rack-heatmap-detail-grid .val[data-band="crit"]   { color: #ef4444; }
+
+.rack-heatmap-detail-section-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    margin: 10px 0 5px;
+}
+.rack-heatmap-detail-spark {
+    width: 100%;
+    height: 70px;
+    background: var(--bg-elevated, #0F1115);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    display: block;
+}
+.rack-heatmap-detail-wo-list { display: flex; flex-direction: column; gap: 4px; }
+.rack-wo {
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 5px 8px;
+    background: var(--bg-elevated, #0F1115);
+    display: grid;
+    grid-template-columns: auto auto auto 1fr;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 10.5px;
+    font-family: var(--font-mono);
+}
+.rack-wo-id { color: var(--accent, #00B8D4); }
+.rack-wo-pri {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-size: 9px;
+}
+.rack-wo-status { color: var(--text-dim); font-size: 9.5px; }
+.rack-wo-summary {
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.rack-empty {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-style: italic;
+    padding: 8px;
+}
+
+@media (max-width: 1200px) {
+    .rack-heatmap-layout { grid-template-columns: 1fr; }
+    .rack-heatmap-detail { position: static; max-height: none; }
+}
+
 /* ── Tier A / A3: Heat overlay on cooling P&ID ───────────────────
    Translucent gradient zones over IT halls + DLC manifold + chiller
    plant. Color encodes thermal state band: cold/normal/warm/hot.
@@ -155,6 +477,39 @@ body {
 .pid-heat-overlay[data-heat="crit"] .pid-heat-pulse  {
     fill: var(--crit, #ef4444);
     animation-duration: 1.1s;
+}
+
+/* Tier A+ / A3': per-rack heat dots — each pulses with its own
+   phase shift via animation-delay so the row "breathes" naturally. */
+.pid-rack-dot {
+    fill: #10b981;
+    opacity: 0.78;
+    transition: fill 0.4s ease;
+    animation: pid-rack-dot-pulse 2.4s ease-in-out infinite;
+}
+.pid-rack-dot:nth-child(1)  { animation-delay: -0.0s; }
+.pid-rack-dot:nth-child(2)  { animation-delay: -0.2s; }
+.pid-rack-dot:nth-child(3)  { animation-delay: -0.4s; }
+.pid-rack-dot:nth-child(4)  { animation-delay: -0.6s; }
+.pid-rack-dot:nth-child(5)  { animation-delay: -0.8s; }
+.pid-rack-dot:nth-child(6)  { animation-delay: -1.0s; }
+.pid-rack-dot:nth-child(7)  { animation-delay: -1.2s; }
+.pid-rack-dot:nth-child(8)  { animation-delay: -1.4s; }
+.pid-rack-dot:nth-child(9)  { animation-delay: -1.6s; }
+.pid-rack-dot:nth-child(10) { animation-delay: -1.8s; }
+.pid-rack-dot:nth-child(11) { animation-delay: -2.0s; }
+.pid-rack-dot:nth-child(12) { animation-delay: -2.2s; }
+@keyframes pid-rack-dot-pulse {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 0.95; }
+}
+/* Heat-band classes applied by core/heat_overlay.js per dot */
+.pid-rack-dot[data-band="cold"]   { fill: #00B8D4; }
+.pid-rack-dot[data-band="normal"] { fill: #10b981; }
+.pid-rack-dot[data-band="warn"]   { fill: #f59e0b; animation-duration: 1.6s; }
+.pid-rack-dot[data-band="crit"]   { fill: #ef4444; animation-duration: 0.9s; }
+@media (prefers-reduced-motion: reduce) {
+    .pid-rack-dot { animation: none; }
 }
 
 .pid-heat-controls {
@@ -255,6 +610,66 @@ body {
     color: var(--text-dim);
 }
 
+/* Tier A+ / A1': search box + path-color toggle button */
+.topo-graph-search {
+    background: var(--bg-elevated, #0F1115);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    border-radius: 3px;
+    width: 180px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.topo-graph-search:focus {
+    outline: none;
+    border-color: var(--accent, #00B8D4);
+    box-shadow: 0 0 0 1px var(--accent, #00B8D4);
+    width: 220px;
+}
+.topo-graph-search::placeholder { color: var(--text-dim, #6a7a8b); }
+
+.topo-filter-toggle[data-on="1"] {
+    color: var(--accent, #00B8D4);
+    background: rgba(0, 184, 212, 0.16);
+    border-color: rgba(0, 184, 212, 0.5);
+}
+.topo-filter-toggle {
+    border: 1px solid var(--border);
+    border-radius: 3px;
+}
+
+/* Search-hit highlight on a node */
+.topo-node-search-hit circle,
+.topo-node-search-hit rect,
+.topo-node-search-hit polygon {
+    stroke: #fbbf24 !important;
+    stroke-width: 3 !important;
+    filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.7));
+}
+.topo-node-search-hit text {
+    fill: #fbbf24 !important;
+    font-weight: 700;
+}
+
+/* Path-coded node halo (when path-color toggle is on) */
+.topo-node-path-a circle,
+.topo-node-path-a rect,
+.topo-node-path-a polygon {
+    filter: drop-shadow(0 0 4px rgba(0, 184, 212, 0.5));
+}
+.topo-node-path-b circle,
+.topo-node-path-b rect,
+.topo-node-path-b polygon {
+    filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.5));
+}
+.topo-node-path-ab circle,
+.topo-node-path-ab rect,
+.topo-node-path-ab polygon {
+    filter: drop-shadow(0 0 4px rgba(168, 85, 247, 0.5));
+}
+
 .topo-graph-canvas-wrap {
     position: relative;
     background: radial-gradient(ellipse at center,
@@ -281,6 +696,11 @@ body {
 }
 .topo-edge-power   { stroke: rgba(0, 184, 212, 0.55); }
 .topo-edge-cooling { stroke: rgba(150, 210, 255, 0.45); stroke-dasharray: 4 3; }
+
+/* Tier A+ / A1': Path A vs Path B edge colouring (when toggle is on) */
+.topo-edge-path-a  { stroke: rgba(0, 184, 212, 0.85); stroke-width: 1.6; }
+.topo-edge-path-b  { stroke: rgba(245, 158, 11, 0.85); stroke-width: 1.6; }
+.topo-edge-path-ab { stroke: rgba(168, 85, 247, 0.65); stroke-width: 1.4; stroke-dasharray: 5 3; }
 .topo-edge-impact {
     stroke: var(--crit, #ef4444);
     stroke-width: 2.4;
