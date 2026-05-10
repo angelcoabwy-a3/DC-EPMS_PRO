@@ -211,43 +211,177 @@ body {
 .mc-status[data-tone="ok"]  { color: var(--good, #10b981); border-color: rgba(16, 185, 129, 0.45); }
 .mc-status[data-tone="err"] { color: var(--crit, #ef4444); border-color: rgba(239, 68, 68, 0.45); }
 
-.mc-acceptance {
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 10px 14px;
-    margin-bottom: 12px;
-    font-size: 11px;
+/* ── B1 Production: Glassmorphism overlay cards ──────────────────
+   Floating HTML cards positioned each frame from the world
+   anchor of each building. Cyan-bordered glass-panel aesthetic
+   matching Tesla Megapack Owner Portal. */
+
+.mc-overlay-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
 }
-.mc-acc-title {
-    font-size: 10px;
+.mc-overlay-card {
+    position: absolute;
+    left: 0;
+    top: 0;
+    /* Pre-translation; transform updated by JS each frame */
+    transform: translate(-50%, -100%);
+    min-width: 168px;
+    max-width: 220px;
+    padding: 8px 11px 9px;
+    background: rgba(11, 13, 16, 0.72);
+    backdrop-filter: blur(10px) saturate(1.2);
+    -webkit-backdrop-filter: blur(10px) saturate(1.2);
+    border: 1px solid rgba(0, 184, 212, 0.45);
+    border-radius: 4px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(0, 184, 212, 0.08);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    pointer-events: none;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    z-index: 5;
+}
+.mc-overlay-card[data-state="warn"] {
+    border-color: rgba(245, 158, 11, 0.65);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(245, 158, 11, 0.20),
+                0 0 14px rgba(245, 158, 11, 0.18);
+}
+.mc-overlay-card[data-state="crit"] {
+    border-color: rgba(239, 68, 68, 0.75);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5),
+                0 0 0 1px rgba(239, 68, 68, 0.25),
+                0 0 16px rgba(239, 68, 68, 0.22);
+}
+.mc-overlay-card-design {
+    border-color: rgba(154, 168, 184, 0.45);
+    background: rgba(11, 13, 16, 0.55);
+}
+.mc-overlay-card-yard {
+    border-color: rgba(245, 158, 11, 0.40);
+}
+
+.mc-card-title {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--accent, #00B8D4);
+    letter-spacing: 0.4px;
+    margin-bottom: 1px;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+.mc-card-sub {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.6px;
-    color: var(--text-dim);
-    font-weight: 600;
+    font-weight: 400;
+}
+.mc-card-sub-design {
+    color: var(--warn, #f59e0b);
+    background: rgba(245, 158, 11, 0.12);
+    padding: 0 4px;
+    border-radius: 2px;
+}
+.mc-card-voltage {
+    font-size: 9.5px;
+    color: var(--text-muted);
     margin-bottom: 6px;
+    border-bottom: 1px dotted rgba(0, 184, 212, 0.20);
+    padding-bottom: 4px;
 }
-.mc-acc-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
+.mc-card-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 4px 14px;
-    font-family: var(--font-mono);
+    grid-template-columns: 1fr 1fr;
+    gap: 2px 10px;
+    margin-bottom: 5px;
+}
+.mc-card-grid > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 10.5px;
+    line-height: 1.45;
+}
+.mc-card-grid .lbl {
     color: var(--text-dim);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.45px;
 }
-.mc-acc-list li {
-    padding: 3px 6px;
-    border-left: 2px solid var(--border);
-    transition: color 0.2s ease, border-left-color 0.2s ease;
+.mc-card-grid .val {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
 }
-.mc-acc-list li.mc-acc-pass {
+.mc-card-grid .mc-anom-val {
+    font-weight: 700;
+}
+.mc-overlay-card[data-state="warn"] .mc-anom-val { color: var(--warn, #f59e0b); }
+.mc-overlay-card[data-state="crit"] .mc-anom-val { color: var(--crit, #ef4444); }
+.mc-card-state {
+    font-size: 9.5px;
+    text-align: right;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    font-weight: 700;
     color: var(--good, #10b981);
-    border-left-color: var(--good, #10b981);
+    border-top: 1px solid rgba(0, 184, 212, 0.16);
+    padding-top: 4px;
+    margin-top: 3px;
 }
-.mc-acc-list li.mc-acc-pass::before { content: "✓ "; color: var(--good, #10b981); }
-.mc-acc-list li:not(.mc-acc-pass)::before { content: "○ "; }
+.mc-overlay-card[data-state="warn"] .mc-card-state { color: var(--warn, #f59e0b); }
+.mc-overlay-card[data-state="crit"] .mc-card-state {
+    color: var(--crit, #ef4444);
+    animation: mc-card-state-pulse 1.6s ease-in-out infinite;
+}
+.mc-card-state-design { color: var(--warn, #f59e0b) !important; opacity: 0.75; }
+@keyframes mc-card-state-pulse {
+    0%, 100% { opacity: 0.65; }
+    50%      { opacity: 1; }
+}
+
+/* ── Tooltip on hover ─────────────────────────────────────────── */
+.mc-tooltip {
+    position: absolute;
+    background: rgba(11, 13, 16, 0.94);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent, #00B8D4);
+    color: var(--text);
+    padding: 5px 9px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    z-index: 30;
+    pointer-events: none;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.55);
+    max-width: 280px;
+}
+.mc-tip-sub {
+    color: var(--text-dim);
+    font-size: 9.5px;
+}
+
+/* ── Drill-down fade overlay ──────────────────────────────────── */
+.mc-transition-fade {
+    position: absolute;
+    inset: 0;
+    background: #0B0D10;
+    opacity: 0;
+    transition: opacity 0.5s ease;
+    pointer-events: none;
+    z-index: 40;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mc-overlay-card[data-state="crit"] .mc-card-state { animation: none; }
+    .mc-transition-fade { transition: none; }
+}
 
 /* ── Tier B / B2: Rack Anomaly Heatmap ───────────────────────────
    50 GB200 NVL72 racks rendered as a Path A / Path B grid. Each

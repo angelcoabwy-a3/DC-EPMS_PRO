@@ -2247,25 +2247,78 @@
                 </div>
             </div>
 
-            <!-- ══════════ View: Mission Control (B1 gray-box spike) ══════════
-                 Tier B / B1 design-spike. Renders 4 primitive BoxGeometry
-                 buildings (A, B, D, Yard) under a fixed isometric
-                 OrthographicCamera. On-canvas FPS HUD + Raycaster click
-                 dispatch. NO textures, NO custom shaders, NO live data
-                 binding. Acceptance criteria documented in
-                 docs/design/B1-mission-control-brief.md (Phase 2 spike).
+            <!-- ══════════ View: Mission Control (B1 production) ══════════
+                 Tesla Megapack Grid Operations aesthetic per
+                 docs/design/B1-mission-control-brief.md.
+                 - 4 buildings rendered as glass-panel meshes with
+                   EdgesGeometry overlays (Path C2 facility plan)
+                 - Fixed isometric OrthographicCamera (30°/30°)
+                 - Live HTML overlay cards with PUE / MW / Racks / Anom
+                   per building (glassmorphism, projected each frame)
+                 - Animated InstancedMesh particles flowing Yard → A/B
+                 - Raycaster click → smooth zoom transition + drill-down
+                   (#rack-heatmap?path=A, etc.)
                  Driven by frontend/assets/js/views/mission_control.js. -->
             <div class="view" id="view-mission-control" hidden>
                 <div class="view-hdr">
-                    <h2>Mission Control <span class="mc-tag">gray-box spike · B1 Phase 2</span></h2>
+                    <h2>Mission Control <span class="mc-tag">B1 production</span></h2>
                     <div class="view-sub">
-                        Three.js r166 · OrthographicCamera fixed iso (30&deg;/30&deg;) ·
-                        4 BoxGeometry primitives (A, B, D, Yard) · Raycaster click &rarr; console.log ·
-                        FPS HUD bottom-right. Validates the 4 acceptance criteria from the brief.
+                        A3-Alpha Toronto Area · Path C2 · 67 MW total · Tier IV 2N ·
+                        Click any building to drill into its details.
                     </div>
                 </div>
                 <div class="mc-canvas-wrap" id="mc-canvas-wrap">
                     <canvas id="mc-canvas" class="mc-canvas"></canvas>
+                    <!-- Glassmorphism overlay cards (positioned by JS each frame) -->
+                    <div class="mc-overlay-layer" id="mc-overlay-layer">
+                        <div class="mc-overlay-card" id="mc-card-a" data-building="building_a" data-state="healthy" hidden>
+                            <div class="mc-card-title">Building A <span class="mc-card-sub">Phase 1</span></div>
+                            <div class="mc-card-voltage">480 VAC trif&aacute;sico 2N</div>
+                            <div class="mc-card-grid">
+                                <div><span class="lbl">PUE</span><span class="val" id="mc-card-a-pue">&mdash;</span></div>
+                                <div><span class="lbl">IT</span><span class="val" id="mc-card-a-mw">&mdash;</span></div>
+                                <div><span class="lbl">Racks</span><span class="val" id="mc-card-a-racks">&mdash;</span></div>
+                                <div><span class="lbl">Anom</span><span class="val mc-anom-val" id="mc-card-a-anom">0</span></div>
+                            </div>
+                            <div class="mc-card-state" id="mc-card-a-state">HEALTHY</div>
+                        </div>
+                        <div class="mc-overlay-card" id="mc-card-b" data-building="building_b" data-state="healthy" hidden>
+                            <div class="mc-card-title">Building B <span class="mc-card-sub">Phase 1</span></div>
+                            <div class="mc-card-voltage">480 VAC trif&aacute;sico 2N</div>
+                            <div class="mc-card-grid">
+                                <div><span class="lbl">PUE</span><span class="val" id="mc-card-b-pue">&mdash;</span></div>
+                                <div><span class="lbl">IT</span><span class="val" id="mc-card-b-mw">&mdash;</span></div>
+                                <div><span class="lbl">Racks</span><span class="val" id="mc-card-b-racks">&mdash;</span></div>
+                                <div><span class="lbl">Anom</span><span class="val mc-anom-val" id="mc-card-b-anom">0</span></div>
+                            </div>
+                            <div class="mc-card-state" id="mc-card-b-state">HEALTHY</div>
+                        </div>
+                        <div class="mc-overlay-card mc-overlay-card-design" id="mc-card-d" data-building="building_d" hidden>
+                            <div class="mc-card-title">Building D <span class="mc-card-sub mc-card-sub-design">design Q2 2026</span></div>
+                            <div class="mc-card-voltage">800 VDC unipolar TN-S</div>
+                            <div class="mc-card-grid">
+                                <div><span class="lbl">PUE tgt</span><span class="val" id="mc-card-d-pue">1.15</span></div>
+                                <div><span class="lbl">IT tgt</span><span class="val">50 MW</span></div>
+                                <div><span class="lbl">Racks tgt</span><span class="val">250</span></div>
+                                <div><span class="lbl">GB300</span><span class="val">NVL144</span></div>
+                            </div>
+                            <div class="mc-card-state mc-card-state-design">DESIGN</div>
+                        </div>
+                        <div class="mc-overlay-card mc-overlay-card-yard" id="mc-card-yard" data-building="yard" hidden>
+                            <div class="mc-card-title">Yard <span class="mc-card-sub">utility + gensets</span></div>
+                            <div class="mc-card-voltage">27.5 kV utility &middot; 4&times; 2 MW genset</div>
+                            <div class="mc-card-grid">
+                                <div><span class="lbl">Util</span><span class="val">27.5 kV</span></div>
+                                <div><span class="lbl">ATS</span><span class="val">2&times;</span></div>
+                                <div><span class="lbl">Gens</span><span class="val">4&times; 2 MW</span></div>
+                                <div><span class="lbl">Cool</span><span class="val">3 chiller</span></div>
+                            </div>
+                            <div class="mc-card-state">NOMINAL</div>
+                        </div>
+                    </div>
+                    <!-- Hover tooltip -->
+                    <div class="mc-tooltip" id="mc-tooltip" hidden></div>
+                    <!-- FPS HUD -->
                     <div class="mc-fps-hud" id="mc-fps-hud">
                         <span class="mc-fps-lbl">FPS</span>
                         <span class="mc-fps-val" id="mc-fps-val">&mdash;</span>
@@ -2276,16 +2329,9 @@
                         <span class="mc-fps-lbl">tris</span>
                         <span class="mc-fps-val" id="mc-tris-val">&mdash;</span>
                     </div>
-                    <div class="mc-status" id="mc-status">initializing&hellip;</div>
-                </div>
-                <div class="mc-acceptance" id="mc-acceptance">
-                    <div class="mc-acc-title">Acceptance criteria (live):</div>
-                    <ul class="mc-acc-list">
-                        <li id="mc-acc-load">[1] three.js bundle loads + canvas mounts</li>
-                        <li id="mc-acc-fps">[2] FPS &ge; 58 sustained at idle</li>
-                        <li id="mc-acc-state">[3] state.js bus integrates (subscribe stub)</li>
-                        <li id="mc-acc-click">[4] Raycaster click prints building id to console</li>
-                    </ul>
+                    <div class="mc-status" id="mc-status">booting&hellip;</div>
+                    <!-- Transition fade overlay -->
+                    <div class="mc-transition-fade" id="mc-transition-fade" hidden></div>
                 </div>
             </div>
 </section>
