@@ -58,6 +58,9 @@ const _initial = {
     // Pushed by app.js renderSiteHealth via bridge after each successful
     // /api/site/health fetch (15s interval -> 15min visible window).
     shiHistory: [],
+    // Phase 4 (v0.10.9) — contextual asset panel
+    selectedAsset: null,            // 'ups_a' | 'xfmr_a' | … | null
+    assetTrends: {},                // { assetId: [{ t, v }] } — 60-sample rolling buffer
 };
 
 const _listeners = new Map();

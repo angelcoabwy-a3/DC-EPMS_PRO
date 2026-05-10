@@ -46,7 +46,7 @@
  * No external libraries. Pure ES module + DOM + state.js bus.
  * ════════════════════════════════════════════════════════════════ */
 
-import { subscribe } from './state.js';
+import { setState, getState, subscribe } from './state.js';
 import { playWarning, playClick } from './sound.js';
 import { tripNode, restoreAll } from './power_grid.js';
 
@@ -174,20 +174,35 @@ function _applyNominalState() {
     ).forEach((el) => el.classList.remove('sld-line-flowing'));
 }
 
-// ─── Click drill-down ─────────────────────────────────────────────
+// ─── Click selection (Phase 4 v0.10.9) ────────────────────────────
+//
+// Plain click on a node -> set state.selectedAsset, which the
+// asset_panel.js renderer subscribes to. Drill-down to the
+// Maintenance view is now an explicit action button INSIDE the
+// asset panel, not the click itself. This frees the primary
+// gesture for inspection without forcing a route change.
+//
+// Shift-click is intercepted upstream by power_ups_iso.js for TRIP
+// (returns early there). The TRIP pip click also stops propagation
+// so we never reach this handler for those gestures.
 function _onSldClick(e) {
+    if (e.shiftKey) return;
+    if (e.target && e.target.closest && e.target.closest('.iso-trip-pip')) return;
     const nodeEl = e.target.closest('[data-sld-node]');
-    if (!nodeEl) return;
+    if (!nodeEl) {
+        // Click on empty canvas -> deselect
+        if (e.target.closest('.sld-iso-stage') || e.target.closest('.pid-canvas')) {
+            if (getState('selectedAsset')) {
+                setState('selectedAsset', null);
+                playClick();
+            }
+        }
+        return;
+    }
     const id = nodeEl.dataset.sldNode;
-    const info = NODE_CATALOGUE[id];
-    if (!info) return;
-    const route = DRILL_TARGETS[info.type] || 'maintenance';
-    // Stash the focus asset id so the destination view can read it
-    try { sessionStorage.setItem('cmms_focus_asset_id', id); } catch {}
-    console.log('[power_sld] click → %s (%s) → route=%s', id, info.type, route);
+    if (!NODE_CATALOGUE[id]) return;
+    setState('selectedAsset', id);
     playClick();
-    const navItem = document.querySelector(`.nav-item[data-route="${route}"]`);
-    if (navItem) navItem.click();
 }
 
 // ─── Demo trigger: hand off to the DAG engine ─────────────────────

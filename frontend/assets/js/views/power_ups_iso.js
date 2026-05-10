@@ -352,6 +352,18 @@ function _bindMechanicalActuation() {
     apply();
 }
 
+// Bind .is-selected class on the iso-block matching state.selectedAsset
+function _bindSelectionHighlight() {
+    const apply = () => {
+        const sel = getState('selectedAsset');
+        document.querySelectorAll('.sld-iso-block').forEach((b) => {
+            b.classList.toggle('is-selected', b.dataset.sldNode === sel);
+        });
+    };
+    subscribe('selectedAsset', apply);
+    apply();
+}
+
 // Bind alive / dead / tripped / on_battery classes on iso-blocks per grid state
 function _bindGridStateToCss() {
     const apply = () => {
@@ -463,6 +475,7 @@ export function initPowerUpsIso() {
 
     // Wire dynamic behaviors + grid-engine bindings
     _bindGridStateToCss();
+    _bindSelectionHighlight();
     _bindVariableFlow();
     _bindThermalPulsing();
     _bindMechanicalActuation();

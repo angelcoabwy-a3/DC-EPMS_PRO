@@ -40,6 +40,7 @@ import { initMultiAgentView } from './views/multi_agent.js';
 import { initPowerUpsIso } from './views/power_ups_iso.js';
 import { initPowerGrid } from './core/power_grid.js';
 import { initPowerCam } from './core/power_cam.js';
+import { initAssetPanel } from './views/asset_panel.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -72,6 +73,8 @@ initMultiAgentView();
 initPowerUpsIso();
 // Camera controls AFTER iso stage is mounted (depends on .sld-iso-stage existing)
 initPowerCam();
+// Contextual asset panel (Phase 4 v0.10.9) — must come after iso so .pid-canvas exists
+initAssetPanel();
 
 if (USE_NEW_TELEMETRY_ENGINE) {
     startTelemetry(window.location.origin);
