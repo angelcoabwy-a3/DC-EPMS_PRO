@@ -964,6 +964,70 @@ body {
 .m-closure-status-err { color: var(--crit); }
 .m-closure-status-pending { color: var(--warn, #f59e0b); }
 
+/* ── Sprint 7.1d-followup: asset enrichment modal fields ─────── */
+.ta-enrich-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin: 4px 0 12px;
+    background: var(--bg-elevated, #0F1115);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 8px 10px;
+}
+.ta-enrich-field-row {
+    display: grid;
+    grid-template-columns: 24px 90px 1fr;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+}
+.ta-enrich-field-row label {
+    cursor: pointer;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 9.5px;
+}
+.ta-enrich-field-row input[type="checkbox"] {
+    cursor: pointer;
+}
+.ta-enrich-field-row input[type="text"],
+.ta-enrich-field-row input[type="number"] {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 4px 7px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    border-radius: 2px;
+    box-sizing: border-box;
+}
+.ta-enrich-field-row input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+.ta-enrich-field-row input:disabled {
+    opacity: 0.4;
+}
+.ta-enrich-link-action {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--accent);
+    background: rgba(0, 184, 212, 0.10);
+    color: var(--accent);
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+}
+.ta-enrich-link-action:hover {
+    background: rgba(0, 184, 212, 0.22);
+}
+
 /* Close-action button inline in the WO row */
 .m-action-close {
     border-color: rgba(245, 158, 11, 0.5);

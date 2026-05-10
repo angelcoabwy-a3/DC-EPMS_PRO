@@ -110,12 +110,22 @@ function Replay-Snapshot {
         Write-Host "  dropped rejected probe artifacts: $dropped"
     }
 
-    # Drop the three predictive_kalman approvals from the snapshot —
+    # Drop the three predictive_kalman approvals from the snapshot -
     # the Reset-PredictiveTargets step recreates them in pending_approval
     # so the demo has fresh click-through buttons.
     $cleared = Invoke-Sql "DELETE FROM work_orders WHERE trigger_source='predictive_kalman' RETURNING work_order_id;"
     if ($cleared) {
         Write-Host "  cleared predictive_kalman rows for fresh injection: $cleared"
+    }
+
+    # Sprint 7.1d-followup: revert the nameplate-enrichment demo asset
+    # (ups_a) to its null-vendor seed state so the operator can repeat
+    # the seed_new_asset -> enrich -> link_to_existing demo cycle on
+    # every replay. The snapshot uses ON CONFLICT DO NOTHING which
+    # cannot overwrite existing rows.
+    $reverted = Invoke-Sql "UPDATE assets SET vendor=NULL, model=NULL, rated_capacity_kw=2500.0, rated_capacity_unit='kW', metadata_json='{\""runtime_full_load_min\"": 7}'::jsonb WHERE asset_id='ups_a' RETURNING asset_id;"
+    if ($reverted) {
+        Write-Host "  reverted ups_a to seed state (null vendor/model) for repeatable enrichment demo"
     }
 }
 

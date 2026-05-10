@@ -1888,6 +1888,47 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- ══════════ Asset Enrich modal (Sprint 7.1d-followup) ══════════
+                     Triggered from the Nameplate panel when suggested_action
+                     is seed_new_asset. Operator picks an existing asset_id,
+                     fields are pre-filled from extracted_fields, Save calls
+                     PATCH /api/cmms/assets/{id} and re-runs Extract so the
+                     suggested_action flips to link_to_existing. -->
+                <div class="m-modal-overlay" id="ta-enrich-overlay" hidden>
+                    <div class="m-modal" id="ta-enrich-modal" role="dialog" aria-labelledby="ta-enrich-title">
+                        <div class="m-modal-header">
+                            <div class="m-modal-title" id="ta-enrich-title">Enrich existing asset</div>
+                            <button class="m-modal-close-x" id="ta-enrich-cancel" type="button" aria-label="Close">×</button>
+                        </div>
+
+                        <div class="m-modal-body" id="ta-enrich-form-body">
+                            <div class="m-modal-context" id="ta-enrich-context">—</div>
+
+                            <label class="m-modal-field-label">Target asset</label>
+                            <select id="ta-enrich-asset-id" class="m-modal-input">
+                                <option value="">— pick an asset —</option>
+                            </select>
+
+                            <label class="m-modal-field-label">Fields to write (pre-filled from extraction; uncheck to skip)</label>
+                            <div class="ta-enrich-fields" id="ta-enrich-fields">
+                                <!-- populated by tech_assist.js -->
+                            </div>
+
+                            <label class="m-modal-field-label">Enriched by (CET id, optional audit trail)</label>
+                            <input id="ta-enrich-cet" class="m-modal-input" type="text" maxlength="120" placeholder="wilmer">
+
+                            <div class="m-modal-actions">
+                                <button class="btn btn-secondary" id="ta-enrich-cancel-2" type="button">Cancel</button>
+                                <button class="btn btn-primary" id="ta-enrich-submit" type="button">Save + re-match</button>
+                            </div>
+                        </div>
+
+                        <div class="m-modal-result" id="ta-enrich-result" hidden>
+                            <!-- populated after Save -->
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- ══════════ View: Multi-Agent (Sprint 10.1 façade) ══════════

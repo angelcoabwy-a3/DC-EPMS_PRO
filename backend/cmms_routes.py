@@ -3,17 +3,18 @@ backend/cmms_routes.py
 ======================
 FastAPI router for CMMS Core v1.0.
 
-Endpoints (Sprint 6 Fase 3):
-  GET  /api/cmms/assets                          List assets (filters)
-  GET  /api/cmms/assets/{asset_id}               Single asset detail
-  GET  /api/cmms/assets/health-aggregate         Per-path/pillar/type rollup
-  GET  /api/cmms/work-orders                     List WOs (filters)
-  GET  /api/cmms/work-orders/{wo_id}             Single WO detail
-  POST /api/cmms/work-orders                     Create WO from manual draft
-  POST /api/cmms/work-orders/{wo_id}/approve     CET approval transition
-  POST /api/cmms/work-orders/{wo_id}/reject      CET rejection transition
-  POST /api/cmms/trigger-maintenance             Convenience: WO from one call
-  GET  /api/cmms/health                          Router health probe
+Endpoints (Sprint 6 Fase 3 + 7.1d-followup):
+  GET   /api/cmms/assets                         List assets (filters)
+  GET   /api/cmms/assets/{asset_id}              Single asset detail
+  PATCH /api/cmms/assets/{asset_id}              Enrich with nameplate fields
+  GET   /api/cmms/assets/health-aggregate        Per-path/pillar/type rollup
+  GET   /api/cmms/work-orders                    List WOs (filters)
+  GET   /api/cmms/work-orders/{wo_id}            Single WO detail
+  POST  /api/cmms/work-orders                    Create WO from manual draft
+  POST  /api/cmms/work-orders/{wo_id}/approve    CET approval transition
+  POST  /api/cmms/work-orders/{wo_id}/reject     CET rejection transition
+  POST  /api/cmms/trigger-maintenance            Convenience: WO from one call
+  GET   /api/cmms/health                         Router health probe
 
 The router uses app.state.cmms_repo (set in main.py lifespan) for the
 backing repository. Routes never touch SQL directly.
@@ -34,6 +35,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 from backend.cmms_models import (
     ApproveRejectRequest,
     Asset,
+    AssetEnrichRequest,
     AssetHealthAggregate,
     CreateWorkOrderRequest,
     WorkOrder,
@@ -168,6 +170,71 @@ async def get_asset(request: Request, asset_id: str) -> dict[str, Any]:
     return {
         "asset": asset.model_dump(mode="json"),
         "open_work_orders": [w.model_dump(mode="json") for w in open_wos],
+    }
+
+
+@router.patch("/assets/{asset_id}")
+async def enrich_asset(
+    request: Request, asset_id: str, body: AssetEnrichRequest,
+) -> dict[str, Any]:
+    """Enrich an existing asset with nameplate-OCR'd fields.
+
+    Sprint 7.1d-followup: closes the loop of the nameplate matcher.
+    Operator extracts a nameplate, sees seed_new_asset because the
+    target row has vendor=null/model=null, picks the canonical asset
+    id, and writes the extracted data with this endpoint. After the
+    write, re-running the nameplate matcher returns link_to_existing
+    with a ~0.95 score.
+
+    Only fields present in the body are written; the rest of the
+    asset row is preserved. `serial` and `voltage_v` flow into
+    `metadata_json` to align with the matcher's lookup keys.
+    """
+    repo = _get_repo(request)
+    try:
+        asset = await repo.get_asset_async(asset_id)
+    except AssetNotFoundError:
+        raise HTTPException(status_code=404, detail=f"asset '{asset_id}' not found")
+    except CMMSRepositoryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Build the merge: copy existing asset, overlay only present fields
+    # from the body, with serial + voltage_v going into metadata_json.
+    updates: dict[str, Any] = {}
+    if body.vendor is not None:
+        updates["vendor"] = body.vendor.strip()
+    if body.model is not None:
+        updates["model"] = body.model.strip()
+    if body.rated_capacity_kw is not None:
+        updates["rated_capacity_kw"] = body.rated_capacity_kw
+    if body.rated_capacity_unit is not None:
+        updates["rated_capacity_unit"] = body.rated_capacity_unit.strip()
+
+    new_metadata = dict(asset.metadata_json or {})
+    if body.serial is not None:
+        new_metadata["serial"] = body.serial.strip()
+    if body.voltage_v is not None:
+        new_metadata["voltage_nominal_v"] = body.voltage_v
+    if body.enriched_by:
+        new_metadata["enriched_by"] = body.enriched_by.strip()
+    if new_metadata != (asset.metadata_json or {}):
+        updates["metadata_json"] = new_metadata
+
+    if not updates:
+        # Nothing to write; return the asset as-is rather than failing.
+        return {"asset": asset.model_dump(mode="json"), "fields_written": []}
+
+    enriched = asset.model_copy(update=updates)
+    try:
+        await repo.upsert_asset_async(enriched)
+    except CMMSRepositoryError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    log.info("Enriched %s with fields: %s",
+             asset_id, sorted(updates.keys()))
+    return {
+        "asset": enriched.model_dump(mode="json"),
+        "fields_written": sorted(updates.keys()),
     }
 
 

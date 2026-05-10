@@ -169,6 +169,30 @@ class ApproveRejectRequest(BaseModel):
     rejection_reason: str | None = None  # required for reject, ignored for approve
 
 
+class AssetEnrichRequest(BaseModel):
+    """Body for PATCH /api/cmms/assets/{asset_id}.
+
+    Sprint 7.1d-followup: lets the operator write nameplate-OCR'd data
+    (vendor / model / serial / capacity / voltage) onto an existing
+    asset row whose corresponding columns are still null. Only fields
+    explicitly present in the body are written; everything else is
+    preserved. `serial` and `voltage_v` flow into metadata_json so they
+    align with the nameplate matcher's lookup convention. ADR-006:
+    advisory write — the operator sees the candidates beforehand and
+    picks the target asset_id explicitly.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    vendor: str | None = Field(default=None, max_length=80)
+    model: str | None = Field(default=None, max_length=120)
+    serial: str | None = Field(default=None, max_length=120)
+    rated_capacity_kw: float | None = Field(default=None, ge=0)
+    rated_capacity_unit: str | None = Field(default=None, max_length=8)
+    voltage_v: float | None = Field(default=None, ge=0)
+    enriched_by: str | None = Field(default=None, max_length=120,
+                                     description="CET id (audit trail). Optional.")
+
+
 class AssetHealthAggregate(BaseModel):
     """Row from the asset_health_aggregate view."""
     facility: str
