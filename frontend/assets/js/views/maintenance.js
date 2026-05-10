@@ -27,10 +27,12 @@ const API_BASE = '';  // same-origin
 let _container = null;
 let _intervalId = null;
 let _isVisible = false;
+let _focusAssetId = null;     // v0.10.12: handoff from #power asset panel
 let _filters = {
     status: '',
     priority: '',
     trigger_source: '',
+    asset_id: '',
     only_open: true,
 };
 
@@ -53,10 +55,34 @@ async function _fetchWorkOrders() {
     if (_filters.priority)       params.set('priority', _filters.priority);
     if (_filters.trigger_source) params.set('trigger_source', _filters.trigger_source);
     if (_filters.only_open)      params.set('only_open', 'true');
+    if (_filters.asset_id)       params.set('asset_id', _filters.asset_id);
     params.set('limit', '200');
     const r = await fetch(`${API_BASE}/api/cmms/work-orders?${params}`);
     if (!r.ok) throw new Error(`work-orders ${r.status}`);
     return r.json();
+}
+
+// v0.10.12: consume sessionStorage handoff from #power asset panel
+// (set by views/asset_panel.js when user clicks "Open in Maintenance").
+// Sets _focusAssetId so banner + filter can highlight the right rows;
+// clears the storage key so a subsequent unrelated nav doesn't re-apply.
+function _consumeFocusHandoff() {
+    let id = null;
+    try { id = sessionStorage.getItem('cmms_focus_asset_id'); } catch {}
+    if (id) {
+        _focusAssetId = id;
+        try { sessionStorage.removeItem('cmms_focus_asset_id'); } catch {}
+    }
+    let openCreate = false;
+    try { openCreate = sessionStorage.getItem('cmms_open_create_modal') === '1'; } catch {}
+    if (openCreate) {
+        try { sessionStorage.removeItem('cmms_open_create_modal'); } catch {}
+        // Create-WO modal isn't built yet — surface a placeholder toast.
+        // Phase 5 will wire this to a real modal; for now the focus filter
+        // alone gives the operator a useful drill landing.
+        console.log('[maintenance] cmms_open_create_modal=1 — Create-WO modal pending in Phase 5');
+    }
+    return _focusAssetId;
 }
 
 // ─── Sprint 6.6: CET signature + approve/reject actions ───────────
@@ -720,6 +746,11 @@ function _onToggleDetail(woId) {
 // ─── Refresh cycle ────────────────────────────────────────────────
 async function _refresh() {
     if (!_isVisible) return;
+    // v0.10.12: pick up handoff from the asset panel BEFORE the fetch so
+    // the asset_id filter applies on this refresh.
+    const focus = _consumeFocusHandoff();
+    if (focus) _filters.asset_id = focus;
+
     try {
         const [assetsResp, wosResp] = await Promise.all([
             _fetchAssets(),
@@ -730,6 +761,7 @@ async function _refresh() {
         _renderKPIs(assets, wos);
         _renderAssetGrid(assets);
         _renderWOBacklog(wos);
+        _renderFocusBanner(assets);
     } catch (err) {
         console.warn('[maintenance] refresh failed:', err);
         const tbody = document.getElementById('m-wo-tbody');
@@ -737,6 +769,43 @@ async function _refresh() {
             tbody.innerHTML = `<tr><td colspan="10" class="m-empty m-error">Refresh failed: ${_escape(err.message)}</td></tr>`;
         }
     }
+}
+
+// v0.10.12: focus banner shows which asset is being filtered + a Clear
+// button. Inserted as the first child of #view-maintenance content.
+function _renderFocusBanner(assets) {
+    const view = document.getElementById('view-maintenance');
+    if (!view) return;
+    let banner = document.getElementById('m-focus-banner');
+    if (!_focusAssetId) {
+        if (banner) banner.remove();
+        return;
+    }
+    const asset = (assets || []).find(a => a.asset_id === _focusAssetId);
+    const label = asset ? (asset.display_name || asset.asset_id) : _focusAssetId;
+    const html = `
+        <div class="m-focus-banner-inner">
+            <span class="m-focus-eyebrow">FOCUS</span>
+            <span class="m-focus-label">${_escape(label)}</span>
+            <span class="m-focus-sub">filtering work orders for ${_escape(_focusAssetId)}</span>
+            <button class="m-focus-clear" id="m-focus-clear" type="button">Clear filter</button>
+        </div>
+    `;
+    if (banner) {
+        banner.innerHTML = html;
+    } else {
+        banner = document.createElement('div');
+        banner.id = 'm-focus-banner';
+        banner.className = 'm-focus-banner';
+        banner.innerHTML = html;
+        view.insertBefore(banner, view.firstChild);
+    }
+    const clearBtn = document.getElementById('m-focus-clear');
+    if (clearBtn) clearBtn.addEventListener('click', () => {
+        _focusAssetId = null;
+        _filters.asset_id = '';
+        _refresh();
+    });
 }
 
 // ─── Visibility tracking ──────────────────────────────────────────

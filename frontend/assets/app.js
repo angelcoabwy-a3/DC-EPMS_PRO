@@ -620,6 +620,15 @@
     // ================================================================
     const MODULES = {
         overview: null, // renders view-overview directly
+        // v0.10.12: declared so navigateTo doesn't fall through to overview
+        // before the ES-module LOTO-pattern in views/maintenance.js fires.
+        // The legacy router now shows view-maintenance directly; the
+        // ES module's MutationObserver picks up the un-hide and refreshes.
+        maintenance: {
+            kind:  'maintenance',
+            title: 'Maintenance — CMMS',
+            sub:   'Asset registry · Work-order backlog · CET approvals',
+        },
         scenarios: {
             kind: 'scenarios',
             title: 'Failure scenario simulator',
@@ -3360,6 +3369,12 @@
             const v = $('view-incidents');
             if (v) v.removeAttribute('hidden');
             renderIncidentsView();
+        } else if (cfg.kind === 'maintenance') {
+            // v0.10.12: hand control to the ES-module renderer.
+            // We unhide here so MutationObserver in views/maintenance.js
+            // picks it up immediately (no flash of overview).
+            const v = $('view-maintenance');
+            if (v) v.removeAttribute('hidden');
         } else if (cfg.kind === 'placeholder') {
             const v = $('view-placeholder');
             if (v) v.removeAttribute('hidden');
