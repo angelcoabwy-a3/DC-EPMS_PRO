@@ -1120,11 +1120,17 @@
 
                 <div class="pid-action-bar">
                     <span class="pid-meta" id="sld-meta">Loading…</span>
-                    <span class="pid-legend">
-                        <span class="pid-legend-item"><span class="pid-flow-power"></span> Energized (live)</span>
-                        <span class="pid-legend-item"><span class="sld-flow-batt"></span> Battery</span>
-                        <span class="pid-legend-item"><span class="sld-flow-genset"></span> Genset standby</span>
-                        <span class="pid-legend-item sld-legend-nominal">— nominal (genset / ATS)</span>
+                    <span class="pid-legend sld-legend-v2">
+                        <span class="pid-legend-item"><span class="sld-leg-path-a"></span> Path A (cyan, energized)</span>
+                        <span class="pid-legend-item"><span class="sld-leg-path-b"></span> Path B (violet, energized)</span>
+                        <span class="pid-legend-item"><span class="sld-leg-batt"></span> On battery (amber)</span>
+                        <span class="pid-legend-item"><span class="sld-leg-fault"></span> Fault / cold</span>
+                    </span>
+                    <!-- Simulation controls (Lead Engineer Mode demo killer) -->
+                    <span class="sld-sim-controls">
+                        <button id="sld-sim-utility-loss-a" class="btn btn-secondary btn-sm sld-sim-btn" type="button" title="Inject utility-A loss event into state.js — observe ATS transfer + UPS on battery">Simulate Utility Loss (Path A)</button>
+                        <button id="sld-sim-reset" class="btn btn-secondary btn-sm sld-sim-btn-reset" type="button" hidden title="Restore nominal state">Reset</button>
+                        <span id="sld-sim-status" class="sld-sim-status" hidden></span>
                     </span>
                 </div>
 

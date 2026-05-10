@@ -5669,6 +5669,169 @@ body {
     opacity: 0.9;
 }
 
+/* ── Lead Engineer Mode: SLD palette unification (Mission Control) ──
+   Replaces the legacy live/battery/standby colour mix with the
+   Mission Control discipline: cyan (Path A) · violet (Path B) ·
+   amber (battery / genset hot) · grey-red (cold / fault).
+   Stroke-dashoffset animation drives the energy-flow effect. */
+
+.sld-line-flow-a {
+    stroke: #00B8D4;
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 3px rgba(0, 184, 212, 0.55));
+    opacity: 0.95;
+}
+.sld-line-flow-b {
+    stroke: #a855f7;
+    stroke-width: 2.5;
+    filter: drop-shadow(0 0 3px rgba(168, 85, 247, 0.55));
+    opacity: 0.95;
+}
+.sld-line-battery {
+    stroke: #f59e0b;
+    stroke-width: 2.4;
+    filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.5));
+    opacity: 0.92;
+}
+.sld-line-cold {
+    stroke: #4a5568;
+    stroke-width: 1.5;
+    stroke-dasharray: 2 4;
+    opacity: 0.55;
+    animation: none !important;
+}
+.sld-line-fault {
+    stroke: #ef4444;
+    stroke-width: 2;
+    filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.55));
+    opacity: 0.85;
+    animation: sld-fault-pulse 0.9s ease-in-out infinite !important;
+}
+.sld-line-flowing {
+    stroke-dasharray: 6 4;
+    animation: sld-flow-dash 1.0s linear infinite;
+}
+@keyframes sld-flow-dash {
+    to { stroke-dashoffset: -20; }
+}
+@keyframes sld-fault-pulse {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 0.95; }
+}
+
+/* SLD node state coding (energized / battery / cold / fault) */
+.sld-node-energized-a .pid-symbol  { color: #00B8D4; }
+.sld-node-energized-a .pid-symbol  { filter: drop-shadow(0 0 4px rgba(0, 184, 212, 0.50)); }
+.sld-node-energized-b .pid-symbol  { color: #a855f7; }
+.sld-node-energized-b .pid-symbol  { filter: drop-shadow(0 0 4px rgba(168, 85, 247, 0.50)); }
+.sld-node-battery .pid-symbol      { color: #f59e0b; filter: drop-shadow(0 0 4px rgba(245, 158, 11, 0.50)); }
+.sld-node-cold .pid-symbol         { color: #6a7a8b; opacity: 0.55; filter: none; }
+.sld-node-fault .pid-symbol        {
+    color: #ef4444;
+    filter: drop-shadow(0 0 5px rgba(239, 68, 68, 0.7));
+    animation: sld-fault-blink 1.2s ease-in-out infinite;
+}
+@keyframes sld-fault-blink {
+    0%, 100% { opacity: 0.7; }
+    50%      { opacity: 1.0; }
+}
+.sld-node-transferring .pid-symbol {
+    color: #f59e0b;
+    filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.65));
+    animation: sld-transferring-pulse 0.7s ease-in-out infinite;
+}
+@keyframes sld-transferring-pulse {
+    0%, 100% { transform: scale(1.0); opacity: 0.7; }
+    50%      { transform: scale(1.06); opacity: 1.0; }
+}
+
+/* Make every sld-node clickable */
+.sld-node {
+    cursor: pointer;
+    transition: filter 0.15s ease;
+}
+.sld-node:hover .pid-symbol { filter: brightness(1.35) drop-shadow(0 0 6px currentColor); }
+.sld-node:hover { transform: translateY(-1px); }
+
+/* Updated legend swatches */
+.sld-legend-v2 .sld-leg-path-a {
+    display: inline-block; width: 22px; height: 0;
+    border-top: 2.5px solid #00B8D4;
+    box-shadow: 0 0 4px rgba(0, 184, 212, 0.55);
+    margin-right: 4px;
+}
+.sld-legend-v2 .sld-leg-path-b {
+    display: inline-block; width: 22px; height: 0;
+    border-top: 2.5px solid #a855f7;
+    box-shadow: 0 0 4px rgba(168, 85, 247, 0.55);
+    margin-right: 4px;
+}
+.sld-legend-v2 .sld-leg-batt {
+    display: inline-block; width: 22px; height: 0;
+    border-top: 2.5px solid #f59e0b;
+    margin-right: 4px;
+}
+.sld-legend-v2 .sld-leg-fault {
+    display: inline-block; width: 22px; height: 0;
+    border-top: 2.5px dashed #ef4444;
+    margin-right: 4px;
+}
+
+/* Simulation controls in action bar */
+.sld-sim-controls {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.sld-sim-btn {
+    border-color: rgba(245, 158, 11, 0.45) !important;
+    color: var(--warn, #f59e0b) !important;
+    background: rgba(245, 158, 11, 0.08) !important;
+}
+.sld-sim-btn:hover:not(:disabled) {
+    background: rgba(245, 158, 11, 0.18) !important;
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.4);
+}
+.sld-sim-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+.sld-sim-btn-reset {
+    border-color: rgba(0, 184, 212, 0.45) !important;
+    color: var(--accent, #00B8D4) !important;
+    background: rgba(0, 184, 212, 0.08) !important;
+}
+.sld-sim-status {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    padding: 4px 9px;
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: 2px;
+    background: var(--bg-elevated, #0F1115);
+}
+.sld-sim-status[data-tone="warn"] {
+    color: var(--warn, #f59e0b);
+    border-left-color: var(--warn, #f59e0b);
+    background: rgba(245, 158, 11, 0.06);
+}
+.sld-sim-status[data-tone="ok"] {
+    color: var(--good, #10b981);
+    border-left-color: var(--good, #10b981);
+}
+.sld-sim-status[data-tone="err"] {
+    color: var(--crit, #ef4444);
+    border-left-color: var(--crit, #ef4444);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sld-line-flowing,
+    .sld-line-fault,
+    .sld-node-fault .pid-symbol,
+    .sld-node-transferring .pid-symbol { animation: none !important; }
+}
+
 /* Tier A / A2: Path-coded power flow.
    Convention: A side = cyan (cool, primary).  B side = amber (warm, alt).
    Visual scan from left of SLD: easy to tell which path feeds where.
