@@ -274,6 +274,164 @@ body {
     opacity: 0.85;
 }
 
+/* ── PUE widget (Sprint 5.5b) ──────────────────────────────────────
+   Two-card live PUE on Overview. Phase 1 (480 VAC, deployed) state-
+   coded green/amber/red; Phase 2 (800 VDC, design Q2 2026) always
+   in dim "design" color. Fill bar visualizes pue position within
+   [1.0, crit_threshold]. Per ADR-004. */
+
+.pue-widget {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px 14px;
+    margin: 16px 0;
+}
+.pue-widget-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 7px;
+}
+.pue-widget-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text);
+    font-weight: 600;
+}
+.pue-widget-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-dim);
+}
+.pue-widget-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.pue-widget-footer {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    font-size: 10px;
+    color: var(--text-dim);
+}
+.pue-widget-footer code {
+    background: var(--bg-elevated, #0F1115);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 0 4px;
+    font-size: 10px;
+    color: var(--accent);
+}
+
+.pue-card {
+    background: var(--bg-elevated, #0F1115);
+    border: 1px solid var(--border);
+    border-left-width: 3px;
+    border-radius: 3px;
+    padding: 10px 12px;
+}
+.pue-card-good { border-left-color: var(--good, #10b981); }
+.pue-card-warn { border-left-color: var(--warn, #f59e0b); }
+.pue-card-crit { border-left-color: var(--crit, #ef4444); }
+.pue-card-design { border-left-color: var(--text-dim); opacity: 0.92; }
+
+.pue-card-phase {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.pue-card-badge {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    text-transform: none;
+    letter-spacing: 0;
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    border-radius: 2px;
+    color: var(--text-muted);
+    font-weight: 400;
+}
+.pue-card-voltage {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 3px 0 8px;
+}
+.pue-card-value-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+.pue-card-value {
+    font-family: var(--font-mono);
+    font-size: 30px;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+}
+.pue-card-good .pue-card-value { color: var(--good, #10b981); }
+.pue-card-warn .pue-card-value { color: var(--warn, #f59e0b); }
+.pue-card-crit .pue-card-value { color: var(--crit, #ef4444); }
+.pue-card-design .pue-card-value { color: var(--text); }
+.pue-card-target {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+}
+.pue-card-bar {
+    height: 5px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    margin: 6px 0 8px;
+    overflow: hidden;
+}
+.pue-card-fill {
+    height: 100%;
+    width: 0;
+    transition: width 0.4s ease, background 0.2s ease;
+}
+.pue-fill-good { background: var(--good, #10b981); }
+.pue-fill-warn { background: var(--warn, #f59e0b); }
+.pue-fill-crit { background: var(--crit, #ef4444); }
+.pue-fill-design { background: var(--text-dim); }
+.pue-card-breakdown {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+.pue-card-breakdown .sep {
+    color: var(--text-dim);
+    margin: 0 6px;
+}
+.pue-card-residual {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--text-dim);
+    border-top: 1px dotted var(--border);
+    padding-top: 5px;
+    margin-top: 4px;
+}
+.pue-residual-audit_grade            { color: var(--good, #10b981); }
+.pue-residual-acceptable             { color: var(--warn, #f59e0b); }
+.pue-residual-instrumentation_drift  { color: var(--crit, #ef4444); }
+
 /* ── Maintenance view (Sprint 6 Fase 5) ────────────────────────────
    CMMS Core v1.0 frontend. Driven by /api/cmms/* endpoints + the
    views/maintenance.js polling module. Match Activity Strip discipline:

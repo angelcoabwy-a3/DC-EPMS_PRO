@@ -25,6 +25,7 @@ import { setState, getState, subscribe } from './core/state.js';
 import { initStaleness } from './core/staleness.js';
 import { initActivityStrip } from './core/activity_strip.js';
 import { initShiSparkline } from './core/shi_sparkline.js';
+import { initPueWidget } from './core/pue_widget.js';
 import { startTelemetry } from './core/telemetry_engine.js';
 import { initMaintenanceView } from './views/maintenance.js';
 import { initTechAssistView } from './views/tech_assist.js';
@@ -45,6 +46,7 @@ window.__epms = Object.freeze({
 initStaleness();
 initActivityStrip();
 initShiSparkline();
+initPueWidget();
 initMaintenanceView();
 initTechAssistView();
 initMultiAgentView();

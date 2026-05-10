@@ -296,6 +296,18 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         log.error("[BOOT] CMMS init failed: %s", e, exc_info=True)
 
+    # ─── Sprint 5.5b: PUE physics + targets init ──────────────────────
+    # Path C2 PUE per phase: Phase 1 (480 VAC trifásico, target 1.30) +
+    # Phase 2 (800 VDC unipolar TN-S, target 1.15 design). First-law
+    # cross-check between input total and subsystem decomposition.
+    # Config in config/pue_targets.yml; ADR-004 documents the decision.
+    try:
+        from backend.physics.pue_routes import register_pue_routes
+        register_pue_routes(app, PROJECT_ROOT)
+        log.info("[BOOT] PUE physics active (Phase 1 live, Phase 2 design)")
+    except Exception as e:
+        log.error("[BOOT] PUE init failed: %s", e, exc_info=True)
+
     # ─── Eager warmup of all audit-path lazy services (CET directive) ─
     # In critical infrastructure, availability is immediate. Lazy init of
     # GraphRAG (sentence-transformers all-MiniLM-L6-v2 + FAISS + NetworkX)

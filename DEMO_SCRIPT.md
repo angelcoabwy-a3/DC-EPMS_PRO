@@ -1,11 +1,11 @@
-# DC-EPMS PRO — Canonical Demo Script (v3, 13 min)
+# DC-EPMS PRO — Canonical Demo Script (v4, 13 min)
 
 **Audience**: Microsoft CO+I CET Lead Architect panel (or Equinix equivalent)
 **Duration**: 13 minutes (11 min demo + 2 min Q&A buffer)
 **Mode**: Live walkthrough on this laptop, browser at `http://127.0.0.1:8080/`
 **Maintainer**: Wilmer Y. Angel Beltran · a3semi
-**Locked**: 2026-05-09 — v3 adds Sprint 10.1 Multi-Agent Act between
-predictive arc and LOTO Auditor (supersedes v2).
+**Locked**: 2026-05-10 — v4 folds Sprint 5.5b PUE physics widget into
+Act 1 (supersedes v3 which added the Multi-Agent act in v3).
 
 This script is the canonical 12-min walkthrough. Anything outside this list of acts is **out of scope** for the live demo — discuss in Q&A only.
 
@@ -41,7 +41,9 @@ The script wipes work_orders, replays the postgres snapshot, then injects four f
 >
 > *"The platform runs entirely on this laptop — RTX 3060, 6 GB VRAM, no cloud dependency. That's deliberate, per ADR-006 Deterministic Sandbox. AI drafts, CET approves; the LLM is never on the critical path."*
 
-**Visual**: terminal showing `git log --oneline --decorate -n 4` (most recent tags visible).
+**Visual**: navigate to `/#overview`. Point at the **PUE widget** (the two-card row, Sprint 5.5b).
+
+> *"And here's the answer to the question every panel asks first. Phase 1, 480 VAC trifásico, running PUE 1.32 right now — target 1.30. Phase 2, 800 VDC unipolar TN-S, design forecast 1.16 at full load. The 16-point delta is what eliminating per-rack rectification stages buys you: a single MV rectifier upstream at 97% efficiency replaces the AC chain. The card at the bottom shows the first-law cross-check residual at 0.4% — audit-grade per ASHRAE TC 9.9 Class W17. ADR-004 documents the math. Pure deterministic Python; no LLM on the critical path."*
 
 ---
 
@@ -211,7 +213,7 @@ pytest -m "not slow" -q --tb=short 2>&1 | tail -5
 
 ## Act 7 — Wrap (30 seconds)
 
-> *"To recap. The platform predicts subsystem failures before alarms fire — three Kalman triggers across three subsystems. It surfaces those triggers to a 4-agent panel that reasons in parallel from architectural, safety, diagnostic and financial perspectives in under 15 ms, with the Safety Officer holding veto power per ADR-006 — and we saw that veto fire on a non-compliant work order in 4 ms. It validates LOTO procedures against six engineering pillars in 12 milliseconds. It gives operators a nameplate-to-asset matcher, a corpus-grounded troubleshooter, and a managed knowledge library. The audit trail is locked — original CET signatures cannot be silently overwritten. NEC, NFPA, CSA, ASHRAE, IEEE cited by section, not paraphrased."*
+> *"To recap. Live PUE per phase with first-law audit-grade cross-check — Phase 1 at 1.32, Phase 2 design 1.16. The platform predicts subsystem failures before alarms fire — three Kalman triggers across three subsystems. It surfaces those triggers to a 4-agent panel that reasons in parallel from architectural, safety, diagnostic and financial perspectives in under 15 ms, with the Safety Officer holding veto power per ADR-006 — and we saw that veto fire on a non-compliant work order in 4 ms. It validates LOTO procedures against six engineering pillars in 12 milliseconds. It gives operators a nameplate-to-asset matcher, a corpus-grounded troubleshooter, and a managed knowledge library. The audit trail is locked — original CET signatures cannot be silently overwritten. NEC, NFPA, CSA, ASHRAE, IEEE, OCP cited by section, not paraphrased."*
 >
 > *"This is what V9 AI-Factory speed plus Tier IV doctrine looks like in practice on a single laptop. I'd be grateful for the chance to bring this discipline to your team."*
 
@@ -231,20 +233,23 @@ pytest -m "not slow" -q --tb=short 2>&1 | tail -5
 | LOTO audit returns 500 | GraphRAG cache cold: first call takes ~30s, subsequent <50ms |
 | Multi-Agent shows "Path unknown" | CMMS asset row not seeded — re-run replay_demo.ps1 |
 | Multi-Agent consult timeout | All 4 agents are <15ms; if hung, check `/api/multi-agent/health` |
+| PUE widget shows "—" | `curl /api/physics/pue/health` — confirm `status: up`, config loaded |
+| PUE first-law residual >5% | Instrumentation drift flag — restart uvicorn (clears noise envelope) |
 
 ---
 
 ## Talking points to memorize (do NOT read)
 
 1. *"Path C2 — 67 MW, 368 racks. 800 VDC is unipolar, not three-phase."*
-2. *"Three predictive triggers, three subsystems, eleven minutes."*
-3. *"Four agents in parallel, sub-15 milliseconds, Safety Officer holds the veto."*
-4. *"ADR-006 Deterministic Sandbox: AI drafts, CET approves."*
-5. *"Six pillars, each grounded in a specific standard."*
-6. *"Pure Python, no LLM in the critical path."*
-7. *"Original CET signature can never be silently overwritten — DC-EPMS-040."*
-8. *"Honest tech debt registry — every bug has a status, an effort, a sprint."*
-9. *"Single laptop, no cloud dependency, fully reproducible."*
+2. *"Phase 1 PUE 1.32 live, Phase 2 design 1.16 — first-law cross-check audit-grade."*
+3. *"Three predictive triggers, three subsystems, eleven minutes."*
+4. *"Four agents in parallel, sub-15 milliseconds, Safety Officer holds the veto."*
+5. *"ADR-006 Deterministic Sandbox: AI drafts, CET approves."*
+6. *"Six pillars, each grounded in a specific standard."*
+7. *"Pure Python, no LLM in the critical path."*
+8. *"Original CET signature can never be silently overwritten — DC-EPMS-040."*
+9. *"Honest tech debt registry — every bug has a status, an effort, a sprint."*
+10. *"Single laptop, no cloud dependency, fully reproducible."*
 
 ---
 
@@ -252,10 +257,11 @@ pytest -m "not slow" -q --tb=short 2>&1 | tail -5
 
 | Skill | Evidence |
 |---|---|
-| **Architectural thinking** | 7 ADRs with rejected alternatives + rationale |
-| **Standards literacy** | NFPA 70E, NEC 460.6, CSA Z462, IEC 62443, IEEE 519-2014, ASHRAE TC 9.9, NFPA 110-2022 cited by section |
-| **Operational discipline** | 549+ tests (19 new in Sprint 10.1), atomic commits, replay script, ADR-006 audit trail |
+| **Architectural thinking** | 8 ADRs with rejected alternatives + rationale (incl. ADR-004 PUE physics) |
+| **Standards literacy** | NFPA 70E, NEC 460.6, CSA Z462, IEC 62443, IEEE 519-2014, ASHRAE TC 9.9, NFPA 110-2022, OCP 800V DC ref design cited by section |
+| **Operational discipline** | 564+ tests (15 new in Sprint 5.5b), atomic commits, replay script, ADR-006 audit trail |
 | **Safety-critical engineering** | Deterministic LOTO auditor, 12ms decisions, 4-agent consultation with Safety Officer veto in <15ms, no LLM on critical path |
+| **Physics literacy** | Live PUE per phase + first-law cross-check residual; vocabulary discipline (480 VAC trifásico vs 800 VDC unipolar TN-S) reinforced visually |
 | **Honest scope reporting** | DC-EPMS bug registry with status precision, in-session catches (DC-EPMS-040) |
 | **Tier IV operational mindset** | Single-signature audit trail, pending_approval gating, retention-aware schema |
 | **Hyperscale fluency** | 67 MW Path C2, GB200/GB300 specs, 480 VAC vs 800 VDC vocabulary discipline |

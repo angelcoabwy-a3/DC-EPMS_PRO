@@ -186,6 +186,60 @@
                 </div>
             </div>
 
+            <!-- ══════════ PUE Physics Widget (Sprint 5.5b) ══════════
+                 Live Power Usage Effectiveness per phase with first-law
+                 cross-check. Driven by frontend/assets/js/core/pue_widget.js
+                 polling /api/physics/pue every 15s.
+                 ADR-004 documents the decision. -->
+            <div class="pue-widget" id="pue-widget" hidden>
+                <div class="pue-widget-header">
+                    <div class="pue-widget-title">PUE — Power Usage Effectiveness</div>
+                    <div class="pue-widget-meta">
+                        <span class="pue-widget-stamp" id="pue-stamp">—</span>
+                        <button class="btn btn-secondary btn-sm" id="pue-refresh-btn">Refresh</button>
+                    </div>
+                </div>
+                <div class="pue-widget-grid">
+                    <div class="pue-card" id="pue-card-phase-1">
+                        <div class="pue-card-phase">PHASE 1</div>
+                        <div class="pue-card-voltage" data-field="voltage">—</div>
+                        <div class="pue-card-value-row">
+                            <span class="pue-card-value" data-field="pue">—</span>
+                            <span class="pue-card-target" data-field="target">target —</span>
+                        </div>
+                        <div class="pue-card-bar"><div class="pue-card-fill" data-field="fill"></div></div>
+                        <div class="pue-card-breakdown">
+                            <span data-field="it">IT —</span>
+                            <span class="sep">·</span>
+                            <span data-field="cool">cool —</span>
+                            <span class="sep">·</span>
+                            <span data-field="elec">elec —</span>
+                        </div>
+                        <div class="pue-card-residual" data-field="residual">first-law —</div>
+                    </div>
+                    <div class="pue-card pue-card-design" id="pue-card-phase-2">
+                        <div class="pue-card-phase">PHASE 2 <span class="pue-card-badge">design Q2 2026</span></div>
+                        <div class="pue-card-voltage" data-field="voltage">—</div>
+                        <div class="pue-card-value-row">
+                            <span class="pue-card-value" data-field="pue">—</span>
+                            <span class="pue-card-target" data-field="target">target —</span>
+                        </div>
+                        <div class="pue-card-bar"><div class="pue-card-fill" data-field="fill"></div></div>
+                        <div class="pue-card-breakdown">
+                            <span data-field="it">IT —</span>
+                            <span class="sep">·</span>
+                            <span data-field="cool">cool —</span>
+                            <span class="sep">·</span>
+                            <span data-field="elec">elec —</span>
+                        </div>
+                        <div class="pue-card-residual" data-field="residual">first-law —</div>
+                    </div>
+                </div>
+                <div class="pue-widget-footer">
+                    <span class="pue-footer-note">Computed by <code>physics/pue.py</code>; first-law cross-check residual must stay below 5 % for audit-grade. Targets per ADR-004.</span>
+                </div>
+            </div>
+
             <div class="agent-panel">
                 <div class="agent-header">
                     <h3>🤖 AI CET Assistant</h3>

@@ -1,0 +1,66 @@
+# =====================================================================
+#  config/pue_targets.yml
+#  =====================================================================
+#  Power Usage Effectiveness targets per Path C2 architecture.
+#  Loaded by backend/physics/pue.py at startup.
+#
+#  Justification of targets:
+#  ------------------------
+#  Phase 1 (Buildings A/B, deployed): 480 VAC trifásico 2N, traditional
+#    Schneider Galaxy VX online double-conversion UPS at ~94% efficiency
+#    in the 30-70% load band. With Tier IV redundancy overhead and
+#    DLC retrofit cooling, target PUE 1.30 at design load is consistent
+#    with Uptime Institute Tier IV references (2024 Global Survey).
+#    Acceptable band 1.30-1.45 reflects partial-load operation; >1.45
+#    indicates either chiller approach drift or UPS in bypass.
+#
+#  Phase 2 (Building D, target Q2 2026): 800 VDC unipolar TN-S, single
+#    MV rectifier upstream, BESS 2.5 MWh, full DLC at 12 VDC GPU rail.
+#    Eliminating per-rack rectification stages saves ~5-7% versus AC
+#    UPS distribution. Target PUE 1.15 at design load is achievable
+#    per OCP Open Rack 800 V DC reference design + Vertiv 2026 white
+#    paper on hyperscale DC distribution.
+#
+#  First-law cross-check residual budget: 2% audit-grade, 5% acceptable.
+#    Beyond 5% indicates instrumentation drift requiring calibration.
+# =====================================================================
+
+phase_1:
+  description: "Buildings A/B — 118 GB200 NVL72 racks @ 142 kW, 480 VAC trifásico 2N"
+  voltage_class: "480 VAC trifásico 2N"
+  ups_topology: "Schneider Galaxy VX online double-conversion"
+  rack_count: 118
+  rack_kw: 142
+  target_pue: 1.30
+  warn_threshold: 1.45    # amber band start
+  crit_threshold: 1.60    # red band start
+  rectification_efficiency: 0.94   # Galaxy VX in 30-70% load band
+  cooling_load_fraction: 0.18      # cooling kW / total facility kW
+  electrical_loss_fraction: 0.06   # transformers + UPS + busway losses
+  lighting_aux_fraction: 0.005
+
+phase_2:
+  description: "Building D (target Q2 2026) — 250 GB300 NVL144 racks @ 200 kW, 800 VDC unipolar TN-S"
+  voltage_class: "800 VDC unipolar TN-S"
+  ups_topology: "MV rectifier + BESS 2.5 MWh + DC distribution"
+  rack_count: 250
+  rack_kw: 200
+  target_pue: 1.15
+  warn_threshold: 1.25
+  crit_threshold: 1.40
+  rectification_efficiency: 0.97   # single MV rectifier
+  cooling_load_fraction: 0.10      # full DLC eliminates most CRAH
+  electrical_loss_fraction: 0.03   # no per-rack rectifier stages
+  lighting_aux_fraction: 0.003
+
+first_law_cross_check:
+  audit_grade_residual_pct: 2.0
+  acceptable_residual_pct: 5.0
+  description: "|input_total - sum(subsystem_loads)| / input_total"
+
+# Synthetic-noise envelope for the demo widget (deterministic seed +
+# small bounded oscillation so the panel sees the value moving but
+# the underlying compute remains reproducible). Values in PUE units.
+demo_noise:
+  amplitude: 0.015     # ±1.5% PUE swing
+  period_seconds: 90   # full oscillation cycle
