@@ -807,6 +807,13 @@
                         <span class="pid-legend-item"><span class="pid-flow-warm"></span> Warm (return)</span>
                         <span class="pid-legend-item"><span class="pid-flow-power"></span> Power flow</span>
                     </span>
+                    <!-- Tier A / A3: heat overlay toggle -->
+                    <span class="pid-heat-controls">
+                        <button class="btn btn-secondary btn-sm" id="pid-heat-toggle" data-on="1" type="button" title="Toggle thermal heatmap overlay">
+                            Heat overlay
+                        </button>
+                        <span class="pid-heat-state" id="pid-heat-state">normal</span>
+                    </span>
                 </div>
 
                 <div class="pid-canvas">
@@ -936,6 +943,52 @@
                             <g class="pid-rack" data-rack="R12" transform="translate(440, 0)"><use xlink:href="#sym-rack" width="30" height="60" class="pid-symbol"/></g>
                         </g>
                         <text x="800" y="155" class="pid-node-metric" data-pid-metric="rack-tj">GPU Tj max: —°C</text>
+
+                        <!-- Tier A / A3: thermal heatmap overlay over IT halls.
+                             Rendered as a translucent gradient layer on top of
+                             the rack row + DLC manifold zone. Toggle via the
+                             #pid-heat-toggle button in the action bar; class
+                             on the SVG drives visibility. Subscribes to
+                             telemetry GPU Tj max if available, otherwise
+                             defaults to "normal" thermal state. -->
+                        <defs>
+                            <radialGradient id="pid-heat-cold" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="#00B8D4" stop-opacity="0.42"/>
+                                <stop offset="60%" stop-color="#00B8D4" stop-opacity="0.18"/>
+                                <stop offset="100%" stop-color="#00B8D4" stop-opacity="0"/>
+                            </radialGradient>
+                            <radialGradient id="pid-heat-normal" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="#10b981" stop-opacity="0.36"/>
+                                <stop offset="60%" stop-color="#10b981" stop-opacity="0.14"/>
+                                <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
+                            </radialGradient>
+                            <radialGradient id="pid-heat-warm" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.46"/>
+                                <stop offset="60%" stop-color="#f59e0b" stop-opacity="0.18"/>
+                                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+                            </radialGradient>
+                            <radialGradient id="pid-heat-hot" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="#ef4444" stop-opacity="0.55"/>
+                                <stop offset="60%" stop-color="#ef4444" stop-opacity="0.22"/>
+                                <stop offset="100%" stop-color="#ef4444" stop-opacity="0"/>
+                            </radialGradient>
+                        </defs>
+                        <g class="pid-heat-overlay" id="pid-heat-overlay" data-heat="normal">
+                            <!-- Rack row hot zone: covers all 12 rack symbols + a margin -->
+                            <ellipse cx="800" cy="90" rx="280" ry="60"
+                                     fill="url(#pid-heat-normal)"
+                                     class="pid-heat-zone" data-zone="rack-row"/>
+                            <!-- DLC manifold supply (left side of CDU) -->
+                            <ellipse cx="450" cy="135" rx="120" ry="50"
+                                     fill="url(#pid-heat-cold)"
+                                     class="pid-heat-zone" data-zone="dlc-supply"/>
+                            <!-- Chiller plant warm-side -->
+                            <ellipse cx="220" cy="170" rx="130" ry="70"
+                                     fill="url(#pid-heat-warm)"
+                                     class="pid-heat-zone" data-zone="chiller-plant"/>
+                            <!-- Animated thermal pulse at center of rack row -->
+                            <circle cx="800" cy="90" r="6" class="pid-heat-pulse"/>
+                        </g>
 
                         <!-- ════ FLOW LINES (animated rectangles using flow patterns) ════ -->
                         <!-- Tower → CWP → Chiller (cold side) -->
@@ -1434,12 +1487,61 @@
             </div>
 
 
-            <!-- View: Site Topology (Sprint S1b) -->
+            <!-- View: Site Topology (Sprint S1b + Tier A / A1 force-directed graph) -->
             <div class="view" id="view-site-topology" hidden>
                 <div class="view-hdr">
                     <h2>Site Topology &mdash; A3-Alpha Toronto Area</h2>
-                    <div class="view-sub">Physical hierarchy &middot; 2N power chains &middot; LOTO impact analysis</div>
+                    <div class="view-sub">Physical hierarchy &middot; 2N power chains &middot; LOTO impact analysis &middot; Force-directed graph view</div>
                 </div>
+
+                <!-- Tier A / A1: graph panel above the legacy tree+detail layout -->
+                <section class="topo-graph-panel" id="topo-graph-panel">
+                    <div class="topo-graph-header">
+                        <div class="topo-graph-title">Force-directed topology</div>
+                        <div class="topo-graph-controls">
+                            <div class="topo-graph-filters" role="radiogroup" aria-label="Chain filter">
+                                <button class="topo-filter active" data-chain="all" type="button">All</button>
+                                <button class="topo-filter" data-chain="power" type="button">Power</button>
+                                <button class="topo-filter" data-chain="cooling" type="button">Cooling</button>
+                            </div>
+                            <span class="topo-graph-meta" id="topo-graph-meta">&mdash;</span>
+                            <button class="btn btn-secondary btn-sm" id="topo-graph-reseed" title="Re-run physics (re-layout)" type="button">&#x21bb; Re-layout</button>
+                        </div>
+                    </div>
+                    <div class="topo-graph-canvas-wrap">
+                        <svg id="topo-graph-svg" class="topo-graph-svg" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <marker id="topo-arrow-power" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                    <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(0,184,212,0.6)"/>
+                                </marker>
+                                <marker id="topo-arrow-cooling" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                    <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(150,210,255,0.5)"/>
+                                </marker>
+                            </defs>
+                            <g class="topo-graph-edges" id="topo-graph-edges"></g>
+                            <g class="topo-graph-nodes" id="topo-graph-nodes"></g>
+                        </svg>
+                        <div class="topo-graph-tooltip" id="topo-graph-tooltip" hidden></div>
+                        <div class="topo-graph-legend">
+                            <div class="topo-legend-row"><span class="topo-legend-dot topo-legend-power"></span> power edge</div>
+                            <div class="topo-legend-row"><span class="topo-legend-dot topo-legend-cooling"></span> cooling edge</div>
+                            <div class="topo-legend-row"><span class="topo-legend-dot topo-legend-impact"></span> downstream impact (click)</div>
+                        </div>
+                    </div>
+                    <div class="topo-graph-detail" id="topo-graph-detail" hidden>
+                        <div class="topo-graph-detail-header">
+                            <span class="topo-graph-detail-id" id="topo-graph-detail-id">&mdash;</span>
+                            <span class="topo-graph-detail-type" id="topo-graph-detail-type">&mdash;</span>
+                            <button class="topo-graph-detail-close" id="topo-graph-detail-close" type="button" aria-label="Clear selection">&times;</button>
+                        </div>
+                        <div class="topo-graph-detail-grid">
+                            <div><span class="lbl">facility</span><span class="val" id="topo-graph-detail-facility">&mdash;</span></div>
+                            <div><span class="lbl">building</span><span class="val" id="topo-graph-detail-building">&mdash;</span></div>
+                            <div><span class="lbl">room type</span><span class="val" id="topo-graph-detail-room">&mdash;</span></div>
+                            <div><span class="lbl">downstream impact</span><span class="val" id="topo-graph-detail-impact">&mdash;</span></div>
+                        </div>
+                    </div>
+                </section>
 
                 <div class="topology-tabs">
                     <span class="topo-meta">

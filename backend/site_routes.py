@@ -174,6 +174,77 @@ def locate(canonical_id: str):
 # ─────────────────────────────────────────────────────────────────────────
 #  Power / cooling / impact
 # ─────────────────────────────────────────────────────────────────────────
+@router.get("/graph")
+def graph(chain: str = Query("all", pattern="^(power|cooling|all)$")):
+    """All nodes + edges for the topology graph (force-directed view).
+
+    Tier A / A1 — feeds frontend force-directed graph in
+    view-site-topology. Lightweight payload: location reduced to a
+    single human-readable path string; voltage/capacity stripped to
+    keep the wire compact for ~91 nodes.
+
+    Returns:
+        {
+            "nodes": [
+                {
+                    "id": "ups_a",
+                    "display": "UPS A (...)",
+                    "type": "ups",
+                    "facility": "A3-Alpha Toronto Area",
+                    "building_id": "building-a",
+                    "room_type": "electrical_room",
+                    "location_path": "A3-Alpha / Building A / Electrical Room A"
+                }, ...
+            ],
+            "edges": [
+                {"src": "switchgear_a", "dst": "ups_a", "chain": "power"}, ...
+            ],
+            "summary": {
+                "node_count": 91,
+                "power_edges": 44,
+                "cooling_edges": 24,
+                "by_type": {"it_rack": 50, "rpp": 4, ...}
+            }
+        }
+    """
+    m = _model()
+    nodes = []
+    by_type: dict[str, int] = {}
+    for c in m.list_components():
+        loc = c.location
+        nodes.append({
+            "id": c.canonical_id,
+            "display": c.display,
+            "type": c.type,
+            "facility": "A3-Alpha Toronto Area",
+            "building_id": getattr(loc, "building_id", None),
+            "room_type": getattr(loc, "room_type", None),
+            "location_path": getattr(loc, "path", ""),
+        })
+        by_type[c.type] = by_type.get(c.type, 0) + 1
+
+    edges = []
+    if chain in ("power", "all"):
+        for src, dsts in m._power_downstream.items():
+            for dst in dsts:
+                edges.append({"src": src, "dst": dst, "chain": "power"})
+    if chain in ("cooling", "all"):
+        for src, dsts in m._cooling_downstream.items():
+            for dst in dsts:
+                edges.append({"src": src, "dst": dst, "chain": "cooling"})
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "summary": {
+            "node_count": len(nodes),
+            "power_edges": sum(1 for e in edges if e["chain"] == "power"),
+            "cooling_edges": sum(1 for e in edges if e["chain"] == "cooling"),
+            "by_type": by_type,
+        },
+    }
+
+
 @router.get("/power-chain/{canonical_id}")
 def power_chain(canonical_id: str):
     """Upstream power feeds (Path A + Path B for 2N components).

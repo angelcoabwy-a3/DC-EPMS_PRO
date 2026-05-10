@@ -28,8 +28,10 @@ import { initShiSparkline } from './core/shi_sparkline.js';
 import { initPueWidget } from './core/pue_widget.js';
 import { initSound } from './core/sound.js';
 import { initKeyboard } from './core/keyboard.js';
+import { initHeatOverlay } from './core/heat_overlay.js';
 import { startTelemetry } from './core/telemetry_engine.js';
 import { initMaintenanceView } from './views/maintenance.js';
+import { initSiteTopologyView } from './views/site_topology.js';
 import { initTechAssistView } from './views/tech_assist.js';
 import { initMultiAgentView } from './views/multi_agent.js';
 
@@ -51,7 +53,9 @@ initShiSparkline();
 initPueWidget();
 initSound();
 initKeyboard();
+initHeatOverlay();
 initMaintenanceView();
+initSiteTopologyView();
 initTechAssistView();
 initMultiAgentView();
 

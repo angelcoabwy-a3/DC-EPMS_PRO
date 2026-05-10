@@ -127,6 +127,325 @@ body {
 .app-header .status-pill.up .dot  { background: var(--ok); }
 .app-header .status-pill.down .dot { background: var(--crit); }
 
+/* ── Tier A / A3: Heat overlay on cooling P&ID ───────────────────
+   Translucent gradient zones over IT halls + DLC manifold + chiller
+   plant. Color encodes thermal state band: cold/normal/warm/hot.
+   Toggleable via #pid-heat-toggle. Severity-coded only — never decoration. */
+
+.pid-heat-overlay { transition: opacity 0.3s ease; }
+.pid-heat-overlay[data-show="0"] { opacity: 0; pointer-events: none; }
+
+.pid-heat-zone { transition: opacity 0.4s ease; }
+
+.pid-heat-pulse {
+    fill: var(--accent, #00B8D4);
+    opacity: 0.85;
+    animation: pid-heat-pulse-anim 2.4s ease-in-out infinite;
+}
+@keyframes pid-heat-pulse-anim {
+    0%, 100% { r: 4; opacity: 0.55; }
+    50%      { r: 12; opacity: 0.0; }
+}
+
+/* Heat state cycling — when state escalates the rack-row zone
+   swaps gradient (controlled via JS) but the colour itself is
+   carried by the gradient stop. Below are visual cues: when the
+   overlay is in "warn" or "crit", the pulse changes colour. */
+.pid-heat-overlay[data-heat="warn"] .pid-heat-pulse  { fill: var(--warn, #f59e0b); }
+.pid-heat-overlay[data-heat="crit"] .pid-heat-pulse  {
+    fill: var(--crit, #ef4444);
+    animation-duration: 1.1s;
+}
+
+.pid-heat-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 12px;
+    padding-left: 12px;
+    border-left: 1px solid var(--border);
+}
+#pid-heat-toggle[data-on="0"] {
+    color: var(--text-dim);
+    border-color: var(--border);
+    background: transparent;
+}
+#pid-heat-toggle[data-on="1"] {
+    color: var(--accent, #00B8D4);
+    border-color: rgba(0, 184, 212, 0.5);
+    background: rgba(0, 184, 212, 0.08);
+}
+.pid-heat-state {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--ok, #10b981);
+}
+.pid-heat-state[data-heat="warn"] { color: var(--warn, #f59e0b); }
+.pid-heat-state[data-heat="crit"] { color: var(--crit, #ef4444); }
+.pid-heat-state[data-heat="cold"] { color: var(--accent, #00B8D4); }
+
+@media (prefers-reduced-motion: reduce) {
+    .pid-heat-pulse { animation: none; }
+}
+
+/* ── Tier A / A1: Force-directed topology graph ──────────────────
+   View: site-topology. Custom Verlet sim in SVG; instrument-grade
+   colour discipline (no neon, type-encoded). Click nodes to cascade-
+   highlight downstream impact. Drag to pin. Wheel to zoom. */
+
+.topo-graph-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin: 12px 0 16px;
+    overflow: hidden;
+}
+.topo-graph-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elevated, #0F1115);
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.topo-graph-title {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text);
+    font-weight: 600;
+}
+.topo-graph-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.topo-graph-filters {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.topo-filter {
+    background: transparent;
+    border: 0;
+    color: var(--text-dim);
+    padding: 5px 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    border-right: 1px solid var(--border);
+    transition: all 0.15s ease;
+}
+.topo-filter:last-child { border-right: 0; }
+.topo-filter:hover { color: var(--text); background: rgba(0, 184, 212, 0.06); }
+.topo-filter.active {
+    color: var(--accent, #00B8D4);
+    background: rgba(0, 184, 212, 0.16);
+}
+.topo-graph-meta {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-dim);
+}
+
+.topo-graph-canvas-wrap {
+    position: relative;
+    background: radial-gradient(ellipse at center,
+                rgba(0, 184, 212, 0.025) 0%,
+                rgba(11, 13, 16, 0) 65%),
+                #0B0D10;
+    height: 540px;
+    overflow: hidden;
+}
+.topo-graph-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+    user-select: none;
+}
+.topo-graph-svg:active { cursor: grabbing; }
+
+.topo-edge {
+    stroke-width: 1.2;
+    stroke-linecap: round;
+    transition: opacity 0.2s ease, stroke-width 0.2s ease;
+    fill: none;
+}
+.topo-edge-power   { stroke: rgba(0, 184, 212, 0.55); }
+.topo-edge-cooling { stroke: rgba(150, 210, 255, 0.45); stroke-dasharray: 4 3; }
+.topo-edge-impact {
+    stroke: var(--crit, #ef4444);
+    stroke-width: 2.4;
+    stroke-dasharray: none;
+    animation: topo-impact-flow 1.4s linear infinite;
+}
+@keyframes topo-impact-flow {
+    0%   { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -20; }
+}
+.topo-edge-impact { stroke-dasharray: 6 4; }
+.topo-edge-dim { opacity: 0.16; }
+
+.topo-node { cursor: pointer; }
+.topo-node text {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    fill: var(--text-muted, #8a9aab);
+    pointer-events: none;
+    transition: fill 0.2s ease;
+}
+.topo-node:hover circle,
+.topo-node:hover rect,
+.topo-node:hover polygon {
+    filter: drop-shadow(0 0 5px var(--accent, #00B8D4));
+}
+.topo-node-selected text { fill: var(--text); font-weight: 700; }
+.topo-node-selected circle,
+.topo-node-selected rect,
+.topo-node-selected polygon {
+    filter: drop-shadow(0 0 8px var(--crit, #ef4444));
+    stroke: var(--crit, #ef4444);
+    stroke-width: 2.5;
+}
+.topo-node-impact text { fill: var(--crit, #ef4444); }
+.topo-node-impact circle,
+.topo-node-impact rect,
+.topo-node-impact polygon {
+    stroke: var(--crit, #ef4444);
+    stroke-width: 2;
+}
+.topo-node-dim { opacity: 0.22; }
+
+.topo-graph-tooltip {
+    position: fixed;
+    background: rgba(11, 13, 16, 0.96);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent, #00B8D4);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    z-index: 50;
+    pointer-events: none;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    max-width: 280px;
+}
+.topo-graph-tooltip .topo-tip-type {
+    color: var(--accent, #00B8D4);
+    font-size: 10px;
+}
+.topo-graph-tooltip .topo-tip-loc {
+    color: var(--text-dim);
+    font-size: 9.5px;
+}
+
+.topo-graph-legend {
+    position: absolute;
+    bottom: 10px;
+    left: 12px;
+    background: rgba(11, 13, 16, 0.86);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 6px 10px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted, #8a9aab);
+}
+.topo-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 0;
+}
+.topo-legend-dot {
+    display: inline-block;
+    width: 18px;
+    height: 0;
+    border-top: 2px solid;
+}
+.topo-legend-dot.topo-legend-power   { border-color: rgba(0, 184, 212, 0.7); }
+.topo-legend-dot.topo-legend-cooling { border-color: rgba(150, 210, 255, 0.6); border-top-style: dashed; }
+.topo-legend-dot.topo-legend-impact  { border-color: var(--crit, #ef4444); border-top-style: dashed; }
+
+.topo-graph-detail {
+    border-top: 1px solid var(--border);
+    background: var(--bg-elevated, #0F1115);
+    padding: 12px 14px;
+}
+.topo-graph-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 8px;
+}
+.topo-graph-detail-id {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--accent, #00B8D4);
+    font-weight: 600;
+}
+.topo-graph-detail-type {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    padding: 2px 7px;
+    border-radius: 2px;
+    color: var(--text-dim);
+}
+.topo-graph-detail-close {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 22px; height: 22px;
+    border-radius: 3px;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+.topo-graph-detail-close:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+.topo-graph-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 6px 14px;
+}
+.topo-graph-detail-grid > div {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 3px 0;
+    border-bottom: 1px dotted var(--border);
+}
+.topo-graph-detail-grid .lbl {
+    color: var(--text-dim);
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex: 0 0 auto;
+}
+.topo-graph-detail-grid .val {
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    margin-left: auto;
+    text-align: right;
+}
+
 /* ── Tier C / C3: keyboard shortcuts (g-leader hint + help modal) ─ */
 .kbd-g-hint {
     position: fixed;
@@ -4673,16 +4992,73 @@ body {
     animation: pid-flow-power 1.2s linear infinite;
     opacity: 0.9;
 }
+
+/* Tier A / A2: Path-coded power flow.
+   Convention: A side = cyan (cool, primary).  B side = amber (warm, alt).
+   Visual scan from left of SLD: easy to tell which path feeds where.
+   Lines where data-sld-line begins with "util_a", "xfmr_a", "ats_a",
+   "ups_a", "batt_a", "genset_a", "rpp_a", "busway_a" get the A treatment. */
+.sld-line.live[data-sld-line^="util_a"],
+.sld-line.live[data-sld-line^="xfmr_a"],
+.sld-line.live[data-sld-line^="ats_a"],
+.sld-line.live[data-sld-line^="ups_a"],
+.sld-line.live[data-sld-line^="genset_a"],
+.sld-line.live[data-sld-line^="rpp_a"],
+.sld-line.live[data-sld-line^="busway_a"],
+.sld-line.live[data-sld-line*="-ups_a"],
+.sld-line.live[data-sld-line*="-ats_a"],
+.sld-line.live[data-sld-line*="-xfmr_a"] {
+    stroke: #00B8D4;
+    filter: drop-shadow(0 0 2.5px rgba(0, 184, 212, 0.55));
+    animation: pid-flow-power 0.9s linear infinite;
+}
+.sld-line.live[data-sld-line^="util_b"],
+.sld-line.live[data-sld-line^="xfmr_b"],
+.sld-line.live[data-sld-line^="ats_b"],
+.sld-line.live[data-sld-line^="ups_b"],
+.sld-line.live[data-sld-line^="genset_b"],
+.sld-line.live[data-sld-line^="rpp_b"],
+.sld-line.live[data-sld-line^="busway_b"],
+.sld-line.live[data-sld-line*="-ups_b"],
+.sld-line.live[data-sld-line*="-ats_b"],
+.sld-line.live[data-sld-line*="-xfmr_b"] {
+    stroke: #f59e0b;
+    filter: drop-shadow(0 0 2.5px rgba(245, 158, 11, 0.55));
+    animation: pid-flow-power 0.9s linear infinite;
+}
+
 .sld-line.battery {
     stroke: #00B8D4;
     stroke-dasharray: 4 3;
     opacity: 0.6;
+    animation: sld-batt-pulse 2.4s ease-in-out infinite;
 }
 .sld-line.standby {
     stroke: #6C737D;
     stroke-dasharray: 2 4;
     stroke-width: 1.5;
     opacity: 0.4;
+    /* Subtle hot-standby pulse so it's not visually dead — you can see
+       it's alive and ready, just not currently energized. */
+    animation: sld-standby-pulse 3.5s ease-in-out infinite;
+}
+
+@keyframes sld-batt-pulse {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 0.85; }
+}
+@keyframes sld-standby-pulse {
+    0%, 100% { opacity: 0.32; }
+    50%      { opacity: 0.55; }
+}
+
+/* When the operator hovers the entire SLD canvas, animations slow
+   down 50% so they can read the topology without distraction. */
+.pid-svg:hover .sld-line.live { animation-duration: 1.6s; }
+@media (prefers-reduced-motion: reduce) {
+    .sld-line.live,
+    .sld-line.battery,
+    .sld-line.standby { animation: none !important; }
 }
 
 /* Nominal metric labels (greyer to indicate non-live) */
