@@ -29,7 +29,40 @@
     --neon-green:   #00FF9D;
 
     --font-sans:    -apple-system, 'Segoe UI', Roboto, Inter, sans-serif;
-    --font-mono:    'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+    --font-mono:    'JetBrains Mono', 'JetBrains Mono Web', 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
+}
+
+/* ── JetBrains Mono self-hosted (Phase 4 follow-up — Tier IV typography)
+ *
+ *   Drop the .woff2 into frontend/assets/vendor/fonts/ to enable.
+ *   Fallback chain in --font-mono ensures graceful degradation if the
+ *   file is missing: browser uses system-installed JetBrains Mono if
+ *   available (most dev workstations have it), otherwise Cascadia /
+ *   Consolas / Roboto Mono.
+ */
+@font-face {
+    font-family: 'JetBrains Mono Web';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url('/assets/vendor/fonts/JetBrainsMono-VariableFont_wght.woff2') format('woff2-variations'),
+         url('/assets/vendor/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+}
+
+/* Global tabular numerics — prevents number jitter in SCADA dashboards.
+   Applies to ALL monospace contexts (KPIs, sparkline readouts, asset
+   detail rows, telemetry strips, etc.). */
+.iso-metric,
+.iso-block-title,
+.cam-readout,
+.sld-info-spark-now,
+.sld-info-row > span:last-child,
+.sld-state-badge,
+.kpi-value,
+.kpi-units,
+.kpi-trend {
+    font-variant-numeric: tabular-nums slashed-zero;
+    font-feature-settings: 'tnum' 1, 'zero' 1, 'cv02' 1, 'ss01' 1;
 }
 
 /* ── Logo styling ──────────────────────────────────────── */
@@ -6438,12 +6471,34 @@ body {
     width: calc(var(--w, 60) * 100% / 1200);
     height:calc(var(--h, 50) * 100% / 720);
 
-    /* The block face — top of the extruded cube */
-    background: linear-gradient(135deg,
-        rgba(0, 184, 212, 0.45) 0%,
-        rgba(0, 184, 212, 0.15) 60%,
-        rgba(0, 184, 212, 0.30) 100%);
-    border: 1px solid rgba(0, 184, 212, 0.85);
+    /* PBR-style brushed-metal cyan base (v0.10.10).
+       Five layers stacked back-to-front:
+         1. Brush striations (vertical hairlines, reads as anisotropic metal)
+         2. Specular shine (corner-to-corner highlight)
+         3. Edge sheen (top edge brighter — light from above)
+         4. Mid tone (color band)
+         5. Base color (saturated bottom)
+       Together they fake a cyan-anodized brushed aluminium look without
+       requiring three.js / shader work. */
+    background:
+        repeating-linear-gradient(180deg,
+            rgba(255, 255, 255, 0.00) 0px,
+            rgba(255, 255, 255, 0.05) 1px,
+            rgba(255, 255, 255, 0.00) 2px),
+        linear-gradient(135deg,
+            rgba(255, 255, 255, 0.22) 0%,
+            rgba(255, 255, 255, 0.04) 28%,
+            rgba(255, 255, 255, 0.00) 55%,
+            rgba(255, 255, 255, 0.08) 100%),
+        linear-gradient(180deg,
+            rgba(255, 255, 255, 0.10) 0%,
+            rgba(0, 0, 0, 0.10) 100%),
+        linear-gradient(135deg,
+            rgba(0, 184, 212, 0.55) 0%,
+            rgba(0, 184, 212, 0.18) 60%,
+            rgba(0, 184, 212, 0.40) 100%);
+    border: 1px solid rgba(0, 229, 255, 0.95);
+    border-top-color: rgba(255, 255, 255, 0.55);   /* light hits top edge */
     border-radius: 2px;
     backdrop-filter: blur(2px);
 
@@ -6505,14 +6560,28 @@ body {
     --shadow-color: rgba(0, 184, 212, 0.75);
 }
 
-/* Path B violet override */
+/* Path B brushed-metal violet (anodized purple, same 5-layer stack) */
 .sld-iso-block.iso-path-b {
-    background: linear-gradient(135deg,
-        rgba(168, 85, 247, 0.45) 0%,
-        rgba(168, 85, 247, 0.15) 60%,
-        rgba(168, 85, 247, 0.30) 100%);
-    border-color: rgba(168, 85, 247, 0.85);
-    --shadow-color: rgba(168, 85, 247, 0.55);
+    background:
+        repeating-linear-gradient(180deg,
+            rgba(255, 255, 255, 0.00) 0px,
+            rgba(255, 255, 255, 0.05) 1px,
+            rgba(255, 255, 255, 0.00) 2px),
+        linear-gradient(135deg,
+            rgba(255, 255, 255, 0.22) 0%,
+            rgba(255, 255, 255, 0.04) 28%,
+            rgba(255, 255, 255, 0.00) 55%,
+            rgba(255, 255, 255, 0.08) 100%),
+        linear-gradient(180deg,
+            rgba(255, 255, 255, 0.10) 0%,
+            rgba(0, 0, 0, 0.10) 100%),
+        linear-gradient(135deg,
+            rgba(168, 85, 247, 0.55) 0%,
+            rgba(168, 85, 247, 0.18) 60%,
+            rgba(168, 85, 247, 0.40) 100%);
+    border-color: rgba(192, 132, 252, 0.95);
+    border-top-color: rgba(255, 255, 255, 0.55);
+    --shadow-color: rgba(168, 85, 247, 0.60);
     --glow-color:   rgba(168, 85, 247, calc(0.30 + var(--stress, 0.12) * 0.55));
 }
 .sld-iso-block.iso-path-b::before {
@@ -6580,7 +6649,7 @@ body {
     position: absolute;
     top: -22px; left: 0; right: 0;
     text-align: center;
-    font-family: 'Roboto Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 9.5px;
     font-weight: 600;
     color: #80E5FF;
@@ -6599,7 +6668,7 @@ body {
     gap: 1px;
 }
 .iso-metric {
-    font-family: 'Roboto Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 8px;
     color: #00E5FF;
     text-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
@@ -6804,7 +6873,7 @@ body {
     bottom: 2px; right: 2px;
     width: 28px; height: 14px;
     padding: 0;
-    font-family: 'Roboto Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 7px;
     font-weight: 800;
     letter-spacing: 0.4px;
@@ -6931,7 +7000,7 @@ body {
     border: 1px solid rgba(0, 184, 212, 0.18);
     border-radius: 4px;
     margin: 6px 0;
-    font-family: 'Roboto Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
 }
 
@@ -6963,7 +7032,7 @@ body {
 }
 
 .cam-btn {
-    font-family: 'Roboto Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     padding: 3px 10px;
     border: 1px solid rgba(0, 184, 212, 0.4);
@@ -7041,7 +7110,7 @@ body {
     border-radius: 6px;
     padding: 14px;
     color: #cbd5e1;
-    font-family: 'Roboto Mono', 'JetBrains Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     overflow-y: auto;
     box-shadow: 0 0 24px rgba(0, 0, 0, 0.5), inset 0 0 30px rgba(0, 184, 212, 0.04);
@@ -7138,7 +7207,7 @@ body {
     width: 100%;
     padding: 6px 12px;
     text-align: left;
-    font-family: 'Roboto Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 11px;
     border: 1px solid rgba(0, 184, 212, 0.4);
     background: rgba(0, 184, 212, 0.06);
@@ -7174,7 +7243,7 @@ body {
     border: 1px solid rgba(0, 184, 212, 0.55);
     border-radius: 4px;
     color: #80E5FF;
-    font-family: 'Roboto Mono', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
     box-shadow: 0 4px 24px rgba(0, 184, 212, 0.4);
     opacity: 0;
