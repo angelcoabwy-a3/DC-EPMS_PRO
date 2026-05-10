@@ -21,6 +21,8 @@
  * with setTimeout(0) override of the legacy navigateTo.
  * ════════════════════════════════════════════════════════════════ */
 
+import { playVeto, playClick } from '../core/sound.js';
+
 const API_BASE = '';
 
 const SCENARIOS = {
@@ -185,6 +187,12 @@ async function _onConsult() {
         meta.textContent = `${data.decision_time_ms} ms · 4 agents · ${data.consensus}`;
         _renderConsensus(data);
         _renderAgents(data.agents);
+        // Tier C / C1: audio cue tracks the verdict
+        if (data.safety_officer_veto || data.consensus === 'hard_stop') {
+            playVeto();
+        } else {
+            playClick();
+        }
     } catch (e) {
         meta.textContent = 'network error';
         document.getElementById('ma-agents-grid').innerHTML =

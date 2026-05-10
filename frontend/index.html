@@ -9,8 +9,64 @@
          Origin: https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js
          SHA-256: 74401D738DD3E03EE5DFB3B6841210FE2C4EAD8A960C4011CA4BA0B78A9FD8F3 -->
     <script src="/assets/vendor/chart.umd.4.4.1.js?v=4.4.1"></script>
+    <!-- Tier C / C2: boot splash dismiss. Runs once per session.
+         Inline so it executes before any module load delays the fade. -->
+    <script>
+        (function () {
+            var SHOWN_KEY = 'epms_splash_shown';
+            try {
+                if (sessionStorage.getItem(SHOWN_KEY)) {
+                    // Already shown this session: skip the splash entirely.
+                    document.addEventListener('DOMContentLoaded', function () {
+                        var s = document.getElementById('boot-splash');
+                        if (s) s.parentNode.removeChild(s);
+                    });
+                    return;
+                }
+                sessionStorage.setItem(SHOWN_KEY, '1');
+            } catch (e) { /* sessionStorage blocked, show every time */ }
+            // Fade out after 900 ms (matches the progress bar animation),
+            // then remove from DOM after 500 ms transition.
+            window.addEventListener('load', function () {
+                setTimeout(function () {
+                    var s = document.getElementById('boot-splash');
+                    if (!s) return;
+                    s.setAttribute('data-show', '0');
+                    setTimeout(function () { if (s.parentNode) s.parentNode.removeChild(s); }, 500);
+                }, 900);
+            });
+        })();
+    </script>
 </head>
 <body>
+
+<!-- Tier C / C2: identity boot splash. One-shot per session.
+     Rendered before any JS module runs so first paint is identitario,
+     not an empty KPI grid. Fades out after ~900 ms via splash.js. -->
+<div class="boot-splash" id="boot-splash" data-show="1">
+    <div class="boot-splash-inner">
+        <div class="boot-splash-mark">A<sup>3</sup></div>
+        <div class="boot-splash-product">DC-EPMS <span>PRO</span></div>
+        <div class="boot-splash-tagline">Edge Operations Platform · Tier IV AI Factory</div>
+        <div class="boot-splash-rule"></div>
+        <div class="boot-splash-meta">
+            <span>A3-Alpha Toronto Area</span>
+            <span class="sep">·</span>
+            <span>Path C2</span>
+            <span class="sep">·</span>
+            <span>67 MW · 368 racks</span>
+        </div>
+        <div class="boot-splash-meta-sub">
+            <span>Phase 1: 118 GB200 NVL72 @ 480 VAC trif&aacute;sico</span>
+            <span class="sep">·</span>
+            <span>Phase 2: 250 GB300 NVL144 @ 800 VDC unipolar TN-S</span>
+        </div>
+        <div class="boot-splash-progress">
+            <div class="boot-splash-progress-bar"></div>
+        </div>
+        <div class="boot-splash-status">initializing operations console&hellip;</div>
+    </div>
+</div>
 
 <div class="app-shell">
 
@@ -27,6 +83,12 @@
         <div class="status-pill" id="health-gemma" data-label="Gemma 4"><span class="dot"></span><span class="lbl">Gemma 4</span></div>
         <div class="status-pill" id="health-gpu" data-label="GPU"><span class="dot"></span><span class="lbl">GPU</span></div>
         <div class="status-pill" id="health-stream" data-label="Stream" data-staleness="unknown"><span class="dot"></span><span class="lbl">Stream —</span></div>
+        <button id="epms-sound-toggle" class="header-icon-btn sound-off" aria-pressed="false" aria-label="Toggle sound" title="Sound: OFF (click to enable)" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/></svg>
+        </button>
+        <button id="epms-shortcuts-toggle" class="header-icon-btn" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
+        </button>
     </header>
 
     <!-- Sprint 5.5 hybrid pivot Bite A3: telemetry activity strip.

@@ -127,6 +127,286 @@ body {
 .app-header .status-pill.up .dot  { background: var(--ok); }
 .app-header .status-pill.down .dot { background: var(--crit); }
 
+/* ── Tier C / C3: keyboard shortcuts (g-leader hint + help modal) ─ */
+.kbd-g-hint {
+    position: fixed;
+    bottom: 18px;
+    right: 18px;
+    background: rgba(11, 13, 16, 0.95);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent, #00B8D4);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    z-index: 1500;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    pointer-events: none;
+}
+.kbd-g-hint-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+.kbd-g-hint kbd {
+    display: inline-block;
+    background: var(--bg-elevated, #14181D);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 1px 5px;
+    margin: 0 2px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--accent, #00B8D4);
+}
+
+.kbd-help-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.62);
+    z-index: 200;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 64px 16px 32px;
+    overflow-y: auto;
+}
+.kbd-help-overlay[hidden] { display: none; }
+.kbd-help-modal {
+    width: min(620px, 100%);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6),
+                0 0 0 1px rgba(0, 184, 212, 0.18);
+    display: flex;
+    flex-direction: column;
+}
+.kbd-help-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-elevated, #0F1115);
+    border-radius: 4px 4px 0 0;
+}
+.kbd-help-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+.kbd-help-body { padding: 14px 18px 16px; }
+.kbd-help-group { margin-bottom: 14px; }
+.kbd-help-group:last-child { margin-bottom: 0; }
+.kbd-help-group-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--accent, #00B8D4);
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+.kbd-help-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+}
+.kbd-help-table td {
+    padding: 4px 0;
+    vertical-align: top;
+}
+.kbd-help-keys {
+    width: 140px;
+    white-space: nowrap;
+    text-align: right;
+    padding-right: 14px;
+}
+.kbd-help-keys kbd {
+    display: inline-block;
+    background: var(--bg-elevated, #0F1115);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 2px 7px;
+    margin: 0 1px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent, #00B8D4);
+    line-height: 1.2;
+}
+.kbd-then {
+    color: var(--text-dim);
+    margin: 0 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+.kbd-help-desc {
+    color: var(--text);
+    line-height: 1.4;
+}
+.kbd-help-footer {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 10.5px;
+    color: var(--text-dim);
+    line-height: 1.5;
+}
+.kbd-help-footer kbd {
+    display: inline-block;
+    background: var(--bg-elevated, #0F1115);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 0 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--accent, #00B8D4);
+}
+
+/* ── Tier C / C2: boot splash ────────────────────────────────────
+   Identity frame shown once per session before main.js runs. Style
+   discipline: anthracite + cyan, monospace, NO neon. Fades out via
+   inline JS in head. */
+.boot-splash {
+    position: fixed;
+    inset: 0;
+    background: #0B0D10;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.4s ease, visibility 0s linear 0.45s;
+    will-change: opacity;
+}
+.boot-splash[data-show="0"] {
+    opacity: 0;
+    visibility: hidden;
+}
+.boot-splash-inner {
+    text-align: center;
+    color: var(--text);
+    font-family: var(--font-mono, 'JetBrains Mono', 'Consolas', monospace);
+    max-width: 720px;
+    padding: 32px;
+}
+.boot-splash-mark {
+    font-size: 60px;
+    color: var(--accent, #00B8D4);
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    margin-bottom: 4px;
+}
+.boot-splash-mark sup { font-size: 0.5em; vertical-align: top; }
+.boot-splash-product {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+}
+.boot-splash-product span {
+    color: var(--accent, #00B8D4);
+    font-weight: 700;
+    margin-left: 4px;
+}
+.boot-splash-tagline {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: var(--text-muted, #8a9aab);
+    margin-bottom: 22px;
+}
+.boot-splash-rule {
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(0, 184, 212, 0.5) 50%,
+        transparent 100%);
+    margin: 0 auto 18px;
+    width: 220px;
+}
+.boot-splash-meta {
+    font-size: 12px;
+    color: var(--text);
+    margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+}
+.boot-splash-meta-sub {
+    font-size: 10.5px;
+    color: var(--text-dim, #6a7a8b);
+    margin-bottom: 24px;
+}
+.boot-splash-meta .sep,
+.boot-splash-meta-sub .sep {
+    margin: 0 8px;
+    color: var(--text-dim);
+}
+.boot-splash-progress {
+    width: 240px;
+    height: 2px;
+    background: var(--bg-elevated, #14181D);
+    border-radius: 1px;
+    overflow: hidden;
+    margin: 0 auto 12px;
+}
+.boot-splash-progress-bar {
+    height: 100%;
+    width: 0;
+    background: var(--accent, #00B8D4);
+    animation: boot-progress 0.85s cubic-bezier(0.55, 0.05, 0.4, 1) forwards;
+}
+@keyframes boot-progress {
+    0%   { width: 0; }
+    40%  { width: 35%; }
+    70%  { width: 70%; }
+    100% { width: 100%; }
+}
+.boot-splash-status {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--text-dim, #6a7a8b);
+}
+@media (prefers-reduced-motion: reduce) {
+    .boot-splash-progress-bar { animation-duration: 0.01s; }
+}
+
+/* ── Tier C / C1+C3: header icon buttons (sound + shortcuts) ─────── */
+.header-icon-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-left: 6px;
+    padding: 0;
+    transition: all 0.15s ease;
+}
+.header-icon-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(0, 184, 212, 0.08);
+}
+.header-icon-btn.sound-on {
+    color: var(--accent);
+    border-color: rgba(0, 184, 212, 0.5);
+    background: rgba(0, 184, 212, 0.08);
+}
+.header-icon-btn.sound-off {
+    color: var(--text-dim);
+}
+
 /* ── Stream staleness states (Sprint 5.5 hybrid pivot Phase 1.3) ──
    Driven by frontend/assets/js/core/staleness.js. Discrete but
    unequivocal: dot color is the primary signal, label appends

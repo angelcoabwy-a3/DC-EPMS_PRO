@@ -19,6 +19,8 @@
  * No emojis, no animations beyond severity color transitions.
  * ════════════════════════════════════════════════════════════════ */
 
+import { playClick } from '../core/sound.js';
+
 const POLL_INTERVAL_MS = 15_000;
 const API_BASE = '';  // same-origin
 
@@ -103,6 +105,7 @@ async function _approveWorkOrder(woId, woContext) {
         alert(`Approve failed: ${errText.slice(0, 200)}`);
         return false;
     }
+    playClick();
     return true;
 }
 
@@ -136,6 +139,7 @@ async function _rejectWorkOrder(woId, woContext) {
         alert(`Reject failed: ${errText.slice(0, 200)}`);
         return false;
     }
+    playClick();
     return true;
 }
 
