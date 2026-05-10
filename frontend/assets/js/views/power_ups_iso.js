@@ -32,6 +32,7 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { getState, subscribe } from '../core/state.js';
+import { toggleTrip, getGridState } from '../core/power_grid.js';
 
 // ─── Catalogue: 18 nodes, exact (x,y) match to legacy SVG transforms
 const NODES = [
@@ -135,6 +136,15 @@ function _buildBlock(node) {
         el.appendChild(cells);
     }
 
+    // Trip pip — always-visible breaker button (universal fault injection)
+    const tripPip = document.createElement('button');
+    tripPip.className = 'iso-trip-pip';
+    tripPip.type = 'button';
+    tripPip.title = `Trip ${node.label} breaker (shift-click also works)`;
+    tripPip.dataset.tripFor = node.id;
+    tripPip.textContent = 'TRIP';
+    el.appendChild(tripPip);
+
     // Metrics — counter-rotated
     const metricsBox = document.createElement('div');
     metricsBox.className = 'iso-block-metrics';
@@ -179,30 +189,52 @@ function _buildFlowSvg() {
 // ─── Dynamic behaviors ────────────────────────────────────────────
 
 // #1 — VARIABLE POWER FLOW
-// Set --flow-duration on each line. Fast = high load, slow = idle.
-// Default oscillation gives the system a calm "breathing" rhythm
-// even when there is no telemetry.
+// Map each line's --flow-duration to its source-node liveness:
+//   - dead source: animation suppressed (CSS .is-dead handles)
+//   - alive on battery: slower amber rhythm (1.4s)
+//   - alive on genset: medium amber (1.0s)
+//   - alive on utility + telemetry load: 1.6s..0.45s by load magnitude
 function _bindVariableFlow() {
     const apply = () => {
-        const t = getState('lastTelemetry') || {};
-        const sim = getState('powerSim') || {};
-        const loadA = _approxPathLoad(t, 'A', sim);
-        const loadB = _approxPathLoad(t, 'B', sim);
-
-        // Map load [0..1] to duration [1.6s ... 0.45s]
-        const durA = (1.6 - loadA * 1.15).toFixed(2) + 's';
-        const durB = (1.6 - loadB * 1.15).toFixed(2) + 's';
-
         if (!_flowSvg) return;
-        _flowSvg.querySelectorAll('.iso-line[data-path="A"]').forEach(ln => {
-            ln.style.setProperty('--flow-duration', durA);
-        });
-        _flowSvg.querySelectorAll('.iso-line[data-path="B"]').forEach(ln => {
-            ln.style.setProperty('--flow-duration', durB);
+        const grid = getState('grid') || getGridState() || {};
+        const t = getState('lastTelemetry') || {};
+        const loadA = _approxPathLoad(t, 'A');
+        const loadB = _approxPathLoad(t, 'B');
+
+        _flowSvg.querySelectorAll('.iso-line').forEach((ln) => {
+            const lineId = ln.dataset.sldLine;
+            const srcId  = lineId.split('-')[0];
+            const src    = grid[srcId];
+
+            // Dead source: line dead (CSS) — duration irrelevant
+            if (!src || !src.alive) {
+                ln.classList.add('is-dead');
+                ln.classList.remove('is-on-battery', 'is-on-genset');
+                return;
+            }
+            ln.classList.remove('is-dead');
+
+            // Energization mode shapes color + duration
+            if (src.energized_by === 'battery') {
+                ln.classList.add('is-on-battery');
+                ln.classList.remove('is-on-genset');
+                ln.style.setProperty('--flow-duration', '1.4s');
+            } else if (src.energized_by === 'genset') {
+                ln.classList.add('is-on-genset');
+                ln.classList.remove('is-on-battery');
+                ln.style.setProperty('--flow-duration', '0.95s');
+            } else {
+                ln.classList.remove('is-on-battery', 'is-on-genset');
+                const path = ln.dataset.path;
+                const load = path === 'A' ? loadA : loadB;
+                ln.style.setProperty('--flow-duration', (1.6 - load * 1.15).toFixed(2) + 's');
+            }
         });
     };
+    subscribe('grid', apply);
     subscribe('lastTelemetry', apply);
-    subscribe('powerSim', apply);
+
     // Organic baseline oscillation when no telemetry: slow sine
     let phase = 0;
     _organicTimer = setInterval(() => {
@@ -210,36 +242,28 @@ function _bindVariableFlow() {
         if (!_flowSvg) return;
         const t = getState('lastTelemetry');
         if (t && t.payload) return; // real data is driving — skip organic
-        const oscA = (Math.sin(phase) + 1) * 0.15 + 0.40;        // 0.40..0.70
+        const grid = getState('grid') || {};
+        const oscA = (Math.sin(phase) + 1) * 0.15 + 0.40;
         const oscB = (Math.sin(phase + Math.PI / 3) + 1) * 0.15 + 0.40;
-        _flowSvg.querySelectorAll('.iso-line[data-path="A"]').forEach(ln => {
-            ln.style.setProperty('--flow-duration', (1.6 - oscA * 1.15).toFixed(2) + 's');
-        });
-        _flowSvg.querySelectorAll('.iso-line[data-path="B"]').forEach(ln => {
-            ln.style.setProperty('--flow-duration', (1.6 - oscB * 1.15).toFixed(2) + 's');
+        _flowSvg.querySelectorAll('.iso-line').forEach((ln) => {
+            if (ln.classList.contains('is-dead')) return;
+            if (ln.classList.contains('is-on-battery') || ln.classList.contains('is-on-genset')) return;
+            const path = ln.dataset.path;
+            const osc  = path === 'A' ? oscA : oscB;
+            ln.style.setProperty('--flow-duration', (1.6 - osc * 1.15).toFixed(2) + 's');
         });
     }, 600);
     apply();
 }
 
-function _approxPathLoad(telemetry, path, sim) {
-    // During simulation: utility-loss path is offline (load=0), other path nominal (0.55)
-    if (sim && sim.stage === 'utility_loss_a' && path === 'A') return 0.10; // battery
-    if (sim && sim.stage === 'utility_loss_a' && path === 'B') return 0.62;
-    if (sim && sim.stage === 'genset_warming_a' && path === 'A') return 0.18;
-    if (sim && sim.stage === 'genset_online_a'  && path === 'A') return 0.50;
-
-    // From telemetry payload if present (lastTelemetry.payload is the kalman channels dict)
+function _approxPathLoad(telemetry, path) {
     const p = telemetry && telemetry.payload;
     if (p) {
-        // GB200 racks at 142kW × 118 = ~16.7MW total IT load split A/B
-        // Use mean_z of voltage_v_phase channels as a load proxy
         try {
             const keys = Object.keys(p);
             if (keys.length === 0) return 0.50;
-            // Average innovation magnitude as load proxy [0..1]
             let sum = 0, n = 0;
-            keys.forEach(k => {
+            keys.forEach((k) => {
                 const ch = p[k];
                 if (ch && typeof ch.mean_z === 'number') {
                     sum += Math.min(1, Math.abs(ch.mean_z));
@@ -247,93 +271,139 @@ function _approxPathLoad(telemetry, path, sim) {
                 }
             });
             const avg = n > 0 ? sum / n : 0.5;
-            return 0.40 + avg * 0.40; // baseline 0.4, scale to 0.8
+            return 0.40 + avg * 0.40;
         } catch (e) {
             return 0.50;
         }
     }
-    return 0.50; // fallback
+    return 0.50;
 }
 
 // #2 — THERMAL & LOAD PULSING
-// Set --stress (0..1) per block. xfmr/ups breathe based on derived stress.
+// Stress is now driven from grid state:
+//   tripped       -> 0.95 (red)
+//   on battery    -> 0.65 (amber)
+//   on genset     -> 0.55 (amber)
+//   xfmr/ups idle -> 0.25 (modest cyan pulse)
+//   nominal       -> 0.12 (calm)
 function _bindThermalPulsing() {
     const apply = () => {
-        const t = getState('lastTelemetry') || {};
-        const sim = getState('powerSim') || {};
-
-        // Synthetic-but-believable stress per block:
-        //   base 0.10 (subtle calm), bumped by simulation events
-        const blocks = document.querySelectorAll('.sld-iso-block');
-        blocks.forEach(b => {
+        const grid = getState('grid') || {};
+        document.querySelectorAll('.sld-iso-block').forEach((b) => {
             const id = b.dataset.sldNode;
+            const n = grid[id];
             let stress = 0.12;
 
-            // XFMR runs at higher steady stress (load bands)
-            if (id === 'xfmr_a' || id === 'xfmr_b') stress = 0.28;
-            // UPS at moderate stress
-            if (id === 'ups_a'  || id === 'ups_b')  stress = 0.22;
-
-            // Simulation override (Path A only)
-            if (sim.stage === 'utility_loss_a') {
-                if (id === 'util_a' || id === 'xfmr_a') stress = 0.95; // fault
-                if (id === 'ats_a' || id === 'ups_a' || id === 'batt_a') stress = 0.65;
-            } else if (sim.stage === 'genset_warming_a') {
-                if (id === 'genset_a') stress = 0.55;
-                if (id === 'util_a' || id === 'xfmr_a') stress = 0.95;
-                if (id === 'ats_a' || id === 'ups_a' || id === 'batt_a') stress = 0.55;
-            } else if (sim.stage === 'genset_online_a') {
-                if (id === 'genset_a') stress = 0.45;
-                if (id === 'util_a' || id === 'xfmr_a') stress = 0.85;
+            if (n) {
+                if (n.tripped)              stress = 0.95;
+                else if (!n.alive)          stress = 0.85;
+                else if (n.on_battery)      stress = 0.68;
+                else if (n.energized_by === 'genset') stress = 0.55;
+                else if (n.type === 'xfmr') stress = 0.28;
+                else if (n.type === 'ups')  stress = 0.22;
             }
 
-            // Telemetry-driven amber if real channel exceeds threshold
-            // (placeholder: if we had xfmr_a-load metric crossing 80%, bump stress)
-
             b.style.setProperty('--stress', stress.toFixed(2));
-
-            // Color tier classes (drive stress-color)
             b.classList.toggle('stress-amber', stress >= 0.50 && stress < 0.85);
             b.classList.toggle('stress-red',   stress >= 0.85);
         });
     };
-    subscribe('lastTelemetry', apply);
-    subscribe('powerSim', apply);
+    subscribe('grid', apply);
     apply();
 }
 
 // #3 — MECHANICAL ACTUATION
-// ATS arm rotates between utility/genset positions; genset fan spins.
+// ATS arm follows ats_pos directly from grid state.
+// Genset fan classes follow genset.running + ats.transferring.
 function _bindMechanicalActuation() {
     const apply = () => {
-        const sim = getState('powerSim') || {};
+        const grid = getState('grid') || {};
 
-        // ATS-A arm
-        const armA = document.querySelector('.iso-ats[data-sld-node="ats_a"] .iso-ats-arm');
-        const armB = document.querySelector('.iso-ats[data-sld-node="ats_b"] .iso-ats-arm');
-        const gensetA = document.querySelector('.iso-genset[data-sld-node="genset_a"]');
-        const gensetB = document.querySelector('.iso-genset[data-sld-node="genset_b"]');
-
-        if (armA) {
-            const pos =
-                sim.stage === 'utility_loss_a'   ? 'transferring' :
-                sim.stage === 'genset_warming_a' ? 'transferring' :
-                sim.stage === 'genset_online_a'  ? 'genset'       :
+        // ATS arms (ats_a, ats_b)
+        ['ats_a', 'ats_b'].forEach((atsId) => {
+            const arm = document.querySelector(`[data-sld-node="${atsId}"] .iso-ats-arm`);
+            if (!arm) return;
+            const ats = grid[atsId];
+            if (!ats) return;
+            arm.dataset.armPos =
+                ats.transferring        ? 'transferring' :
+                ats.ats_pos === 'secondary' ? 'genset' :
                 'utility';
-            armA.dataset.armPos = pos;
-        }
-        if (armB) armB.dataset.armPos = 'utility';
+        });
 
-        if (gensetA) {
-            gensetA.classList.toggle('is-warming', sim.stage === 'utility_loss_a' || sim.stage === 'genset_warming_a');
-            gensetA.classList.toggle('is-running', sim.stage === 'genset_online_a');
-        }
-        if (gensetB) {
-            gensetB.classList.remove('is-running', 'is-warming');
-        }
+        // Genset fans
+        ['genset_a', 'genset_b'].forEach((gensetId) => {
+            const block = document.querySelector(`[data-sld-node="${gensetId}"]`);
+            if (!block) return;
+            const g = grid[gensetId];
+            if (!g) {
+                block.classList.remove('is-running', 'is-warming');
+                return;
+            }
+            // Warming = associated ATS is mid-transfer; running = genset alive
+            const atsId = gensetId.replace('genset_', 'ats_');
+            const ats = grid[atsId];
+            const warming = ats && ats.transferring;
+            block.classList.toggle('is-warming', !!warming);
+            block.classList.toggle('is-running', !!g.alive && !warming);
+        });
     };
-    subscribe('powerSim', apply);
+    subscribe('grid', apply);
     apply();
+}
+
+// Bind alive / dead / tripped / on_battery classes on iso-blocks per grid state
+function _bindGridStateToCss() {
+    const apply = () => {
+        const grid = getState('grid') || {};
+        document.querySelectorAll('.sld-iso-block').forEach((b) => {
+            const id = b.dataset.sldNode;
+            const n = grid[id];
+            if (!n) return;
+            b.classList.toggle('is-dead',       !n.alive);
+            b.classList.toggle('is-tripped',     n.tripped);
+            b.classList.toggle('is-on-battery',  n.on_battery);
+            b.classList.toggle('is-on-genset',   n.energized_by === 'genset');
+        });
+        // Update battery SOC text on iso layer
+        ['batt_a', 'batt_b'].forEach((bid) => {
+            const n = grid[bid];
+            if (!n) return;
+            document.querySelectorAll(`[data-sld-metric="${bid}-soc"]`).forEach((el) => {
+                el.textContent = `SOC ${n.soc}%`;
+                if (n.soc < 100) el.dataset.frozen = '1';
+                else delete el.dataset.frozen;
+            });
+        });
+    };
+    subscribe('grid', apply);
+    apply();
+}
+
+// Universal fault injection wiring — TRIP pip click + shift-click on block
+function _bindTripInjection() {
+    const stage = _stage;
+    if (!stage) return;
+    stage.addEventListener('click', (e) => {
+        // TRIP pip — direct toggle
+        const pip = e.target.closest('.iso-trip-pip');
+        if (pip) {
+            e.stopPropagation();
+            e.preventDefault();
+            const id = pip.dataset.tripFor;
+            if (id) toggleTrip(id);
+            return;
+        }
+        // Shift-click on a block = trip toggle (drill is plain click, handled elsewhere)
+        if (e.shiftKey) {
+            const block = e.target.closest('.sld-iso-block');
+            if (block) {
+                e.stopPropagation();
+                e.preventDefault();
+                toggleTrip(block.dataset.sldNode);
+            }
+        }
+    });
 }
 
 // #4 — TICKING TELEMETRY (jitter)
@@ -391,14 +461,16 @@ export function initPowerUpsIso() {
     // Hide legacy SVG (kept in DOM as fallback)
     if (oldSvg) oldSvg.classList.add('sld-legacy-hidden');
 
-    // Wire dynamic behaviors
+    // Wire dynamic behaviors + grid-engine bindings
+    _bindGridStateToCss();
     _bindVariableFlow();
     _bindThermalPulsing();
     _bindMechanicalActuation();
+    _bindTripInjection();
     _startTelemetryJitter();
 
     _initialized = true;
-    console.log('[power_ups_iso] 2.5D iso stage mounted, 4 dynamic behaviors active');
+    console.log('[power_ups_iso] 2.5D iso stage mounted, DAG-bound, 5 dynamic behaviors active');
 }
 
 export function destroyPowerUpsIso() {

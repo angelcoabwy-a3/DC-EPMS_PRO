@@ -38,6 +38,7 @@ import { initMissionControlView } from './views/mission_control.js';
 import { initTechAssistView } from './views/tech_assist.js';
 import { initMultiAgentView } from './views/multi_agent.js';
 import { initPowerUpsIso } from './views/power_ups_iso.js';
+import { initPowerGrid } from './core/power_grid.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -58,6 +59,8 @@ initPueWidget();
 initSound();
 initKeyboard();
 initHeatOverlay();
+// Power grid DAG engine must come BEFORE power_sld + iso (subscribers bind early)
+initPowerGrid();
 initPowerSld();
 initMaintenanceView();
 initSiteTopologyView();

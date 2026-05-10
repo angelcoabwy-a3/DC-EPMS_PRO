@@ -46,8 +46,9 @@
  * No external libraries. Pure ES module + DOM + state.js bus.
  * ════════════════════════════════════════════════════════════════ */
 
-import { setState, getState, subscribe } from './state.js';
+import { subscribe } from './state.js';
 import { playWarning, playClick } from './sound.js';
+import { tripNode, restoreAll } from './power_grid.js';
 
 // ─── Static catalogues ────────────────────────────────────────────
 // All SLD nodes by id, mapped to their type (drives drill-down route)
@@ -110,25 +111,10 @@ const LINE_CATALOGUE = {
     'rpp_b2-busway_b':     { path: 'B', kind: 'flow' },
 };
 
-// ─── Simulation state ──────────────────────────────────────────────
-const SIM_STAGES = {
-    NOMINAL: 'nominal',
-    UTILITY_LOSS_A: 'utility_loss_a',
-};
-const UTILITY_LOSS_A_TIMELINE = [
-    // {at: ms, label: status, action: fn}
-    { at:    0, label: 'Utility A lost · UPS A on battery · ATS A transferring',
-                action: '_subStage1_loss' },
-    { at: 4000, label: 'Genset A spinning up (cold start)',
-                action: '_subStage2_genset_warmup' },
-    { at: 8000, label: 'Genset A online · ATS A connected · UPS A on amber bus',
-                action: '_subStage3_genset_online' },
-];
+// Hardcoded simulation timeline removed in v0.10.7 — see core/power_grid.js
+// for the DAG-based propagation engine that replaced it.
 
 let _initialized = false;
-let _socTimer = null;
-let _soc = 100;
-let _stageTimers = [];
 let _btnSim = null;
 let _btnReset = null;
 let _statusEl = null;
@@ -204,12 +190,13 @@ function _onSldClick(e) {
     if (navItem) navItem.click();
 }
 
-// ─── Simulate Utility Loss (Path A) ───────────────────────────────
-function _clearTimers() {
-    _stageTimers.forEach(t => clearTimeout(t));
-    _stageTimers = [];
-    if (_socTimer) { clearInterval(_socTimer); _socTimer = null; }
-}
+// ─── Demo trigger: hand off to the DAG engine ─────────────────────
+//
+// The hardcoded simulation timeline is gone (v0.10.7). Faults are now
+// injected via core/power_grid.js's tripNode() / restoreAll(), which
+// runs propagatePower() and publishes state.grid for the iso layer to
+// re-render. The Sim button is preserved as a one-click demo shortcut
+// that trips util_a (utility-loss A) — the engine handles the cascade.
 
 function _setSimStatus(text, tone) {
     if (!_statusEl) return;
@@ -218,100 +205,49 @@ function _setSimStatus(text, tone) {
     _statusEl.removeAttribute('hidden');
 }
 
-function _subStage1_loss() {
-    _setSimStatus(UTILITY_LOSS_A_TIMELINE[0].label, 'warn');
-    // Publish stage so iso layer (power_ups_iso.js) can react with ATS arm + genset fan
-    setState('powerSim', { active: true, scenario: SIM_STAGES.UTILITY_LOSS_A, stage: 'utility_loss_a', startTs: Date.now() });
-    // Path A upstream goes cold
-    _applyNodeState('util_a', 'fault');
-    _applyNodeState('xfmr_a', 'cold');
-    _applyLineState('util_a-xfmr_a', 'fault');
-    _applyLineState('xfmr_a-ats_a', 'cold');
-    // ATS in transit
-    _applyNodeState('ats_a', 'transferring');
-    // UPS on battery
-    _applyNodeState('ups_a', 'battery');
-    _applyLineState('ats_a-ups_a', 'cold');           // input from ATS gone for now
-    _applyLineState('batt_a-ups_a', 'battery');       // battery line lights up flowing
-    // Re-add flowing class to the battery line so it animates
-    const battLine = document.querySelector(`.sld-line[data-sld-line="batt_a-ups_a"]`);
-    if (battLine) battLine.classList.add('sld-line-flowing');
-    // Downstream still gets power from UPS battery, but recolour amber
-    ['ups_a-rpp_a1', 'rpp_a1-rpp_a2', 'rpp_a2-busway_a'].forEach(l => _applyLineState(l, 'battery'));
-    ['rpp_a1', 'rpp_a2', 'busway_a'].forEach(n => _applyNodeState(n, 'battery'));
-    // SOC ticker
-    _soc = 100;
-    setState('powerSim.soc_a', _soc);
-    _socTimer = setInterval(() => {
-        _soc = Math.max(0, _soc - 1);
-        setState('powerSim.soc_a', _soc);
-        _renderSocOnBatteryNode();
-    }, 1000);
+function _runSimulation() {
+    // Trip util_a — the DAG engine cascades:
+    //   util_a -> xfmr_a (dies) -> ats_a (2s transfer, genset_a starts)
+    //                                -> ups_a goes on battery during gap
+    //                                -> ats_a back online via genset
+    tripNode('util_a');
+    _setSimStatus('TRIP injected: util_a · cascading through DAG', 'warn');
+    if (_btnReset) _btnReset.removeAttribute('hidden');
+    if (_btnSim)   _btnSim.disabled = true;
     playWarning();
 }
 
-function _subStage2_genset_warmup() {
-    _setSimStatus(UTILITY_LOSS_A_TIMELINE[1].label, 'warn');
-    setState('powerSim', { active: true, scenario: SIM_STAGES.UTILITY_LOSS_A, stage: 'genset_warming_a', startTs: Date.now() });
-    _applyNodeState('genset_a', 'transferring');     // amber pulse
-}
-
-function _subStage3_genset_online() {
-    _setSimStatus(UTILITY_LOSS_A_TIMELINE[2].label, 'warn');
-    setState('powerSim', { active: true, scenario: SIM_STAGES.UTILITY_LOSS_A, stage: 'genset_online_a', startTs: Date.now() });
-    // Genset feeding ATS
-    _applyNodeState('genset_a', 'battery');           // running on amber now
-    _applyLineState('genset_a-ats_a', 'battery');
-    // ATS on genset
-    _applyNodeState('ats_a', 'battery');
-    _applyLineState('ats_a-ups_a', 'battery');
-    // UPS on amber bus (no longer pure battery)
-    _applyNodeState('ups_a', 'battery');
-    // Stop SOC decay (UPS is now charging back)
-    if (_socTimer) { clearInterval(_socTimer); _socTimer = null; }
-}
-
-function _renderSocOnBatteryNode() {
-    // Best-effort: try to inline the SOC into both legacy SVG and iso-block
-    document.querySelectorAll('[data-sld-metric="batt_a-soc"]').forEach((el) => {
-        el.textContent = `${_soc}%`;
-        el.dataset.frozen = '1';   // tell iso jitter loop to leave SOC alone
-    });
-}
-
-function _runSimulation(scenario) {
-    _clearTimers();
-    setState('powerSim', { active: true, scenario, startTs: Date.now() });
-    if (scenario !== SIM_STAGES.UTILITY_LOSS_A) return;
-    const actions = {
-        '_subStage1_loss': _subStage1_loss,
-        '_subStage2_genset_warmup': _subStage2_genset_warmup,
-        '_subStage3_genset_online': _subStage3_genset_online,
-    };
-    for (const stage of UTILITY_LOSS_A_TIMELINE) {
-        const t = setTimeout(actions[stage.action], stage.at);
-        _stageTimers.push(t);
-    }
-    if (_btnReset) _btnReset.removeAttribute('hidden');
-    if (_btnSim) _btnSim.disabled = true;
-}
-
 function _resetSimulation() {
-    _clearTimers();
-    setState('powerSim', { active: false, scenario: SIM_STAGES.NOMINAL, stage: 'nominal', startTs: Date.now() });
-    _soc = 100;
-    setState('powerSim.soc_a', _soc);
-    // Unfreeze SOC for jitter loop now that sim is reset
-    document.querySelectorAll('[data-sld-metric="batt_a-soc"]').forEach((el) => {
-        delete el.dataset.frozen;
-        el.textContent = 'SOC 100%';
-    });
-    _applyNominalState();
+    restoreAll();
     _setSimStatus('Nominal · 2N redundancy intact', 'ok');
     setTimeout(() => { _statusEl?.setAttribute('hidden', ''); }, 1800);
     if (_btnReset) _btnReset.setAttribute('hidden', '');
-    if (_btnSim) _btnSim.disabled = false;
+    if (_btnSim)   _btnSim.disabled = false;
     playClick();
+}
+
+// Status pill auto-update from grid state — counts tripped nodes
+function _wireStatusPill() {
+    subscribe('grid', (grid) => {
+        if (!grid || !_statusEl) return;
+        const tripped = Object.values(grid).filter((n) => n.tripped).map((n) => n.id);
+        const onBattery = Object.values(grid).filter((n) => n.on_battery).map((n) => n.id);
+        const transferring = Object.values(grid).filter((n) => n.transferring).map((n) => n.id);
+
+        if (tripped.length === 0 && onBattery.length === 0 && transferring.length === 0) {
+            // fully nominal — only hide if button is in nominal state
+            if (_btnReset && _btnReset.hasAttribute('hidden')) {
+                // already nominal; nothing to do
+            }
+            return;
+        }
+        const parts = [];
+        if (tripped.length)      parts.push(`${tripped.length} TRIPPED [${tripped.join(', ')}]`);
+        if (transferring.length) parts.push(`${transferring.length} TRANSFERRING`);
+        if (onBattery.length)    parts.push(`${onBattery.length} ON BATTERY`);
+        _setSimStatus(parts.join(' · '), 'warn');
+        if (_btnReset) _btnReset.removeAttribute('hidden');
+    });
 }
 
 // ─── Wiring ──────────────────────────────────────────────────────
@@ -320,13 +256,16 @@ function _wireEvents() {
     _btnReset = document.getElementById('sld-sim-reset');
     _statusEl = document.getElementById('sld-sim-status');
 
-    _btnSim?.addEventListener('click', () => _runSimulation(SIM_STAGES.UTILITY_LOSS_A));
+    _btnSim?.addEventListener('click', _runSimulation);
     _btnReset?.addEventListener('click', _resetSimulation);
 
     // Make the entire SLD canvas a click delegator for nodes (covers both
     // legacy SVG and the iso-block layer rendered by power_ups_iso.js).
     const canvas = document.querySelector('#view-power .pid-canvas');
     canvas?.addEventListener('click', _onSldClick);
+
+    // Subscribe the status pill to grid state changes
+    _wireStatusPill();
 }
 
 // ─── Public init ────────────────────────────────────────────────
@@ -337,21 +276,9 @@ export function initPowerSld() {
         return;
     }
     _wireEvents();
+    // Apply nominal palette to legacy SVG (kept hidden when iso is mounted)
     _applyNominalState();
-    setState('powerSim', { active: false, scenario: SIM_STAGES.NOMINAL });
-
-    // Subscribe to powerSim state — future Hermes hook
-    try {
-        subscribe('powerSim', (s) => {
-            if (!s) return;
-            // External force-reset
-            if (s.scenario === SIM_STAGES.NOMINAL && s.active === false &&
-                getState('powerSim.soc_a') !== _soc) {
-                _resetSimulation();
-            }
-        });
-    } catch {}
 
     _initialized = true;
-    console.log('[power_sld] enhancer ready (palette + flow + click + sim)');
+    console.log('[power_sld] enhancer ready (palette + flow + click + DAG-bound sim)');
 }

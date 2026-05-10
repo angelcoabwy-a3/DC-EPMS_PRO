@@ -6782,3 +6782,137 @@ body {
         transform: rotateX(55deg) rotateZ(-30deg) scale(0.62);
     }
 }
+
+/* ════════════════════════════════════════════════════════════════
+ * DAG ENGINE BINDINGS (v0.10.7) — universal fault injection + cascade
+ *
+ *   Node states (mutually exclusive priority):
+ *     .is-tripped     → user-injected fault (red dashed border on top of dead body)
+ *     .is-dead        → cascade-killed (grey body, no breathing, no glow)
+ *     .is-on-battery  → UPS holdup (amber palette + faster pulse)
+ *     .is-on-genset   → ATS on secondary input (amber-violet hybrid)
+ *
+ *   Line states (driven by source node's grid state):
+ *     .is-dead        → source dead → grey, animation suspended
+ *     .is-on-battery  → source on battery → amber stroke
+ *     .is-on-genset   → source from genset → amber stroke (slightly faster)
+ * ════════════════════════════════════════════════════════════════ */
+
+/* TRIP pip — universal fault-injection button per block */
+.iso-trip-pip {
+    position: absolute;
+    bottom: 2px; right: 2px;
+    width: 28px; height: 14px;
+    padding: 0;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 7px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    background: rgba(244, 67, 54, 0.78);
+    color: #fff;
+    border: 1px solid rgba(244, 67, 54, 0.95);
+    border-radius: 2px;
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(244, 67, 54, 0.5);
+    transform: rotateZ(30deg) rotateX(-55deg);
+    transform-origin: center;
+    transition: background 150ms, box-shadow 150ms, transform 150ms;
+    z-index: 5;
+}
+.iso-trip-pip:hover {
+    background: rgba(244, 67, 54, 1);
+    box-shadow: 0 0 12px rgba(244, 67, 54, 0.95);
+    transform: rotateZ(30deg) rotateX(-55deg) scale(1.2);
+}
+.iso-trip-pip:active {
+    background: rgba(180, 32, 22, 1);
+}
+
+/* Tripped block — red dashed body + glow even when dead */
+.sld-iso-block.is-tripped {
+    background: linear-gradient(135deg, rgba(244, 67, 54, 0.4), rgba(180, 32, 22, 0.2)) !important;
+    border-color: rgba(244, 67, 54, 1) !important;
+    border-style: dashed !important;
+    --shadow-color: rgba(244, 67, 54, 0.7);
+    --glow-color:   rgba(244, 67, 54, 0.85);
+    animation: iso-trip-blink 0.8s ease-in-out infinite;
+}
+.sld-iso-block.is-tripped::before { background: linear-gradient(90deg, rgba(244, 67, 54, 0.55), rgba(244, 67, 54, 0.15)); border-right-color: rgba(244, 67, 54, 0.8); }
+.sld-iso-block.is-tripped::after  { background: linear-gradient(180deg, rgba(244, 67, 54, 0.40), rgba(244, 67, 54, 0.15)); border-bottom-color: rgba(244, 67, 54, 0.8); }
+.sld-iso-block.is-tripped .iso-trip-pip { background: rgba(244, 67, 54, 1); animation: iso-trip-pip-blink 0.8s ease-in-out infinite; }
+.sld-iso-block.is-tripped .iso-trip-pip::after { content: ''; }
+
+@keyframes iso-trip-blink {
+    0%, 100% { filter: brightness(1.0); }
+    50%      { filter: brightness(1.6); }
+}
+@keyframes iso-trip-pip-blink {
+    0%, 100% { box-shadow: 0 0 6px rgba(244, 67, 54, 0.5); }
+    50%      { box-shadow: 0 0 16px rgba(244, 67, 54, 1.0); }
+}
+
+/* Dead (cascaded) block — grey body, no glow, no breathing */
+.sld-iso-block.is-dead:not(.is-tripped) {
+    background: linear-gradient(135deg, rgba(60, 70, 78, 0.5), rgba(35, 41, 47, 0.2)) !important;
+    border-color: rgba(120, 130, 140, 0.5) !important;
+    --shadow-color: rgba(60, 70, 78, 0.45);
+    --glow-color:   rgba(60, 70, 78, 0.0);
+    animation: none !important;
+    opacity: 0.55;
+}
+.sld-iso-block.is-dead:not(.is-tripped)::before {
+    background: linear-gradient(90deg, rgba(60, 70, 78, 0.55), rgba(35, 41, 47, 0.20));
+    border-right-color: rgba(120, 130, 140, 0.45);
+}
+.sld-iso-block.is-dead:not(.is-tripped)::after {
+    background: linear-gradient(180deg, rgba(60, 70, 78, 0.40), rgba(35, 41, 47, 0.15));
+    border-bottom-color: rgba(120, 130, 140, 0.45);
+}
+.sld-iso-block.is-dead .iso-block-title  { color: #6b7280; }
+.sld-iso-block.is-dead .iso-metric       { color: #6b7280; }
+
+/* On-battery block — amber palette regardless of path */
+.sld-iso-block.is-on-battery {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.45) 0%, rgba(245, 158, 11, 0.18) 60%, rgba(245, 158, 11, 0.30) 100%) !important;
+    border-color: rgba(245, 158, 11, 0.9) !important;
+    --shadow-color: rgba(245, 158, 11, 0.6);
+    --glow-color:   rgba(245, 158, 11, calc(0.40 + var(--stress, 0.5) * 0.5));
+}
+.sld-iso-block.is-on-battery::before { background: linear-gradient(90deg, rgba(245, 158, 11, 0.55), rgba(245, 158, 11, 0.20)); border-right-color: rgba(245, 158, 11, 0.7); }
+.sld-iso-block.is-on-battery::after  { background: linear-gradient(180deg, rgba(245, 158, 11, 0.40), rgba(245, 158, 11, 0.15)); border-bottom-color: rgba(245, 158, 11, 0.7); }
+.sld-iso-block.is-on-battery .iso-block-title { color: #fcd34d; }
+
+/* ─── Lines: source-driven state */
+
+.sld-iso-flow .iso-line.is-dead {
+    stroke: #475569 !important;
+    color: #475569;
+    opacity: 0.4;
+    stroke-dasharray: 2 6;
+    animation: none !important;
+}
+.sld-iso-flow .iso-line.is-on-battery {
+    stroke: #fcd34d !important;
+    color: #f59e0b;
+    filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.7));
+}
+.sld-iso-flow .iso-line.is-on-genset {
+    stroke: #fbbf24 !important;
+    color: #f59e0b;
+    filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.8));
+}
+
+/* ─── Action-bar hint */
+.sld-sim-hint {
+    font-size: 10.5px;
+    color: #6b7280;
+    margin-left: 8px;
+    font-style: italic;
+    align-self: center;
+}
+
+/* Reduced-motion guards extended */
+@media (prefers-reduced-motion: reduce) {
+    .sld-iso-block.is-tripped { animation: none; }
+    .sld-iso-block.is-tripped .iso-trip-pip { animation: none; }
+}

@@ -1126,11 +1126,12 @@
                         <span class="pid-legend-item"><span class="sld-leg-batt"></span> On battery (amber)</span>
                         <span class="pid-legend-item"><span class="sld-leg-fault"></span> Fault / cold</span>
                     </span>
-                    <!-- Simulation controls (Lead Engineer Mode demo killer) -->
+                    <!-- DAG-driven fault injection (v0.10.7) -->
                     <span class="sld-sim-controls">
-                        <button id="sld-sim-utility-loss-a" class="btn btn-secondary btn-sm sld-sim-btn" type="button" title="Inject utility-A loss event into state.js — observe ATS transfer + UPS on battery">Simulate Utility Loss (Path A)</button>
-                        <button id="sld-sim-reset" class="btn btn-secondary btn-sm sld-sim-btn-reset" type="button" hidden title="Restore nominal state">Reset</button>
+                        <button id="sld-sim-utility-loss-a" class="btn btn-secondary btn-sm sld-sim-btn" type="button" title="Demo shortcut: trip util_a, watch the cascade through the DAG engine. Click any node TRIP pip or shift-click to fail any other component.">⚡ Demo: Trip Utility A</button>
+                        <button id="sld-sim-reset" class="btn btn-secondary btn-sm sld-sim-btn-reset" type="button" hidden title="Restore all tripped breakers + reset battery/genset/ATS state to nominal">Restore All</button>
                         <span id="sld-sim-status" class="sld-sim-status" hidden></span>
+                        <span class="sld-sim-hint">shift-click any node to trip</span>
                     </span>
                 </div>
 
