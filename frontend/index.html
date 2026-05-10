@@ -144,6 +144,7 @@
                 <div class="nav-item" data-route="tech-assist"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="life-buoy"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/></svg></span>Tech Assist</div>
                 <div class="nav-item" data-route="multi-agent"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="users"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Multi-Agent</div>
                 <div class="nav-item" data-route="rack-heatmap"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="grid"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg></span>Rack Heatmap</div>
+                <div class="nav-item" data-route="mission-control"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="box"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></span>Mission Control <sup class="nav-item-tag">spike</sup></div>
             </div>
 
             <div class="nav-section">
@@ -2243,6 +2244,48 @@
                             <div id="rack-heatmap-detail-wo-list" class="rack-heatmap-detail-wo-list">&mdash;</div>
                         </div>
                     </aside>
+                </div>
+            </div>
+
+            <!-- ══════════ View: Mission Control (B1 gray-box spike) ══════════
+                 Tier B / B1 design-spike. Renders 4 primitive BoxGeometry
+                 buildings (A, B, D, Yard) under a fixed isometric
+                 OrthographicCamera. On-canvas FPS HUD + Raycaster click
+                 dispatch. NO textures, NO custom shaders, NO live data
+                 binding. Acceptance criteria documented in
+                 docs/design/B1-mission-control-brief.md (Phase 2 spike).
+                 Driven by frontend/assets/js/views/mission_control.js. -->
+            <div class="view" id="view-mission-control" hidden>
+                <div class="view-hdr">
+                    <h2>Mission Control <span class="mc-tag">gray-box spike · B1 Phase 2</span></h2>
+                    <div class="view-sub">
+                        Three.js r166 · OrthographicCamera fixed iso (30&deg;/30&deg;) ·
+                        4 BoxGeometry primitives (A, B, D, Yard) · Raycaster click &rarr; console.log ·
+                        FPS HUD bottom-right. Validates the 4 acceptance criteria from the brief.
+                    </div>
+                </div>
+                <div class="mc-canvas-wrap" id="mc-canvas-wrap">
+                    <canvas id="mc-canvas" class="mc-canvas"></canvas>
+                    <div class="mc-fps-hud" id="mc-fps-hud">
+                        <span class="mc-fps-lbl">FPS</span>
+                        <span class="mc-fps-val" id="mc-fps-val">&mdash;</span>
+                        <span class="mc-fps-sep">|</span>
+                        <span class="mc-fps-lbl">draw</span>
+                        <span class="mc-fps-val" id="mc-draw-val">&mdash;</span>
+                        <span class="mc-fps-sep">|</span>
+                        <span class="mc-fps-lbl">tris</span>
+                        <span class="mc-fps-val" id="mc-tris-val">&mdash;</span>
+                    </div>
+                    <div class="mc-status" id="mc-status">initializing&hellip;</div>
+                </div>
+                <div class="mc-acceptance" id="mc-acceptance">
+                    <div class="mc-acc-title">Acceptance criteria (live):</div>
+                    <ul class="mc-acc-list">
+                        <li id="mc-acc-load">[1] three.js bundle loads + canvas mounts</li>
+                        <li id="mc-acc-fps">[2] FPS &ge; 58 sustained at idle</li>
+                        <li id="mc-acc-state">[3] state.js bus integrates (subscribe stub)</li>
+                        <li id="mc-acc-click">[4] Raycaster click prints building id to console</li>
+                    </ul>
                 </div>
             </div>
 </section>

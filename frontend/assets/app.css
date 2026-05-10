@@ -127,6 +127,128 @@ body {
 .app-header .status-pill.up .dot  { background: var(--ok); }
 .app-header .status-pill.down .dot { background: var(--crit); }
 
+/* ── B1 Phase 2 — Gray-box three.js spike ────────────────────────
+   Mission Control SPIKE. Validates 4 acceptance criteria from
+   docs/design/B1-mission-control-brief.md before committing to
+   production B1. Anthracite+cyan, no kitsch. */
+
+#view-mission-control .view-hdr h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 4px 0;
+}
+.mc-tag {
+    display: inline-block;
+    margin-left: 10px;
+    background: rgba(245, 158, 11, 0.10);
+    border: 1px solid rgba(245, 158, 11, 0.45);
+    color: var(--warn, #f59e0b);
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding: 2px 7px;
+    border-radius: 2px;
+    vertical-align: middle;
+}
+.nav-item-tag {
+    font-size: 8.5px;
+    color: var(--warn, #f59e0b);
+    margin-left: 4px;
+    letter-spacing: 0.5px;
+    vertical-align: super;
+    font-weight: 700;
+}
+.mc-canvas-wrap {
+    position: relative;
+    background: #0B0D10;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    height: 540px;
+    overflow: hidden;
+    margin: 12px 0;
+}
+.mc-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: default;
+}
+.mc-fps-hud {
+    position: absolute;
+    bottom: 10px;
+    right: 12px;
+    background: rgba(11, 13, 16, 0.86);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent, #00B8D4);
+    color: var(--text);
+    padding: 5px 10px;
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    pointer-events: none;
+}
+.mc-fps-lbl { color: var(--text-dim); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.5px; }
+.mc-fps-val { color: var(--accent, #00B8D4); font-weight: 700; font-variant-numeric: tabular-nums; }
+.mc-fps-sep { color: var(--text-dim); margin: 0 2px; }
+.mc-status {
+    position: absolute;
+    top: 10px;
+    left: 12px;
+    background: rgba(11, 13, 16, 0.86);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 4px 10px;
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    pointer-events: none;
+}
+.mc-status[data-tone="ok"]  { color: var(--good, #10b981); border-color: rgba(16, 185, 129, 0.45); }
+.mc-status[data-tone="err"] { color: var(--crit, #ef4444); border-color: rgba(239, 68, 68, 0.45); }
+
+.mc-acceptance {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    font-size: 11px;
+}
+.mc-acc-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+.mc-acc-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 4px 14px;
+    font-family: var(--font-mono);
+    color: var(--text-dim);
+}
+.mc-acc-list li {
+    padding: 3px 6px;
+    border-left: 2px solid var(--border);
+    transition: color 0.2s ease, border-left-color 0.2s ease;
+}
+.mc-acc-list li.mc-acc-pass {
+    color: var(--good, #10b981);
+    border-left-color: var(--good, #10b981);
+}
+.mc-acc-list li.mc-acc-pass::before { content: "✓ "; color: var(--good, #10b981); }
+.mc-acc-list li:not(.mc-acc-pass)::before { content: "○ "; }
+
 /* ── Tier B / B2: Rack Anomaly Heatmap ───────────────────────────
    50 GB200 NVL72 racks rendered as a Path A / Path B grid. Each
    cell color-codes Tj band; cells with z >= 3 blink at a rate
