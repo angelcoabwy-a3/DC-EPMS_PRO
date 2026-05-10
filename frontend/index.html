@@ -1710,6 +1710,53 @@
                     </section>
 
                 </div>
+
+                <!-- ══════════ Voice Closure modal (Sprint 7.1c) ══════════
+                     Per-WO closure dictation. Opened from any row whose
+                     status is approved/scheduled/in_progress via the
+                     "Close" button. Backend: POST /api/tech-assist/closure/
+                     {wo_id}/dictate. Per ADR-006: follow-up WOs auto-created
+                     from LLM recommendations land in pending_approval. -->
+                <div class="m-modal-overlay" id="m-closure-overlay" hidden>
+                    <div class="m-modal" id="m-closure-modal" role="dialog" aria-labelledby="m-closure-title">
+                        <div class="m-modal-header">
+                            <div class="m-modal-title" id="m-closure-title">Close work order</div>
+                            <button class="m-modal-close-x" id="m-closure-cancel" type="button" aria-label="Close">×</button>
+                        </div>
+
+                        <div class="m-modal-body" id="m-closure-form-body">
+                            <div class="m-modal-context" id="m-closure-context">—</div>
+
+                            <label class="m-modal-field-label">CET id (signs the closure)</label>
+                            <input id="m-closure-cet" class="m-modal-input" type="text" maxlength="120" placeholder="wilmer">
+
+                            <label class="m-modal-field-label">Closure notes (free-form, min 10 chars)</label>
+                            <textarea id="m-closure-notes" class="m-modal-textarea" rows="6"
+                                placeholder="Example:&#10;Replaced rotor bearing on chiller_1 secondary pump P-2A. Old bearing showed 0.012 inch radial play, well above the 0.003 inch service limit. Installed SKF-6308-2RS, torqued shaft coupling to 24 Nm. Vibration smooth at 1750 RPM. Recommend belt inspection within 90 days &#x2014; visible glazing on the inner surface."></textarea>
+
+                            <div class="m-modal-checks">
+                                <label class="m-modal-check">
+                                    <input type="checkbox" id="m-closure-complete">
+                                    <span>Mark WO as <strong>completed</strong> (transitions status)</span>
+                                </label>
+                                <label class="m-modal-check">
+                                    <input type="checkbox" id="m-closure-followups" checked>
+                                    <span>Auto-create follow-up WOs in <strong>pending_approval</strong></span>
+                                </label>
+                            </div>
+
+                            <div class="m-modal-actions">
+                                <button class="btn btn-secondary" id="m-closure-cancel-2" type="button">Cancel</button>
+                                <button class="btn btn-primary" id="m-closure-submit" type="button">Submit closure</button>
+                            </div>
+                        </div>
+
+                        <div class="m-modal-result" id="m-closure-result" hidden>
+                            <!-- populated by maintenance.js after a successful submit -->
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
             <!-- ══════════ View: Tech Assist (Sprint 7.1a–d) ══════════

@@ -139,6 +139,203 @@ async function _rejectWorkOrder(woId, woContext) {
     return true;
 }
 
+// ─── Sprint 7.1c: voice closure modal ─────────────────────────────
+let _activeClosureWoId = null;
+
+function _openClosureModal(woId, woContext) {
+    _activeClosureWoId = woId;
+    const overlay = document.getElementById('m-closure-overlay');
+    const ctxEl   = document.getElementById('m-closure-context');
+    const cetEl   = document.getElementById('m-closure-cet');
+    const notesEl = document.getElementById('m-closure-notes');
+    const completeEl  = document.getElementById('m-closure-complete');
+    const followupsEl = document.getElementById('m-closure-followups');
+    const formBody    = document.getElementById('m-closure-form-body');
+    const resultBox   = document.getElementById('m-closure-result');
+    if (!overlay || !ctxEl || !cetEl || !notesEl) return;
+
+    // Reset state
+    if (resultBox) {
+        resultBox.setAttribute('hidden', '');
+        resultBox.innerHTML = '';
+    }
+    if (formBody) formBody.removeAttribute('hidden');
+
+    ctxEl.innerHTML = `<strong>${_escape(woId)}</strong> &middot; asset: <strong>${_escape(woContext.asset_id || '?')}</strong> &middot; priority: ${_escape(woContext.priority || '?')} &middot; LOTO: ${woContext.requires_loto ? 'YES' : 'no'}`;
+
+    // Default CET id from sessionStorage (same convention as approve flow)
+    const stored = sessionStorage.getItem('cmms_cet_id') || '';
+    cetEl.value = stored;
+    notesEl.value = '';
+    completeEl.checked = false;
+    followupsEl.checked = true;
+
+    overlay.removeAttribute('hidden');
+    setTimeout(() => notesEl.focus(), 50);
+}
+
+function _closeClosureModal() {
+    const overlay = document.getElementById('m-closure-overlay');
+    if (overlay) overlay.setAttribute('hidden', '');
+    _activeClosureWoId = null;
+}
+
+async function _submitClosure() {
+    const cetEl   = document.getElementById('m-closure-cet');
+    const notesEl = document.getElementById('m-closure-notes');
+    const completeEl  = document.getElementById('m-closure-complete');
+    const followupsEl = document.getElementById('m-closure-followups');
+    const submitBtn   = document.getElementById('m-closure-submit');
+    const formBody    = document.getElementById('m-closure-form-body');
+    const resultBox   = document.getElementById('m-closure-result');
+    if (!_activeClosureWoId || !cetEl || !notesEl) return;
+
+    const cetId = (cetEl.value || '').trim();
+    const notes = (notesEl.value || '').trim();
+    if (!cetId) { alert('CET id is required.'); cetEl.focus(); return; }
+    if (notes.length < 10) { alert('Closure notes must be at least 10 characters.'); notesEl.focus(); return; }
+
+    sessionStorage.setItem('cmms_cet_id', cetId);
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'normalizing…';
+
+    // Show pending status above form
+    if (resultBox) {
+        resultBox.removeAttribute('hidden');
+        resultBox.innerHTML = `<div class="m-closure-status m-closure-status-pending">Sending notes to gemma for normalization (typically 2&ndash;6 seconds)&hellip;</div>`;
+    }
+
+    try {
+        const r = await fetch(
+            `${API_BASE}/api/tech-assist/closure/${encodeURIComponent(_activeClosureWoId)}/dictate`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    cet_id: cetId,
+                    notes_text: notes,
+                    complete_wo: completeEl.checked,
+                    auto_create_follow_ups: followupsEl.checked,
+                }),
+            },
+        );
+        if (!r.ok) {
+            const errText = await r.text().catch(() => `${r.status}`);
+            if (resultBox) {
+                resultBox.innerHTML = `<div class="m-closure-status m-closure-status-err">HTTP ${r.status}: ${_escape(errText.slice(0, 400))}</div>`;
+            }
+            return;
+        }
+        const data = await r.json();
+        // Hide form, show result
+        if (formBody) formBody.setAttribute('hidden', '');
+        _renderClosureResult(data);
+        // Refresh backlog so the row state updates (completed status,
+        // new follow-up WOs in pending_approval).
+        await _refresh();
+    } catch (err) {
+        if (resultBox) {
+            resultBox.innerHTML = `<div class="m-closure-status m-closure-status-err">Network error: ${_escape(err.message)}</div>`;
+        }
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit closure';
+    }
+}
+
+function _renderClosureResult(data) {
+    const box = document.getElementById('m-closure-result');
+    if (!box) return;
+    box.removeAttribute('hidden');
+
+    // Backend response shape (verified against POST /closure/{id}/dictate):
+    //   { work_order_id, status_after, normalized: {...}, raw_notes_chars,
+    //     follow_ups_created: [...], follow_ups_skipped: [...], elapsed_ms }
+    const norm = data.normalized || {};
+    const completed = data.status_after === 'completed';
+    const created   = data.follow_ups_created || [];
+    const status    = norm._normalization_status || 'success';
+
+    const meta = [
+        `<span class="m-closure-meta">normalization: <strong>${_escape(status)}</strong></span>`,
+        `<span class="m-closure-meta">status: <strong>${_escape(data.status_after || '?')}</strong></span>`,
+        norm.time_spent_min != null ? `<span class="m-closure-meta">time: <strong>${_escape(String(norm.time_spent_min))} min</strong></span>` : '',
+        Number.isFinite(data.elapsed_ms) ? `<span class="m-closure-meta">LLM: <strong>${data.elapsed_ms} ms</strong></span>` : '',
+    ].filter(Boolean).join('');
+
+    const partsHTML = (norm.parts_used || []).length
+        ? `<div class="m-closure-section-title">Parts used</div>
+           <div class="m-closure-chips">${(norm.parts_used || []).map(p => `<span class="m-closure-chip">${_escape(p)}</span>`).join('')}</div>`
+        : '';
+
+    const safetyHTML = (norm.safety_events || []).length
+        ? `<div class="m-closure-section-title">Safety events</div>
+           <div class="m-closure-chips">${(norm.safety_events || []).map(p => `<span class="m-closure-chip" style="border-color:rgba(239,68,68,0.5);color:var(--crit);">${_escape(p)}</span>`).join('')}</div>`
+        : '';
+
+    // Backend returns follow_ups_created as a list of WO ID strings
+    // (not full objects). We pair each id with the matching recommendation
+    // from norm.follow_ups_recommended (same order, by index) so the
+    // operator sees what each new WO is about.
+    const skipped = data.follow_ups_skipped || [];
+    const recs    = norm.follow_ups_recommended || [];
+    let followupsHTML = '';
+    if (created.length) {
+        followupsHTML = `<div class="m-closure-section-title">Follow-up WOs created (pending_approval)</div>` +
+            created.map((wid, idx) => {
+                const rec = recs[idx] || {};
+                return `
+                <div class="m-closure-followup">
+                  <div><strong>${_escape(wid)}</strong> &middot; ${_escape(rec.asset_id || '?')} &middot; class: ${_escape(rec.suggested_work_class || '?')}</div>
+                  <div class="m-closure-followup-meta">${_escape(rec.summary || '(see Maintenance backlog for details)')}</div>
+                </div>`;
+            }).join('');
+    } else if (skipped.length) {
+        followupsHTML = `<div class="m-closure-section-title">Follow-ups skipped</div>` +
+            skipped.map(fu => `
+                <div class="m-closure-followup">
+                  <div>${_escape(typeof fu === 'string' ? fu : (fu.summary || JSON.stringify(fu)))}</div>
+                </div>`).join('');
+    } else if (recs.length) {
+        followupsHTML = `<div class="m-closure-section-title">Follow-ups recommended (not created &mdash; checkbox unchecked)</div>` +
+            recs.map(fu => `
+                <div class="m-closure-followup">
+                  <div>${_escape(fu.summary || '?')}</div>
+                  <div class="m-closure-followup-meta">asset: ${_escape(fu.asset_id || '?')} &middot; severity: ${_escape(fu.severity || '?')} &middot; class: ${_escape(fu.suggested_work_class || '?')}</div>
+                </div>`).join('');
+    }
+
+    box.innerHTML = `
+        <div class="m-closure-status m-closure-status-ok">&#x2714; closure normalized</div>
+        <div class="m-closure-meta-row">${meta}</div>
+        <div class="m-closure-section-title">Primary action</div>
+        <div class="m-closure-primary">${_escape(norm.primary_action || '&mdash;')}</div>
+        <div class="m-closure-section-title">Professional report</div>
+        <div class="m-closure-report">${_escape(norm.professional_report || '&mdash;')}</div>
+        ${partsHTML}
+        ${safetyHTML}
+        ${followupsHTML}
+        <div class="m-modal-actions">
+            <button class="btn btn-primary" id="m-closure-done" type="button">Done</button>
+        </div>
+    `;
+    document.getElementById('m-closure-done')?.addEventListener('click', _closeClosureModal);
+}
+
+function _wireClosureModal() {
+    document.getElementById('m-closure-cancel')?.addEventListener('click', _closeClosureModal);
+    document.getElementById('m-closure-cancel-2')?.addEventListener('click', _closeClosureModal);
+    document.getElementById('m-closure-submit')?.addEventListener('click', _submitClosure);
+    document.getElementById('m-closure-overlay')?.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) _closeClosureModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && _activeClosureWoId) _closeClosureModal();
+    });
+}
+
+
 async function _onActionClick(e) {
     const btn = e.target.closest('[data-cmms-action]');
     if (!btn || btn.disabled) return;
@@ -161,6 +358,12 @@ async function _onActionClick(e) {
         procedure_class: tr?.dataset.procedureClass || '',
         requires_loto: tr?.dataset.requiresLoto === 'true',
     };
+
+    // Sprint 7.1c: voice closure opens a modal, not a confirm dialog.
+    if (action === 'close') {
+        _openClosureModal(woId, ctx);
+        return;
+    }
 
     btn.disabled = true;
     btn.textContent = action === 'approve' ? '...' : '...';
@@ -349,14 +552,24 @@ function _renderWOBacklog(workOrders) {
         const requiresLoto = w.requires_loto ? 'true' : 'false';
 
         // Sprint 6.6: inline approve/reject ONLY when pending_approval.
-        const actionsCell = w.status === 'pending_approval'
-            ? `
+        // Sprint 7.1c: voice closure button on actionable states.
+        let actionsCell;
+        if (w.status === 'pending_approval') {
+            actionsCell = `
                 <td class="m-wo-actions">
                     <button class="m-action-btn m-action-approve" data-cmms-action="approve" data-wo-id="${wid}" title="Approve and sign as CET">✓</button>
                     <button class="m-action-btn m-action-reject"  data-cmms-action="reject"  data-wo-id="${wid}" title="Reject with reason">✗</button>
                 </td>
-            `
-            : `<td class="m-wo-actions m-wo-actions-disabled">—</td>`;
+            `;
+        } else if (['approved', 'scheduled', 'in_progress'].includes(w.status)) {
+            actionsCell = `
+                <td class="m-wo-actions">
+                    <button class="m-action-btn m-action-close" data-cmms-action="close" data-wo-id="${wid}" title="Dictate closure notes (LLM normalizes + auto-creates follow-ups)">⊝</button>
+                </td>
+            `;
+        } else {
+            actionsCell = `<td class="m-wo-actions m-wo-actions-disabled">—</td>`;
+        }
 
         // Mission 3: drill-down chevron only on rows that carry rich
         // forensic data — predictive_kalman or any WO with a
@@ -593,6 +806,7 @@ export function initMaintenanceView() {
     }
     _wireFilters();
     _wireActionButtons();
+    _wireClosureModal();
     _wireRouting();
 
     // Observe show/hide via mutation observer on the hidden attribute.
