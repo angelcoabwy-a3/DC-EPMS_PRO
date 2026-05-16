@@ -55,6 +55,16 @@ coverage.xml
 .hypothesis/
 
 # ============================================================
+# NODE / FRONTEND TEST HARNESS (ROADMAP V11 T2.4)
+# ============================================================
+node_modules/
+/coverage/
+.vitest/
+*.tsbuildinfo
+npm-debug.log*
+# NOTE: package-lock.json IS versioned (reproducible installs)
+
+# ============================================================
 # TYPE CHECKERS AND LINTERS
 # ============================================================
 .mypy_cache/
