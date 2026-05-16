@@ -23,81 +23,85 @@ Phase V9 evolves the platform from rule-based (Software 2.0) to AI-native (Softw
 
 The system architecture preserves the **Deterministic Sandbox** (per ADR-006): AI has read-only topological authority and document-drafting capability, but **zero write-action authority**. Every CMMS work order, MOP, or THA stays in `pending_approval` state in Paperclip until a qualified CET validates and executes. This is non-negotiable Human-in-the-Loop discipline. See `docs/adr/ADR-006-deterministic-sandbox.md` for the architectural commitment.
 
-## Current Project State (Post-Batch 3.5 Recovery, 2026-05-06)
+## Current Project State (synced 2026-05-16 — v0.10.13)
 
-**Sprints Completed (verified by tests + commits)**:
+> This section was rewritten 2026-05-16. The prior "Post-Batch 3.5 Recovery
+> (2026-05-06)" snapshot is obsolete — it predated Batch 4 and 31 tags of work.
+> Single source of truth for forward planning: `docs/ROADMAP-V11.md` (locked
+> 2026-05-10). Per-release detail: `CHANGELOG.md`.
 
-- **Sprint S1a procedures** — `procedure_engine.py` (8-state machine, 32 tests), `witness_engine.py` (multi-signature drafts, 26 tests), `cmms_mcp.py` (LOR scoring, 51 tests), HAL adapters Cummins + ASCO + Russelectric (39 tests). Total ~1500 lines.
-- **Sprint S1a-physics** (was undocumented before audit) — `backend/physics/` package with 4 sub-modules (`it_thermal`, `mechanical`, `electrical`, `heat_rejection`), 85 unit tests. ~3500 lines applying Darcy-Weisbach pressure drop, Magnus-Tetens psychrometrics, ANSI C57.12 transformer loss model, ODE integration via `scipy.solve_ivp`.
-- **Sprint S1b** — `site_model.py` (declarative YAML parser), `site_routes.py` (9 endpoints `/api/site/*`), 44 unit tests + 41 integration tests on LOTO impact analysis and topology walks.
-- **Sprint S2 GraphRAG** — `graphrag_service.py` + `knowledge_graph.py` + `graphrag_index.py`, NetworkX MultiDiGraph + FAISS IndexFlatIP + sentence-transformers `all-MiniLM-L6-v2`, 5 docs in `config/knowledge/`, 6 endpoints `/api/graph/*`, 20 tests. See ADR-002 and ADR-003.
-- **Dual-RAG architecture** (was undocumented before audit) — `rag_service.py` ChromaDB primary (20 references in main.py, 20-doc operational corpus across 4 priority tiers Safety/Vendor/Standards/MOPs) plus GraphRAG secondary. See ADR-001.
-- **Agent Copilot** — 6 tools registered via `_build_default_registry()`: `query_unified_graph`, `analyze_rul_and_supply`, `draft_precooling_plan`, `query_site_model`, `query_graph_rag`, `draft_cmms_work_order`.
-- **MCP Server stdio** — `mcp_server.py` 531 lines, 0 references in main.py (correct: subprocess of Claude Desktop), exposes 3 tools (`simulate_failure`, `read_bms_tag`, `list_bms_tags`) and 4 resources (telemetry, SHI, scenarios, incidents). MCP spec 2024-11-05.
-- **REST endpoints** — 29 direct in main.py + 5 routers, approximately 50 total active endpoints.
-- **HMI/Frontend** — Lucide UI Polish + 9 site_routes endpoints.
-- **Total tests verified**: **352 passed in 38 seconds aggregate**, 5 deselected by `not slow` marker per DC-EPMS-001 FAISS AVX2 mitigation, 1 known issue (DC-EPMS-019 test_smoke async cleanup, ResourceWarning on logs/epms_pro.log file held open at module import).
+**Position**: V9 scope is feature-complete. Repo at commit `1f9cc76`, tag
+`v0.10.13-modal-fix`, branch `master` == `origin/master`, working tree clean.
+The project is in the **V11 phase, pre-Tier-1** (demo readiness).
 
-**DevOps Quick Wins Status**:
+**Capabilities locked and proven** (verified by tests + commits):
 
-- ✅ **Batch 1 CLOSED 2026-05-05** at commit `0d868e1`: pyproject.toml PEP 621 + 10 extras, .pre-commit-config.yaml with 17 hooks, validate_environment.ps1, 91 tests passing exit 0.
-- ✅ **Batch 2 CLOSED 2026-05-06** at commit `0d868e1`: Docker multi-stage 1.54 GB CPU-only image, .dockerignore, docker-compose.yml with healthcheck plus unless-stopped fix, Prometheus instrumentation 5 SLOs grounded normatively, 12 metrics tests, 8/8 validation layers PASS, container healthy in 10 seconds.
-- ✅ **Batch 3 CLOSED 2026-05-06** at commit `0d868e1` (tags `v0.5.0` + `v0.6.0-batch3`): git init plus two-commit strategy, 6 ADRs retroactive (001 dual-RAG, 002 NetworkX, 003 FAISS, 006 Deterministic Sandbox, 007 Sprint 6 simulator killed, 008 GO-OPTION-C image size), `docs/architecture/sre_layers.md` with 5-layer SRE mapping, cleanup of DC-EPMS-002+004+005+006, pre-commit hooks installed and ran on all files.
-- ✅ **Batch 3.5 RECOVERED-CLOSED 2026-05-06** at commit `d221594` (tag `v0.6.1-batch3.5`): Tech Debt Surgery for DC-EPMS-012-018 attempted via `apply_batch3_5.ps1`. Original orchestrator had Invoke-GitSafe bug that printed [OK] without checking $LASTEXITCODE; pre-commit hooks recursively modified files post-stage causing all commits to fail with [WARNING] Unstaged files detected. Fixes were applied to disk but never committed (tag pointed to obsolete `0d868e1`). Recovery executed via `recovery_batch3_5.ps1` with `--no-verify` bypass: 3 atomic commits created (`1899c0a` C1 orphan imports, `8182efa` C4 lint configs, `d221594` C5 cleanup + bug registry), tag force-moved to `d221594`, forensic tarball `pre_recovery_batch3_5_20260506_223123.tar.gz` preserved (491.64 KB), 352 tests still pass post-Recovery, working tree CLEAN. C2 (DC-EPMS-014) and C3 (DC-EPMS-015) auto-skipped because changes were already absorbed into C1 by ruff format global pass during original orchestrator run; their content is preserved in the C1 commit diff. Disk reclaim: 25.4 GB Docker side via `cleanup_phase1.ps1`.
+- **Physics engine** — `backend/physics/` 4 first-principles modules
+  (it_thermal, mechanical, electrical, heat_rejection): Darcy-Weisbach,
+  Magnus-Tetens psychrometrics, ANSI C57.12 transformer loss, ODE integration
+  via `scipy.solve_ivp`. ~85 unit tests.
+- **LOTO Auditor Agent — Batch 4, DONE at `v0.7.0-batch4`** — paranoid 6-pillar
+  2N-redundancy validator: `loto_auditor_agent.py` plus `_models`,
+  `_pillar_helpers`, `_report_renderer`, `_repository`, `_routes`. All 6 pillars
+  fixed (DC-EPMS-029..034). REST under `/api/loto`, PostgreSQL persistence,
+  markdown rendering, `pending_approval` discipline.
+- **Telemetry + Kalman pipeline — Sprint 5** — `telemetry_simulator.py` plus
+  `telemetry_pipeline.py` plus `cyber_physical_tools.py` (no longer orphan):
+  Send-on-Delta compression, per-channel YAML calibration
+  (`config/telemetry_channels.yml`), Numba JIT verified.
+- **CMMS Core — Sprint 6 — plus predictive trigger — Sprint 9.1** — 91-asset
+  registry, LOR-scored work-order lifecycle, REST router, Kalman -> auto-WO P1
+  with telemetry forensic snapshot.
+- **Tech Assist — Sprint 7.1a-d** — real-time troubleshoot QA, PDF ingestion,
+  voice/dictation closure, nameplate OCR plus asset fuzzy matcher.
+- **Multi-Agent facade — Sprint 10.1** — 4 agents plus Safety Officer veto,
+  deterministic consensus.
+- **PUE physics — Sprint 5.5b** — first-law cross-check, architecture-aware
+  thresholds (480 VAC Phase 1 / 800 VDC Phase 2), ADR-004.
+- **HMI** — B1 Mission Control (three.js Tesla-Megapack), 2.5D isometric
+  Power/UPS SLD plus DAG propagation engine, SCADA asset panel, Tier A/B/C polish.
+- **Dual-RAG** — ChromaDB tier-aware (20-doc operational corpus) plus GraphRAG
+  (NetworkX MultiDiGraph + FAISS). See ADR-001/002/003.
+- **MCP Server stdio** — `mcp_server.py`, Claude Desktop subprocess, 3 tools
+  plus 4 resources, MCP spec 2024-11-05.
+- **Deterministic Sandbox — ADR-006** — AI read-only plus draft-only,
+  Human-in-the-Loop approval. Held without exception.
 
-**Phase V9 Sprint Decisions Resolved**:
+**Test baseline**: ~667 tests collected (`pytest --co -m "not slow"`),
+5 deselected (FAISS AVX2, DC-EPMS-001). Frontend tests: 0 (V11 T2.4 target).
 
-- ✅ **D1** (votes 1A+2B+D-B): integrate `cyber_physical_tools.py` (Kalman innovation residual + Numba @njit + Send-on-Delta) in S5; integrate `dpo_edge_healing.py` capture-only with manual trigger in S6; DPO compute on CPU bitsandbytes.
-- ✅ **D2 Path C2** (2026-05-05): facility scale set to 67 MW, 368 racks total. 118 GB200 + 250 GB300. Rubin Ultra excluded.
-- ✅ **D3** (vote 3B): keep `agent_engine.py` (294 lines, 2 references) as dual-AI fallback (Gemma local plus Claude Sonnet cloud plus NeMo Guardrails) coexisting with `agent_copilot.py` primary tool-calling agent. ADR-004 to be written in S5.5b H6.
-- ✅ **D4** (Option 4-B): convert `T4-MOP-CHI-001` (York YZ chiller PM) plus `T4-MOP-UPS-001` (Galaxy VX UPS PM with LOTO Level 4 plus capacitor discharge per NEC 460.6) markdown to executable YAML in S5.
-- ✅ **GO-OPTION-C** (2026-05-06, see ADR-008): accept 1.54 GB Docker image Phase 1, defer Distroless or Alpine migration to Phase 3.
+**Live roadmap** — `docs/ROADMAP-V11.md` (locked 2026-05-10):
 
-**Roadmap V9 Status**: 12-week Option A confirmed. Interview target: 3 months from 2026-05-06 = **early August 2026**. S9 EKF killed (Sensor Fusion covered by `cyber_physical_tools.py` integration in S5; no separate sprint needed). Time freed by orphan reuse approximately 50 to 60 hours, reassigned to S5.5a/b briefing plus Building D YAML expansion plus MOP YAML conversion plus polish.
+- **Tier 1** (~8h): demo readiness — browser-validate B1 Mission Control,
+  DEMO_SCRIPT v5, OBS recording rehearsals, backend bug closeout.
+- **Tier 2** (~7-10 days): architectural polish — dismantle `app.js` IIFE
+  (4003 LOC, 8 legacy views), declarative router, Vite + TypeScript strict,
+  frontend tests (Vitest), a11y audit, cache busting.
+- **Tier 3** (~3-4 weeks): capability expansion — WebSocket "Hermes" pipeline
+  (T3.1, the architectural inflection point), Multi-Agent ML upgrade,
+  DPO edge-healing, voice transcription.
 
-**Sprint sequence post-Batch 3.5 Recovery**:
+**Open tech debt** (detail in `CHANGELOG.md` and `CLAUDE.md` bugs registry):
+DC-EPMS-019 (logging file handle), DC-EPMS-021 (~90 ruff legacy errors),
+DC-EPMS-022 (ADR MD004 asterisks), DC-EPMS-039 (pytest-bootstrap noise),
+DC-EPMS-029c (physics LOTO sensitivity). All LOW/MED, none demo-blocking.
+DC-EPMS-DB-001 (PostgreSQL credentials mismatch) resolved 2026-05-16 via
+`config/.env`.
 
-1. **Batch 3.6 candidate (optional, ~6-10h)**: Lint legacy surgery for DC-EPMS-021 (90 ruff errors B904, F821, E402, SIM102, RUF005, RUF013, etc. across backend/main.py, backend/site_routes.py, backend/hal/, backend/physics/, tests/, scripts/) plus DC-EPMS-022 (6 ADRs MD004 retroactive asterisk-to-dash bullets, 5 min mass sed) plus DC-EPMS-016 root-cause fix (yamllint hook env PYTHONIOENCODING=utf-8) plus DC-EPMS-019 fix (test_smoke logs/epms_pro.log lifespan cleanup) plus DC-EPMS-020 patch (validate_batch3 venv auto-detect). Decision pending: defer to V10 if interview pressure rises, or execute before Batch 4 if standards purity matters more than visible LOTO Auditor delivery.
-2. **Batch 4 (next session, ~12-16h)**: LOTO Auditor Agent. Implements `loto_auditor_agent.py`, a paranoid validator that ingests a procedure YAML plus target equipment, walks the GraphRAG topology to map impact radius, queries the physics_engine to verify 2N redundancy survives, and drafts a deterministic LOTO Step Validation report citing NFPA 70E and CSA Z462-24 in `pending_approval` state. Tests include integration suite with simulated failure injection.
-3. **W3-4 S4 EHS Auditor**: DSPy-based rules engine for LOTO escalation logic.
-4. **W5-6 S5**: Telemetry plus Kalman integration plus 2 MOP YAML conversions per D4.
-5. **W6.5 S5.5a**: Pre-Operational Briefing orchestrator (5-step pipeline).
-6. **W7 S5.5b**: PUE logic architecture-aware plus ADR-004 (5-6h).
-7. **W8-9 S6**: DPO capture-only plus ADR-005 (2-3 days, leveraging dpo_edge_healing.py orphan per ADR-007). Note: original plan said W7-8 but that overlapped S5.5b; corrected here.
-
-**Known Tech Debt** (registered as DC-EPMS-NNN bugs in CHANGELOG.md):
-
-- DC-EPMS-001: FAISS AVX2 access violation on AMD Ryzen plus Windows. Mitigated via slow markers; long-term Linux CI or hnswlib migration.
-- DC-EPMS-002: ✅ FIXED in Batch 3.
-- DC-EPMS-003: ✅ Auto-fixed by pre-commit hooks in Batch 3.
-- DC-EPMS-004: ✅ FIXED in Batch 3.
-- DC-EPMS-005: ✅ FIXED in Batch 3 + followup CLOSED in Batch 3.5 Recovery (3 iteration scripts archived to `scripts/_archive/pre_batch3_5/`).
-- DC-EPMS-006: ✅ FIXED in Batch 3.
-- DC-EPMS-007: ✅ Auto-fixed by pre-commit hooks in Batch 3.
-- DC-EPMS-008: ✅ RESOLVED in Batch 2 (Prometheus REGISTRY pollution fix).
-- DC-EPMS-009: ACCEPTED Phase 1 per ADR-008 (image size 1.54 GB).
-- DC-EPMS-010: PowerShell stderr noise in rebuild_batch2.ps1, cosmetic only.
-- DC-EPMS-011: ✅ RESOLVED in Batch 2.
-- DC-EPMS-012: ✅ RESOLVED in Batch 3.5 Recovery commit `1899c0a` (cyber_physical_tools.py orphan imports + numba.njit guarded fallback).
-- DC-EPMS-013: ✅ RESOLVED in Batch 3.5 Recovery commit `1899c0a` (dpo_edge_healing.py orphan imports + lazy factory functions for LoraConfig and TrainingArguments).
-- DC-EPMS-014: ✅ RESOLVED in Batch 3.5 Recovery (cummins_adapter.py UTF-8 BOM stripped, content absorbed into commit `1899c0a` by global ruff format pass).
-- DC-EPMS-015: ✅ RESOLVED in Batch 3.5 Recovery (mojibake mass replacement 5083 substitutions across 10 files, content absorbed into commit `1899c0a` by global ruff format pass).
-- DC-EPMS-016: 🟡 MITIGATED in Batch 3.5 Recovery commit `8182efa` (.yamllint config added). Root cause hook env PYTHONIOENCODING=utf-8 deferred to Batch 3.6.
-- DC-EPMS-017: 🟡 MITIGATED in Batch 3.5 Recovery commit `8182efa` (.markdownlint.json config added with project style preferences). 6 ADRs retroactive MD004 conversion deferred to Batch 3.6 as DC-EPMS-022.
-- DC-EPMS-018: ✅ RESOLVED in Batch 3.5 Recovery (finalize_batch3.py ruff RUF005 + E741 + format applied).
-- DC-EPMS-019: 🟡 INVESTIGATED — root cause identified as `logs/epms_pro.log` file held open at module import (`logging.basicConfig` in `backend/main.py:117` without close on shutdown). Mitigation deferred to Batch 4 (lifespan cleanup hook in main.py).
-- DC-EPMS-020: 🟢 OPEN (LOW) — `validate_batch3.ps1` Layer 4 false negative when run outside venv. Workaround documented: always run `.\.venv\Scripts\Activate.ps1` before. Patch path: auto-detect `.venv` or use absolute pytest path. Estimated 5 minutes.
-- DC-EPMS-021: 🟡 OPEN (MEDIUM) — 90 ruff legacy errors discovered during pre-commit run on Batch 3.5 files. B904, F821, E402, SIM102, RUF005, RUF013 across `backend/main.py`, `backend/site_routes.py`, `backend/hal/__init__.py`, `backend/physics/electrical.py`, `backend/physics/mechanical.py`, `backend/physics_engine.py`, `backend/rag_service.py`, `backend/shift_report.py`, `tests/test_*.py`, `scripts/generate_training_manual.py`, `scripts/seed_rag_v2.py`, `scripts/physics_smoke_test.py`. Pre-existing tech debt not introduced by Batch 3.5. Estimated 6-8h. Target Batch 3.6.
-- DC-EPMS-022: 🟢 OPEN (LOW) — 6 ADRs use asterisk bullets violating MD004 dash style. Estimated 5 minutes mass sed replacement. Target Batch 3.6.
+**Environment note**: the `epms-db` container is provisioned with
+`docker-compose.yml` credentials — DB `dcepms`, user `epms`. The backend reads
+`PG_DB`/`PG_USER`/`PG_PASSWORD` from `config/.env`; if unset it falls back to
+non-existent defaults `postgres`/`epms` (DC-EPMS-DB-001). Backend runs native
+via `python backend\main.py` on :8080, NOT in Docker.
 
 **Critical references**:
 
-- `02_STATUS_SUMMARY_REAL.md` — operational baseline, evidence-verified inventory, decisions log.
-- `S5_5_BRIEFING_SPEC.md` — Pre-Operational Briefing specification, hour-by-hour plan W6.5 and W7.
+- `docs/ROADMAP-V11.md` — live backlog, single source of truth post-`v0.10.5`.
+- `CLAUDE.md` — Claude Code project memory, synced 2026-05-16.
+- `CHANGELOG.md` — Keep a Changelog format, reconstructed through `v0.10.13`.
+- `docs/adr/` — 8 architectural decision records (MADR format).
+- `docs/architecture/sre_layers.md` — 5-layer SRE mapping for the CO+I narrative.
 - `03_TECHNICAL_SPECS_800VDC.md` — Building D Phase 2 specifications.
-- `CHANGELOG.md` — Keep a Changelog format, all batches and bugs registered.
-- `docs/adr/` — 6 architectural decision records (MADR format). Future ADRs scheduled: ADR-004 in S5.5b, ADR-005 in S6, ADR-009 in V10 (Arc Flash boundary calculator).
-- `docs/architecture/sre_layers.md` — 5-layer SRE mapping for Microsoft CO+I narrative.
 
 ## Working Style — "Fine Tuning Quirúrgico"
 

@@ -13,6 +13,246 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **CHANGELOG reconstruction note (2026-05-16)**: the entries from
+> `v0.7.2-camino1` through `v0.10.13-modal-fix` below were reconstructed from
+> annotated git tags. The CHANGELOG was not maintained during the rapid
+> 2026-05-08..10 iteration arc; the tag annotations are the authoritative
+> record and are transcribed faithfully here. Forward planning lives in
+> `docs/ROADMAP-V11.md` (locked 2026-05-10).
+
+## [v0.10.13-modal-fix] - 2026-05-10
+
+### Fixed
+
+- DC-EPMS-MAINT-003: closure modal "zombie" — `app.css .m-modal-overlay`
+  used `display: flex`, overriding the UA `[hidden]` rule on specificity.
+  Fix plus inline validation UX (shake/hint replacing silent `alert()`)
+  plus force-close on success. Plus 3 hardening directives.
+
+## [v0.10.12-maint-fix] - 2026-05-10
+
+### Fixed
+
+- DC-EPMS-MAINT-001/002: Maintenance nav-routing flicker (`maintenance` key
+  absent from the legacy `MODULES` dict) and dead asset-panel to Maintenance
+  focus handoff (`sessionStorage.cmms_focus_asset_id` was never consumed).
+
+## [v0.10.11-ddu-busway] - 2026-05-10
+
+### Added
+
+- DDU / busway expansion in the Power SLD — 12 GB200 NVL72 rack drops.
+
+## [v0.10.10-aesthetic-polish] - 2026-05-10
+
+### Changed
+
+- PBR brushed-metal isometric blocks; JetBrains Mono global typography.
+
+## [v0.10.9-asset-panel] - 2026-05-10
+
+### Added
+
+- Phase 4 contextual SCADA asset panel with Chart.js sparkline.
+
+## [v0.10.8-power-cam] - 2026-05-10
+
+### Added
+
+- Bounded isometric camera controls (zoom/pan/pitch/yaw/flat) for the Power & UPS SLD.
+
+## [v0.10.7-dag-engine] - 2026-05-10
+
+### Added
+
+- DAG-driven electrical propagation engine with universal fault injection.
+
+## [v0.10.6-iso-sld] - 2026-05-10
+
+### Added
+
+- 2.5D isometric "living-organism" Power & UPS single-line diagram.
+
+## [v0.10.5-power-sld-v2] - 2026-05-10
+
+### Added
+
+- Power & UPS SLD "Lead Engineer Mode".
+- `docs/ROADMAP-V11.md` committed — the V11 backlog (Tier 1/2/3 + Hermes).
+
+## [v0.10.4-b1-production] - 2026-05-10
+
+### Added
+
+- B1 Mission Control — Tesla Megapack glass-panel: glassmorphism overlay cards
+  (live PUE / MW / Racks / Anomalies), animated InstancedMesh particle flow
+  Yard to A/B, Raycaster drill-down with 600 ms eased zoom into rack-heatmap /
+  site-topology / tech-assist.
+
+## [v0.10.3-b1-spike] - 2026-05-10
+
+### Added
+
+- B1 gray-box three.js spike — 4 BoxGeometry buildings, isometric ortho camera,
+  Raycaster, FPS HUD. Validates 4 B1 acceptance criteria. Not production.
+
+## [v0.10.2-tier-b-anomaly-heatmap] - 2026-05-10
+
+### Added
+
+- Tier B: 50-rack anomaly heatmap (Tesla Megapack aesthetic); Tier A+ polish
+  (search box, Path A/B coloring, per-rack heat dots). 1019 LOC.
+
+## [v0.10.1-tier-a-topology] - 2026-05-10
+
+### Added
+
+- Tier A: force-directed topology graph (`/api/site/graph` + SVG sim),
+  path-coded SLD power flow, thermal heat overlay on the cooling P&ID. 1133 LOC.
+
+## [v0.10.0-tier-c-polish] - 2026-05-10
+
+### Added
+
+- Tier C: WebAudio sound design, boot splash, keyboard shortcuts. Marks the
+  v0.10.x feature-set milestone.
+
+## [v0.9.16-asset-enrichment] - 2026-05-10
+
+### Added
+
+- `PATCH /api/cmms/assets/{id}` and a Tech Assist enrich modal — closes the
+  nameplate matcher loop end-to-end (seed_new_asset to link_to_existing 0.95+).
+
+## [v0.9.15-voice-closure-modal] - 2026-05-10
+
+### Added
+
+- Voice closure modal in the Maintenance view (closes the API-only gap from v0.9.7).
+
+## [v0.9.14-pue-physics] - 2026-05-10
+
+### Added
+
+- PUE physics widget with first-law cross-check; ADR-004 (Phase 1 480 VAC live,
+  Phase 2 800 VDC design).
+
+## [v0.9.13-demo-veto-sample] - 2026-05-09
+
+### Added
+
+- Pre-seeded VETO sample work order so the Multi-Agent demo Act 3 is 100% UI.
+
+## [v0.9.12-multi-agent-facade] - 2026-05-09
+
+### Added
+
+- Sprint 10.1: Multi-Agent facade — 4 agents plus Safety Officer veto,
+  deterministic consensus.
+
+## [v0.9.11-consolidation-2026-05-09] - 2026-05-09
+
+### Added
+
+- Pre-demo consolidation: replay script, work-order drill-down, DEMO_SCRIPT.md v2.
+
+### Fixed
+
+- DC-EPMS-040: audit-trail fix.
+
+## [v0.9.10-demo-snapshot-2026-05-09] - 2026-05-09
+
+### Added
+
+- Demo snapshot: 3 predictive_kalman P1 LOTO work orders (cooling / UPS / power
+  distribution), all CET-signed — the CO+I panel walkthrough state.
+
+## [v0.9.9-tech-assist-view] - 2026-05-09
+
+### Added
+
+- Sprint 7.1 frontend: 3-panel Tech Assist view (nameplate / troubleshoot / library).
+
+## [v0.9.8-tech-assist-71d] - 2026-05-09
+
+### Added
+
+- Sprint 7.1d: nameplate OCR and asset fuzzy matcher (29 tests).
+
+## [v0.9.7-tech-assist-71c] - 2026-05-09
+
+### Added
+
+- Sprint 7.1c: voice/dictation closure pipeline (text mode) — informal notes to
+  LLM-normalized professional report plus auto-detected follow-up WOs in
+  `pending_approval`.
+
+## [v0.9.6-tech-assist-71b] - 2026-05-09
+
+### Added
+
+- Sprint 7.1b: PDF ingestion pipeline — a field tech uploads a vendor manual and
+  the chunks integrate into troubleshoot QA on the next query.
+
+## [v0.9.5-tech-assist-71a] - 2026-05-09
+
+### Added
+
+- Sprint 7.1a: real-time troubleshoot QA combining RAG + CMMS + LLM, 3-section
+  cited answers, safety-keyword detection.
+
+## [v0.9.0-cmms-predictive] - 2026-05-09
+
+### Added
+
+- Sprint 9.1: predictive WO trigger end-to-end — simulator to Kalman to auto-WO
+  P1 with telemetry forensic snapshot.
+
+## [v0.8.5-cmms-core-v1] - 2026-05-09
+
+### Added
+
+- Sprint 6: CMMS Core v1.0 — persistent asset registry, work-order lifecycle,
+  REST router. Vision deck (Wilmer #1..#7) persisted as a CLAUDE.md appendix.
+
+## [v0.8.0-sprint5-kalman] - 2026-05-09
+
+### Added
+
+- Sprint 5 closure: telemetry simulator + Kalman pipeline + per-channel YAML
+  calibration (`config/telemetry_channels.yml`).
+
+## [v0.7.6-kalman-pipeline] - 2026-05-09
+
+### Added
+
+- Sprint 5 C2: Kalman + Send-on-Delta pipeline wired.
+
+## [v0.7.5-telemetry-stream] - 2026-05-09
+
+### Added
+
+- Sprint 5 C1: synthetic telemetry simulator wired into the SSE endpoint.
+
+## [v0.7.4-frontend-pivot] - 2026-05-09
+
+### Added
+
+- Sprint 5.5 hybrid frontend pivot milestone (local Chart.js, telemetry
+  activity strip, SHI trend sparkline).
+
+## [v0.7.3-sprint5-patches] - 2026-05-08
+
+### Fixed
+
+- Sprint 5 patches: 4 of 5 bugs closed plus UTF-8 BOM strip.
+
+## [v0.7.2-camino1] - 2026-05-08
+
+### Added
+
+- Camino 1 closure: Path C2 drift sync (40 to 67 MW) and the LOTO Auditor HMI view.
+
 ## [v0.7.0-batch4] - 2026-05-08
 
 ### Added
@@ -673,4 +913,3 @@ pyproject.toml. Better: only install via extras mechanism.
   `diagnose_output.txt`, and `frontend_pre_camino1_20260508_215625.zip` moved
   to `scripts/_archive/sesion_sprint5/` per Atomic Batches discipline
   (B3-2c precedent).
-
