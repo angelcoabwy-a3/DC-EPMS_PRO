@@ -960,3 +960,52 @@ export function initMissionControlView() {
 }
 
 export function stopMissionControl() { _stop(); }
+
+// ════════════════════════════════════════════════════════════════
+//  Test-only surface — ROADMAP V11 T2.4.
+//
+//  Exposed for the Vitest harness only; production (main.js) imports
+//  just initMissionControlView, so this is an unused export there —
+//  prod-inert (a few bytes in the un-bundled build). injectScene is
+//  dependency injection: a test stands up a fake scene WITHOUT the
+//  real _boot()/WebGLRenderer. Keep this surface minimal + explicit.
+// ════════════════════════════════════════════════════════════════
+export const __mc_test__ = {
+    // Drill-down state-machine handlers (post DC-EPMS-MC-001 fix)
+    onClick:          _onClick,
+    onPointerMove:    _onPointerMove,
+    animateDrillDown: _animateDrillDown,
+    navigateTo:       _navigateTo,
+    stop:             _stop,
+    DRILL_TARGETS,
+
+    // _transitioning flag — read / force
+    getTransitioning: () => _transitioning,
+    setTransitioning: (v) => { _transitioning = !!v; },
+
+    // Dependency injection — fake scene, no _boot() required
+    injectScene({ buildings, renderer, camera, raycaster, pointer, statusEl, fadeEl } = {}) {
+        if (buildings !== undefined) _buildings = buildings;
+        if (renderer  !== undefined) _renderer = renderer;
+        if (camera    !== undefined) _camera = camera;
+        if (raycaster !== undefined) _raycaster = raycaster;
+        if (pointer   !== undefined) _pointer = pointer;
+        if (statusEl  !== undefined) _statusEl = statusEl;
+        if (fadeEl    !== undefined) _fadeEl = fadeEl;
+    },
+
+    // Restore module state between tests
+    reset() {
+        clearTimeout(_transitionWatchdog);
+        _transitionWatchdog = null;
+        _transitioning = false;
+        _buildings = [];
+        _renderer = null;
+        _camera = null;
+        _raycaster = null;
+        _pointer = null;
+        _hovered = null;
+        _statusEl = null;
+        _fadeEl = null;
+    },
+};
