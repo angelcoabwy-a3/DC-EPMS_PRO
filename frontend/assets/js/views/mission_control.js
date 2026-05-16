@@ -56,6 +56,7 @@ let _liveData = {
 };
 let _liveTimer = null;
 let _transitioning = false;
+let _transitionWatchdog = null;   // fail-safe timer for _transitioning (see _animateDrillDown)
 
 // Particle flow
 let _flowGroups = [];   // [{ instMesh, curve, count, speed, t[] }]
@@ -694,7 +695,9 @@ function _tick(ts) {
 
 // ─── Hover + tooltip ────────────────────────────────────────────
 function _onPointerMove(e) {
-    if (!_renderer || _transitioning) return;
+    // No _transitioning gate — a cosmetic camera animation must never be
+    // able to deadlock hover (drill-down deadlock fix, DC-EPMS-MC-001).
+    if (!_renderer || !_camera || !_raycaster) return;
     const rect = _renderer.domElement.getBoundingClientRect();
     _pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     _pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -752,9 +755,22 @@ function _navigateTo(route) {
     navItem.click();
 }
 
-function _animateDrillDown(targetMesh, onDone) {
-    if (_transitioning) return;
+// Cosmetic camera zoom ONLY. Navigation is decoupled — it already fired
+// synchronously in _onClick before this is ever called. A skipped or
+// interrupted animation therefore costs nothing functional.
+function _animateDrillDown(targetMesh) {
+    // Reentrancy guard so two zooms do not fight. NOT a correctness gate.
+    if (_transitioning || !_camera) return;
     _transitioning = true;
+
+    const DURATION = 600;
+
+    // Fail-safe watchdog: _transitioning must NEVER stay stuck true. Even
+    // if the rAF chain is interrupted (view torn down, tab backgrounded),
+    // this force-clears it so click + hover can never deadlock again
+    // (drill-down deadlock fix, DC-EPMS-MC-001).
+    clearTimeout(_transitionWatchdog);
+    _transitionWatchdog = setTimeout(() => { _transitioning = false; }, DURATION + 400);
 
     const startPos = _camera.position.clone();
     const startLook = new THREE.Vector3(0, 0, 0);
@@ -768,10 +784,25 @@ function _animateDrillDown(targetMesh, onDone) {
     }
 
     const startTs = performance.now();
-    const DURATION = 600;
     const ease = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
+    // Single exit path — clears the flag + watchdog, resets the camera.
+    const _endTransition = () => {
+        _transitioning = false;
+        clearTimeout(_transitionWatchdog);
+        if (_camera) {
+            _camera.position.copy(_camera.userData._origPos);
+            _camera.lookAt(_camera.userData._origLook);
+        }
+        if (_fadeEl) {
+            _fadeEl.style.opacity = '0';
+            setTimeout(() => _fadeEl.setAttribute('hidden', ''), 250);
+        }
+    };
+
     const step = (now) => {
+        // Guard: the scene may have been torn down mid-animation.
+        if (!_camera || !_renderer) { _endTransition(); return; }
         const elapsed = now - startTs;
         const k = Math.min(1, elapsed / DURATION);
         const e = ease(k);
@@ -780,19 +811,16 @@ function _animateDrillDown(targetMesh, onDone) {
         if (k < 1) {
             requestAnimationFrame(step);
         } else {
-            _transitioning = false;
-            // Reset camera for next time
-            _camera.position.copy(_camera.userData._origPos);
-            _camera.lookAt(_camera.userData._origLook);
-            if (_fadeEl) { _fadeEl.style.opacity = '0'; setTimeout(() => _fadeEl.setAttribute('hidden', ''), 250); }
-            onDone?.();
+            _endTransition();
         }
     };
     requestAnimationFrame(step);
 }
 
 function _onClick(e) {
-    if (!_renderer || _transitioning) return;
+    // No _transitioning gate — clicks must work even mid-animation
+    // (drill-down deadlock fix, DC-EPMS-MC-001).
+    if (!_renderer || !_camera || !_raycaster) return;
     const rect = _renderer.domElement.getBoundingClientRect();
     _pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     _pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -806,7 +834,11 @@ function _onClick(e) {
     console.log('[mission_control] click → %s → %s', id, route || '(no drill target)');
     _setStatus(`drilling: ${id} → ${route}`, 'ok');
     if (!route) return;
-    _animateDrillDown(hit, () => _navigateTo(route));
+    // Navigate FIRST — immediate, synchronous, unconditional. The drill-down
+    // must succeed even if the zoom animation never runs or is interrupted.
+    _navigateTo(route);
+    // Camera zoom is now pure fire-and-forget eye-candy, fully decoupled.
+    _animateDrillDown(hit);
 }
 
 // ─── Resize ──────────────────────────────────────────────────────
@@ -888,6 +920,9 @@ async function _boot() {
 function _stop() {
     if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
     if (_liveTimer) { clearInterval(_liveTimer); _liveTimer = null; }
+    // Fail-safe: never leave a transition flag stuck across a stop.
+    clearTimeout(_transitionWatchdog);
+    _transitioning = false;
 }
 
 // ─── Routing (LOTO pattern) ─────────────────────────────────────
