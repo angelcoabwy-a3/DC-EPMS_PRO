@@ -114,15 +114,24 @@ FACILITY_NAME = os.environ.get("FACILITY_NAME", "A3-Alpha Toronto Area")
 # ==============================================================
 #  Logging (file + console)
 # ==============================================================
+# DC-EPMS-019: keep a reference to the file handler so the lifespan
+# shutdown can close it explicitly (no ResourceWarning on exit).
+_log_file_handler = logging.FileHandler(LOG_DIR / "epms_pro.log", encoding="utf-8")
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s :: %(message)s",
     handlers=[
-        logging.FileHandler(LOG_DIR / "epms_pro.log", encoding="utf-8"),
+        _log_file_handler,
         logging.StreamHandler(sys.stdout),
     ],
 )
 log = logging.getLogger("dc-epms-pro")
+
+# DC-EPMS-039: chromadb's posthog telemetry version-mismatches and emits
+# ERROR noise on every boot. chromadb telemetry is disabled by design
+# (rag_service passes anonymized_telemetry=False); mute the logger so the
+# failed-telemetry-send lines never reach the boot output.
+logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
 
 
 # ==============================================================
@@ -375,6 +384,11 @@ async def lifespan(app: FastAPI):
     log.info("DC-EPMS PRO shutting down...")
     if db_manager:
         await db_manager.close()
+
+    # DC-EPMS-019: release the log file handle so no ResourceWarning
+    # fires on interpreter shutdown.
+    logging.getLogger().removeHandler(_log_file_handler)
+    _log_file_handler.close()
 
 
 # ==============================================================

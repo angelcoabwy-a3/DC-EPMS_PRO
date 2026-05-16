@@ -62,7 +62,7 @@ from typing import Any
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 log = logging.getLogger(__name__)
 
@@ -893,6 +893,10 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    # DC-EPMS-039: model_id collides with Pydantic v2's protected
+    # "model_" namespace; disable it (mirrors AgentQuery in main.py).
+    model_config = ConfigDict(protected_namespaces=())
+
     reply: str
     tool_invocations: list[dict]
     drafts: list[str]
