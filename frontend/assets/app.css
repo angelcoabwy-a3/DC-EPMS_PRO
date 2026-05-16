@@ -258,10 +258,9 @@ body {
     position: absolute;
     left: 0;
     top: 0;
-    /* Pre-translation; transform updated by JS each frame */
-    transform: translate(-50%, -100%);
-    min-width: 168px;
-    max-width: 220px;
+    /* HUD MODE (v0.10.14): JS sets left/top from a fixed/persisted
+       corner layout. No per-frame world->screen projection transform. */
+    width: 200px;
     padding: 8px 11px 9px;
     background: rgba(11, 13, 16, 0.72);
     backdrop-filter: blur(10px) saturate(1.2);
@@ -273,8 +272,12 @@ body {
     color: var(--text);
     font-family: var(--font-mono);
     font-size: 11px;
-    pointer-events: none;
-    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    pointer-events: auto;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease,
+                backdrop-filter 0.2s ease;
     z-index: 5;
 }
 .mc-overlay-card[data-state="warn"] {
@@ -296,6 +299,75 @@ body {
 .mc-overlay-card-yard {
     border-color: rgba(245, 158, 11, 0.40);
 }
+
+/* ── B1 HUD MODE — drag, hover-link, SVG connectors, reset ─────────
+   Replaces the collapsed world->screen projection. Panels are a
+   fixed/draggable/persisted heads-up display. */
+
+.mc-overlay-card.is-dragging {
+    cursor: grabbing;
+    z-index: 9;
+    transition: none;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.70),
+                0 0 0 1px rgba(0, 184, 212, 0.35),
+                0 0 22px rgba(0, 184, 212, 0.30);
+}
+.mc-overlay-card.is-linked-hover {
+    backdrop-filter: blur(18px) saturate(1.45);
+    -webkit-backdrop-filter: blur(18px) saturate(1.45);
+    border-color: rgba(0, 229, 255, 0.85);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55),
+                0 0 0 1px rgba(0, 229, 255, 0.25),
+                0 0 20px rgba(0, 229, 255, 0.28);
+}
+
+/* SVG connector layer — between the WebGL canvas and the panels */
+.mc-connector-svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 2;
+}
+.mc-connector-line {
+    stroke: #00e5ff;
+    stroke-width: 1;
+    stroke-opacity: 0.20;
+    transition: stroke-opacity 0.2s ease, stroke-width 0.2s ease;
+}
+.mc-connector-line.is-active {
+    stroke-opacity: 0.85;
+    stroke-width: 1.6;
+}
+
+/* Reset-to-default-layout ghost button (bottom-right, above FPS HUD) */
+.mc-reset-layout-btn {
+    position: absolute;
+    right: 12px;
+    bottom: 46px;
+    z-index: 8;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    background: rgba(11, 13, 16, 0.78);
+    border: 1px solid rgba(0, 229, 255, 0.20);
+    border-radius: 3px;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+.mc-reset-layout-btn:hover {
+    color: #00e5ff;
+    border-color: rgba(0, 229, 255, 0.55);
+    background: rgba(0, 229, 255, 0.08);
+}
+.mc-reset-layout-btn:active { transform: translateY(1px); }
+.mc-reset-layout-btn svg { opacity: 0.9; flex-shrink: 0; }
 
 .mc-card-title {
     font-size: 11.5px;

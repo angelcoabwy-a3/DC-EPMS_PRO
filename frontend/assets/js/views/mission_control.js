@@ -10,9 +10,12 @@
  *   - 4 building meshes (A, B, D, Yard) with glass-panel
  *     translucent MeshStandardMaterial + EdgesGeometry overlays
  *   - OrthographicCamera at fixed isometric angle (30° / 30°)
- *   - HTML overlay cards (glassmorphism) projected world→screen
- *     each frame, populated with live data from /api/physics/pue
- *     + /api/cmms/assets + /api/cmms/work-orders
+ *   - HUD MODE overlay panels (glassmorphism): 4 cards at a fixed,
+ *     draggable, localStorage-persisted corner layout — replaces the
+ *     old world→screen projection that collapsed them into an
+ *     unreadable central stack. Live data from /api/physics/pue
+ *     + /api/cmms/assets + /api/cmms/work-orders. SVG connector lines
+ *     keep the panel↔building cognitive anchor. See _hud* functions.
  *   - Animated power flow: cyan particle InstancedMesh sliding
  *     along CatmullRomCurve3 from Yard → A and Yard → B
  *   - Raycaster click on a building → smooth 0.6 s zoom-and-fade
@@ -284,7 +287,7 @@ function _updatePowerFlow(dt) {
     }
 }
 
-// ─── HTML overlay cards (project world → screen each frame) ────
+// ─── HTML overlay cards — bind + un-hide ─────────────────────────
 function _bindOverlayCards() {
     _buildings.forEach(b => {
         b.cardEl = document.getElementById('mc-card-' + b.id.replace('building_', ''));
@@ -292,17 +295,294 @@ function _bindOverlayCards() {
     });
 }
 
-function _updateOverlayCards() {
-    if (!_renderer || !_camera) return;
-    const rect = _renderer.domElement.getBoundingClientRect();
-    const tmp = new THREE.Vector3();
+// ════════════════════════════════════════════════════════════════
+//  B1 HUD MODE — fixed / draggable / persisted overlay panels
+//
+//  Replaces the original _updateOverlayCards() world→screen
+//  projection, which collapsed the 4 cards into an unreadable
+//  central stack whenever the render loop was unstable. HUD MODE:
+//    - 4 panels at a deliberate corner layout on load (no overlap)
+//    - independent drag-and-drop per panel (pointer capture)
+//    - position persisted in localStorage, survives reload
+//    - [Reset Panel Layout] ghost button restores default corners
+//    - SVG connector line panel↔building (cognitive anchor)
+//    - hover a 3D building → its panel blurs up + connector lights
+//  Entirely decoupled from the (unstable) render loop: panels are
+//  repositioned only on drag / resize / reset.
+// ════════════════════════════════════════════════════════════════
+
+const HUD_LS_KEY = 'mc_panel_layout_v1';
+const HUD_MARGIN = 14;            // px gap from wrap edge
+const HUD_BOTTOM_RESERVED = 72;   // px kept clear bottom-right (FPS HUD + reset btn)
+const HUD_SVG_NS = 'http://www.w3.org/2000/svg';
+
+let _hudCardW = 200;              // measured from a live card at setup
+let _hudCardH = 138;              // measured from a live card at setup
+let _panelLayout = null;          // { a|b|d|yard: {x,y} } px relative to wrap
+let _hudDrag = null;              // active drag descriptor or null
+let _connectorSvg = null;
+let _connectorLines = {};         // buildingId → <line>
+let _resetBtn = null;
+let _buildingScreenPos = {};      // buildingId → {x,y} (static, fixed camera)
+
+// card DOM-id suffix for a building id ('building_a'→'a', 'yard'→'yard')
+function _hudCardKey(buildingId) { return buildingId.replace('building_', ''); }
+
+// ─── Default corner layout (computed from live wrap size) ──────────
+function _hudDefaultLayout(W, H) {
+    const xL = HUD_MARGIN;
+    const xR = Math.max(HUD_MARGIN, W - _hudCardW - HUD_MARGIN);
+    const yT = HUD_MARGIN;
+    const yB = Math.max(HUD_MARGIN, H - _hudCardH - HUD_MARGIN - HUD_BOTTOM_RESERVED);
+    return {
+        a:    { x: xL, y: yT },   // Building A — top-left
+        b:    { x: xR, y: yT },   // Building B — top-right
+        yard: { x: xL, y: yB },   // Yard       — bottom-left
+        d:    { x: xR, y: yB },   // Building D — bottom-right
+    };
+}
+
+// ─── Clamp a point so the card stays fully inside the wrap ─────────
+function _hudClamp(p, W, H) {
+    return {
+        x: Math.min(Math.max(0, p.x), Math.max(0, W - _hudCardW)),
+        y: Math.min(Math.max(0, p.y), Math.max(0, H - _hudCardH)),
+    };
+}
+
+// ─── localStorage persistence ──────────────────────────────────────
+function _hudLoadLayout() {
+    try {
+        const raw = localStorage.getItem(HUD_LS_KEY);
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        for (const k of ['a', 'b', 'd', 'yard']) {
+            if (!obj || !obj[k] ||
+                typeof obj[k].x !== 'number' || typeof obj[k].y !== 'number') {
+                return null;   // missing/corrupt → fall back to defaults
+            }
+        }
+        return obj;
+    } catch (e) {
+        console.warn('[mission_control] layout load failed, using defaults:', e);
+        return null;
+    }
+}
+
+function _hudSaveLayout() {
+    try {
+        localStorage.setItem(HUD_LS_KEY, JSON.stringify(_panelLayout));
+    } catch (e) {
+        console.warn('[mission_control] layout save failed (storage blocked/full):', e);
+    }
+}
+
+// ─── Apply current layout to the DOM + redraw connectors ───────────
+function _hudApplyLayout() {
     for (const b of _buildings) {
         if (!b.cardEl) continue;
-        tmp.copy(b.anchor).project(_camera);
-        const x = (tmp.x + 1) / 2 * rect.width;
-        const y = (-tmp.y + 1) / 2 * rect.height;
-        b.cardEl.style.transform = `translate(-50%, -100%) translate(${x.toFixed(0)}px, ${y.toFixed(0)}px)`;
+        const pos = _panelLayout[_hudCardKey(b.id)];
+        if (!pos) continue;
+        b.cardEl.style.transform = 'none';   // kill any legacy projection transform
+        b.cardEl.style.left = pos.x + 'px';
+        b.cardEl.style.top  = pos.y + 'px';
     }
+    _hudUpdateConnectors();
+}
+
+// ─── Drag and drop (pointer-capture based) ─────────────────────────
+function _hudOnPointerDown(e, buildingId, cardEl) {
+    if (e.button !== undefined && e.button !== 0) return;   // primary button only
+    const wrap = document.getElementById('mc-canvas-wrap');
+    if (!wrap || !_panelLayout) return;
+    const wrapRect = wrap.getBoundingClientRect();
+    const pos = _panelLayout[_hudCardKey(buildingId)] || { x: 0, y: 0 };
+    _hudDrag = {
+        id: buildingId,
+        cardEl,
+        grabDX: (e.clientX - wrapRect.left) - pos.x,
+        grabDY: (e.clientY - wrapRect.top)  - pos.y,
+    };
+    cardEl.classList.add('is-dragging');
+    try { cardEl.setPointerCapture(e.pointerId); } catch { /* capture unsupported */ }
+    e.preventDefault();
+}
+
+function _hudOnPointerDrag(e) {
+    if (!_hudDrag) return;
+    const wrap = document.getElementById('mc-canvas-wrap');
+    if (!wrap) return;
+    const wrapRect = wrap.getBoundingClientRect();
+    const clamped = _hudClamp({
+        x: (e.clientX - wrapRect.left) - _hudDrag.grabDX,
+        y: (e.clientY - wrapRect.top)  - _hudDrag.grabDY,
+    }, wrapRect.width, wrapRect.height);
+    _panelLayout[_hudCardKey(_hudDrag.id)] = clamped;
+    _hudDrag.cardEl.style.left = clamped.x + 'px';
+    _hudDrag.cardEl.style.top  = clamped.y + 'px';
+    _hudUpdateConnectors();
+}
+
+function _hudOnPointerUp(e) {
+    if (!_hudDrag) return;
+    _hudDrag.cardEl.classList.remove('is-dragging');
+    try { _hudDrag.cardEl.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+    _hudDrag = null;
+    _hudSaveLayout();
+}
+
+// ─── SVG connector lines (panel centre ↔ building anchor) ──────────
+function _hudBuildConnectorSvg(wrap) {
+    let svg = document.getElementById('mc-connector-svg');
+    if (!svg) {
+        svg = document.createElementNS(HUD_SVG_NS, 'svg');
+        svg.setAttribute('id', 'mc-connector-svg');
+        svg.setAttribute('class', 'mc-connector-svg');
+        const canvas = document.getElementById('mc-canvas');
+        if (canvas) wrap.insertBefore(svg, canvas.nextSibling);
+        else wrap.appendChild(svg);
+    }
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    _connectorLines = {};
+    for (const b of _buildings) {
+        const line = document.createElementNS(HUD_SVG_NS, 'line');
+        line.setAttribute('class', 'mc-connector-line');
+        line.setAttribute('data-building', b.id);
+        svg.appendChild(line);
+        _connectorLines[b.id] = line;
+    }
+    _connectorSvg = svg;
+}
+
+// Project each building anchor → wrap-relative px. Recomputes the
+// camera inverse explicitly so it does NOT depend on the render loop.
+function _hudComputeBuildingScreenPositions() {
+    if (!_camera || !_renderer) return;
+    _camera.updateMatrixWorld(true);
+    _camera.matrixWorldInverse.copy(_camera.matrixWorld).invert();
+    const rect = _renderer.domElement.getBoundingClientRect();
+    const v = new THREE.Vector3();
+    _buildingScreenPos = {};
+    for (const b of _buildings) {
+        v.copy(b.anchor).project(_camera);
+        _buildingScreenPos[b.id] = {
+            x: (v.x + 1) / 2 * rect.width,
+            y: (-v.y + 1) / 2 * rect.height,
+        };
+    }
+}
+
+function _hudUpdateConnectors() {
+    if (!_connectorSvg) return;
+    for (const b of _buildings) {
+        const line = _connectorLines[b.id];
+        const pos  = _panelLayout ? _panelLayout[_hudCardKey(b.id)] : null;
+        const bs   = _buildingScreenPos[b.id];
+        if (!line || !pos || !bs || !b.cardEl) continue;
+        const px = pos.x + b.cardEl.offsetWidth / 2;
+        const py = pos.y + b.cardEl.offsetHeight / 2;
+        line.setAttribute('x1', px.toFixed(1));
+        line.setAttribute('y1', py.toFixed(1));
+        line.setAttribute('x2', bs.x.toFixed(1));
+        line.setAttribute('y2', bs.y.toFixed(1));
+    }
+}
+
+// ─── Reset-to-default-layout ghost button ──────────────────────────
+function _hudBuildResetButton(wrap) {
+    if (document.getElementById('mc-reset-layout-btn')) {
+        _resetBtn = document.getElementById('mc-reset-layout-btn');
+        return;
+    }
+    const btn = document.createElement('button');
+    btn.id = 'mc-reset-layout-btn';
+    btn.className = 'mc-reset-layout-btn';
+    btn.type = 'button';
+    btn.title = 'Reset the 4 panels to their default corner layout';
+    btn.innerHTML =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" ' +
+        'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>' +
+        '<path d="M3 3v5h5"/></svg><span>Reset Panel Layout</span>';
+    btn.addEventListener('click', _hudResetLayout);
+    wrap.appendChild(btn);
+    _resetBtn = btn;
+}
+
+function _hudResetLayout() {
+    const wrap = document.getElementById('mc-canvas-wrap');
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    _panelLayout = _hudDefaultLayout(rect.width, rect.height);
+    try { localStorage.removeItem(HUD_LS_KEY); } catch { /* noop */ }
+    _hudApplyLayout();
+    _setStatus('panel layout reset to default corners', 'ok');
+}
+
+// ─── Hover-link: hovered 3D building → its panel + connector ───────
+function _hudSetLinkedHover(buildingId) {
+    for (const b of _buildings) {
+        const on = (b.id === buildingId);
+        if (b.cardEl) b.cardEl.classList.toggle('is-linked-hover', on);
+        const line = _connectorLines[b.id];
+        if (line) line.classList.toggle('is-active', on);
+    }
+}
+
+// ─── HUD setup — called once from _boot after _bindOverlayCards ────
+function _hudSetup() {
+    const wrap = document.getElementById('mc-canvas-wrap');
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+
+    // Measure a real card so corner math + connector centres are exact
+    const sample = _buildings.find(b => b.cardEl);
+    if (sample && sample.cardEl) {
+        _hudCardW = sample.cardEl.offsetWidth  || _hudCardW;
+        _hudCardH = sample.cardEl.offsetHeight || _hudCardH;
+    }
+
+    // Layout: persisted (clamped into current bounds) else defaults
+    const saved = _hudLoadLayout();
+    if (saved) {
+        _panelLayout = {};
+        for (const k of ['a', 'b', 'd', 'yard']) {
+            _panelLayout[k] = _hudClamp(saved[k], rect.width, rect.height);
+        }
+    } else {
+        _panelLayout = _hudDefaultLayout(rect.width, rect.height);
+    }
+
+    // Wire drag handlers on every card
+    for (const b of _buildings) {
+        if (!b.cardEl) continue;
+        b.cardEl.classList.add('mc-hud-card');
+        b.cardEl.addEventListener('pointerdown', (e) => _hudOnPointerDown(e, b.id, b.cardEl));
+        b.cardEl.addEventListener('pointermove', _hudOnPointerDrag);
+        b.cardEl.addEventListener('pointerup', _hudOnPointerUp);
+        b.cardEl.addEventListener('pointercancel', _hudOnPointerUp);
+    }
+
+    _hudBuildConnectorSvg(wrap);
+    _hudBuildResetButton(wrap);
+    _hudComputeBuildingScreenPositions();
+    _hudApplyLayout();
+    console.log('[mission_control] HUD MODE ready — 4 panels, drag + persist + connectors');
+}
+
+// ─── HUD resize — re-clamp panels, recompute anchors, redraw ───────
+function _hudOnResize() {
+    const wrap = document.getElementById('mc-canvas-wrap');
+    if (!wrap || !_panelLayout) return;
+    const rect = wrap.getBoundingClientRect();
+    for (const k of ['a', 'b', 'd', 'yard']) {
+        if (_panelLayout[k]) {
+            _panelLayout[k] = _hudClamp(_panelLayout[k], rect.width, rect.height);
+        }
+    }
+    _hudComputeBuildingScreenPositions();
+    _hudApplyLayout();
 }
 
 // ─── Live data fetch + apply to overlay cards ──────────────────
@@ -397,8 +677,8 @@ function _tick(ts) {
     // Render
     _renderer.render(_scene, _camera);
 
-    // Position overlay cards (cheap: 4 projections)
-    _updateOverlayCards();
+    // Overlay panels are HUD MODE — positioned on drag/resize/reset,
+    // intentionally decoupled from this (possibly unstable) render loop.
 
     // FPS HUD (twice/sec)
     if (dt > 0) _fpsBuffer.push(1 / dt);
@@ -447,6 +727,8 @@ function _onPointerMove(e) {
     } else if (_tooltipEl) {
         _tooltipEl.setAttribute('hidden', '');
     }
+    // HUD MODE: light the linked panel + connector for the hovered building
+    _hudSetLinkedHover(_hovered ? _hovered.userData?.id : null);
 }
 
 function _onPointerLeave() {
@@ -542,6 +824,7 @@ function _resize() {
     _camera.top    =  viewSize / 2;
     _camera.bottom = -viewSize / 2;
     _camera.updateProjectionMatrix();
+    _hudOnResize();   // B1 HUD MODE — re-clamp panels + redraw connectors
 }
 
 // ─── Boot ────────────────────────────────────────────────────────
@@ -583,6 +866,7 @@ async function _boot() {
         window.addEventListener('resize', _resize);
 
         _bindOverlayCards();
+        _hudSetup();   // B1 HUD MODE — fixed/draggable panels + connectors
         try { subscribe('latestTelemetry', () => { /* future: real-time card refresh */ }); } catch {}
 
         // Initial live-data fetch + poll
