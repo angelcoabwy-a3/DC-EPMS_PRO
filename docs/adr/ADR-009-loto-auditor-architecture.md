@@ -36,23 +36,28 @@ Implement `LotoAuditorAgent` as a **deterministic, read-only validator** with a 
 ## Considered Alternatives
 
 ### Alternative 1: Pure LLM-based validation (rejected)
+
 Use Gemma local + Claude Sonnet to read the procedure YAML and the site_model, then have the LLM rate the procedure quality.
 
 Rejected because:
+
 - Hallucination risk on safety-critical citations (e.g. LLM might cite "NEC 470.6" instead of "NEC 460.6")
 - No deterministic reproducibility for audit trail
 - Inability to defend the verdict in panel: "the model said so" is not Tier IV documentation
 - Slow latency (~5-10s per pillar, blocking shift handover)
 
 ### Alternative 2: Embed validation logic in procedure_engine (rejected)
+
 Add the 6 pillars as preconditions in the existing procedure_engine state machine.
 
 Rejected because:
+
 - Mixes concerns: procedure_engine is execution-time state, LOTO Auditor is design-time validation
 - Couples agent to procedure_engine evolution: future state machine changes break the auditor
 - Makes the auditor non-reusable for ad-hoc audits ("I want to audit MOP-001 against ats_a without actually executing it")
 
 ### Alternative 3: External validation via DSPy program (deferred)
+
 Use DSPy's signature-based validation with an LLM backbone to ingest the procedure YAML and produce structured outputs.
 
 Deferred to S4 (W3-4 EHS Auditor) for procedure-class taxonomies, classification, and recommendation. The LOTO Auditor stays deterministic. The split is intentional: deterministic for safety-critical validation, DSPy for educational and classification tasks.
@@ -60,6 +65,7 @@ Deferred to S4 (W3-4 EHS Auditor) for procedure-class taxonomies, classification
 ## Consequences
 
 ### Positive
+
 - Every audit verdict cites file path, line number, standard reference
 - Sub-5s latency p95 (no LLM dependency for core)
 - Reproducible: same procedure + same target + same telemetry snapshot = same audit
@@ -68,11 +74,13 @@ Deferred to S4 (W3-4 EHS Auditor) for procedure-class taxonomies, classification
 - Reusable: any caller (HMI, CMMS, MCP server) can request audit without execution
 
 ### Negative
+
 - More code to maintain than a "just ask the LLM" approach (~1500 lines for full Batch 4)
 - Each pillar requires explicit logic for new component types (e.g. when Building D adds new equipment, Pillar 6 PPE matrix needs update)
 - Six pillars are not independent of cross-cutting concerns: e.g. Pillar 1 informs Pillar 2 (the components affected determine whether redundancy survives)
 
 ### Risks and Mitigations
+
 - **Risk**: Stale telemetry causes Pillar 2 to falsely pass. **Mitigation**: agent accepts `as_of_timestamp` parameter and reads TimescaleDB snapshot at that exact time.
 - **Risk**: GraphRAG lazy-load slows first audit by 2-3s. **Mitigation**: pre-warm in `lifespan` startup (pattern from Batch 2 ChromaDB).
 - **Risk**: Concurrent audits on same target produce conflicting reports. **Mitigation**: audit_id includes timestamp + uuid, both audits persist independently in PostgreSQL with no conflict.
