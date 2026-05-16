@@ -16,62 +16,64 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 
 **Vocabulary discipline (CRITICAL)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is unipolar (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in panel review.
 
-## 📊 CURRENT STATE (verified 2026-05-09 mid-cycle)
+## 📊 CURRENT STATE (synced 2026-05-16)
 
 ```
-Tags chronological:
-  v0.5.0
-  v0.6.0-batch3
-  v0.6.1-batch3.5
-  v0.7.0-batch4
-  v0.7.2-camino1
-  v0.7.3-sprint5-patches
-  v0.7.4-frontend-pivot     ← Sprint 5.5 hybrid frontend pivot (browser milestone)
-  v0.7.5-telemetry-stream   ← Sprint 5 C1: synthetic telemetry simulator + SSE wired
-  v0.7.6-kalman-pipeline    ← Sprint 5 C2: Kalman + SoD pipeline + 60-min anomaly counter
-  v0.8.0-sprint5-kalman     ← Sprint 5 C3: per-channel YAML calibration + perf-verified
-  v0.8.5-cmms-core-v1       ← Sprint 6: CMMS Core v1.0 (Tesla/SpaceX vision, 91 assets seeded)
+HEAD:  7f6ea55  (tag v0.10.13-modal-fix)  branch master  ==  origin/master
+Working tree clean (only .claude/ + PRIMER_PROMPT.md untracked — intentional).
 
-System completion:
-  Backend:   91% (Sprint 5 closed, telemetry_channels.yml replaces hardcoded R/Q)
-  Frontend:  88%
-  Total V9:  90%
+Tags chronological (38 total):
+  v0.5.0 .. v0.8.5-cmms-core-v1               foundation → Sprint 6 CMMS Core
+  v0.9.0-cmms-predictive                      Sprint 9.1 predictive WO trigger (Kalman→auto-WO)
+  v0.9.5..v0.9.9-tech-assist*                 Sprint 7.1a-d Tech Assist (QA, PDF ingest, voice, OCR) + view
+  v0.9.10-demo-snapshot / v0.9.11-consolidation
+  v0.9.12-multi-agent-facade                  Sprint 10.1 (4 agents + Safety Officer veto)
+  v0.9.13-demo-veto-sample
+  v0.9.14-pue-physics                         Sprint 5.5b PUE physics widget + ADR-004
+  v0.9.15-voice-closure-modal / v0.9.16-asset-enrichment
+  v0.10.0..v0.10.2                            HMI Tier A/B/C polish (topology, flow, anomaly heatmap)
+  v0.10.3-b1-spike / v0.10.4-b1-production    B1 Mission Control (three.js Tesla-Megapack)
+  v0.10.5-power-sld-v2                        Lead Engineer Mode + V11 roadmap committed
+  v0.10.6..v0.10.8                            2.5D isometric SLD + DAG engine + iso camera
+  v0.10.9..v0.10.11                           SCADA asset panel, PBR polish, DDU/busway expansion
+  v0.10.12-maint-fix / v0.10.13-modal-fix     maintenance routing + closure-modal fixes
 
-Tests:   457+ passing
-         - 412 baseline
-         - 17 telemetry_simulator (Sprint 5 C1)
-         - 12 telemetry_pipeline (Sprint 5 C2)
-         - 12 telemetry_channels_config (Sprint 5 C3)
-         - 4 telemetry_perf (Sprint 5 C3 — Numba JIT verified)
-         - Pillar 4-5-6: 14/14 GREEN
-         - 4 pre-existing failures in test_loto_auditor_pillars.py
-           (DC-EPMS-036 fixture drift, non-regressive)
+Tests:   667 collected, 5 deselected (slow/FAISS) — `pytest --co -m "not slow"`, 3.58s
+         (was 457+ at v0.8.5; ~210 added across Sprints 6-10 + HMI tracks)
 
-Perf baseline (2026-05-09 AMD Ryzen + Windows):
+Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
   - Numba JIT cold compile: 4.8 ms
   - Hot compute() over 238 channels: 5.11 ms / window
   - Per-step Kalman: 4.3 us (well under SSCB target 1-100 us)
-  - Anomaly log trim over 10k entries: 1.83 ms
 
-Validation layers: 8 of 8 PASS
+Runtime: backend = `python backend\main.py` on :8080 (native, NOT docker).
+         epms-db container = TimescaleDB pg16 — DB `dcepms`, user `epms`.
+
+V9 scope: feature-complete. Live backlog = docs/ROADMAP-V11.md (locked
+2026-05-10): Tier 1 = demo readiness (browser-validate B1 Mission Control,
+DEMO_SCRIPT v5, OBS recording). Tiers 2/3/Hermes queued.
 ```
 
 **Recent commits (latest at top)**:
 ```
-HEAD                                feat(backend): Sprint 5 C1 telemetry simulator + SSE wiring
-26b9b1d (tag: v0.7.4-frontend-pivot) feat(frontend): Bite B SHI trend sparkline
-c42187b                             feat(frontend): Bites A1+A2+A3 telemetry activity strip
-b872396                             feat(frontend): Bite 1.3 stale-data badge
-b8065db                             feat(frontend): Phase 1.0 setup (Chart.js local + skeletons)
-8f3f2e6                             docs(sprint5): C0 architecture locked + PAUSE_STATE
-509be04                             fix(loto): DC-EPMS-034 witness_engine call site
+7f6ea55 (tag: v0.10.13-modal-fix)        fix(maintenance): closure modal — zombie + validation + auto-close
+409e695 (tag: v0.10.12-maint-fix)        fix(maintenance): close 2 routing bugs (DC-EPMS-MAINT-001/002)
+62489dd (tag: v0.10.11-ddu-busway)       feat(sld): DDU + busway expansion — 12 GB200 NVL72 rack drops
+79942f7 (tag: v0.10.10-aesthetic-polish) feat(sld): PBR brushed-metal + JetBrains Mono typography
+576ddec (tag: v0.10.9-asset-panel)       feat(asset-panel): Phase 4 contextual SCADA info panel
+85c0b44 (tag: v0.10.8-power-cam)         feat(power-cam): bounded iso camera controls
+2dd409d (tag: v0.10.7-dag-engine)        feat(power-grid): DAG electrical propagation + fault injection
 ```
 
-## 🛰 ROADMAP_V9_NEXT_STEPS — Sprint 5 C0 Architecture (locked 2026-05-09)
+## 🛰 [HISTORICAL] Sprint 5 C0 Architecture (delivered — preserved as design record)
 
-> **1-pager produced during C0 read-only phase 2026-05-09 ~04:00 by Claude Opus 4.7 (1M ctx).**
-> Source files read: `backend/cyber_physical_tools.py` (248 LOC, orphan), `backend/physics_engine.py` (369 LOC, live), `backend/main.py:459-491` (current `/api/telemetry/stream` placeholder).
-> When resuming Sprint 5: re-read this section first, then `git status` + `docker ps` + `curl /api/health`.
+> **STATUS 2026-05-16: Sprint 5 fully shipped.** C1-C3 closed at tags
+> `v0.7.5-telemetry-stream` → `v0.7.6-kalman-pipeline` → `v0.8.0-sprint5-kalman`;
+> C3.5 MOPs bundled. The telemetry simulator + Kalman pipeline + per-channel YAML
+> calibration are all LIVE in `backend/` and wired into `/api/telemetry/stream`.
+> Everything below is the original C0 1-pager, kept ONLY as a historical design
+> record — do NOT treat its "What's MISSING / to build" lists as open work.
+> Current roadmap is `docs/ROADMAP-V11.md` (locked 2026-05-10).
 
 ### Architectural intent
 
@@ -235,40 +237,46 @@ post-C3 or to V10.
 ### Directory layout
 ```
 C:\dev\DC-EPMS_PRO\
-├── backend/                     ← FastAPI + SQLAlchemy + asyncpg
-│   ├── main.py                  ← 1823 lines, 5 routers, ~50 endpoints
-│   ├── physics_engine.py        ← 369 lines, facade for 4 physics modules
-│   ├── physics/                 ← 4 sub-modules (it_thermal, mechanical, electrical, heat_rejection), 85 unit tests
-│   ├── agent_copilot.py         ← 894 lines, primary agent with 6 tools
-│   ├── agent_engine.py          ← 294 lines, dual-AI fallback (NeMo Guardrails + Claude Sonnet)
-│   ├── procedure_engine.py      ← 641 lines, 8-state machine, 32 tests
-│   ├── witness_engine.py        ← 290 lines, multi-signature drafts, 26 tests
-│   ├── cmms_mcp.py              ← 492 lines, LOR scoring, 51 tests
-│   ├── site_model.py            ← 462 lines, declarative YAML parser, 44 tests + 41 integration
-│   ├── graphrag_service.py      ← 166 lines, NetworkX MultiDiGraph + FAISS, 20 tests
-│   ├── rag_service.py           ← 234 lines, ChromaDB primary, 20-doc operational corpus
-│   ├── loto_auditor_agent.py    ← 1100+ lines, 6-pillar paranoid validator
-│   ├── loto_auditor_pillar_helpers.py  ← Helpers for Pillar 1-6
-│   ├── loto_auditor_routes.py   ← 4 REST endpoints under /api/loto
-│   ├── shift_briefing.py        ← (NOT YET) Sprint 5.5a target
-│   ├── cyber_physical_tools.py  ← 248 lines ORPHAN (Sprint 5 Telemetry target)
-│   ├── dpo_edge_healing.py      ← 352 lines ORPHAN (Sprint 6 target)
-│   ├── mcp_server.py            ← 531 lines, Claude Desktop subprocess
+├── backend/                     ← FastAPI + asyncpg — 40 modules
+│   ├── main.py                  ← central hub, ~50+ endpoints, lifespan boot
+│   ├── physics_engine.py + physics/   ← facade + 4 first-principles modules (it_thermal, mechanical, electrical, heat_rejection)
+│   ├── agent_copilot.py / agent_engine.py        ← primary tool-calling agent + dual-AI fallback (NeMo + Sonnet)
+│   ├── agent_site_tool.py / agent_graph_tool.py  ← agent tools (site model, GraphRAG)
+│   ├── multi_agent.py / multi_agent_routes.py    ← Sprint 10.1 façade (4 agents + Safety Officer veto)
+│   ├── procedure_engine.py / witness_engine.py   ← MOP 8-state machine + multi-signature drafts
+│   ├── cmms_*.py                ← Sprint 6 CMMS Core: mcp, models, repository, routes, seeder, predictive_trigger, site_enrichment
+│   ├── loto_auditor_*.py        ← 6-pillar validator: agent, models, pillar_helpers, report_renderer, repository, routes
+│   ├── telemetry_simulator.py / telemetry_pipeline.py / cyber_physical_tools.py  ← Sprint 5 Kalman pipeline (WIRED, live)
+│   ├── site_model.py / site_routes.py            ← declarative YAML parser + /api/site/*
+│   ├── graphrag_service.py / graphrag_index.py / graphrag_routes.py / knowledge_graph.py  ← GraphRAG (NetworkX + FAISS)
+│   ├── rag_service.py           ← ChromaDB primary, 20-doc 4-tier operational corpus
+│   ├── shift_report.py          ← PDF shift report via /api/shift/report
+│   ├── database.py / bms_connector.py / metrics_router.py  ← persistence + BMS stub + Prometheus
+│   ├── dpo_edge_healing.py      ← 352 lines, STILL ORPHAN (DPO loop — V11 candidate)
+│   ├── mcp_server.py            ← Claude Desktop stdio subprocess
 │   └── hal/                     ← Cummins, ASCO, Russelectric adapters
-├── frontend/                    ← Production-grade HMI
-│   ├── index.html               ← 105KB, 13 nav routes, includes LOTO Auditor view
+├── frontend/                    ← Production-grade HMI (modular ES + legacy IIFE)
+│   ├── index.html               ← entry; nav routes incl. LOTO Auditor, Maintenance, Tech Assist
 │   └── assets/
-│       ├── app.js               ← 3601 lines, IIFE pattern
-│       └── app.css              ← 71KB
+│       ├── app.js / app.css     ← legacy IIFE shell (MODULES dict, navigateTo router)
+│       ├── js/main.js           ← ES-module entry
+│       ├── js/core/             ← 13 modules: telemetry_engine, power_sld, power_grid, power_cam, pue_widget, shi_sparkline, heat_overlay, activity_strip, state, sound, keyboard, staleness, asset_metadata
+│       ├── js/views/            ← 8 views: mission_control, site_topology, rack_heatmap, maintenance, asset_panel, tech_assist, multi_agent, power_ups_iso
+│       └── vendor/              ← chart.umd 4.4.1 + three.module.min.js (local, no CDN)
 ├── config/
-│   ├── site_model.yml           ← 91 components, 50 racks (will expand to 368 in Sprint 5)
-│   ├── knowledge/               ← 5 GraphRAG markdown docs
-│   └── pue_targets.yml          ← (NOT YET) Sprint 5.5b target
+│   ├── site_model.yml           ← 91 components (50 racks Phase 1; DDU/busway expanded v0.10.11)
+│   ├── telemetry_channels.yml   ← per-channel Kalman R/Q/F calibration (Sprint 5 C3)
+│   ├── pue_targets.yml          ← architecture-aware PUE thresholds (Sprint 5.5b)
+│   ├── procedures/              ← executable MOP YAMLs (T4-MOP-CHI-001, T4-MOP-UPS-001, ...)
+│   ├── knowledge/               ← GraphRAG markdown docs
+│   ├── .env                     ← secrets + PG creds (gitignored — see DC-EPMS-DB-001)
+│   └── bms_tags.yml / scenarios.yml / paperclip_org.yml / config.yml
 ├── data/
 │   └── chroma_db/               ← 20-doc 4-tier corpus (Safety/Vendor/Standards/MOPs)
-├── tests/                       ← 412+ tests
+├── tests/                       ← 29 files, 667 tests (`pytest --co -m "not slow"`)
 ├── docs/
-│   ├── adr/                     ← 7 ADRs (MADR format)
+│   ├── adr/                     ← 8 ADRs (MADR format)
+│   ├── ROADMAP-V11.md           ← live backlog (locked 2026-05-10)
 │   └── architecture/sre_layers.md
 ├── scripts/
 │   └── _archive/                ← Session helpers archive
@@ -314,6 +322,33 @@ C:\dev\DC-EPMS_PRO\
 - **DC-EPMS-030** (MED): cooling_chain_for() doesn't exist; replaced with impact_set(chain="cooling")
 - **DC-EPMS-031** (MED): query_topology() doesn't exist; replaced with loto_with_knowledge(target_id)
 - **DC-EPMS-032** (LOW): walk direction polarity comment block
+
+### Closed in v0.10.12 / v0.10.13 (2026-05-15)
+- **DC-EPMS-MAINT-001** (LOW, cosmetic/race) — RESOLVED v0.10.12 (`409e695`).
+  Maintenance nav-click flicker: legacy IIFE `MODULES` dict in `app.js` had no
+  `maintenance` key, so `navigateTo('maintenance')` hit the `!cfg` fallback and
+  flashed `view-overview` before `views/maintenance.js` re-routed. Fix: declared
+  `MODULES.maintenance` + dedicated `navigateTo` branch.
+- **DC-EPMS-MAINT-002** (MED, functional regression from v0.10.9) — RESOLVED
+  v0.10.12 (`409e695`). Asset-panel "Open in Maintenance" handoff dead:
+  `asset_panel.js` set `sessionStorage.cmms_focus_asset_id` but
+  `views/maintenance.js` never read it. Fix: `_consumeFocusHandoff()` reads +
+  clears the key, applies `asset_id` filter, renders a FOCUS banner.
+- **DC-EPMS-MAINT-003** (MED) — RESOLVED v0.10.13 (`7f6ea55`). Closure modal
+  would not close ("zombie modal"): `app.css .m-modal-overlay` used
+  `display: flex`, overriding the UA `[hidden]{display:none}` on specificity.
+  Fix: `.m-modal-overlay[hidden]{display:none !important}` + inline validation
+  UX (shake/hint, replacing silent `alert()`) + force-close on 200 OK.
+
+### Closed in this session (2026-05-16)
+- **DC-EPMS-DB-001** (HIGH, environmental) — RESOLVED 2026-05-16. Backend
+  reported `postgres: down` despite a healthy `epms-db` container. Root cause:
+  the container was (re)provisioned with `docker-compose.yml` credentials
+  (`POSTGRES_USER=epms`, `POSTGRES_DB=dcepms`) while `backend/main.py` defaults
+  remained `postgres`/`epms` — a role + database that never existed. The app
+  ran in silent degraded mode (CMMS boot skipped). Fix: added `PG_HOST/PG_PORT/
+  PG_DB/PG_USER/PG_PASSWORD` to `config/.env` (gitignored, local-only). On
+  restart: `PostgreSQL connected to database 'dcepms'`, 91 assets re-seeded.
 
 ### Open / Deferred
 
@@ -464,59 +499,38 @@ C:\dev\DC-EPMS_PRO\
 **DC-EPMS-022** (LOW) - 6 ADRs use asterisk bullets violating MD004
 - 5 min mass sed replacement, target Batch 3.6
 
-## 🗺️ ROADMAP V9 - what's next
+## 🗺️ ROADMAP — V9 delivered, V11 is the live backlog
 
-### Sprint 5 Telemetry + Kalman (W5-6, 1.5 sem) ⭐ IMMEDIATE NEXT
+**V9 scope is feature-complete** (tags `v0.5.0` → `v0.10.13`). The live,
+authoritative backlog is **`docs/ROADMAP-V11.md`** (locked 2026-05-10). The
+section below is a delivery summary; the Sprint 5 1-pager above is historical.
 
-> **Locked architecture**: see `## 🛰 ROADMAP_V9_NEXT_STEPS — Sprint 5 C0 Architecture` above for the full 1-pager (C0 done 2026-05-09). Atomic ladder C1 → C2 → C3.
+### Delivered (v0.8.5 → v0.10.13)
 
-**Backend goal**: integrate `cyber_physical_tools.py` orphan (248 lines, Kalman + Numba `@njit` + Send-on-Delta) via two new modules (`telemetry_simulator.py`, `telemetry_pipeline.py`) and rewrite `/api/telemetry/stream`. Resolves DC-EPMS-029b naturally during C2.
+| Track | Tag(s) | Status |
+|---|---|---|
+| Sprint 5 — Telemetry + Kalman pipeline | v0.7.5 → v0.8.0 | ✅ |
+| Sprint 5.5b — PUE physics widget + ADR-004 | v0.9.14 | ✅ |
+| Sprint 6 — CMMS Core v1.0 (91 assets seeded) | v0.8.5 | ✅ |
+| Sprint 9.1 — Predictive WO trigger (Kalman → auto-WO) | v0.9.0 | ✅ |
+| Sprint 7.1 — Tech Assist (QA, PDF ingest, voice, OCR) + view | v0.9.5 → v0.9.9 | ✅ |
+| Sprint 10.1 — Multi-Agent façade (4 agents + Safety Officer veto) | v0.9.12 | ✅ |
+| HMI Tier A/B/C polish (topology, flow, anomaly heatmap) | v0.10.0 → v0.10.2 | ✅ |
+| B1 Mission Control (three.js Tesla-Megapack) | v0.10.3 → v0.10.4 | ✅ |
+| Power SLD — 2.5D isometric + DAG engine + iso camera | v0.10.5 → v0.10.8 | ✅ |
+| SCADA asset panel + PBR polish + DDU/busway expansion | v0.10.9 → v0.10.11 | ✅ |
 
-**Tag target**: `v0.8.0-sprint5-kalman` (C3 closure).
+### Not built — deferred to V11
 
-### Sprint 5.5a Pre-Operational Briefing Orchestrator (W6.5, 6-8h)
+- **DPO edge-healing** — `dpo_edge_healing.py` (352 LOC) is **still an ORPHAN**.
+  The original "Sprint 6 = DPO" plan was superseded by CMMS Core. V11 candidate.
+- **Alarm Storm Mitigation** (Bayesian alarm correlation) — V11 candidate.
+- **EOP Abort < 100 ms** (async event bus, NFPA 70E §130) — V11 candidate.
 
-**New backend module**: `backend/shift_briefing.py` (~250 lines)
+### V11 Tier 1 — next up (per `docs/ROADMAP-V11.md`)
 
-5-step pipeline:
-1. `_step1_subsystem_status()` -> physics_engine.validate_site() (<50ms)
-2. `_step2_topology_awareness()` -> graphrag.query("redundancy") (~100ms)
-3. `_step3_incidents_12h()` -> TimescaleDB (<30ms)
-4. `_step4_relevant_procedures()` -> ChromaDB tier-priority (~200ms)
-5. `_step5_llm_synthesis()` -> LM Studio gemma-4-e2b-it (2-5s, timeout 10s)
-
-**Endpoint**: `POST /api/shift/briefing`
-**Persistence**: `shift_briefings` table (PostgreSQL)
-**Tag target**: `v0.8.5-sprint55a-briefing`
-
-### Sprint 5.5b PUE Logic + ADR-004 (W7, 5-6h)
-
-- `physics_engine.compute_pue()` with first-law cross-check (<2% residual)
-- `config/pue_targets.yml` architecture-aware:
-  - Phase 1 (480 VAC trifásico): 1.30 / 1.45
-  - Phase 2 (800 VDC unipolar TN-S): 1.15 / 1.25
-- ADR-004 (agent_engine.py dual-AI rationale)
-
-**Tag target**: `v0.9.0-sprint55b-pue`
-
-### Sprint 6 DPO Capture-Only + ADR-005 (W8-9, 2-3 days)
-
-**Backend**: integrate `dpo_edge_healing.py` orphan (352 lines)
-- `dpo_pairs` table capturing (original_draft, corrected_draft, rejection_reason, ts)
-- `POST /api/dpo/capture` (auto-disparado en CMMS WO rejection)
-- `POST /api/dpo/recompile` (manual trigger)
-- DPO compute: CPU bitsandbytes (preserves edge-local property)
-- ADR-005 (DPO compute strategy)
-
-**Tag target**: `v0.9.5-sprint6-dpo`
-
-### Sprint 7 Alarm Storm Mitigation (W9-10, ~1 sem)
-Bayesian network for alarm correlation. 10-100 alarms burst -> topological graph reduction -> 1-5 root causes.
-
-### Sprint 8 EOP Abort under 100ms (W11-12, ~1 sem)
-Mission-critical async event bus per NFPA 70E Section 130 + IEC 62443-3-3 SR 3.4/7.6.
-
-**Tag target**: `v1.0.0-v9-complete`
+Demo readiness, ~8h: browser-validate B1 Mission Control on a real WebGL
+canvas, DEMO_SCRIPT v5, 3× OBS recording rehearsals, commit `PRIMER_PROMPT.md`.
 
 ## 🛠️ TOOLING CONSTRAINTS
 
@@ -524,8 +538,8 @@ Mission-critical async event bus per NFPA 70E Section 130 + IEC 62443-3-3 SR 3.4
 - **Python**: 3.12.10, venv at `C:\dev\DC-EPMS_PRO\.venv`
 - **Activation**: `.\.venv\Scripts\Activate.ps1` (always activate before running tests/uvicorn)
 - **LM Studio**: gemma-4-e2b-it on `127.0.0.1:1234`
-- **TimescaleDB**: Docker container `epms-db` on port 5432 (postgres user)
-- **FastAPI backend**: port 8080
+- **TimescaleDB**: Docker container `epms-db` on port 5432 — DB `dcepms`, user `epms`, pwd `epms_dev_only_change_me` (provisioned per `docker-compose.yml`). Backend reads `PG_DB`/`PG_USER`/`PG_PASSWORD` from `config/.env`; these MUST be set or it falls back to stale defaults `postgres`/`epms` — a role + DB that do NOT exist (see DC-EPMS-DB-001).
+- **FastAPI backend**: port 8080, launched native via `python backend\main.py` (NOT docker). `scripts/start.ps1` bootstraps venv + DB + backend.
 - **Claude Desktop**: MCP server `dc-epms-pro` (stdio)
 - **NetworkX 3.6.1, FAISS 1.13.2, sentence-transformers 3.2.1** (lazy-loaded)
 - **ChromaDB persistent client** at `data/chroma_db/`
@@ -534,7 +548,7 @@ Mission-critical async event bus per NFPA 70E Section 130 + IEC 62443-3-3 SR 3.4
 **Critical operational notes**:
 - Docker container `epms-backend` from old deployment auto-restarts and steals port 8080. Always `docker ps` and `docker stop epms-backend` if conflict.
 - FAISS has AVX2 access violation on AMD Ryzen + Windows (DC-EPMS-001). Mitigated via `not slow` markers.
-- The `epms-db` Docker container should ALWAYS stay running. Don't stop it.
+- The `epms-db` container should stay running. If found `Exited` (e.g. after a host reboot or Docker Desktop restart), bring it back with `docker start epms-db` and wait for `docker inspect --format "{{.State.Health.Status}}" epms-db` = `healthy` BEFORE launching the backend — otherwise PostgreSQL boots `down` and CMMS is skipped (DC-EPMS-DB-001).
 
 ## 🎓 WORKING STYLE - "Fine Tuning Quirúrgico"
 
@@ -607,18 +621,23 @@ When making changes that need to coordinate with external services:
 - **Browser**: http://127.0.0.1:8080/ for HMI smoke tests
 - **MCP**: stdio server `dc-epms-pro` for Claude Desktop integration
 
-## 🎬 RECENT SESSION HIGHLIGHTS (2026-05-08 to 2026-05-09)
+## 🎬 RECENT SESSION HIGHLIGHTS (2026-05-16)
 
-**9.5-hour overnight session 7+8 closed**:
-- 11 commits + 2 tags (v0.7.2-camino1, v0.7.3-sprint5-patches)
-- 8 bugs closed (1 HIGH + 4 MED + 3 LOW)
-- Backend 75% to 80%, Frontend 70% to 82%
-- LOTO Auditor view production-grade in HMI
-- Path C2 drift sync (40 MW to 67 MW)
-- Sprint 5 patches verified in browser smoke test:
-  - 16 sources_consulted, 14 OK + 1 deferred (ADR-009) + 1 warning (DC-EPMS-034)
-  - decision_time_ms ~12ms maintained
-- Real-world bug discovery: MOP-ATS-MONTHLY-001 + ups_a target = NEC 460.6 violation in 12ms (demo killer for CO+I panel)
+**Environment troubleshooting + doc sync**:
+- Found the dev stack down: `epms-db` container `Exited`, backend not running.
+- Brought it up: `docker start epms-db` → healthy; relaunched backend on :8080.
+- Diagnosed + fixed **DC-EPMS-DB-001** (HIGH): PostgreSQL credentials mismatch —
+  container is `epms`/`dcepms`, backend defaulted to nonexistent `postgres`/`epms`.
+  Fixed via `config/.env` (`PG_DB`/`PG_USER`/`PG_PASSWORD`). On restart: PostgreSQL
+  `up`, 91 CMMS assets re-seeded, all boot stages green.
+- Synced this CLAUDE.md to real state: it was stale at v0.8.5 / Sprint 6 while the
+  project is at v0.10.13 (~28 commits — Sprints 6-10 + full HMI / SLD /
+  Mission-Control tracks). Updated CURRENT STATE, bugs registry, roadmap, tooling,
+  directory layout, vision-deck trajectory.
+
+**Prior (2026-05-08/09) — preserved**: 9.5h overnight session 7+8 — 11 commits,
+8 bugs closed, LOTO Auditor HMI view, Path C2 drift sync (40 → 67 MW). Demo-killer
+finding: MOP-ATS-MONTHLY-001 + `ups_a` = NEC 460.6 violation flagged in ~12 ms.
 
 ## 📝 COMMUNICATION PREFERENCES
 
@@ -629,53 +648,48 @@ When making changes that need to coordinate with external services:
 
 ## 🎯 IMMEDIATE NEXT STEPS (when resuming)
 
-1. **Read `## 🛰 ROADMAP_V9_NEXT_STEPS`** — Sprint 5 architecture is locked there (C0 done 2026-05-09 ~04:00).
-2. **Verify state**: `git log --oneline -n 6` (HEAD must be `509be04` or descendant), `git status` (only `.claude/` + `DEMO_SCRIPT.md` + `PRIMER_PROMPT.md` untracked), `docker ps` (`epms-db` healthy), `curl http://127.0.0.1:8080/api/health` (200).
-3. **Restart uvicorn** if backend health check shows stale code (DC-EPMS-034 fix in `backend/loto_auditor_agent.py` not yet active in running process). Browser smoke optional but recommended before C1.
-4. **Activate venv**: `.\.venv\Scripts\Activate.ps1`.
-5. **Wait for explicit GO** from Wilmer before starting C1 (`telemetry_simulator.py`).
+1. **Verify state**: `git log --oneline -n 6` (HEAD must be `7f6ea55` /
+   `v0.10.13-modal-fix` or a descendant), `git status` (only `.claude/` +
+   `PRIMER_PROMPT.md` untracked).
+2. **Bring up the stack**:
+   - `docker start epms-db` → wait for `docker inspect --format
+     "{{.State.Health.Status}}" epms-db` = `healthy`.
+   - `python backend\main.py` (native, :8080) — confirm `curl
+     http://127.0.0.1:8080/api/health` reports `postgres: up` /
+     `database: dcepms`. If it says `down`, see DC-EPMS-DB-001.
+   - One-shot alternative: `.\scripts\start.ps1`.
+3. **Activate venv** for any test / CLI work: `.\.venv\Scripts\Activate.ps1`.
+4. **Read `docs/ROADMAP-V11.md`** — the live backlog. Tier 1 = demo readiness.
+5. **Wait for explicit GO** from Wilmer before starting any V11 work.
 
-## ⏸ PAUSE_STATE (last updated 2026-05-09 mid-cycle)
+## ⏸ PAUSE_STATE (last updated 2026-05-16)
 
-> Original pause was PROACTIVE per Zero-Incidents discipline. Resumption was driven by user re-engagement; backend C1 + frontend Sprint 5.5 hybrid pivot were both completed in this same calendar day in alternating turns. PAUSE_STATE preserved as resumption protocol record.
+> The Sprint-5-era pause record has been superseded. The project ran far past it
+> (v0.8.5 → v0.10.13). There is no active pause: V9 is feature-complete and the
+> live backlog is `docs/ROADMAP-V11.md`. This session (2026-05-16) did
+> environment troubleshooting + this doc sync only — no feature commits.
 
-### Session arc (commits beyond v0.7.3-sprint5-patches, oldest first)
+### State at sync time
 
-| Commit | Phase | Bugs / milestones |
-|---|---|---|
-| `17dfded` chore(sprint5): close session 7+8 + recovery from shell friction [DC-EPMS-035] | Phase A | DC-EPMS-035 opened+closed |
-| `509be04` fix(loto): DC-EPMS-034 witness_engine call site (LOW) | Phase B | DC-EPMS-034 RESOLVED, DC-EPMS-036 opened |
-| `8f3f2e6` docs(sprint5): C0 architecture locked + PAUSE_STATE | C0 | — (read-only 1-pager) |
-| `b8065db` feat(frontend): Phase 1.0 setup (Chart.js local + skeletons) | Frontend pivot | Edge-first ADR-006 reinforced |
-| `b872396` feat(frontend): Bite 1.3 stale-data badge | Frontend pivot | Stream pill 4-state |
-| `c42187b` feat(frontend): Bites A1+A2+A3 telemetry activity strip | Frontend pivot | 6-field strip, C2-ready |
-| `26b9b1d` (tag: v0.7.4-frontend-pivot) feat(frontend): Bite B SHI trend sparkline | Frontend pivot CLOSED | SVG sparkline + breach markers |
-| HEAD (tag: v0.7.5-telemetry-stream) feat(backend): Sprint 5 C1 telemetry simulator + SSE wiring | Sprint 5 C1 | 17 tests GREEN, simulator emits 238 channels |
-
-### Pending from this session (NOT blocking next session)
-
-- **Browser smoke verification of DC-EPMS-034 fix** (older): requires uvicorn restart. Audit on `MOP-ATS-MONTHLY-001` + `ups_a`, confirm `sources_consulted.witness_engine_protection = "confirmed via WitnessStore.sign + IdentityCollisionError (IEC 62443 SR 6.1)"`.
-- **Browser smoke verification of Sprint 5 C1** (current): requires uvicorn restart. After restart, hard-reload `http://127.0.0.1:8080/`. Activity Strip "SCHEMA" cell should flip from `legacy_kpi` (gray) to `channel_innovations` (neon-cyan, glow). Anomaly counter remains 0 until C2 wires real Kalman residuals.
-- **Optional rollback for C1**: set env var `DC_EPMS_USE_SIMULATOR=0` and restart uvicorn — reverts to legacy DB-poll without code change.
+- HEAD `7f6ea55` (`v0.10.13-modal-fix`), `master` == `origin/master`, tree clean.
+- Dev stack UP: `epms-db` healthy, backend on :8080, PostgreSQL `up` (`dcepms`).
+- `config/.env` now carries the PG credentials (DC-EPMS-DB-001 fix) — local-only,
+  gitignored, persistent across restarts.
 
 ### Resumption protocol (next session entry)
 
-1. Read this `PAUSE_STATE` section.
-2. Read `## 🛰 ROADMAP_V9_NEXT_STEPS` for Sprint 5 architecture (above).
-3. Verify state per `IMMEDIATE NEXT STEPS` step 2.
-4. Restart uvicorn if needed.
-5. Activate `.venv`.
-6. Wait for Wilmer's explicit GO before starting C1.
+1. Run the `## 🎯 IMMEDIATE NEXT STEPS` checklist (verify state, bring up stack).
+2. Read `docs/ROADMAP-V11.md` for the live backlog.
+3. Wait for Wilmer's explicit GO before starting any V11 work.
 
-### Open bugs at pause time
+### Open bugs at sync time (see BUGS REGISTRY for detail)
 
-- DC-EPMS-019 (LOW, deferred): logging file handle on shutdown.
-- DC-EPMS-021 (MED, deferred): 90 ruff legacy errors.
-- DC-EPMS-022 (LOW, deferred): 6 ADRs MD004 asterisks.
-- DC-EPMS-029b (MED, deferred to Sprint 5 C2): SHI delta in `simulate_loto_measurements`. Natural resolution expected during C2.
-- DC-EPMS-035 (LOW, closed): shell-friction recovery (V9.1 PowerShell Native Mandate adopted).
-- DC-EPMS-036 (MED, deferred to Sprint 5): 4 test-fixture drifts in `tests/test_loto_auditor_pillars.py` from DC-EPMS-029/030/031 production fixes that did not propagate to mocks. NON-regressive (verified pre-existing on clean HEAD `17dfded` via `git stash`).
-- DC-EPMS-034 (LOW): RESOLVED 2026-05-09 in commit `509be04`. Stays in registry as historical record.
+- DC-EPMS-019 (LOW): logging file handle on shutdown.
+- DC-EPMS-021 (MED): ~90 ruff legacy errors.
+- DC-EPMS-022 (LOW): 6 ADRs MD004 asterisks.
+- DC-EPMS-029c (LOW): physics_engine SHI rollup insensitive to some LOTO types.
+- DC-EPMS-039 (LOW): pytest-bootstrap noise — Pydantic `model_id` namespace +
+  chromadb posthog telemetry errors. Still reproduced 2026-05-16 (non-fatal).
 
 ### V9.1 PowerShell Native Mandate (in force after DC-EPMS-035)
 
@@ -744,29 +758,32 @@ When making changes that need to coordinate with external services:
 - SLM lifecycle pool with VRAM-budget LRU eviction
 - compliance_failsafe.yml preloaded rules survive total LLM failure
 
-### Sprint trajectory mapping
+### Sprint trajectory mapping (updated 2026-05-16)
 
 | Sprint | Vision deck items | Status |
 |---|---|---|
-| 5 (DONE) | telemetry simulator + Kalman + frontend | ✅ v0.8.0 |
-| **6 (DONE)** | **#1 CMMS Core + #2 Tesla/SpaceX Vision** | **✅ this commit** |
-| 7 | #3 Tech Assist V1 (text + voice + nameplate) | deferred |
-| 8 | #3 Tech Assist V2 (diagram CV) | deferred |
-| 9 | #4 Real-time CoPilot + NLP dashboards | deferred |
-| 10 | #6 Multi-Agent Orchestration | deferred |
+| 5 | telemetry simulator + Kalman + frontend | ✅ v0.8.0 |
+| 6 | #1 CMMS Core + #2 Tesla/SpaceX Vision | ✅ v0.8.5 |
+| 7.1 | #3 Tech Assist V1 (QA + PDF ingest + voice + nameplate OCR) | ✅ v0.9.5–v0.9.9 |
+| 8 | #3 Tech Assist V2 (diagram CV) | deferred → V11 |
+| 9.1 | #4 partial — predictive WO trigger (Kalman → auto-WO) | ✅ v0.9.0 |
+| 9 (full) | #4 Real-time CoPilot + NLP-to-SQL dashboards | deferred → V11 |
+| 10.1 | #6 Multi-Agent façade (4 agents + Safety Officer veto) | ✅ v0.9.12 |
 | 11 | #5 Equinix multi-IBX | design-only (single-laptop) |
-| 12 | #7 Agent AI OS Self-Healing | deferred |
+| 12 | #7 Agent AI OS Self-Healing | deferred → V11 |
 
-### CO+I demo killer subset (target: early August 2026)
+Plus an unplanned HMI / visualization track (v0.10.x): Tier A/B/C polish, B1
+Mission Control (three.js), 2.5D isometric SLD + DAG engine, SCADA asset panel.
 
-Items for the "demonstrable" minimum:
-- ✅ Sprint 5 (DONE)
-- ✅ Sprint 6 (DONE this commit)
-- 🟡 Sprint 7.1-7.5 Tech Assist MVP (~10-12h)
-- 🟡 Sprint 9.1 In-line CoPilot simplified (~6-8h)
-- 🟡 Sprint 10.1 Multi-Agent básico façade (~4-5h)
+### CO+I demo readiness (target: early August 2026)
 
-Total to MVP demo: ~30-35h remaining. Polish budget: ~30-50h. Realistic.
+The "demonstrable minimum" is built. Remaining work is delivery, not features —
+see `docs/ROADMAP-V11.md` Tier 1 (~8h): browser-validate B1 Mission Control,
+DEMO_SCRIPT v5, 3× OBS recording rehearsals.
+
+- ✅ Sprint 5 / 6 / 7.1 / 9.1 / 10.1 — all shipped
+- ✅ HMI Mission Control + 2.5D isometric SLD — shipped (v0.10.x)
+- 🟡 Demo recording + DEMO_SCRIPT v5 — pending (V11 Tier 1)
 
 ## 🚨 DO NOT TOUCH
 
@@ -774,4 +791,4 @@ Total to MVP demo: ~30-35h remaining. Polish budget: ~30-50h. Realistic.
 - `_legacy_backup/` directory (Batch 1+2 archived materials)
 - `.venv/` directory (regenerate via `pip install -e .[dev]` if needed)
 - Any commits older than v0.5.0 (foundation, brittle)
-- `agent_engine.py` (dual-AI fallback per ADR-004 future, do NOT delete)
+- `agent_engine.py` (dual-AI fallback per ADR-004, do NOT delete)
