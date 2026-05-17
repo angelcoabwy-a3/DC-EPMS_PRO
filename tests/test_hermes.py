@@ -1,11 +1,12 @@
 """
 DC-EPMS PRO — tests/test_hermes.py
-ROADMAP V11 T3.1 — Project Hermes WebSocket vertical slice.
+ROADMAP V11 T3.1 — Project Hermes WebSocket telemetry pipeline.
 
 Covers the multiplexed frame envelope, the ConnectionManager fan-out
-(including dead-socket eviction), and the live WS endpoint. No real
-network: ConnectionManager runs against fake sockets; the endpoint is
-driven by FastAPI's TestClient.websocket_connect.
+(including dead-socket eviction), the live Kalman-pipeline tap, the
+graceful fallback, and the WS endpoint. No real network: ConnectionManager
+runs against fake sockets; the endpoint is driven by TestClient and the
+WS test mocks the producer for speed + isolation.
 """
 
 import asyncio
@@ -16,6 +17,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+# Both roots: flat imports (import hermes) need backend/; the simulator's
+# own `from backend.site_model import ...` needs the project root.
+sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
 import hermes
@@ -59,6 +63,39 @@ def test_telemetry_snapshot_carries_path_c2_fields():
     assert {"pue", "it_load_kw", "hall_temp_c", "delta_t_c", "scenario"} <= set(snap)
     assert 1.0 < snap["pue"] < 1.3
     assert snap["scenario"] == "NORMAL"
+
+
+# ── live Kalman pipeline tap ─────────────────────────────────────────
+def test_real_telemetry_frame_taps_kalman_pipeline():
+    """The production producer taps the real simulator + Kalman pipeline."""
+    from telemetry_pipeline import reset_pipeline
+    from telemetry_simulator import reset_simulator
+
+    reset_simulator()
+    reset_pipeline()
+    try:
+        frame = hermes._real_telemetry_frame()
+        assert frame["schema"] == "channel_innovations"
+        assert isinstance(frame["channels"], dict)
+        assert len(frame["channels"]) > 0   # the Path C2 inventory emits channels
+        # every channel carries the Kalman innovation contract
+        sample = next(iter(frame["channels"].values()))
+        assert {"max_z", "mean_z", "is_anomalous"} <= set(sample)
+        assert isinstance(frame["anomaly_count_60min"], int)
+    finally:
+        reset_simulator()
+        reset_pipeline()
+
+
+def test_telemetry_payload_falls_back_when_tap_unavailable(monkeypatch):
+    """If the live tap raises, the producer degrades to a representative frame."""
+    def _boom():
+        raise RuntimeError("simulator offline")
+
+    monkeypatch.setattr(hermes, "_real_telemetry_frame", _boom)
+    payload = hermes._telemetry_payload(5)
+    assert payload["schema"] == "legacy_kpi"
+    assert payload["latest"]["scenario"] == "NORMAL"
 
 
 # ── ConnectionManager ────────────────────────────────────────────────
@@ -122,8 +159,17 @@ def test_router_exposes_the_hermes_websocket_route():
 
 
 def test_ws_endpoint_streams_multiplexed_frames(monkeypatch):
-    # Shrink the tick so the test does not wait a real second.
+    # Shrink the tick + mock the producer so the test is fast and isolated
+    # from the simulator singletons.
     monkeypatch.setattr(hermes, "HERMES_TICK_SECONDS", 0.01)
+    stub = {
+        "schema": "channel_innovations",
+        "channels": {"rack_a_01:gpu_Tj_c": {"max_z": 0.4, "mean_z": 0.1, "is_anomalous": False}},
+        "anomaly_count_60min": 0,
+        "ts": 1700000000.0,
+    }
+    monkeypatch.setattr(hermes, "_real_telemetry_frame", lambda: dict(stub))
+
     client = TestClient(_make_app())
     with client.websocket_connect("/api/hermes") as ws:
         welcome = ws.receive_json()
@@ -134,7 +180,8 @@ def test_ws_endpoint_streams_multiplexed_frames(monkeypatch):
         tele = ws.receive_json()
         assert tele["stream"] == "telemetry"
         assert tele["seq"] >= 1
-        assert {"pue", "it_load_kw", "hall_temp_c", "delta_t_c", "scenario"} <= set(tele["payload"])
+        assert tele["payload"]["schema"] == "channel_innovations"
+        assert "rack_a_01:gpu_Tj_c" in tele["payload"]["channels"]
 
         # the endpoint registered the live connection with the manager
         assert hermes.manager.active_count >= 1

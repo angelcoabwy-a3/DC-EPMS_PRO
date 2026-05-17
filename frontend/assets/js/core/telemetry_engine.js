@@ -1,53 +1,31 @@
 /* ════════════════════════════════════════════════════════════════
  * DC-EPMS PRO — core/telemetry_engine.js
  *
- * SSE network handler. Replaces the IIFE-private functions in app.js
- * (legacy IIFE; see git history for archive/app.js.legacy):
+ * Real-time telemetry transport for the HMI.
  *
- *   - startTelemetryStream()  legacy:122-143
- *   - handleTelemetry(point)  legacy:145-158
- *   - updateKPIs(point)       legacy:160-180  (stays in views/, not here)
+ * ROADMAP V11 T3.1 — TRANSPORT CUTOVER:
+ *   The live transport is now the Project Hermes multiplexed WebSocket
+ *   (services/api.js → /api/hermes). The legacy SSE EventSource path is
+ *   retained below, flag-gated, for emergency rollback ONLY.
  *
- * Status: SKELETON — Sprint 5.5 Hybrid Frontend Pivot, Phase 1.0.
- *   Wired: NO (app.js still owns the EventSource).
- *   Next bite: move EventSource lifecycle here, expose start/stop,
- *   add schema-aware dispatch + reconnect-with-backoff.
+ *   Both transports funnel into the SAME `_ingest()` schema dispatch, so
+ *   the view layer (Mission Control, PUE widget, SHI sparkline, activity
+ *   strip, heatmaps) is untouched by the cutover — it only ever reads
+ *   the reactive state keys this module writes.
  *
- * Design contract (binding when implemented):
+ * Schema dispatch (unchanged across the cutover):
+ *   - legacy_kpi          {latest:{…flat…}, ts}        → latestTelemetry
+ *   - channel_innovations {channels:{…}, anomaly_count_60min, ts}
+ *                                                      → channels + anomalies
  *
- *   1. SSE schema dispatch
- *      - legacy KPI payload `{latest: {...flat fields...}, ts}` -> kpi handler
- *      - C2 channel payload `{schema: "channel_innovations",
- *          channels: {ch_id: {n_emissions, max_z, mean_z, is_anomalous,
- *          last_emission}}}` -> channels handler
- *      Single onmessage routes by `data.schema` (default = legacy_kpi).
- *
- *   2. Stale-data tracking
- *      Every successful message updates `state.lastTelemetryAtMs`.
- *      A separate frame-scheduler module reads this and toggles a
- *      DOM dataset attribute for CSS-driven staleness rendering.
- *
- *   3. Reconnect policy
- *      Exponential backoff: 1s, 2s, 4s, 8s, capped at 30s.
- *      Reset to 1s after a successful message.
- *      Hard reset (close + reopen fresh EventSource) on every retry
- *      to avoid stuck-connection states observed in legacy 5s fixed
- *      reconnect (legacy:135-142).
- *
- *   4. Worker offload (Phase 2)
- *      JSON parsing of large channel payloads will move to a Web
- *      Worker. The main thread receives only the parsed object via
- *      postMessage. See ./workers/telemetry_parser.js (TODO).
- *
- * Public API (planned):
- *
+ * Public API:
  *   import { startTelemetry, stopTelemetry } from './core/telemetry_engine.js';
- *   startTelemetry(API_BASE);          // begins SSE
- *   stopTelemetry();                   // closes EventSource cleanly
- *
+ *   startTelemetry(apiBase);   // connects the live transport
+ *   stopTelemetry();           // tears it down cleanly
  * ════════════════════════════════════════════════════════════════ */
 
 import { setState, getState } from './state.js';
+import { connectHermes, onHermesStream } from '../services/api.js';
 
 const SCHEMA_LEGACY_KPI = 'legacy_kpi';
 const SCHEMA_CHANNEL_INNOVATIONS = 'channel_innovations';
@@ -55,9 +33,15 @@ const SCHEMA_CHANNEL_INNOVATIONS = 'channel_innovations';
 const RECONNECT_INITIAL_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
 
-let _source = null;
+// T3.1 cutover: the Hermes WebSocket is the live telemetry transport.
+// Set false (here or via console) to fall back to the legacy SSE
+// EventSource — kept wired purely for emergency rollback.
+const _USE_HERMES_TRANSPORT = true;
+
+let _source = null;            // legacy SSE EventSource (rollback path)
 let _reconnectMs = RECONNECT_INITIAL_MS;
 let _reconnectTimer = null;
+let _hermesUnsub = null;       // Hermes telemetry-stream subscription handle
 
 const _dispatchTable = {
     [SCHEMA_LEGACY_KPI]: (data) => setState('latestTelemetry', data.latest ?? null),
@@ -71,14 +55,13 @@ const _dispatchTable = {
     },
 };
 
-function _onMessage(e) {
-    let data;
-    try {
-        data = JSON.parse(e.data);
-    } catch (err) {
-        console.warn('[telemetry] JSON parse failed:', err);
-        return;
-    }
+/**
+ * Transport-agnostic ingest: route a parsed telemetry object by its
+ * schema and update the reactive store. Both the Hermes WS path and the
+ * legacy SSE path call this with an already-parsed object.
+ */
+function _ingest(data) {
+    if (!data || typeof data !== 'object') return;
     const schema = data.schema || SCHEMA_LEGACY_KPI;
     const handler = _dispatchTable[schema];
     if (!handler) {
@@ -88,14 +71,23 @@ function _onMessage(e) {
     handler(data);
     setState('schemaVersion', schema);
     setState('lastTelemetryAtMs', performance.now());
-
-    // counters + lag for activity strip (Bite A3)
     setState('messageCount', (getState('messageCount') || 0) + 1);
     if (typeof data.ts === 'number') {
-        // backend ts is unix seconds (main.py:471); compare to client ms
+        // backend ts is unix seconds; compare to client ms
         setState('serverClientLagMs', Date.now() - data.ts * 1000);
     }
+}
 
+// ─── Legacy SSE transport (rollback path — _USE_HERMES_TRANSPORT=false) ───
+function _onMessage(e) {
+    let data;
+    try {
+        data = JSON.parse(e.data);
+    } catch (err) {
+        console.warn('[telemetry] JSON parse failed:', err);
+        return;
+    }
+    _ingest(data);
     _reconnectMs = RECONNECT_INITIAL_MS;
 }
 
@@ -114,16 +106,17 @@ function _onError() {
     }, _reconnectMs);
 }
 
-export function startTelemetry(apiBase) {
-    setState('_apiBase', apiBase);
-    if (_source) stopTelemetry();
+function _startLegacySse(apiBase) {
+    if (_source) {
+        try { _source.close(); } catch (_) { /* noop */ }
+    }
     _source = new EventSource(`${apiBase}/api/telemetry/stream`);
     _source.onmessage = _onMessage;
     _source.onerror = _onError;
     setState('telemetrySource', _source);
 }
 
-export function stopTelemetry() {
+function _stopLegacySse() {
     if (_reconnectTimer) {
         clearTimeout(_reconnectTimer);
         _reconnectTimer = null;
@@ -133,6 +126,36 @@ export function stopTelemetry() {
         _source = null;
     }
     setState('telemetrySource', null);
+}
+
+// ─── Public API ───────────────────────────────────────────────────
+export function startTelemetry(apiBase) {
+    setState('_apiBase', apiBase);
+
+    if (_USE_HERMES_TRANSPORT) {
+        // Live path: subscribe the schema dispatch to the Hermes
+        // `telemetry` stream. The WS client (services/api.js) owns the
+        // socket lifecycle + exponential-backoff reconnection.
+        if (_hermesUnsub) _hermesUnsub();
+        connectHermes();
+        _hermesUnsub = onHermesStream('telemetry', _ingest);
+        setState('telemetryTransport', 'hermes-ws');
+        console.log('[telemetry] transport: Hermes WebSocket (/api/hermes)');
+        return;
+    }
+
+    // Rollback path: legacy SSE EventSource.
+    _startLegacySse(apiBase);
+    setState('telemetryTransport', 'legacy-sse');
+    console.warn('[telemetry] transport: legacy SSE (rollback mode)');
+}
+
+export function stopTelemetry() {
+    if (_hermesUnsub) {
+        _hermesUnsub();
+        _hermesUnsub = null;
+    }
+    _stopLegacySse();
 }
 
 export const SCHEMAS = Object.freeze({
