@@ -1939,6 +1939,45 @@
 
                 </div>
 
+                <!-- ══════════ G6: Procedure Generator panel ══════════ -->
+                <section class="m-procgen-panel">
+                    <div class="m-panel-header">
+                        <div class="m-panel-title">Procedure Generator - Asset Taxonomy</div>
+                        <div class="m-panel-meta">
+                            <span>actor role</span>
+                            <select id="m-procgen-role" class="m-filter-input">
+                                <option value="TECH_L4">TECH_L4</option>
+                                <option value="SENIOR_TECH_L5">SENIOR_TECH_L5</option>
+                                <option value="SME_L6">SME_L6</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="m-procgen-split">
+                        <div class="m-procgen-tree" id="m-procgen-tree">
+                            <div class="m-empty">Loading&hellip;</div>
+                        </div>
+                        <div class="m-procgen-actions" id="m-procgen-actions">
+                            <div class="m-empty">Select an asset from the taxonomy tree.</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- G6: procedure draft modal -->
+                <div class="m-modal-overlay" id="m-procgen-overlay" hidden>
+                    <div class="m-modal" id="m-procgen-modal" role="dialog" aria-modal="true" aria-labelledby="m-procgen-title">
+                        <div class="m-modal-header">
+                            <div class="m-modal-title" id="m-procgen-title">Procedure Draft</div>
+                            <button class="m-modal-close-x" id="m-procgen-cancel" type="button" aria-label="Close">&times;</button>
+                        </div>
+                        <div class="m-procgen-alert" id="m-procgen-alert" hidden></div>
+                        <div class="m-modal-body" id="m-procgen-body"></div>
+                        <div class="m-modal-actions">
+                            <button class="btn btn-secondary" id="m-procgen-close-2" type="button">Close</button>
+                            <button class="btn btn-primary" id="m-procgen-activate" type="button">Approve &amp; Activate</button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- ══════════ Voice Closure modal (Sprint 7.1c) ══════════
                      Per-WO closure dictation. Opened from any row whose
                      status is approved/scheduled/in_progress via the

@@ -886,6 +886,7 @@ async function _refresh() {
         const wos = wosResp.work_orders || [];
         _renderKPIs(assets, wos);
         _renderAssetGrid(assets);
+        _renderProcgenTree(assets);
         _renderWOBacklog(wos);
         _renderFocusBanner(assets);
     } catch (err) {
@@ -987,6 +988,272 @@ function _wireRouting() {
     registerRoute('maintenance', { viewId: 'view-maintenance' });
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  G6: Procedure Generator panel - taxonomy drill-down + API wiring
+// ══════════════════════════════════════════════════════════════════
+let _procgenAssets = [];
+let _procgenChildren = new Map();   // parent_id -> [asset, ...]
+const _procgenExpanded = new Set(); // expanded tree-node ids
+let _procgenSelected = null;        // selected asset_id
+let _procgenDraft = null;           // the active DRAFT procedure dict
+let _procgenTrapRelease = null;
+
+const _PROCGEN_ANOMALIES = ['gen_desync', 'cdu_flow_starvation',
+                            'thermal_runaway', 'ups_drain'];
+// asset_levels that count as a micro-component (a valid EMP target).
+const _MICRO_LEVELS = new Set(['sub_assembly', 'component', 'sensor']);
+
+function _assetMeta(asset, key) {
+    const m = asset && asset.metadata_json;
+    return (m && typeof m === 'object') ? m[key] : undefined;
+}
+
+function _renderProcgenTree(assets) {
+    _procgenAssets = assets || [];
+    _procgenChildren = new Map();
+    for (const a of _procgenAssets) {
+        const parent = _assetMeta(a, 'parent');
+        if (!parent) continue;
+        if (!_procgenChildren.has(parent)) _procgenChildren.set(parent, []);
+        _procgenChildren.get(parent).push(a);
+    }
+    const container = document.getElementById('m-procgen-tree');
+    if (!container) return;
+
+    // Roots = parentless assets; containment roots (systems + decomposed
+    // equipment that have children) float to the top so the macro->micro
+    // hierarchy is immediately visible.
+    const roots = _procgenAssets.filter(a => !_assetMeta(a, 'parent'));
+    roots.sort((a, b) => {
+        const ah = _procgenChildren.has(a.asset_id) ? 0 : 1;
+        const bh = _procgenChildren.has(b.asset_id) ? 0 : 1;
+        if (ah !== bh) return ah - bh;
+        return a.asset_id.localeCompare(b.asset_id);
+    });
+    container.innerHTML = roots.length
+        ? roots.map(r => _procgenTreeNode(r, 0)).join('')
+        : '<div class="m-empty">No assets.</div>';
+}
+
+function _procgenTreeNode(asset, depth) {
+    if (depth > 8) return '';   // defensive: cap a malformed parent cycle
+    const id = asset.asset_id;
+    const kids = _procgenChildren.get(id) || [];
+    const hasKids = kids.length > 0;
+    const expanded = _procgenExpanded.has(id);
+    const level = _assetMeta(asset, 'asset_level') || asset.asset_type;
+    const caret = hasKids ? (expanded ? '▾' : '▸') : '·';
+    const sel = id === _procgenSelected ? ' is-selected' : '';
+    let html = `
+        <div class="m-tree-node${sel}" style="padding-left:${8 + depth * 16}px">
+            <span class="m-tree-caret" data-caret="${_escape(id)}">${caret}</span>
+            <span class="m-tree-label" data-select="${_escape(id)}">${
+                _escape(asset.display_name || id)}</span>
+            <span class="m-tree-level">${_escape(level)}</span>
+        </div>`;
+    if (hasKids && expanded) {
+        html += kids.slice()
+            .sort((a, b) => a.asset_id.localeCompare(b.asset_id))
+            .map(k => _procgenTreeNode(k, depth + 1)).join('');
+    }
+    return html;
+}
+
+function _onProcgenTreeClick(e) {
+    const caret = e.target.closest('[data-caret]');
+    if (caret) {
+        const id = caret.getAttribute('data-caret');
+        if (_procgenExpanded.has(id)) _procgenExpanded.delete(id);
+        else _procgenExpanded.add(id);
+        _renderProcgenTree(_procgenAssets);
+        return;
+    }
+    const label = e.target.closest('[data-select]');
+    if (label) _selectProcgenAsset(label.getAttribute('data-select'));
+}
+
+function _selectProcgenAsset(assetId) {
+    _procgenSelected = assetId;
+    _renderProcgenTree(_procgenAssets);   // re-render to paint the selection
+    _renderProcgenActions(_procgenAssets.find(a => a.asset_id === assetId));
+}
+
+function _renderProcgenActions(asset) {
+    const panel = document.getElementById('m-procgen-actions');
+    if (!panel) return;
+    if (!asset) {
+        panel.innerHTML = '<div class="m-empty">Select an asset from the taxonomy tree.</div>';
+        return;
+    }
+    const level = _assetMeta(asset, 'asset_level');
+    const isMicro = _MICRO_LEVELS.has(level) || !!_assetMeta(asset, 'parent');
+    const aid = _escape(asset.asset_id);
+    const anomalyOpts = _PROCGEN_ANOMALIES
+        .map(a => `<option value="${a}">${a}</option>`).join('');
+    panel.innerHTML = `
+        <div class="m-procgen-sel">
+            <span class="m-procgen-sel-name">${_escape(asset.display_name || asset.asset_id)}</span>
+            <span class="m-procgen-sel-meta">${_escape(level || asset.asset_type)}</span>
+        </div>
+        <div class="m-procgen-btns">
+            <button class="btn btn-secondary" data-draft="SOP" data-asset="${aid}">Draft SOP</button>
+            <button class="btn btn-secondary" data-draft="MOP" data-asset="${aid}">Draft MOP</button>
+            <button class="btn btn-secondary" data-draft="EMP" data-asset="${aid}"${
+                isMicro ? '' : ' disabled title="EMP targets micro-components"'}>Draft EMP</button>
+        </div>
+        <div class="m-procgen-eop">
+            <select id="m-procgen-anomaly" class="m-filter-input">${anomalyOpts}</select>
+            <button class="btn btn-secondary" data-draft="EOP" data-asset="${aid}">Draft EOP</button>
+        </div>`;
+}
+
+function _onProcgenActionClick(e) {
+    const btn = e.target.closest('[data-draft]');
+    if (!btn || btn.disabled) return;
+    const procClass = btn.getAttribute('data-draft');
+    const assetId = btn.getAttribute('data-asset');
+    let anomaly = null;
+    if (procClass === 'EOP') {
+        const sel = document.getElementById('m-procgen-anomaly');
+        anomaly = sel ? sel.value : null;
+    }
+    _draftProcedure(assetId, procClass, anomaly);
+}
+
+function _procgenRole() {
+    const sel = document.getElementById('m-procgen-role');
+    return sel ? sel.value : 'TECH_L4';
+}
+
+async function _draftProcedure(assetId, procClass, anomalyProfile) {
+    const body = { asset_id: assetId, procedure_class: procClass,
+                   actor_role: _procgenRole() };
+    if (anomalyProfile) body.anomaly_profile = anomalyProfile;
+    try {
+        const r = await fetch(`${API_BASE}/api/procedures/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+            _maintToast(`Generate failed (${r.status}): ${data.detail || 'error'}`, 'warn');
+            return;
+        }
+        _openProcgenModal(data);
+    } catch (err) {
+        _maintToast(`Network error: ${err.message}`, 'warn');
+    }
+}
+
+function _renderProcedureSteps(proc) {
+    const steps = Array.isArray(proc.steps) ? proc.steps : [];
+    const rows = steps.map((s, i) => `
+        <div class="m-proc-step">
+            <span class="m-proc-step-n">${i + 1}</span>
+            <div class="m-proc-step-body">
+                <div class="m-proc-step-title">${_escape(s.title || s.id || '-')}</div>
+                <div class="m-proc-step-meta">${_escape(s.type || '')}${
+                    s.vendor_stage ? ` &middot; ${_escape(s.vendor_stage)}` : ''}</div>
+            </div>
+        </div>`).join('');
+    const warn = proc.it_load_warning
+        ? `<div class="m-proc-warn">${_escape(proc.it_load_warning)}</div>` : '';
+    return `
+        <div class="m-proc-head">
+            <span class="m-proc-class">${_escape(proc.procedure_class || '?')}</span>
+            <span class="m-proc-status">${_escape(proc.status || '?')} &middot; ${
+                _escape(proc.version || '')}</span>
+        </div>
+        <div class="m-proc-id">${_escape(proc.procedure_id || '')}</div>
+        ${warn}
+        <div class="m-proc-steps">${rows || '<div class="m-empty">No steps.</div>'}</div>`;
+}
+
+function _openProcgenModal(proc) {
+    _procgenDraft = proc;
+    const overlay = document.getElementById('m-procgen-overlay');
+    const bodyEl = document.getElementById('m-procgen-body');
+    const alertEl = document.getElementById('m-procgen-alert');
+    const titleEl = document.getElementById('m-procgen-title');
+    const activateBtn = document.getElementById('m-procgen-activate');
+    if (!overlay || !bodyEl) return;
+    if (alertEl) { alertEl.hidden = true; alertEl.textContent = ''; }
+    if (titleEl) titleEl.textContent = `Procedure Draft - ${proc.procedure_id || ''}`;
+    if (activateBtn) activateBtn.disabled = false;
+    bodyEl.innerHTML = _renderProcedureSteps(proc);
+    overlay.removeAttribute('hidden');
+    _procgenTrapRelease = trapFocus(document.getElementById('m-procgen-modal'),
+                                    { onEscape: _closeProcgenModal });
+}
+
+function _closeProcgenModal() {
+    const overlay = document.getElementById('m-procgen-overlay');
+    if (overlay) overlay.setAttribute('hidden', '');
+    if (_procgenTrapRelease) { _procgenTrapRelease(); _procgenTrapRelease = null; }
+    _procgenDraft = null;
+}
+
+function _procgenAlert(cls, msg) {
+    const el = document.getElementById('m-procgen-alert');
+    if (!el) return;
+    el.className = `m-procgen-alert ${cls}`;
+    el.textContent = msg;
+    el.hidden = false;
+}
+
+async function _activateProcedure() {
+    if (!_procgenDraft) return;
+    const pid = _procgenDraft.procedure_id || '';
+    const activateBtn = document.getElementById('m-procgen-activate');
+    try {
+        const r = await fetch(
+            `${API_BASE}/api/procedures/${encodeURIComponent(pid)}/activate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ actor_role: _procgenRole(),
+                                   procedure: _procgenDraft }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (r.status === 403) {
+            // RBAC failure -> high-visibility red banner.
+            _procgenAlert('m-procgen-alert-deny',
+                          'Access Denied: L5/L6 Senior Clearance Required.');
+            return;
+        }
+        if (!r.ok) {
+            _procgenAlert('m-procgen-alert-deny',
+                          `Activation failed (${r.status}): ${data.detail || 'error'}`);
+            return;
+        }
+        _procgenDraft = data;
+        const bodyEl = document.getElementById('m-procgen-body');
+        if (bodyEl) bodyEl.innerHTML = _renderProcedureSteps(data);
+        _procgenAlert('m-procgen-alert-ok',
+                      `Activated - status ${data.status}, version ${data.version}.`);
+        if (activateBtn) activateBtn.disabled = true;
+    } catch (err) {
+        _procgenAlert('m-procgen-alert-deny', `Network error: ${err.message}`);
+    }
+}
+
+function _wireProcgen() {
+    document.getElementById('m-procgen-tree')
+        ?.addEventListener('click', _onProcgenTreeClick);
+    document.getElementById('m-procgen-actions')
+        ?.addEventListener('click', _onProcgenActionClick);
+    document.getElementById('m-procgen-cancel')
+        ?.addEventListener('click', _closeProcgenModal);
+    document.getElementById('m-procgen-close-2')
+        ?.addEventListener('click', _closeProcgenModal);
+    document.getElementById('m-procgen-activate')
+        ?.addEventListener('click', _activateProcedure);
+    document.getElementById('m-procgen-overlay')?.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) _closeProcgenModal();
+    });
+}
+
+
 // ─── Public API ───────────────────────────────────────────────────
 export function initMaintenanceView() {
     _container = document.getElementById('view-maintenance');
@@ -997,6 +1264,7 @@ export function initMaintenanceView() {
     _wireFilters();
     _wireActionButtons();
     _wireClosureModal();
+    _wireProcgen();
     _wireRouting();
 
     // Observe show/hide via mutation observer on the hidden attribute.
