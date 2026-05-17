@@ -2053,6 +2053,15 @@ async def write_bms_tag(payload: dict = Body(...)):
     Payload: {"tag_id": str, "value": Any, "user": str (optional)}
     All writes are logged to an immutable audit log for review.
     """
+    # F3-2: BMS write is a raw control-surface actuation -- SME_L6 only.
+    # (No separate SYSADMIN role added; SME_L6 is the top UserRole tier.)
+    from backend.cmms_models import role_rank as _role_rank
+    _bms_role = payload.get("actor_role")
+    if _role_rank(_bms_role) < 6:
+        raise HTTPException(
+            403,
+            f"BMS write requires SME_L6; actor_role={_bms_role!r} is insufficient.",
+        )
     if not BMS_AVAILABLE:
         raise HTTPException(503, "BMS connector unavailable")
     tag_id = payload.get("tag_id")
@@ -2237,6 +2246,21 @@ try:
     _proc_router = APIRouter(prefix="/api/procedures", tags=["procedures"])
     _witness_router = APIRouter(prefix="/api/witness", tags=["witness"])
 
+    # F3-3: RBAC gate for the state-mutating procedure + witness endpoints.
+    from backend.cmms_models import role_rank as _role_rank
+
+    def _require_actor_role(body: dict, min_rank: int, action: str) -> None:
+        """Reject a request whose payload actor_role is below min_rank.
+        No auth layer exists yet -- the role is a client-supplied claim
+        (audit F3); a missing / unknown role is rejected fail-closed."""
+        role = (body or {}).get("actor_role")
+        if _role_rank(role) < min_rank:
+            raise HTTPException(
+                status_code=403,
+                detail=(f"{action} requires role rank >= {min_rank}; "
+                        f"actor_role={role!r} is insufficient (RBAC F3-3)."),
+            )
+
     # â"€â"€ Procedure endpoints â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
     @_proc_router.get("")
     async def list_procedures():
@@ -2277,6 +2301,7 @@ try:
         """Operator initiates a procedure. Returns the execution with
         pre_condition_results  -  operator clicks 'Advance' to proceed
         if all pre-conditions are OK."""
+        _require_actor_role(body, 5, "starting a procedure")
         operator = body.get("operator", "anonymous")
         try:
             ex = await _proc_orch.start_procedure(procedure_id, operator)
@@ -2293,6 +2318,7 @@ try:
         """Operator clicks 'GO' from ARMED state. Begins step execution.
         Will block at any requires_witness step until a second operator
         signs at /api/witness."""
+        _require_actor_role(body, 4, "advancing a procedure")
         operator = body.get("operator", "anonymous")
         try:
             ex = await _proc_orch.advance_to_in_progress(exec_id, operator)
@@ -2309,6 +2335,7 @@ try:
     @_proc_router.post("/executions/{exec_id}/abort")
     async def abort_execution(exec_id: str, body: dict):
         """Operator-triggered emergency abort."""
+        _require_actor_role(body, 4, "aborting a procedure")
         operator = body.get("operator", "anonymous")
         reason = body.get("reason", "no_reason_provided")
         try:
@@ -2342,6 +2369,7 @@ try:
     @_witness_router.post("/{request_id}/sign")
     async def sign_witness(request_id: str, body: dict):
         """Witness operator signs the request. Identity must differ from initiator."""
+        _require_actor_role(body, 5, "signing a witness request")
         witness_id = body.get("witness", "")
         try:
             req = _witness_store.sign(request_id, witness_id)
@@ -2355,6 +2383,7 @@ try:
 
     @_witness_router.post("/{request_id}/reject")
     async def reject_witness(request_id: str, body: dict):
+        _require_actor_role(body, 5, "rejecting a witness request")
         witness_id = body.get("witness", "")
         reason = body.get("reason", "no_reason_provided")
         try:

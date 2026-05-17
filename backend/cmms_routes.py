@@ -38,7 +38,9 @@ from backend.cmms_models import (
     AssetEnrichRequest,
     AssetHealthAggregate,
     CreateWorkOrderRequest,
+    RBACDenied,
     WorkOrder,
+    assert_can_approve_work_order,
 )
 from backend.cmms_repository import (
     AssetNotFoundError,
@@ -345,6 +347,13 @@ async def create_work_order(request: Request, body: CreateWorkOrderRequest) -> d
 async def approve_wo(
     request: Request, wo_id: str, body: ApproveRejectRequest,
 ) -> dict[str, Any]:
+    # F3-1: RBAC gate -- only SENIOR_TECH_L5 / SME_L6 may approve a WO.
+    # The role is a client-supplied claim (no auth layer yet -- audit F3);
+    # a missing / TECH_L4 actor_role is rejected with HTTP 403.
+    try:
+        assert_can_approve_work_order(body.actor_role)
+    except RBACDenied as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
     repo = _get_repo(request)
     try:
         wo = await repo.transition_status_async(wo_id, "approved", body.cet_id)
@@ -368,6 +377,12 @@ async def approve_wo(
 async def reject_wo(
     request: Request, wo_id: str, body: ApproveRejectRequest,
 ) -> dict[str, Any]:
+    # F3-1: RBAC gate -- rejecting a WO is an approval-authority decision,
+    # gated to SENIOR_TECH_L5 / SME_L6 like approve.
+    try:
+        assert_can_approve_work_order(body.actor_role)
+    except RBACDenied as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
     if not body.rejection_reason:
         raise HTTPException(status_code=400, detail="rejection_reason required for reject")
     repo = _get_repo(request)
