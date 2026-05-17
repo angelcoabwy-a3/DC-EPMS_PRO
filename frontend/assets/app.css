@@ -32,6 +32,38 @@
     --font-mono:    'JetBrains Mono', 'JetBrains Mono Web', 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
 }
 
+/* ════════════════════════════════════════════════════════════════
+ * T2.5 A11y-1 — global accessibility primitives (WCAG 2.1)
+ * ════════════════════════════════════════════════════════════════ */
+
+/* Violation #2 — Focus Visible (WCAG 2.4.7 AA). One keyboard focus
+ * ring for every interactive element. The 9 pre-existing input
+ * `outline:none` rules are scoped to `:focus:not(:focus-visible)` so a
+ * mouse click stays ring-free while keyboard nav is always tracked. */
+:focus-visible {
+    outline: 2px solid var(--neon-cyan, #00E5FF);
+    outline-offset: 2px;
+}
+
+/* Violation #6 (quick win) — Bypass Blocks (WCAG 2.4.1 A).
+ * Off-screen until focused, then pins to the top-left corner. */
+.skip-link {
+    position: absolute;
+    left: 8px;
+    top: -48px;
+    z-index: 2000;
+    padding: 9px 16px;
+    background: var(--accent, #00B8D4);
+    color: #06080A;
+    font: 600 12px/1 var(--font-sans);
+    text-decoration: none;
+    border-radius: 0 0 6px 6px;
+    transition: top 0.12s ease;
+}
+.skip-link:focus {
+    top: 0;
+}
+
 /* ── JetBrains Mono self-hosted (Phase 4 follow-up — Tier IV typography)
  *
  *   Drop the .woff2 into frontend/assets/vendor/fonts/ to enable.
@@ -983,7 +1015,7 @@ body {
     width: 180px;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.topo-graph-search:focus {
+.topo-graph-search:focus:not(:focus-visible) {
     outline: none;
     border-color: var(--accent, #00B8D4);
     box-shadow: 0 0 0 1px var(--accent, #00B8D4);
@@ -2257,8 +2289,8 @@ body {
     box-sizing: border-box;
 }
 .m-modal-textarea { resize: vertical; }
-.m-modal-input:focus,
-.m-modal-textarea:focus {
+.m-modal-input:focus:not(:focus-visible),
+.m-modal-textarea:focus:not(:focus-visible) {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent);
@@ -2412,7 +2444,7 @@ body {
     border-radius: 2px;
     box-sizing: border-box;
 }
-.ta-enrich-field-row input:focus {
+.ta-enrich-field-row input:focus:not(:focus-visible) {
     outline: none;
     border-color: var(--accent);
 }
@@ -2619,7 +2651,7 @@ body {
     resize: vertical;
     box-sizing: border-box;
 }
-.ma-textarea:focus {
+.ma-textarea:focus:not(:focus-visible) {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent);
@@ -2895,7 +2927,7 @@ body {
     resize: vertical;
     box-sizing: border-box;
 }
-.ta-textarea:focus {
+.ta-textarea:focus:not(:focus-visible) {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 1px var(--accent);
@@ -3319,7 +3351,7 @@ body {
     transition: border-color 0.2s;
 }
 
-.agent-input:focus {
+.agent-input:focus:not(:focus-visible) {
     outline: none;
     border-color: var(--accent);
 }
@@ -4614,7 +4646,7 @@ body {
     font-family: inherit;
     margin-bottom: 6px;
 }
-.mop-gen-input:focus {
+.mop-gen-input:focus:not(:focus-visible) {
     outline: none;
     border-color: #00B8D4;
 }
@@ -5245,7 +5277,7 @@ body {
     font-family: inherit;
     box-sizing: border-box;
 }
-.bms-write-field:focus {
+.bms-write-field:focus:not(:focus-visible) {
     outline: none;
     border-color: #00B8D4;
 }
@@ -6253,7 +6285,7 @@ body {
     resize: none;
     line-height: 1.4;
 }
-.copilot-input:focus {
+.copilot-input:focus:not(:focus-visible) {
     outline: none;
     border-color: #00B8D4;
     box-shadow: 0 0 0 2px rgba(0,184,212,0.15);

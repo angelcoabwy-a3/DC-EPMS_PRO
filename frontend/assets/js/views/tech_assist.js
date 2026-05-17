@@ -23,6 +23,7 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { registerRoute } from '../core/router.js';
+import { trapFocus } from '../core/focus_trap.js';
 
 const API_BASE = '';
 
@@ -488,6 +489,9 @@ const ENRICH_FIELD_DEFS = [
     { key: 'voltage_v',          label: 'voltage (V)', extractFrom: 'voltage_nominal_v',    type: 'number', step: '1' },
 ];
 
+// T2.5 A11y-1 — focus-trap release handle for the enrich dialog.
+let _enrichTrapRelease = null;
+
 async function _openEnrichModal() {
     const overlay = document.getElementById('ta-enrich-overlay');
     const ctxEl   = document.getElementById('ta-enrich-context');
@@ -553,12 +557,17 @@ async function _openEnrichModal() {
     });
 
     overlay.removeAttribute('hidden');
+    // T2.5 A11y-1 (WCAG 2.4.3): trap Tab inside the dialog. This modal has
+    // no prior Escape handler, so wire onEscape to close it.
+    _enrichTrapRelease = trapFocus(document.getElementById('ta-enrich-modal'), { onEscape: _closeEnrichModal });
     setTimeout(() => selEl.focus(), 50);
 }
 
 function _closeEnrichModal() {
     const overlay = document.getElementById('ta-enrich-overlay');
     if (overlay) overlay.setAttribute('hidden', '');
+    // T2.5 A11y-1 — release the focus trap + return focus to the trigger.
+    if (_enrichTrapRelease) { _enrichTrapRelease(); _enrichTrapRelease = null; }
 }
 
 async function _submitEnrich() {

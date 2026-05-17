@@ -21,6 +21,7 @@
 
 import { playClick } from '../core/sound.js';
 import { registerRoute } from '../core/router.js';
+import { trapFocus } from '../core/focus_trap.js';
 
 const POLL_INTERVAL_MS = 15_000;
 const API_BASE = '';  // same-origin
@@ -215,6 +216,9 @@ function _clearValidation() {
         .forEach((el) => el.classList.remove('is-visible'));
 }
 
+// T2.5 A11y-1 — focus-trap release handle for the closure dialog.
+let _closureTrapRelease = null;
+
 function _openClosureModal(woId, woContext) {
     _activeClosureWoId = woId;
     const overlay = document.getElementById('m-closure-overlay');
@@ -246,6 +250,10 @@ function _openClosureModal(woId, woContext) {
 
     overlay.removeAttribute('hidden');
     _attachEscape();
+    // T2.5 A11y-1 (WCAG 2.4.3): constrain Tab to the dialog. Escape is
+    // already handled by _attachEscape, so no onEscape here (avoids a
+    // double close).
+    _closureTrapRelease = trapFocus(document.getElementById('m-closure-modal'));
     setTimeout(() => notesEl.focus(), 50);
 }
 
@@ -253,6 +261,8 @@ function _closeClosureModal() {
     const overlay = document.getElementById('m-closure-overlay');
     if (overlay) overlay.setAttribute('hidden', '');
     _detachEscape();
+    // T2.5 A11y-1 — release the focus trap + return focus to the trigger.
+    if (_closureTrapRelease) { _closureTrapRelease(); _closureTrapRelease = null; }
     _clearValidation();
     _activeClosureWoId = null;
 }

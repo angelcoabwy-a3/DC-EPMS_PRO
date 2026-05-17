@@ -293,7 +293,25 @@ function _updatePowerFlow(dt) {
 function _bindOverlayCards() {
     _buildings.forEach(b => {
         b.cardEl = document.getElementById('mc-card-' + b.id.replace('building_', ''));
-        if (b.cardEl) b.cardEl.removeAttribute('hidden');
+        if (!b.cardEl) return;
+        b.cardEl.removeAttribute('hidden');
+        // T2.5 A11y-1 (WCAG 2.1.1) — keyboard-equivalent drill-down. The
+        // raycaster click path in _onClick is mouse-only; the overlay
+        // card (role="button" tabindex="0" in index.html) is the keyboard
+        // route. Enter/Space mirrors _onClick's navigate-then-zoom order.
+        if (!b.cardEl.dataset.a11yKeyBound) {
+            b.cardEl.dataset.a11yKeyBound = '1';
+            b.cardEl.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+                e.preventDefault();
+                const route = DRILL_TARGETS[b.id];
+                if (!route) return;
+                console.log('[mission_control] keyboard drill → %s → %s', b.id, route);
+                _setStatus(`drilling: ${b.id} → ${route}`, 'ok');
+                _navigateTo(route);
+                if (b.mesh) _animateDrillDown(b.mesh);
+            });
+        }
     });
 }
 
