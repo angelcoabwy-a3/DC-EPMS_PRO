@@ -3318,6 +3318,14 @@
     function navigateTo(routeKey) {
         if (!routeKey) routeKey = 'overview';
 
+        // T2.2: ES-module routes are owned by core/router.js. Delegate
+        // any registered route to it and return, so the legacy renderer
+        // below does not also fire (kills the dual-router race).
+        if (window.__epmsRouter && window.__epmsRouter.isRegistered(routeKey)) {
+            window.__epmsRouter.navigateTo(routeKey);
+            return;
+        }
+
         // Update nav active state
         document.querySelectorAll('.nav-item').forEach(n => {
             n.classList.toggle('active', n.dataset.route === routeKey);

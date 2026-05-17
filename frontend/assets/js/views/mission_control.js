@@ -27,6 +27,7 @@
 
 import * as THREE from '/assets/vendor/three.module.min.js';
 import { subscribe } from '../core/state.js';
+import { registerRoute } from '../core/router.js';
 
 const API_BASE = '';
 const POLL_LIVE_DATA_MS = 15_000;
@@ -848,6 +849,10 @@ function _resize() {
     if (!wrap) return;
     const w = wrap.clientWidth;
     const h = wrap.clientHeight || 540;
+    // The view is hidden (display:none -> clientWidth 0). Resizing now
+    // would build a degenerate OrthographicCamera (left===right) and
+    // poison the HUD projection with NaN. Skip until the view is shown.
+    if (w === 0) return;
     _renderer.setSize(w, h, false);
     const aspect = w / h;
     const viewSize = 95;
@@ -927,24 +932,17 @@ function _stop() {
 
 // ─── Routing (LOTO pattern) ─────────────────────────────────────
 function _wireRouting() {
-    let firstActivation = true;
-    document.addEventListener('click', (e) => {
-        const navItem = e.target.closest('[data-route="mission-control"]');
-        if (!navItem) return;
-        setTimeout(() => {
-            document.querySelectorAll('.view').forEach(v => v.setAttribute('hidden', ''));
-            const v = document.getElementById('view-mission-control');
-            if (v) v.removeAttribute('hidden');
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            navItem.classList.add('active');
+    // T2.2: declarative registry (replaces the setTimeout(0) LOTO race).
+    registerRoute('mission-control', {
+        viewId: 'view-mission-control',
+        activate: ({ firstActivation }) => {
             if (firstActivation) {
-                firstActivation = false;
                 _boot();
             } else {
                 _resize();
                 _fetchLiveData();
             }
-        }, 0);
+        },
     });
 }
 

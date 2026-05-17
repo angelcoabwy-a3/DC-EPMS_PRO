@@ -24,6 +24,8 @@
  * nav-item click here and run our own initialization.
  * ════════════════════════════════════════════════════════════════ */
 
+import { registerRoute } from '../core/router.js';
+
 const API_BASE = '';
 
 // ─── Force simulation constants ──────────────────────────────────
@@ -504,26 +506,16 @@ function _wireEvents() {
 // initialize the graph. We listen for the click and auto-load on first
 // activation, then idempotently render on subsequent visits.
 function _wireRouting() {
-    let firstActivation = true;
-    document.addEventListener('click', (e) => {
-        const navItem = e.target.closest('[data-route="site_topology"]');
-        if (!navItem) return;
-        setTimeout(() => {
-            // Ensure the view is visible (router may have routed elsewhere)
-            const v = document.getElementById('view-site-topology');
-            if (v && v.hasAttribute('hidden')) {
-                document.querySelectorAll('.view').forEach(x => x.setAttribute('hidden', ''));
-                v.removeAttribute('hidden');
-                document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
-                navItem.classList.add('active');
-            }
+    // T2.2: declarative registry (replaces the setTimeout(0) LOTO race).
+    registerRoute('site_topology', {
+        viewId: 'view-site-topology',
+        activate: ({ firstActivation }) => {
             if (firstActivation) {
-                firstActivation = false;
                 _loadGraph();
             } else {
                 _setSvgViewBox();
             }
-        }, 0);
+        },
     });
 }
 

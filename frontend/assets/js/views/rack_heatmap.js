@@ -25,6 +25,7 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { subscribe } from '../core/state.js';
+import { registerRoute } from '../core/router.js';
 
 const API_BASE = '';
 const SPARK_LEN = 60;
@@ -362,21 +363,12 @@ function _wireEvents() {
 }
 
 function _wireRouting() {
-    let firstActivation = true;
-    document.addEventListener('click', (e) => {
-        const navItem = e.target.closest('[data-route="rack-heatmap"]');
-        if (!navItem) return;
-        setTimeout(() => {
-            document.querySelectorAll('.view').forEach(v => v.setAttribute('hidden', ''));
-            const v = document.getElementById('view-rack-heatmap');
-            if (v) v.removeAttribute('hidden');
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            navItem.classList.add('active');
-            if (firstActivation) {
-                firstActivation = false;
-                _loadRacks();
-            }
-        }, 0);
+    // T2.2: declarative registry (replaces the setTimeout(0) LOTO race).
+    registerRoute('rack-heatmap', {
+        viewId: 'view-rack-heatmap',
+        activate: ({ firstActivation }) => {
+            if (firstActivation) _loadRacks();
+        },
     });
 }
 

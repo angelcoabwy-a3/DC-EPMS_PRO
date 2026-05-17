@@ -22,6 +22,7 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { playVeto, playClick } from '../core/sound.js';
+import { registerRoute } from '../core/router.js';
 
 const API_BASE = '';
 
@@ -226,17 +227,8 @@ function _wireEvents() {
 }
 
 function _wireRouting() {
-    document.addEventListener('click', (e) => {
-        const navItem = e.target.closest('[data-route="multi-agent"]');
-        if (!navItem) return;
-        setTimeout(() => {
-            document.querySelectorAll('.view').forEach(v => v.setAttribute('hidden', ''));
-            const v = document.getElementById('view-multi-agent');
-            if (v) v.removeAttribute('hidden');
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            navItem.classList.add('active');
-        }, 0);
-    });
+    // T2.2: declarative registry (replaces the setTimeout(0) LOTO race).
+    registerRoute('multi-agent', { viewId: 'view-multi-agent' });
 }
 
 // ─── Public API ───────────────────────────────────────────────────

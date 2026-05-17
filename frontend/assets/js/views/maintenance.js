@@ -20,6 +20,7 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { playClick } from '../core/sound.js';
+import { registerRoute } from '../core/router.js';
 
 const POLL_INTERVAL_MS = 15_000;
 const API_BASE = '';  // same-origin
@@ -971,18 +972,9 @@ function _wireActionButtons() {
 // overview fallback. We override that decision after a setTimeout(0)
 // so this view actually becomes visible when its nav-item is clicked.
 function _wireRouting() {
-    document.addEventListener('click', (e) => {
-        const navItem = e.target.closest('[data-route="maintenance"]');
-        if (!navItem) return;
-        setTimeout(() => {
-            document.querySelectorAll('.view').forEach(v => v.setAttribute('hidden', ''));
-            const v = document.getElementById('view-maintenance');
-            if (v) v.removeAttribute('hidden');
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            navItem.classList.add('active');
-            // MutationObserver picks up the un-hide and triggers _refresh.
-        }, 0);
-    });
+    // T2.2: declarative registry. The router un-hides #view-maintenance;
+    // the MutationObserver below picks up the un-hide and runs _refresh.
+    registerRoute('maintenance', { viewId: 'view-maintenance' });
 }
 
 // ─── Public API ───────────────────────────────────────────────────

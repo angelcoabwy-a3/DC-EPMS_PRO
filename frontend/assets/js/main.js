@@ -22,6 +22,7 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { setState, getState, subscribe } from './core/state.js';
+import { initRouter } from './core/router.js';
 import { initStaleness } from './core/staleness.js';
 import { initActivityStrip } from './core/activity_strip.js';
 import { initShiSparkline } from './core/shi_sparkline.js';
@@ -54,6 +55,7 @@ window.__epms = Object.freeze({
     useNewEngine: USE_NEW_TELEMETRY_ENGINE,
 });
 
+initRouter();
 initStaleness();
 initActivityStrip();
 initShiSparkline();

@@ -22,6 +22,8 @@
  * Style: instrument-grade, mirrors Maintenance + Activity Strip.
  * ════════════════════════════════════════════════════════════════ */
 
+import { registerRoute } from '../core/router.js';
+
 const API_BASE = '';
 
 const SAMPLE_NAMEPLATE = `SCHNEIDER ELECTRIC GALAXY VX UPS
@@ -689,19 +691,12 @@ function _wireEvents() {
 // LOTO-pattern: legacy router has no `tech-assist` branch, so this
 // handler runs after navigateTo and forces our view visible.
 function _wireRouting() {
-    document.addEventListener('click', (e) => {
-        const navItem = e.target.closest('[data-route="tech-assist"]');
-        if (!navItem) return;
-        setTimeout(() => {
-            document.querySelectorAll('.view').forEach(v => v.setAttribute('hidden', ''));
-            const v = document.getElementById('view-tech-assist');
-            if (v) v.removeAttribute('hidden');
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            navItem.classList.add('active');
-            // First-show: load the library lazily so the network call
-            // doesn't fire on page load if user never visits.
+    // T2.2: declarative registry (replaces the setTimeout(0) LOTO race).
+    registerRoute('tech-assist', {
+        viewId: 'view-tech-assist',
+        activate: () => {
             if (!_libraryLoaded) _refreshLibrary();
-        }, 0);
+        },
     });
 }
 
