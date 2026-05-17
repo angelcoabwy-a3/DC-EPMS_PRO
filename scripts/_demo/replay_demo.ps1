@@ -94,12 +94,26 @@ function Wipe-WorkOrders {
 
 function Replay-Snapshot {
     Write-Section "Replay snapshot SQL"
+    # Gap E: snapshot provenance visibility.
+    $snapInfo = Get-Item $SNAPSHOT
+    Write-Host ("  snapshot: {0}  (last modified {1:yyyy-MM-dd HH:mm})" -f `
+        $snapInfo.Name, $snapInfo.LastWriteTime)
     if ($DryRun) {
         Write-Host "  [DRY] would pipe $SNAPSHOT through psql"
         return
     }
-    Get-Content $SNAPSHOT -Raw | docker exec -i $PG_CONTAINER psql -U $PG_USER -d $PG_DB 2>&1 |
-        Select-String -Pattern '^INSERT|^ERROR' -Context 0,0 |
+    $psqlOut = Get-Content $SNAPSHOT -Raw |
+        docker exec -i $PG_CONTAINER psql -U $PG_USER -d $PG_DB 2>&1
+
+    # Gap C: a snapshot/schema-drift error must abort, not slip through.
+    $errLines = @($psqlOut | Select-String -Pattern '^ERROR' -Context 0,0)
+    if ($errLines.Count -gt 0) {
+        Write-Host "  [FAIL] snapshot replay produced $($errLines.Count) SQL ERROR line(s):" -ForegroundColor Red
+        $errLines | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+        throw "Snapshot replay aborted on SQL ERROR - the snapshot has likely drifted from the current schema."
+    }
+
+    $psqlOut | Select-String -Pattern '^INSERT' -Context 0,0 |
         Group-Object Line |
         ForEach-Object { Write-Host "  $($_.Count)x $($_.Name.Substring(0, [Math]::Min(40, $_.Name.Length)))" }
 
@@ -123,7 +137,7 @@ function Replay-Snapshot {
     # the seed_new_asset -> enrich -> link_to_existing demo cycle on
     # every replay. The snapshot uses ON CONFLICT DO NOTHING which
     # cannot overwrite existing rows.
-    $reverted = Invoke-Sql "UPDATE assets SET vendor=NULL, model=NULL, rated_capacity_kw=2500.0, rated_capacity_unit='kW', metadata_json='{\""runtime_full_load_min\"": 7}'::jsonb WHERE asset_id='ups_a' RETURNING asset_id;"
+    $reverted = Invoke-Sql "UPDATE assets SET vendor=NULL, model=NULL, rated_capacity_kw=2500.0, rated_capacity_unit='kW', metadata_json='{""runtime_full_load_min"": 7}'::jsonb WHERE asset_id='ups_a' RETURNING asset_id;"
     if ($reverted) {
         Write-Host "  reverted ups_a to seed state (null vendor/model) for repeatable enrichment demo"
     }
@@ -284,10 +298,39 @@ try {
     Inject-VetoSampleWO
     Show-Backlog
 
+    # Gap B: twin-script verification. The reset is NOT "done" until the
+    # certification pass confirms the exact baseline. No silent successes.
+    Write-Section "Post-condition: pre-flight certification"
+    if ($DryRun) {
+        Write-Host "  [DRY] would run preflight_demo_check.ps1"
+    } else {
+        & (Join-Path $PSScriptRoot 'preflight_demo_check.ps1')
+        if ($LASTEXITCODE -ne 0) {
+            throw "Pre-flight certification FAILED (exit $LASTEXITCODE). Baseline not trustworthy - do NOT record."
+        }
+        Write-Host "  [OK] pre-flight certified the baseline" -ForegroundColor Green
+    }
+
     $elapsed = ((Get-Date) - $start).TotalSeconds
     Write-Host ""
-    Write-Host ("[OK] demo reset complete in {0:N1}s" -f $elapsed) -ForegroundColor Green
-    Write-Host "Hard-reload the browser (Ctrl+Shift+R) at http://127.0.0.1:8080/#maintenance"
+    Write-Host ("[OK] demo reset complete + certified in {0:N1}s" -f $elapsed) -ForegroundColor Green
+
+    $reminder = @'
+
+  ================================================================
+  ==                                                            ==
+  ==   [PRE-FLIGHT REMINDER] : purge stale browser state         ==
+  ==                                                            ==
+  ==   Open DevTools  ->  Run  'localStorage.clear()'            ==
+  ==   ->  Hit  Ctrl+Shift+R                                     ==
+  ==                                                            ==
+  ==   Purges 'mc_panel_layout_v1' HUD-layout data so the 4      ==
+  ==   panels load in their default corners.                     ==
+  ==   Then open  http://127.0.0.1:8080/#maintenance             ==
+  ==                                                            ==
+  ================================================================
+'@
+    Write-Host $reminder -ForegroundColor Yellow
 } catch {
     Write-Host ""
     Write-Host "[FAIL] demo reset aborted: $_" -ForegroundColor Red
