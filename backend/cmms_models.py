@@ -31,6 +31,11 @@ ASSET_TYPES = (
     "ats", "rpp", "busway", "utility_intake",
     "fuel_tank", "bms_panel", "workstation",
     "it_rack", "rectifier", "sensor", "other",
+    # G1 micro-component taxonomy types (mirrors the W3 migration CHECK)
+    "system", "battery", "breaker", "filter", "valve",
+    "fuel_pump", "coolant_pump",
+    # Phase-2 SLD topology types
+    "mv_rectifier", "sscb", "dc_bus", "bess",
 )
 HEALTH_STATES = ("healthy", "degraded", "failed", "unknown")
 REDUNDANCY_PILLARS = ("2N", "N+1", "N", "single")

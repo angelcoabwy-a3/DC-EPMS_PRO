@@ -151,7 +151,10 @@ async def seed_assets_from_site_model(
                 "ups","chiller","cdu","pump","cooling_tower_field","cooling_tower",
                 "genset","transformer","switchgear","ats","rpp","busway",
                 "utility_intake","fuel_tank","bms_panel","workstation","it_rack",
-                "rectifier","sensor"
+                "rectifier","sensor",
+                # G1 micro-component taxonomy + Phase-2 SLD types (W3 migration)
+                "system","battery","breaker","filter","valve","fuel_pump",
+                "coolant_pump","mv_rectifier","sscb","dc_bus","bess",
             ) else "other",
             facility="A3-Alpha Toronto Area",
             location_path=comp.location.path if comp.location else None,
