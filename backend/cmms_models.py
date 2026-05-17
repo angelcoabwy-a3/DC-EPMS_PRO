@@ -36,7 +36,7 @@ HEALTH_STATES = ("healthy", "degraded", "failed", "unknown")
 REDUNDANCY_PILLARS = ("2N", "N+1", "N", "single")
 CRITICALITY_CLASSES = ("critical", "high", "medium", "low")
 WORK_CLASSES = ("PM", "CM", "EM")
-PROCEDURE_CLASSES = ("SOP", "MOP", "DMOP", "EOP")
+PROCEDURE_CLASSES = ("SOP", "MOP", "DMOP", "EOP", "EMP")
 WO_STATUSES = (
     "pending_approval", "approved", "scheduled", "in_progress",
     "completed", "rejected", "cancelled", "overdue",
@@ -53,6 +53,21 @@ ROOT_CAUSE_CATEGORIES = (
     "equipment_failure", "human_error", "environmental",
     "design_deficiency", "procedure_gap", "vendor_defect", "unknown",
 )
+
+
+class AssetLevel(str, Enum):
+    """Hierarchical asset taxonomy tier (ADR-010 containment tree).
+
+    Macro -> micro containment scope. The ProcedureGenerator reads this to
+    decide procedure scope: SYSTEM / EQUIPMENT -> holistic SOP / MOP;
+    SUB_ASSEMBLY / COMPONENT / SENSOR -> hyper-focused EMP.
+    """
+
+    SYSTEM = "system"            # e.g. Backup Power
+    EQUIPMENT = "equipment"      # e.g. Genset_A1
+    SUB_ASSEMBLY = "sub_assembly"  # e.g. Starter Battery, Fuel Pump
+    COMPONENT = "component"      # e.g. 24 VDC breaker, fuel filter
+    SENSOR = "sensor"            # e.g. fuel pressure probe
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -153,6 +168,16 @@ class Asset(BaseModel):
     criticality_class: str = "medium"
 
     linked_mop_id: str | None = None
+
+    # G1 — hierarchical asset taxonomy (ADR-010 containment tree).
+    asset_level: AssetLevel | None = None
+    parent_asset_id: str | None = None
+
+    # G1 — Arc Flash data (NFPA 70E / IEEE 1584). Carried, NOT computed —
+    # populated from an arc-flash study; null on non-electrical nodes.
+    fault_current_ka: float | None = None
+    incident_energy_cal: float | None = None
+    arc_flash_boundary_m: float | None = None
 
     health_state: str = "healthy"
     last_health_update_at: datetime | None = None

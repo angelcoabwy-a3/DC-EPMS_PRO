@@ -395,6 +395,16 @@ cooling_chains:
 #  existing code that references chiller_1 by string keeps working.
 # ════════════════════════════════════════════════════════════════════════
 components:
+  # ── System-tier roots (G1 / ADR-010 hierarchical taxonomy)
+  sys_backup_power:
+    display: "Backup Power System"
+    type: system
+    asset_level: system
+  sys_primary_cooling:
+    display: "Primary Cooling System"
+    type: system
+    asset_level: system
+
   # ── Power Path A
   utility_feed_a:
     display: "Utility Feed A"
@@ -413,9 +423,48 @@ components:
   genset_a_01:
     display: "Genset A1 (Cummins QSK95)"
     type: genset
+    asset_level: equipment
+    parent: sys_backup_power
     vendor: cummins
     model: "QSK95"
     rated_kw: 2750
+    voltage_v: 480
+    fault_current_ka: 35.0
+    incident_energy_cal: 8.4
+    arc_flash_boundary_m: 1.2
+
+  # ── genset_a_01 micro-component decomposition (G1 representative slice)
+  genset_a_01_starter_battery:
+    display: "Genset A1 Starter Battery (24 VDC string)"
+    type: battery
+    asset_level: sub_assembly
+    parent: genset_a_01
+    voltage_v: 24
+  genset_a_01_fuel_pump:
+    display: "Genset A1 Fuel Transfer Pump"
+    type: fuel_pump
+    asset_level: sub_assembly
+    parent: genset_a_01
+  genset_a_01_24vdc_breaker:
+    display: "Genset A1 24 VDC Control Breaker"
+    type: breaker
+    asset_level: component
+    parent: genset_a_01_starter_battery
+    voltage_v: 24
+    isolation_capable: true
+    fault_current_ka: 0.8
+    incident_energy_cal: 0.3
+    arc_flash_boundary_m: 0.3
+  genset_a_01_fuel_filter:
+    display: "Genset A1 Primary Fuel Filter"
+    type: filter
+    asset_level: component
+    parent: genset_a_01_fuel_pump
+  genset_a_01_fuel_pressure_probe:
+    display: "Genset A1 Fuel Pressure Probe"
+    type: sensor
+    asset_level: sensor
+    parent: genset_a_01_fuel_pump
 
   genset_a_02:
     display: "Genset A2 (Cummins QSK95)"
@@ -496,6 +545,9 @@ components:
     display: "DC Main Bus D (800 VDC unipolar TN-S)"
     type: dc_bus
     voltage_v_dc: 800
+    fault_current_ka: 50.0
+    incident_energy_cal: 31.0
+    arc_flash_boundary_m: 2.5
   bess_d_01:
     display: "BESS D-01 (battery energy storage, 2.5 MWh)"
     type: bess
@@ -538,7 +590,40 @@ components:
   chw_pump_n_01: {display: "CHW Pump N-1", type: pump, rated_gpm: 4500}
   chw_pump_n_02: {display: "CHW Pump N-2", type: pump, rated_gpm: 4500}
   chw_pump_s_01: {display: "CHW Pump S-1", type: pump, rated_gpm: 4500}
-  cdu_a_01: {display: "CDU A-1", type: cdu, rated_kw_thermal: 1500}
+  cdu_a_01:
+    display: "CDU A-1"
+    type: cdu
+    asset_level: equipment
+    parent: sys_primary_cooling
+    rated_kw_thermal: 1500
+  # ── cdu_a_01 micro-component decomposition (G1 representative slice)
+  cdu_a_01_secondary_pump:
+    display: "CDU A-1 Secondary-Loop Circulation Pump"
+    type: coolant_pump
+    asset_level: sub_assembly
+    parent: cdu_a_01
+  cdu_a_01_secondary_filter:
+    display: "CDU A-1 Secondary-Loop Coolant Filter"
+    type: filter
+    asset_level: component
+    parent: cdu_a_01_secondary_pump
+  cdu_a_01_isolation_valve_supply:
+    display: "CDU A-1 Secondary Supply Isolation Valve"
+    type: valve
+    asset_level: component
+    parent: cdu_a_01
+    isolation_capable: true
+  cdu_a_01_isolation_valve_return:
+    display: "CDU A-1 Secondary Return Isolation Valve"
+    type: valve
+    asset_level: component
+    parent: cdu_a_01
+    isolation_capable: true
+  cdu_a_01_flow_sensor:
+    display: "CDU A-1 Secondary-Loop Flow Sensor"
+    type: sensor
+    asset_level: sensor
+    parent: cdu_a_01_secondary_pump
   cdu_a_02: {display: "CDU A-2", type: cdu, rated_kw_thermal: 1500}
   cdu_a_03: {display: "CDU A-3 (+1)", type: cdu, rated_kw_thermal: 1500}
   cdu_b_01: {display: "CDU B-1", type: cdu, rated_kw_thermal: 1500}

@@ -88,19 +88,23 @@ _VALID_TRANSITIONS: dict[ProcedureState, set[ProcedureState]] = {
 class ProcedureClass(str, Enum):
     """Operational procedure tier per Microsoft CO+I doctrine.
 
-    SOP — Standard Operating Procedure: routine stability / consistency
-          (daily rounds, BMS monitoring). Prevents human error.
-    MOP — Method of Procedure: planned maintenance with explicit
-          approval, risk assessment, isolation mapping and rollback.
-          LOTO-Auditor integrated.
-    EOP — Emergency Operating Procedure: active-failure response
-          (cascading cooling loss, utility failure). Fast-path — it
-          bypasses the manual approval (ARMED) gate.
+    SOP  — Standard Operating Procedure: routine stability / consistency
+           (daily rounds, BMS monitoring). Prevents human error.
+    MOP  — Method of Procedure: planned maintenance with explicit
+           approval, risk assessment, isolation mapping and rollback.
+    DMOP — De-energized Method of Procedure: a MOP requiring full LOTO
+           isolation (LOR >= 3). Drives the cmms_mcp two-person rule.
+    EOP  — Emergency Operating Procedure: active-failure response.
+           Fast-path — bypasses the manual approval (ARMED) gate.
+    EMP  — Equipment Maintenance Procedure: micro-component preventive
+           testing (filter / breaker / sensor scope), G1 taxonomy.
     """
 
     SOP = "SOP"
     MOP = "MOP"
+    DMOP = "DMOP"
     EOP = "EOP"
+    EMP = "EMP"
 
 
 # EOP fast-path transition graph. An EOP responding to a live failure must
