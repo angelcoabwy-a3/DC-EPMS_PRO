@@ -22,11 +22,21 @@ from fastapi.testclient import TestClient
 
 @pytest.fixture(scope="module")
 def client():
-    """Boot the FastAPI app for testing."""
+    """FastAPI test client WITHOUT the lifespan context (DC-EPMS-039 fix).
+
+    `with TestClient(app)` triggers the full app lifespan, whose GraphRAG
+    model pre-warm takes ~35s (and LM-Studio probes can hang) -- that
+    froze the whole pytest run. These smoke tests are schema-validation +
+    graceful-degradation checks by design (each already tolerates
+    "DB down / RAG unavailable / LM down"), so the heavy lifespan is not
+    needed: a plain TestClient(app) skips it, the routes are still
+    mounted (at import time), and the suite completes and exits cleanly.
+    """
     from main import app
 
-    with TestClient(app) as c:
-        yield c
+    test_client = TestClient(app)
+    yield test_client
+    test_client.close()
 
 
 def test_health_endpoint_reachable(client):
