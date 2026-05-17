@@ -340,7 +340,7 @@ C:\dev\DC-EPMS_PRO\
   Fix: `.m-modal-overlay[hidden]{display:none !important}` + inline validation
   UX (shake/hint, replacing silent `alert()`) + force-close on 200 OK.
 
-### Closed in this session (2026-05-16)
+### Closed in this session (2026-05-16 / 05-17)
 - **DC-EPMS-DB-001** (HIGH, environmental) — RESOLVED 2026-05-16. Backend
   reported `postgres: down` despite a healthy `epms-db` container. Root cause:
   the container was (re)provisioned with `docker-compose.yml` credentials
@@ -349,6 +349,25 @@ C:\dev\DC-EPMS_PRO\
   ran in silent degraded mode (CMMS boot skipped). Fix: added `PG_HOST/PG_PORT/
   PG_DB/PG_USER/PG_PASSWORD` to `config/.env` (gitignored, local-only). On
   restart: `PostgreSQL connected to database 'dcepms'`, 91 assets re-seeded.
+
+- **DC-EPMS-040** (HIGH, deployment) — RESOLVED 2026-05-17. `GET
+  /api/cmms/assets` returned HTTP 500 for every caller (Maintenance, Rack
+  Heatmap, Mission Control) after the ProcedureGenerator sprint (bites
+  G1-G6). Root cause: the W3 migration (`backend/migrations/2026_05_W3_
+  g1_taxonomy.sql`) was applied to the live `dcepms` database — adding 5
+  columns to `assets` (`asset_level`, `parent_asset_id`, `fault_current_
+  ka`, `incident_energy_cal`, `arc_flash_boundary_m`) — while the backend
+  process kept running pre-G1 code. `cmms_repository.list_assets_async`
+  does `SELECT * FROM assets`; `_row_to_asset` calls
+  `Asset.model_validate(row)`; the stale `Asset` model has
+  `ConfigDict(extra="forbid")` and no knowledge of the 5 new columns →
+  `ValidationError` → `CMMSRepositoryError` → HTTP 500. The schema moved
+  ahead of the running code. Fix: restart the backend — the current
+  `Asset` model carries the 5 fields (added in G1) and is consistent with
+  the W3-migrated schema. No code change. **Rule (lesson):** applying a
+  schema migration to a live DB MUST be paired with an app restart in the
+  same step — a migration is not truly "applied" until the running
+  process is reloaded against the new schema.
 
 ### Open / Deferred
 
