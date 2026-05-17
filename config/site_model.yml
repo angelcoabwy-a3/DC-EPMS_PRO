@@ -332,6 +332,20 @@ power_chains:
   - {from: fuel_tank_b, to: genset_b_01}
   - {from: fuel_tank_b, to: genset_b_02}
 
+  # ── Path D (Phase 2 / Building D — 800 VDC unipolar TN-S, design Q2 2026)
+  #    Unifilar SLD: 35 kVAC 3-phase utility -> MV Rectifier -> SSCB ->
+  #    DC main bus. The BESS and the RPPs are BOTH bus-connected elements —
+  #    the BESS is parallel storage (charge/discharge), NOT in series with
+  #    the IT load. Routing all rack power through the battery would be
+  #    electrically wrong; the SLD flow terminates at the DC bus.
+  - {from: utility_feed_d,  to: mv_rectifier_d}
+  - {from: mv_rectifier_d,  to: sscb_d_01}
+  - {from: sscb_d_01,       to: main_bus_dc_d}
+  - {from: main_bus_dc_d,   to: bess_d_01}
+  - {from: main_bus_dc_d,   to: rpp_d_01}
+  - {from: main_bus_dc_d,   to: rpp_d_02}
+  - {from: bess_d_01,       to: main_bus_dc_d}   # BESS discharges back onto the DC bus
+
 
 # ════════════════════════════════════════════════════════════════════════
 #  Cooling chains — DAG of "what cools what"
@@ -461,6 +475,40 @@ components:
   rpp_b_02:       {display: "RPP-B2", type: rpp, rated_kw: 1200}
   busway_b_01:    {display: "Busway B-01", type: busway, rated_amps: 1600, voltage_v: 480}
   busway_b_02:    {display: "Busway B-02", type: busway, rated_amps: 1600, voltage_v: 480}
+
+  # ── Power Path D (Phase 2 / Building D — 800 VDC unipolar TN-S, design Q2 2026)
+  utility_feed_d:
+    display: "Utility Feed D (Phase 2 MV intake)"
+    type: utility_intake
+    voltage_kv: 35.0
+    rated_capacity_mw: 60.0
+  mv_rectifier_d:
+    display: "MV Rectifier D (35 kVAC 3-phase -> 800 VDC unipolar)"
+    type: mv_rectifier
+    voltage_v_dc: 800
+    rated_kw: 55000
+  sscb_d_01:
+    display: "SSCB D-01 (solid-state circuit breaker, 1-100 us clearing)"
+    type: sscb
+    voltage_v_dc: 800
+    clearing_time_us_max: 100
+  main_bus_dc_d:
+    display: "DC Main Bus D (800 VDC unipolar TN-S)"
+    type: dc_bus
+    voltage_v_dc: 800
+  bess_d_01:
+    display: "BESS D-01 (battery energy storage, 2.5 MWh)"
+    type: bess
+    voltage_v_dc: 800
+    rated_capacity_mwh: 2.5
+  rpp_d_01:
+    display: "RPP-D1 (Phase 2 / GB300 NVL144 rows)"
+    type: rpp
+    rated_kw: 2000
+  rpp_d_02:
+    display: "RPP-D2 (Phase 2 / GB300 NVL144 rows)"
+    type: rpp
+    rated_kw: 2000
 
   # ── Cooling
   chiller_1:

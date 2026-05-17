@@ -1,0 +1,88 @@
+# ════════════════════════════════════════════════════════════════════
+#  EOP-COOLING-LOSS-001 — Emergency Response: Cascading Cooling Loss
+# ════════════════════════════════════════════════════════════════════
+# Emergency Operating Procedure: critical response during an active
+# failure. An EOP minimizes downtime impact and follows the cycle
+# Alarm Recognition -> Immediate Response -> Escalation -> Recovery.
+#
+# FAST-PATH: procedure_class EOP. The procedure_engine EOP transition
+# graph (_EOP_TRANSITIONS) permits PRE_CONDITION_CHECK -> IN_PROGRESS
+# directly, so emergency execution is NOT gated on the manual approval
+# (ARMED) step. pre_conditions is therefore intentionally empty.
+#
+# Microsoft CO+I taxonomy: EMERGENCY / EOP. LOR 4 (highest severity).
+# ════════════════════════════════════════════════════════════════════
+
+procedure_id: EOP-COOLING-LOSS-001
+title: "Emergency Response - Cascading Cooling Loss"
+work_class: EMERGENCY
+procedure_class: EOP
+default_lor: 4
+estimated_duration_min: 20
+applicable_standards:
+  - NFPA_70E_arc_flash
+  - Uptime_Institute_Operations_Sustainability
+  - a3semi_EOP
+
+# EOP fast-path: no manual approval pre-conditions.
+pre_conditions: []
+
+steps:
+  - id: step_01_alarm_recognition
+    title: "Alarm recognition - confirm cooling-loss alarm cluster"
+    type: read_verify
+    adapter: simulated
+    target: bms
+    expected:
+      cooling_alarm_active: true
+    timeout_s: 30
+    requires_witness: false
+    abort_on_failure: false
+
+  - id: step_02_immediate_response
+    title: "Immediate response - engage N+1 standby chiller"
+    type: write_verify
+    adapter: simulated
+    target: chiller_3
+    command: ENGAGE_STANDBY
+    verify_after:
+      chiller_running: true
+    timeout_s: 60
+    requires_witness: false
+    abort_on_failure: false
+
+  - id: step_03_load_shed_assess
+    title: "Assess IT load-shed need - thermal trend vs ASHRAE A2 limit"
+    type: read_verify
+    adapter: simulated
+    target: bms
+    expected:
+      hall_inlet_temp_c: { max: 32 }
+    timeout_s: 60
+    requires_witness: false
+    abort_on_failure: false
+
+  - id: step_04_escalation
+    title: "Escalation - notify shift lead and facility manager"
+    type: notification
+    payload:
+      template: eop_cooling_loss
+      escalation_tier: 2
+    timeout_s: 30
+    requires_witness: false
+    abort_on_failure: false
+
+  - id: step_05_recovery_dwell
+    title: "Recovery and restoration - dwell, verify thermal stabilization"
+    type: read_dwell
+    adapter: simulated
+    target: bms
+    duration_s: 300
+    expected_at_end:
+      hall_inlet_temp_c: { max: 27 }
+    abort_on_failure: false
+
+  - id: step_06_finalize
+    title: "Log EOP execution to CMMS and incident record"
+    type: cmms_finalize
+    target_procedure: EOP-COOLING-LOSS-001

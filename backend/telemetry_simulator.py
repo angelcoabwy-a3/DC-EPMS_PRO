@@ -83,8 +83,10 @@ PHASE1_BASELINES: dict[str, tuple[float, float]] = {
     # Mechanical — York YZ chiller, CDU, pumps
     "chiller_LWT_c":       (6.8, 0.15),
     "chiller_cop":         (5.8, 0.2),
-    "cdu_supply_T_c":      (30.5, 0.25),
-    "cdu_flow_lpm":        (180.0, 5.0),
+    "cdu_primary_supply_T_c":   (30.5, 0.25),  # BPHE facility (district CHW) side
+    "cdu_secondary_supply_T_c": (32.0, 0.22),  # BPHE technology (clean coolant) side -> IT
+    "cdu_flow_lpm":             (180.0, 5.0),  # secondary-loop flow; 142 LPM = starvation
+    "cdu_filter_dp_kpa":        (22.0, 4.0),   # filter differential pressure (nominal 10-35 kPa)
     "pump_NPSH_margin_m":  (3.5, 0.15),
     "pump_flow_gpm":       (4500.0, 50.0),
     # Heat rejection — ECWT and weather-driven wet bulb
@@ -119,7 +121,60 @@ ANOMALY_PROFILES: dict[str, dict[str, float]] = {
         "chiller_LWT_c": +2.5,
         "chiller_cop": -1.4,
     },
+    "cdu_flow_starvation": {
+        "cdu_flow_lpm": -38.0,        # 180 LPM nominal -> 142 LPM secondary-loop starvation
+        "cdu_filter_dp_kpa": +28.0,   # clogged filter element drives the flow loss
+    },
+    "gen_desync": {
+        "genset_phase_angle_deg": +8.0,   # nominal 0 deg -> 8 deg, past the 5 deg fault gate
+        "genset_freq_hz": +0.35,          # frequency slip accompanies loss of sync
+        "genset_breaker_status": -1.0,    # protective SSCB trip on desynchronization
+    },
 }
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Multi-region generator synchronization profiles
+# ─────────────────────────────────────────────────────────────────────
+# Eliminates regional hardcoding. Toronto Path C2 baseline runs
+# 480 V / 60.00 Hz (ANSI A-B-C phase rotation); EMEA deployment clusters
+# run 416 V / 50.00 Hz (IEC R-Y-B). _gen_genset() reads the ACTIVE
+# region. Values are (baseline_mean, gaussian_std) per channel.
+REGION_PROFILES: dict[str, dict[str, tuple[float, float]]] = {
+    "toronto_60hz": {
+        "genset_voltage_v":       (480.0, 2.4),
+        "genset_freq_hz":         (60.00, 0.02),
+        "genset_phase_angle_deg": (0.0,   0.4),
+        "phase_sequence_match":   (1.0,   0.02),
+        "genset_breaker_status":  (1.0,   0.02),
+    },
+    "emea_50hz": {
+        "genset_voltage_v":       (416.0, 2.1),
+        "genset_freq_hz":         (50.00, 0.02),
+        "genset_phase_angle_deg": (0.0,   0.4),
+        "phase_sequence_match":   (1.0,   0.02),
+        "genset_breaker_status":  (1.0,   0.02),
+    },
+}
+
+DEFAULT_REGION = "toronto_60hz"
+_active_region = DEFAULT_REGION
+
+
+def set_region(region_key: str) -> None:
+    """Select the active regional sync band. Raises ValueError on unknown key."""
+    global _active_region
+    if region_key not in REGION_PROFILES:
+        raise ValueError(
+            f"unknown region: {region_key}; valid: {sorted(REGION_PROFILES)}"
+        )
+    _active_region = region_key
+    log.info("[telemetry_sim] active region set to %s", region_key)
+
+
+def get_region() -> str:
+    """Return the active regional sync band key."""
+    return _active_region
 
 
 @dataclass
@@ -156,9 +211,14 @@ def _gen_chiller(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict
 
 
 def _gen_cdu(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+    # CDU dual-loop hydraulics: the brazed-plate heat exchanger (BPHE)
+    # thermally separates the facility (primary) loop from the technology
+    # (secondary) loop that delivers clean coolant to the IT racks.
     return {
-        "cdu_supply_T_c": _noise(rng, "cdu_supply_T_c", n),
-        "cdu_flow_lpm":   _noise(rng, "cdu_flow_lpm", n),
+        "cdu_primary_supply_T_c":   _noise(rng, "cdu_primary_supply_T_c", n),
+        "cdu_secondary_supply_T_c": _noise(rng, "cdu_secondary_supply_T_c", n),
+        "cdu_flow_lpm":             _noise(rng, "cdu_flow_lpm", n),
+        "cdu_filter_dp_kpa":        _noise(rng, "cdu_filter_dp_kpa", n),
     }
 
 
@@ -186,6 +246,18 @@ def _gen_cooling_tower_field(_comp: ComponentInfo, n: int, rng: np.random.Genera
     }
 
 
+def _gen_genset(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+    # Generator bus synchronization telemetry. Region-aware: emits the
+    # 480 V/60 Hz (Toronto) or 416 V/50 Hz (EMEA) band per the ACTIVE
+    # region. The 4 sync tracks + breaker status feed the Kalman pipeline,
+    # whose z-score flags a desync fault when phase angle drifts past 5 deg.
+    profile = REGION_PROFILES[_active_region]
+    return {
+        metric: rng.normal(loc=mean, scale=std, size=n)
+        for metric, (mean, std) in profile.items()
+    }
+
+
 GeneratorFn = Callable[[ComponentInfo, int, np.random.Generator], dict[str, np.ndarray]]
 
 _GENERATORS: dict[str, GeneratorFn] = {
@@ -195,6 +267,7 @@ _GENERATORS: dict[str, GeneratorFn] = {
     "ups":                  _gen_ups,
     "pump":                 _gen_pump,
     "cooling_tower_field":  _gen_cooling_tower_field,
+    "genset":               _gen_genset,
 }
 
 
@@ -203,10 +276,11 @@ _GENERATORS: dict[str, GeneratorFn] = {
 _CHANNELS_PER_TYPE: dict[str, int] = {
     "it_rack": 4,
     "chiller": 2,
-    "cdu": 2,
+    "cdu": 4,
     "ups": 5,
     "pump": 2,
     "cooling_tower_field": 2,
+    "genset": 5,
 }
 
 
@@ -295,7 +369,8 @@ class TelemetrySimulator:
 
         kinds (see ANOMALY_PROFILES):
           thermal_runaway, pump_cavitation, phase_imbalance,
-          ups_drain, chiller_degraded.
+          ups_drain, chiller_degraded, cdu_flow_starvation,
+          gen_desync.
 
         magnitude scales the profile delta (1.0 = full deviation).
         duration_samples controls persistence in get_window() calls.

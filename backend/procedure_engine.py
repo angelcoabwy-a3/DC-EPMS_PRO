@@ -42,6 +42,13 @@ from typing import Any
 
 import yaml
 
+from backend.cmms_models import (
+    RBACDenied,
+    UserRole,
+    can_arm_critical_procedure,
+    can_qa_signoff_vendor,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -72,6 +79,42 @@ _VALID_TRANSITIONS: dict[ProcedureState, set[ProcedureState]] = {
     # Terminal states
     ProcedureState.COMPLETED: set(),
     ProcedureState.ABORTED: set(),
+}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Procedure class (SOP / MOP / EOP) + EOP fast-path transition graph
+# ─────────────────────────────────────────────────────────────────────────
+class ProcedureClass(str, Enum):
+    """Operational procedure tier per Microsoft CO+I doctrine.
+
+    SOP — Standard Operating Procedure: routine stability / consistency
+          (daily rounds, BMS monitoring). Prevents human error.
+    MOP — Method of Procedure: planned maintenance with explicit
+          approval, risk assessment, isolation mapping and rollback.
+          LOTO-Auditor integrated.
+    EOP — Emergency Operating Procedure: active-failure response
+          (cascading cooling loss, utility failure). Fast-path — it
+          bypasses the manual approval (ARMED) gate.
+    """
+
+    SOP = "SOP"
+    MOP = "MOP"
+    EOP = "EOP"
+
+
+# EOP fast-path transition graph. An EOP responding to a live failure must
+# reach IN_PROGRESS without waiting on the manual approval / witness gate
+# that ARMED represents — so PRE_CONDITION_CHECK -> IN_PROGRESS is a legal
+# transition for EOP procedures only. transition_to() selects this graph
+# when ProcedureExecution.procedure_class == ProcedureClass.EOP.
+_EOP_TRANSITIONS: dict[ProcedureState, set[ProcedureState]] = {
+    **_VALID_TRANSITIONS,
+    ProcedureState.PRE_CONDITION_CHECK: {
+        ProcedureState.ARMED,
+        ProcedureState.IN_PROGRESS,  # fast-path: skip the ARMED approval gate
+        ProcedureState.ABORTED,
+    },
 }
 
 
@@ -115,14 +158,50 @@ class ProcedureExecution:
     pre_condition_results: list[dict] = field(default_factory=list)
     execution_log: list[StepResult] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
+    procedure_class: ProcedureClass = ProcedureClass.MOP
+    vendor_supervision_log: list = field(default_factory=list)
 
-    def transition_to(self, new_state: ProcedureState) -> None:
-        """Enforce valid state transitions. Raises if invalid."""
-        valid_next = _VALID_TRANSITIONS.get(self.state, set())
+    def transition_to(
+        self,
+        new_state: ProcedureState,
+        actor_role: UserRole | str | None = None,
+    ) -> None:
+        """Enforce valid state transitions. Raises if invalid.
+
+        EOP procedures use the fast-path graph (_EOP_TRANSITIONS): an
+        emergency response may go PRE_CONDITION_CHECK -> IN_PROGRESS
+        directly, skipping the manual approval gate that ARMED represents.
+
+        RBAC: the ARMED transition is gated. A TECH_L4 cannot ARM a
+        procedure — SENIOR_TECH_L5 is the floor, SME_L6 for a high-risk
+        one (metadata['high_risk']). The gate enforces strictly only when
+        actor_role is supplied; legacy call sites that pass none get a
+        warning, not a block, until the auth layer is wired.
+        """
+        graph = (
+            _EOP_TRANSITIONS
+            if self.procedure_class == ProcedureClass.EOP
+            else _VALID_TRANSITIONS
+        )
+        valid_next = graph.get(self.state, set())
         if new_state not in valid_next:
             raise InvalidTransitionError(
                 f"Cannot transition {self.state} -> {new_state}. Valid next states: {valid_next}"
             )
+        if new_state is ProcedureState.ARMED:
+            high_risk = bool(self.metadata.get("high_risk", False))
+            if actor_role is None:
+                log.warning(
+                    "[procedure_engine] %s -> ARMED with no actor_role; "
+                    "RBAC gate NOT enforced (auth layer pending)",
+                    self.execution_id[:8],
+                )
+            elif not can_arm_critical_procedure(actor_role, high_risk=high_risk):
+                raise RBACDenied(
+                    f"role {actor_role} cannot ARM procedure {self.procedure_id} "
+                    f"(high_risk={high_risk}) - "
+                    f"{'SME_L6' if high_risk else 'SENIOR_TECH_L5 or SME_L6'} required."
+                )
         log.info(
             "[procedure_engine] %s: %s -> %s",
             self.execution_id[:8],
@@ -142,6 +221,75 @@ class ProcedureNotFoundError(KeyError):
 
 class PreConditionFailedError(RuntimeError):
     """Raised when a hard precondition fails. Triggers ABORT."""
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Vendor supervision lifecycle — 3-step tiered loop within an MOP
+# ─────────────────────────────────────────────────────────────────────────
+class VendorSupervisionStage(str, Enum):
+    """Tiered vendor-management loop executed inside an MOP. Modeled as
+    its own ordered sub-stage enum rather than as new ProcedureState
+    members — the loop is a sub-process within IN_PROGRESS, and adding it
+    to the core 8-state graph would break every existing transition path.
+
+    PRE_WORK_BRIEFING_COMPLETED — safety / scope briefing logged.
+    ACTIVE_SHIFT_SUPERVISION    — vendor working under escort.
+    POST_WORK_QA_SIGNOFF        — QA acceptance that closes the LOTO.
+    """
+
+    PRE_WORK_BRIEFING_COMPLETED = "PRE_WORK_BRIEFING_COMPLETED"
+    ACTIVE_SHIFT_SUPERVISION = "ACTIVE_SHIFT_SUPERVISION"
+    POST_WORK_QA_SIGNOFF = "POST_WORK_QA_SIGNOFF"
+
+
+# Ordered progression — a stage may only be logged once its predecessor is.
+_VENDOR_STAGE_ORDER: list[VendorSupervisionStage] = [
+    VendorSupervisionStage.PRE_WORK_BRIEFING_COMPLETED,
+    VendorSupervisionStage.ACTIVE_SHIFT_SUPERVISION,
+    VendorSupervisionStage.POST_WORK_QA_SIGNOFF,
+]
+
+
+@dataclass
+class VendorSupervisionRecord:
+    """Audit record of one logged vendor-supervision stage."""
+
+    stage: VendorSupervisionStage
+    logged_by: str
+    logged_by_role: str
+    logged_at_unix: float
+
+
+def log_vendor_stage(
+    stage: VendorSupervisionStage,
+    actor_role: UserRole | str | None,
+    logged_by: str,
+    prior_stages: list[VendorSupervisionStage] | None = None,
+) -> VendorSupervisionRecord:
+    """Validate + build a vendor-supervision record. Raises on a gate fail.
+
+    - Stages must be logged in order (no skipping a predecessor).
+    - PRE_WORK_BRIEFING_COMPLETED + ACTIVE_SHIFT_SUPERVISION: any tech (L4+).
+    - POST_WORK_QA_SIGNOFF: SENIOR_TECH_L5 or higher — it closes the LOTO.
+    """
+    prior = prior_stages or []
+    idx = _VENDOR_STAGE_ORDER.index(stage)
+    if idx > 0 and _VENDOR_STAGE_ORDER[idx - 1] not in prior:
+        raise InvalidTransitionError(
+            f"vendor stage {stage.value} cannot be logged before "
+            f"{_VENDOR_STAGE_ORDER[idx - 1].value} is complete"
+        )
+    if stage is VendorSupervisionStage.POST_WORK_QA_SIGNOFF and not can_qa_signoff_vendor(actor_role):
+        raise RBACDenied(
+            f"role {actor_role or 'NONE'} cannot sign off vendor QA "
+            "(closes the LOTO) — SENIOR_TECH_L5 or SME_L6 required."
+        )
+    return VendorSupervisionRecord(
+        stage=stage,
+        logged_by=logged_by,
+        logged_by_role=str(actor_role) if actor_role else "UNKNOWN",
+        logged_at_unix=time.time(),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────

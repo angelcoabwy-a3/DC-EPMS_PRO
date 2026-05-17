@@ -1,0 +1,81 @@
+# ════════════════════════════════════════════════════════════════════
+#  SOP-DAILY-ROUNDS-001 — Daily Operations Rounds
+# ════════════════════════════════════════════════════════════════════
+# Standard Operating Procedure: routine stability + consistency checks.
+# An SOP prevents human error through repeatable daily discipline — it
+# is NOT state-changing maintenance (that is an MOP) and carries no
+# isolation or witness gate.
+#
+# Microsoft CO+I taxonomy: ROUNDS / SOP. LOR 1 (lowest operational risk).
+# ════════════════════════════════════════════════════════════════════
+
+procedure_id: SOP-DAILY-ROUNDS-001
+title: "Daily Operations Rounds - Stability and Consistency Checks"
+work_class: ROUNDS
+procedure_class: SOP
+default_lor: 1
+estimated_duration_min: 45
+applicable_standards:
+  - Uptime_Institute_Operations_Sustainability
+  - ASHRAE_TC_9_9_thermal_guidelines
+  - a3semi_OPS
+
+pre_conditions:
+  - id: operator_on_shift
+    description: "Certified CET operator on shift"
+    check: operator_certified == true
+    failure_action: WARN
+
+steps:
+  - id: step_01_bms_overview
+    title: "Review BMS overview - active alarms, SHI, PUE"
+    type: read_verify
+    adapter: simulated
+    target: bms
+    expected:
+      active_critical_alarms: { max: 0 }
+    timeout_s: 120
+    requires_witness: false
+    abort_on_failure: false
+
+  - id: step_02_ups_rounds
+    title: "UPS A/B routine rounds - SoC, runtime, online mode"
+    type: read_verify
+    adapter: simulated
+    target: ups_a
+    expected:
+      ups_soc_pct: { min: 95 }
+      mode: ONLINE
+    timeout_s: 120
+    requires_witness: false
+    abort_on_failure: false
+
+  - id: step_03_genset_rounds
+    title: "Generator routine rounds - AUTO mode, fuel level, sync ready"
+    type: read_verify
+    adapter: simulated
+    target: genset_a_01
+    expected:
+      mode: AUTO
+      fuel_pct: { min: 80 }
+      phase_sequence_match: { min: 1 }
+    timeout_s: 120
+    requires_witness: false
+    abort_on_failure: false
+
+  - id: step_04_cooling_walkthrough
+    title: "Cooling plant walkthrough - chiller LWT, CDU flow, filter dP"
+    type: read_verify
+    adapter: simulated
+    target: cdu_a_01
+    expected:
+      cdu_flow_lpm: { min: 160 }
+      cdu_filter_dp_kpa: { max: 35 }
+    timeout_s: 120
+    requires_witness: false
+    abort_on_failure: false
+
+  - id: step_05_finalize
+    title: "Log rounds completion to CMMS"
+    type: cmms_finalize
+    target_procedure: SOP-DAILY-ROUNDS-001

@@ -18,6 +18,7 @@ CreateWorkOrderRequest -> draft via cmms_mcp.tool_draft_cmms_work_order
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -46,6 +47,86 @@ TRIGGER_SOURCES = (
 )
 PRIORITIES = ("P1", "P2", "P3", "P4")
 MOP_RESOLUTION_METHODS = ("hardcoded", "graphrag", "manual")
+
+# RCA root-cause taxonomy for incident-triggered work orders.
+ROOT_CAUSE_CATEGORIES = (
+    "equipment_failure", "human_error", "environmental",
+    "design_deficiency", "procedure_gap", "vendor_defect", "unknown",
+)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  RBAC — operational role hierarchy + permission matrix
+#
+#  Models the Equinix / Vantage hyperscale technician ladder. The gate
+#  functions below are pure (role in -> bool out); the enforcement points
+#  (procedure_engine ARMED transition, vendor QA sign-off, WO approval)
+#  call them.
+#
+#  REALITY CHECK: this is the AUTHORIZATION layer only. There is no
+#  authentication layer in the platform yet — the actor role is an
+#  asserted claim (carried alongside a cet_id), NOT a verified identity.
+#  Real authentication (login / SSO) is a separate production prerequisite.
+# ═══════════════════════════════════════════════════════════════════════
+class UserRole(str, Enum):
+    """Operational role hierarchy (hyperscale data-center technician ladder)."""
+
+    TECH_L4 = "TECH_L4"                # executes SOPs, drafts MOPs, monitors BMS
+    SENIOR_TECH_L5 = "SENIOR_TECH_L5"  # approves standard MOPs, validates RCA
+    SME_L6 = "SME_L6"                  # approves high-risk EOPs, MV / UPS isolations
+
+
+# Numeric rank — higher outranks lower. Every gate decision routes through this.
+_ROLE_RANK: dict[UserRole, int] = {
+    UserRole.TECH_L4: 4,
+    UserRole.SENIOR_TECH_L5: 5,
+    UserRole.SME_L6: 6,
+}
+
+
+class RBACDenied(PermissionError):
+    """Raised when an actor role is insufficient for a gated transition."""
+
+
+def role_rank(role: UserRole | str | None) -> int:
+    """Numeric rank for a role. None / unknown -> 0 (no privilege)."""
+    if role is None:
+        return 0
+    try:
+        return _ROLE_RANK[UserRole(role)]
+    except (ValueError, KeyError):
+        return 0
+
+
+def can_approve_work_order(role: UserRole | str | None) -> bool:
+    """L5+ may approve a work order / MOP. A TECH_L4 may only draft it."""
+    return role_rank(role) >= 5
+
+
+def can_arm_critical_procedure(role: UserRole | str | None, high_risk: bool = False) -> bool:
+    """Gate the ARMED transition. Standard MOP -> L5+; a high-risk EOP or
+    an MV / UPS isolation -> SME_L6 only."""
+    return role_rank(role) >= (6 if high_risk else 5)
+
+
+def can_signoff_incident_closure(role: UserRole | str | None) -> bool:
+    """Incident closure sign-off requires L5+ validation. A TECH_L4 may
+    enter initial RCA data but may not close the incident."""
+    return role_rank(role) >= 5
+
+
+def can_qa_signoff_vendor(role: UserRole | str | None) -> bool:
+    """Vendor POST_WORK_QA_SIGNOFF (closes the LOTO) requires L5+."""
+    return role_rank(role) >= 5
+
+
+def assert_can_approve_work_order(role: UserRole | str | None) -> None:
+    """Raise RBACDenied if `role` may not approve a work order."""
+    if not can_approve_work_order(role):
+        raise RBACDenied(
+            f"role {role or 'NONE'} cannot approve a work order — "
+            "SENIOR_TECH_L5 or SME_L6 signature required."
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -121,7 +202,17 @@ class WorkOrder(BaseModel):
     requested_by: str | None = None
     assigned_to_cet: str | None = None
     approved_by_cet: str | None = None
+    approved_by_role: str | None = None       # RBAC signature bit (UserRole value)
     rejection_reason: str | None = None
+
+    # RBAC escalation + RCA (incident-triggered WOs). NOTE: these are
+    # model / API-surface fields — the work_orders table does not yet
+    # carry the columns; persistence needs a migration (see report).
+    escalation_required: bool = False
+    escalation_reason: str | None = None
+    spof_identified: bool = False
+    root_cause_category: str | None = None
+    closure_signoff_by_role: str | None = None
 
     due_at: datetime | None = None
     approved_at: datetime | None = None
@@ -166,6 +257,7 @@ class ApproveRejectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     cet_id: str
+    actor_role: UserRole | None = None   # RBAC signature bit; None -> gate not enforced
     rejection_reason: str | None = None  # required for reject, ignored for approve
 
 

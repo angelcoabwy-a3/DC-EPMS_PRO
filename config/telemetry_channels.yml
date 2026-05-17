@@ -108,11 +108,23 @@ channels:
     sod_threshold_k: 0.2
     rationale: "York YZ chiller coefficient of performance, baseline 5.8, std=0.2."
 
-  cdu_supply_T_c:
+  cdu_primary_supply_T_c:
     R: 0.0625
     Q: 0.0001
     sod_threshold_k: 0.3
-    rationale: "Coolant distribution unit supply temp, baseline 30.5 C, std=0.25 K."
+    rationale: "CDU dual-loop — BPHE facility-side (primary / district CHW) supply temp. Baseline 30.5 C, std=0.25 K."
+
+  cdu_secondary_supply_T_c:
+    R: 0.0484
+    Q: 0.0001
+    sod_threshold_k: 0.3
+    rationale: "CDU dual-loop — BPHE technology-side (secondary / clean coolant) supply temp to IT racks. Baseline 32.0 C, std=0.22 K."
+
+  cdu_filter_dp_kpa:
+    R: 16.0
+    Q: 0.001
+    sod_threshold_k: 3.0
+    rationale: "CDU coolant filter differential pressure. Nominal 10-35 kPa, baseline 22, std=4. Critical at 50 kPa (clogged element)."
 
   cdu_flow_lpm:
     R: 25.0
@@ -144,3 +156,34 @@ channels:
     Q: 0.01
     sod_threshold_k: 1.0
     rationale: "Outdoor wet-bulb temperature, weather-driven. Baseline 15 C, std=1.5 K. Larger Q reflects rapid weather swings."
+
+  # ── Generator bus synchronization (multi-region: 480V/60Hz + 416V/50Hz) ──
+  genset_voltage_v:
+    R: 5.76
+    Q: 0.001
+    sod_threshold_k: 1.0
+    rationale: "Genset terminal voltage at the sync panel. Toronto 480 V band (std=2.4); EMEA 416 V band (std=2.1) shares this calibration."
+
+  genset_freq_hz:
+    R: 0.0004
+    Q: 0.00001
+    sod_threshold_k: 0.05
+    rationale: "Genset frequency at the sync panel. Toronto 60.00 Hz / EMEA 50.00 Hz, std=0.02 Hz. Tight sync gate."
+
+  genset_phase_angle_deg:
+    R: 0.16
+    Q: 0.001
+    sod_threshold_k: 0.5
+    rationale: "Phase-angle deviation vs the main bus. Nominal 0 deg, std=0.4. Desynchronization fault when sustained > 5 deg."
+
+  phase_sequence_match:
+    R: 0.0004
+    Q: 0.00001
+    sod_threshold_k: 0.5
+    rationale: "Phase-sequence (rotation) match status bit. 1.0 = matched (A-B-C / R-Y-B), 0.0 = reversed. std=0.02."
+
+  genset_breaker_status:
+    R: 0.0004
+    Q: 0.00001
+    sod_threshold_k: 0.5
+    rationale: "Generator SSCB status bit. 1.0 = closed/synced to main bus, 0.0 = tripped/open. std=0.02."

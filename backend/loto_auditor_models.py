@@ -85,6 +85,20 @@ class PPECategory(int, Enum):
     CAT_4 = 4  # 40 cal/cm2 (mandatory for 800VDC)
 
 
+class RedundancyTier(str, Enum):
+    """Infrastructure redundancy topology (Uptime Institute Tier doctrine).
+
+    Ordered weakest -> strongest. `N` is the unprotected single-path
+    state Pillar 2 flags as CRITICAL when a LOTO isolation degrades a
+    2N / 2N+1 sub-system down to it.
+    """
+
+    N = "N"                # single path, no backup — unprotected (1N)
+    N_PLUS_1 = "N+1"       # component-level spare
+    TWO_N = "2N"           # fully independent System A + System B
+    TWO_N_PLUS_1 = "2N+1"  # dual paths, each with an isolated component reserve
+
+
 # =============================================================================
 #  Input model
 # =============================================================================

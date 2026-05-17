@@ -107,11 +107,14 @@ def _derive_telemetry_channels(asset_type: str, canonical_id: str) -> list[str]:
     metrics_per_type = {
         "it_rack": ["rack_inlet_T_c", "gpu_Tj_c", "dlc_supply_T_c", "dlc_return_T_c"],
         "chiller": ["chiller_LWT_c", "chiller_cop"],
-        "cdu":     ["cdu_supply_T_c", "cdu_flow_lpm"],
+        "cdu":     ["cdu_primary_supply_T_c", "cdu_secondary_supply_T_c",
+                    "cdu_flow_lpm", "cdu_filter_dp_kpa"],
         "ups":     ["voltage_v_phase_ab", "voltage_v_phase_bc", "voltage_v_phase_ca",
                     "ups_soc_pct", "batt_runtime_min"],
         "pump":    ["pump_NPSH_margin_m", "pump_flow_gpm"],
         "cooling_tower_field": ["ecwt_c", "outdoor_wet_bulb_c"],
+        "genset":  ["genset_voltage_v", "genset_freq_hz", "genset_phase_angle_deg",
+                    "phase_sequence_match", "genset_breaker_status"],
     }
     metrics = metrics_per_type.get(asset_type, [])
     return [f"{canonical_id}:{m}" for m in metrics]

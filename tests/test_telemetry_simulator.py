@@ -23,6 +23,7 @@ from backend.site_model import SiteModel
 from backend.telemetry_simulator import (
     ANOMALY_PROFILES,
     PHASE1_BASELINES,
+    REGION_PROFILES,
     TelemetrySimulator,
     build_placeholder_payload,
     reset_simulator,
@@ -255,10 +256,19 @@ def test_placeholder_payload_skips_empty_arrays():
 #  Anomaly profile validity
 # ─────────────────────────────────────────────────────────────────────
 def test_all_anomaly_profiles_target_known_metrics():
-    """Every anomaly profile must reference metrics that exist in baselines."""
+    """Every anomaly profile must reference metrics that exist in baselines.
+
+    Genset synchronization metrics live in REGION_PROFILES (multi-region
+    480V/60Hz + 416V/50Hz calibration), not PHASE1_BASELINES — so the
+    known-metric set is the union of both.
+    """
+    region_metrics = {
+        m for profile in REGION_PROFILES.values() for m in profile
+    }
+    known = set(PHASE1_BASELINES) | region_metrics
     for kind, profile in ANOMALY_PROFILES.items():
         for metric in profile.keys():
-            assert metric in PHASE1_BASELINES, (
+            assert metric in known, (
                 f"anomaly {kind} targets metric {metric!r} "
-                f"that is not in PHASE1_BASELINES"
+                f"that is not in PHASE1_BASELINES or REGION_PROFILES"
             )

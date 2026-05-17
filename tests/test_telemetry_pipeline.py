@@ -68,10 +68,13 @@ def test_cold_start_initializes_filter_state(pipeline, sim):
 
 
 def test_payload_shape_matches_frontend_contract(pipeline, sim):
-    """Each channel entry must have the exact 5 fields the frontend expects."""
+    """Each channel entry must have the exact 6 fields the frontend expects."""
     window = sim.get_window(n_samples=5)
     payload = pipeline.compute(window)
-    expected_fields = {"n_emissions", "max_z", "mean_z", "is_anomalous", "last_emission"}
+    expected_fields = {
+        "n_emissions", "max_z", "mean_z", "is_anomalous",
+        "last_emission", "escalation_required",
+    }
     for ch_id, fields in payload.items():
         assert set(fields.keys()) == expected_fields, (
             f"{ch_id}: missing {expected_fields - set(fields.keys())}, "

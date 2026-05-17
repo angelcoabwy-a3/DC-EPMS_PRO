@@ -53,6 +53,30 @@ log = logging.getLogger(__name__)
 DEFAULT_DT_SECONDS = 1.0
 ANOMALY_WINDOW_SECONDS = 3600  # 60 minutes
 
+# ── Incident escalation triage ──────────────────────────────────────────
+# Metrics whose anomalies are CRITICAL physics events — generator bus
+# desynchronization and CDU secondary-loop flow starvation. When the
+# Kalman z-score flags one of these channels as anomalous, compute()
+# sets the per-channel `escalation_required` flag so the predictive WO
+# trigger routes the work order to the Level V/VI queue (not Level IV).
+CRITICAL_ESCALATION_METRICS: frozenset = frozenset({
+    "genset_phase_angle_deg",
+    "genset_freq_hz",
+    "genset_breaker_status",
+    "cdu_flow_lpm",
+    "cdu_filter_dp_kpa",
+})
+
+
+def requires_escalation(channel_id: str) -> bool:
+    """True if `channel_id`'s metric is a critical-escalation metric.
+
+    channel_id is the scoped '<component>:<metric>' form; the metric is
+    the segment after the last ':'.
+    """
+    metric = channel_id.split(":", 1)[-1] if ":" in channel_id else channel_id
+    return metric in CRITICAL_ESCALATION_METRICS
+
 # Channel calibration is loaded from config/telemetry_channels.yml at
 # pipeline init. Hardcoded fallbacks below are used ONLY when the YAML
 # is missing or malformed (defensive — Sprint 5 C3 made the YAML the
@@ -139,6 +163,8 @@ class TelemetryPipeline:
         self._filter_state: dict[str, Any] = {}
         # anomaly_log entries: (timestamp_unix, channel_id)
         self._anomaly_log: list[tuple[float, str]] = []
+        # escalation_log: anomalies on CRITICAL_ESCALATION_METRICS channels
+        self._escalation_log: list[tuple[float, str]] = []
         self._anomaly_window_s = ANOMALY_WINDOW_SECONDS
         # Per-channel calibration. If not supplied, auto-load the default
         # config/telemetry_channels.yml so direct instantiation in tests
@@ -172,14 +198,32 @@ class TelemetryPipeline:
             delta_t_seconds=self.dt_seconds,
         )
 
-        # Track anomalies for rolling-window count
+        # Track anomalies for rolling-window count + escalation triage.
         now = time.time()
         for ch_id, fields in payload.items():
-            if fields.get("is_anomalous"):
-                self._anomaly_log.append((now, ch_id))
+            if not fields.get("is_anomalous"):
+                fields["escalation_required"] = False
+                continue
+            self._anomaly_log.append((now, ch_id))
+            # Critical physics anomaly -> escalate the WO to the L5/L6 queue.
+            escalate = requires_escalation(ch_id)
+            fields["escalation_required"] = escalate
+            if escalate:
+                self._escalation_log.append((now, ch_id))
 
         self._trim_anomaly_log(now)
+        self._trim_escalation_log(now)
         return payload
+
+    def count_escalations_60min(self) -> int:
+        """Count CRITICAL anomalies in the rolling 60-min window. A non-zero
+        value means at least one work order belongs in the Level V/VI queue."""
+        self._trim_escalation_log(time.time())
+        return len(self._escalation_log)
+
+    def _trim_escalation_log(self, now: float) -> None:
+        cutoff = now - self._anomaly_window_s
+        self._escalation_log = [e for e in self._escalation_log if e[0] >= cutoff]
 
     # ── filter state pre-init (Sprint 5 C3 — YAML-driven calibration) ──
     def _init_filter_state_for_new_channels(self, window: dict[str, np.ndarray]) -> None:
