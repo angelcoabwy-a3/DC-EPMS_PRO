@@ -42,6 +42,7 @@ import { initPowerUpsIso } from './views/power_ups_iso.js';
 import { initPowerGrid } from './core/power_grid.js';
 import { initPowerCam } from './core/power_cam.js';
 import { initAssetPanel } from './views/asset_panel.js';
+import { initScenariosView } from './views/scenarios.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -77,6 +78,8 @@ initPowerUpsIso();
 initPowerCam();
 // Contextual asset panel (Phase 4 v0.10.9) — must come after iso so .pid-canvas exists
 initAssetPanel();
+// Failure-scenario simulator — T2.1: first IIFE view extracted to an ES module
+initScenariosView();
 
 if (USE_NEW_TELEMETRY_ENGINE) {
     startTelemetry(window.location.origin);
