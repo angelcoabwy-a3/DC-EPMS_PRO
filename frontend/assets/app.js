@@ -2946,7 +2946,10 @@
             const resp = await fetch(`${API_BASE}/api/bms/write`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tag_id: tagId, value: value, user: 'dashboard-operator' }),
+                // F3-2: backend RBAC gate - BMS write requires SME_L6. The legacy
+                // BMS view has no role selector, so a gate-satisfying demo default
+                // is sent (swap for a selector value when one is added).
+                body: JSON.stringify({ tag_id: tagId, value: value, user: 'dashboard-operator', actor_role: 'SME_L6' }),
             });
             const data = await resp.json();
             if (!resp.ok) {

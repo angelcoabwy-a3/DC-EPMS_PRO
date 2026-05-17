@@ -126,7 +126,8 @@ async function _approveWorkOrder(woId, woContext) {
     const r = await fetch(`${API_BASE}/api/cmms/work-orders/${encodeURIComponent(woId)}/approve`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({cet_id: cetId}),
+        // F3-1: backend RBAC gate - actor_role from the live role selector.
+        body: JSON.stringify({cet_id: cetId, actor_role: _procgenRole()}),
     });
     if (!r.ok) {
         const errText = await r.text().catch(() => `${r.status}`);
@@ -160,7 +161,8 @@ async function _rejectWorkOrder(woId, woContext) {
     const r = await fetch(`${API_BASE}/api/cmms/work-orders/${encodeURIComponent(woId)}/reject`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({cet_id: cetId, rejection_reason: reason.trim()}),
+        // F3-1: backend RBAC gate - actor_role from the live role selector.
+        body: JSON.stringify({cet_id: cetId, rejection_reason: reason.trim(), actor_role: _procgenRole()}),
     });
     if (!r.ok) {
         const errText = await r.text().catch(() => `${r.status}`);
