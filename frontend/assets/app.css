@@ -29,7 +29,7 @@
     --neon-green:   #00FF9D;
 
     --font-sans:    -apple-system, 'Segoe UI', Roboto, Inter, sans-serif;
-    --font-mono:    'JetBrains Mono', 'JetBrains Mono Web', 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
+    --font-mono:    'JetBrains Mono', 'Cascadia Code', Consolas, 'Roboto Mono', monospace;
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -64,22 +64,10 @@
     top: 0;
 }
 
-/* ── JetBrains Mono self-hosted (Phase 4 follow-up — Tier IV typography)
- *
- *   Drop the .woff2 into frontend/assets/vendor/fonts/ to enable.
- *   Fallback chain in --font-mono ensures graceful degradation if the
- *   file is missing: browser uses system-installed JetBrains Mono if
- *   available (most dev workstations have it), otherwise Cascadia /
- *   Consolas / Roboto Mono.
- */
-@font-face {
-    font-family: 'JetBrains Mono Web';
-    font-style: normal;
-    font-weight: 400 700;
-    font-display: swap;
-    src: url('/assets/vendor/fonts/JetBrainsMono-VariableFont_wght.woff2') format('woff2-variations'),
-         url('/assets/vendor/fonts/JetBrainsMono-Regular.woff2') format('woff2');
-}
+/* JetBrains Mono Web (self-hosted @font-face) removed 2026-05-17 (T3.1
+ * housekeeping): the .woff2 assets were never committed, so the rule only
+ * emitted console 404s. The --font-mono fallback chain covers typography;
+ * restore from git history to revive self-hosting. */
 
 /* Global tabular numerics — prevents number jitter in SCADA dashboards.
    Applies to ALL monospace contexts (KPIs, sparkline readouts, asset
