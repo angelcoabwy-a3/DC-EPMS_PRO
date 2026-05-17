@@ -45,6 +45,7 @@ import yaml
 from backend.cmms_models import (
     RBACDenied,
     UserRole,
+    can_approve_work_order,
     can_arm_critical_procedure,
     can_qa_signoff_vendor,
 )
@@ -294,6 +295,48 @@ def log_vendor_stage(
         logged_by_role=str(actor_role) if actor_role else "UNKNOWN",
         logged_at_unix=time.time(),
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  G4 -- RBAC procedure promotion gate (DRAFT -> ACTIVE)
+# ─────────────────────────────────────────────────────────────────────────
+DRAFT_STATUS = "DRAFT"
+ACTIVE_STATUS = "ACTIVE"
+
+
+def promote_procedure(procedure: dict, actor_role: UserRole | str) -> dict:
+    """Promote a generated DRAFT procedure to ACTIVE / v1.0.
+
+    RBAC gate (Multi-Tier framework): only SENIOR_TECH_L5 or SME_L6 may
+    activate a procedure. A TECH_L4 may draft or compile one (the
+    procedure_generator factories) but cannot promote it -- the attempt
+    raises RBACDenied with a descriptive message.
+
+    Returns a promoted copy (status ACTIVE, version 1.0, activated_by_role
+    audit stamp); the input dict is not mutated.
+    """
+    current = procedure.get("status", DRAFT_STATUS)
+    if current == ACTIVE_STATUS:
+        return procedure  # already active -- idempotent
+    if current != DRAFT_STATUS:
+        raise InvalidTransitionError(
+            f"cannot promote a procedure in status {current!r}; expected DRAFT"
+        )
+
+    role_name = (actor_role.value if isinstance(actor_role, UserRole)
+                 else str(actor_role))
+    if not can_approve_work_order(actor_role):
+        raise RBACDenied(
+            f"role {role_name} cannot promote a procedure to ACTIVE -- "
+            "SENIOR_TECH_L5 or SME_L6 signature is required. A TECH_L4 may "
+            "draft or compile a procedure but may not activate it."
+        )
+
+    promoted = dict(procedure)
+    promoted["status"] = ACTIVE_STATUS
+    promoted["version"] = "1.0"
+    promoted["activated_by_role"] = role_name
+    return promoted
 
 
 # ─────────────────────────────────────────────────────────────────────────
