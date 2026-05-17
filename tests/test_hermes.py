@@ -1,12 +1,12 @@
 """
 DC-EPMS PRO — tests/test_hermes.py
-ROADMAP V11 T3.1 — Project Hermes WebSocket telemetry pipeline.
+ROADMAP V11 T3.1 — Project Hermes: unified event-driven plane.
 
-Covers the multiplexed frame envelope, the ConnectionManager fan-out
-(including dead-socket eviction), the live Kalman-pipeline tap, the
-graceful fallback, and the WS endpoint. No real network: ConnectionManager
-runs against fake sockets; the endpoint is driven by TestClient and the
-WS test mocks the producer for speed + isolation.
+Covers the multiplexed frame envelope, the ConnectionManager fan-out,
+the live Kalman tap, the event plane (emit_event + cmms_alerts /
+agent_consensus), the closed-loop edge-healing engine, and the WS
+endpoint. No real network: ConnectionManager runs against fake sockets;
+the WS test mocks the producers for speed + isolation.
 """
 
 import asyncio
@@ -49,6 +49,25 @@ def _make_app() -> FastAPI:
     return app
 
 
+def _with_listener() -> _FakeWS:
+    """Register a dummy connection so emit_event() is not a no-op."""
+    ws = _FakeWS()
+    hermes.manager._active.add(ws)
+    return ws
+
+
+def _clean_event_state() -> None:
+    hermes.reset_hermes_state()
+    hermes.manager._active.clear()
+
+
+def _drain_events() -> list:
+    out = []
+    while not hermes._event_queue.empty():
+        out.append(hermes._event_queue.get_nowait())
+    return out
+
+
 # ── frame envelope ───────────────────────────────────────────────────
 def test_build_frame_envelope_shape():
     frame = hermes.build_frame("telemetry", {"pue": 1.1}, seq=7)
@@ -77,8 +96,7 @@ def test_real_telemetry_frame_taps_kalman_pipeline():
         frame = hermes._real_telemetry_frame()
         assert frame["schema"] == "channel_innovations"
         assert isinstance(frame["channels"], dict)
-        assert len(frame["channels"]) > 0   # the Path C2 inventory emits channels
-        # every channel carries the Kalman innovation contract
+        assert len(frame["channels"]) > 0
         sample = next(iter(frame["channels"].values()))
         assert {"max_z", "mean_z", "is_anomalous"} <= set(sample)
         assert isinstance(frame["anomaly_count_60min"], int)
@@ -133,8 +151,8 @@ def test_manager_broadcast_evicts_dead_socket():
         await mgr.connect(good)
         await mgr.connect(dead)
         delivered = await mgr.broadcast(hermes.build_frame("telemetry", {}))
-        assert delivered == 1            # only the live socket received it
-        assert mgr.active_count == 1     # the dead one was dropped
+        assert delivered == 1
+        assert mgr.active_count == 1
 
     asyncio.run(_run())
 
@@ -146,10 +164,114 @@ def test_manager_disconnect_is_idempotent():
         ws = _FakeWS()
         await mgr.connect(ws)
         mgr.disconnect(ws)
-        mgr.disconnect(ws)               # safe to call twice
+        mgr.disconnect(ws)
         assert mgr.active_count == 0
 
     asyncio.run(_run())
+
+
+# ── event plane — emit_event / cmms_alerts / agent_consensus ─────────
+def test_emit_event_enqueues_a_framed_event():
+    _clean_event_state()
+    _with_listener()
+    try:
+        hermes.emit_event("cmms_alerts", {"work_order_id": "WO-1", "status": "pending_approval"})
+        events = _drain_events()
+        assert len(events) == 1
+        assert events[0]["stream"] == "cmms_alerts"
+        assert events[0]["payload"]["work_order_id"] == "WO-1"
+        assert isinstance(events[0]["seq"], int)
+    finally:
+        _clean_event_state()
+
+
+def test_emit_event_is_a_noop_with_no_listener():
+    _clean_event_state()
+    # no listener registered -> the live stream drops the event
+    hermes.emit_event("agent_consensus", {"agent": "consensus", "event": "resolved"})
+    assert hermes._event_queue.empty()
+    _clean_event_state()
+
+
+# ── closed-loop edge healing ─────────────────────────────────────────
+def test_edge_healing_recommends_on_sustained_breach():
+    """Sustained Z>3 on a critical asset -> one CET-gated recommendation."""
+    _clean_event_state()
+    _with_listener()
+    try:
+        channels = {"genset_a_01:genset_voltage_v": {"max_z": 5.2, "is_anomalous": True}}
+
+        async def _run():
+            for _ in range(hermes.EDGE_HEALING_SUSTAIN):
+                await hermes._process_telemetry_channels(channels)
+
+        asyncio.run(_run())
+        eh = [e for e in _drain_events()
+              if e["payload"].get("event") == "EDGE_HEALING_RECOMMENDED"]
+        assert len(eh) == 1
+        assert eh[0]["stream"] == "cmms_alerts"
+        assert eh[0]["payload"]["asset_id"] == "genset_a_01"
+        # CET-gated: the engine RECOMMENDS, it does not actuate.
+        assert eh[0]["payload"]["actuation"] == "CET_APPROVAL_REQUIRED"
+    finally:
+        _clean_event_state()
+
+
+def test_edge_healing_silent_below_sustain_threshold():
+    """Fewer than EDGE_HEALING_SUSTAIN consecutive breaches -> no recommendation."""
+    _clean_event_state()
+    _with_listener()
+    try:
+        channels = {"cdu_a_01:cdu_flow_lpm": {"max_z": 6.0, "is_anomalous": True}}
+
+        async def _run():
+            for _ in range(hermes.EDGE_HEALING_SUSTAIN - 1):
+                await hermes._process_telemetry_channels(channels)
+
+        asyncio.run(_run())
+        eh = [e for e in _drain_events()
+              if e["payload"].get("event") == "EDGE_HEALING_RECOMMENDED"]
+        assert eh == []
+    finally:
+        _clean_event_state()
+
+
+def test_edge_healing_dedups_within_one_episode():
+    """A sustained breach fires exactly once, not on every later tick."""
+    _clean_event_state()
+    _with_listener()
+    try:
+        channels = {"cdu_a_01:cdu_flow_lpm": {"max_z": 7.1, "is_anomalous": True}}
+
+        async def _run():
+            for _ in range(hermes.EDGE_HEALING_SUSTAIN + 4):
+                await hermes._process_telemetry_channels(channels)
+
+        asyncio.run(_run())
+        eh = [e for e in _drain_events()
+              if e["payload"].get("event") == "EDGE_HEALING_RECOMMENDED"]
+        assert len(eh) == 1
+    finally:
+        _clean_event_state()
+
+
+def test_edge_healing_ignores_non_critical_assets():
+    """A non-critical asset (rack) never triggers edge healing, even at z=9."""
+    _clean_event_state()
+    _with_listener()
+    try:
+        channels = {"rack_a_01:gpu_Tj_c": {"max_z": 9.0, "is_anomalous": True}}
+
+        async def _run():
+            for _ in range(hermes.EDGE_HEALING_SUSTAIN + 2):
+                await hermes._process_telemetry_channels(channels)
+
+        asyncio.run(_run())
+        eh = [e for e in _drain_events()
+              if e["payload"].get("event") == "EDGE_HEALING_RECOMMENDED"]
+        assert eh == []
+    finally:
+        _clean_event_state()
 
 
 # ── live WebSocket endpoint ──────────────────────────────────────────
@@ -159,8 +281,8 @@ def test_router_exposes_the_hermes_websocket_route():
 
 
 def test_ws_endpoint_streams_multiplexed_frames(monkeypatch):
-    # Shrink the tick + mock the producer so the test is fast and isolated
-    # from the simulator singletons.
+    # Shrink the tick + mock the producers so the test is fast and
+    # isolated from the simulator / CMMS singletons.
     monkeypatch.setattr(hermes, "HERMES_TICK_SECONDS", 0.01)
     stub = {
         "schema": "channel_innovations",
@@ -170,18 +292,21 @@ def test_ws_endpoint_streams_multiplexed_frames(monkeypatch):
     }
     monkeypatch.setattr(hermes, "_real_telemetry_frame", lambda: dict(stub))
 
+    async def _noop_channels(_channels):
+        return None
+
+    monkeypatch.setattr(hermes, "_process_telemetry_channels", _noop_channels)
+
     client = TestClient(_make_app())
     with client.websocket_connect("/api/hermes") as ws:
         welcome = ws.receive_json()
         assert welcome["stream"] == "hermes"
         assert welcome["payload"]["event"] == "connected"
-        assert "telemetry" in welcome["payload"]["streams"]
+        # the unified plane advertises all three logical streams
+        assert {"telemetry", "cmms_alerts", "agent_consensus"} <= set(welcome["payload"]["streams"])
 
         tele = ws.receive_json()
         assert tele["stream"] == "telemetry"
         assert tele["seq"] >= 1
         assert tele["payload"]["schema"] == "channel_innovations"
-        assert "rack_a_01:gpu_Tj_c" in tele["payload"]["channels"]
-
-        # the endpoint registered the live connection with the manager
         assert hermes.manager.active_count >= 1

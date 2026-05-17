@@ -329,6 +329,21 @@ class PostgresCMMSRepository:
         except Exception as e:
             raise CMMSRepositoryError(f"save_work_order {wo.work_order_id} failed: {e}") from e
 
+        # T3.1 EDA: broadcast the WO mutation on the Hermes cmms_alerts
+        # stream. Fire-and-forget -- streaming must never affect persistence.
+        try:
+            from backend import hermes
+            hermes.emit_event("cmms_alerts", {
+                "event": "work_order_saved",
+                "work_order_id": wo.work_order_id,
+                "asset_id": wo.asset_id,
+                "status": wo.status,
+                "priority": wo.priority,
+                "trigger_source": wo.trigger_source,
+            })
+        except Exception:
+            pass
+
     async def get_work_order_async(self, wo_id: str) -> WorkOrder:
         sql = "SELECT * FROM work_orders WHERE work_order_id = $1;"
         try:

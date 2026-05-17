@@ -105,6 +105,18 @@ async def multi_agent_consult(
     )
     try:
         result = await orch.consult(ctx)
+        # T3.1 EDA: stream the consensus on the Hermes agent_consensus
+        # channel. Fire-and-forget -- never affects the HTTP response.
+        try:
+            from backend import hermes
+            hermes.emit_event("agent_consensus", {
+                "agent": "consensus",
+                "event": "resolved",
+                "content": getattr(result, "rationale", result.consensus),
+                "veto_active": bool(result.safety_officer_veto),
+            })
+        except Exception:
+            pass
         return result.to_dict()
     except Exception as e:
         log.exception("multi-agent consult failed: %s", e)

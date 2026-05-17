@@ -32,6 +32,7 @@ import { initKeyboard } from './core/keyboard.js';
 import { initHeatOverlay } from './core/heat_overlay.js';
 import { initPowerSld } from './core/power_sld.js';
 import { startTelemetry } from './core/telemetry_engine.js';
+import { initHermesEvents } from './core/hermes_events.js';
 import { initMaintenanceView } from './views/maintenance.js';
 import { initSiteTopologyView } from './views/site_topology.js';
 import { initRackHeatmapView } from './views/rack_heatmap.js';
@@ -80,6 +81,10 @@ initPowerCam();
 initAssetPanel();
 // Failure-scenario simulator — T2.1: first IIFE view extracted to an ES module
 initScenariosView();
+
+// Project Hermes EDA — T3.1: route cmms_alerts + agent_consensus streams
+// into reactive state + decoupled DOM events for the HMI.
+initHermesEvents();
 
 if (USE_NEW_TELEMETRY_ENGINE) {
     startTelemetry(window.location.origin);
