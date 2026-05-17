@@ -2378,6 +2378,19 @@ except Exception as e:
 
 
 # ==============================================================
+#  Sprint G5: Procedure Generator HTTP endpoints
+# ==============================================================
+try:
+    from backend import procedure_routes
+
+    app.include_router(procedure_routes.router)
+    log.info("[G5] Procedure generator routes mounted at /api/procedures "
+             "(/generate, /{id}/activate)")
+except Exception as e:
+    log.error(f"[G5] Procedure generator routes mount failed: {e}")
+
+
+# ==============================================================
 #  Sprint S1b: Site Model HTTP endpoints
 # ==============================================================
 try:

@@ -820,6 +820,50 @@ def generate_eop(anomaly_profile: str, affected_asset_id: str) -> dict[str, Any]
     return proc
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  G5 -- API dispatch helper
+# ══════════════════════════════════════════════════════════════════════
+def compile_procedure(asset_id: str, procedure_class: str, *,
+                      anomaly_profile: str | None = None,
+                      author_role: UserRole | str = UserRole.TECH_L4,
+                      site_model: Any = None) -> dict[str, Any]:
+    """Dispatch an HTTP /generate request to the right factory.
+
+    Resolves the asset from the site model and routes to generate_sop /
+    generate_mop / generate_eop / generate_emp. Raises ValueError on a
+    bad procedure_class, a missing anomaly_profile for an EOP, or an
+    unknown asset_id -- the API layer maps ValueError to HTTP 400.
+    """
+    pclass = str(procedure_class).upper()
+    if pclass not in {"SOP", "MOP", "EOP", "EMP"}:
+        raise ValueError(f"unsupported procedure_class: {procedure_class!r}")
+
+    if pclass == "EOP":
+        if not anomaly_profile:
+            raise ValueError("anomaly_profile is required to generate an EOP")
+        return generate_eop(anomaly_profile, asset_id)
+
+    site = site_model if site_model is not None else get_site_model(
+        project_root=_repo_root())
+    try:
+        comp = site.get_component(asset_id)
+    except ComponentNotFoundError as exc:
+        raise ValueError(f"unknown asset_id: {asset_id}") from exc
+
+    if pclass == "SOP":
+        return generate_sop(asset_id, comp.type, display_name=comp.display)
+    if pclass == "MOP":
+        return generate_mop(asset_id, author_role, site_model=site)
+    # EMP
+    return generate_emp(
+        asset_id, comp.type,
+        display_name=comp.display,
+        asset_level=comp.metadata.get("asset_level"),
+        is_electrical=_domain(comp) == "electrical",
+        incident_energy_cal=comp.metadata.get("incident_energy_cal"),
+    )
+
+
 # ── YAML emission ─────────────────────────────────────────────────────
 def write_procedure_yaml(procedure: dict[str, Any], target_dir: str | Path) -> Path:
     """Write a generated procedure dict to <target_dir>/<procedure_id>.yml.
