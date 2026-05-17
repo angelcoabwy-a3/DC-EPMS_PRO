@@ -16,11 +16,13 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 
 **Vocabulary discipline (CRITICAL)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is unipolar (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in panel review.
 
-## 📊 CURRENT STATE (synced 2026-05-16)
+## 📊 CURRENT STATE (synced 2026-05-17)
 
 ```
-HEAD:  7f6ea55  (tag v0.10.13-modal-fix)  branch master  ==  origin/master
-Working tree clean (only .claude/ + PRIMER_PROMPT.md untracked — intentional).
+HEAD:  d495c7b  branch master  —  24 commits AHEAD of tag v0.10.13-modal-fix
+       (UNTAGGED), and master is AHEAD of origin/master (unpushed).
+Working tree: .claude/ + PRIMER_PROMPT.md untracked + DEMO_SCRIPT.md modified
+(all intentional — not part of any committed bite).
 
 Tags chronological (38 total):
   v0.5.0 .. v0.8.5-cmms-core-v1               foundation → Sprint 6 CMMS Core
@@ -37,9 +39,12 @@ Tags chronological (38 total):
   v0.10.6..v0.10.8                            2.5D isometric SLD + DAG engine + iso camera
   v0.10.9..v0.10.11                           SCADA asset panel, PBR polish, DDU/busway expansion
   v0.10.12-maint-fix / v0.10.13-modal-fix     maintenance routing + closure-modal fixes
+  [+ 24 UNTAGGED commits post-v0.10.13 — ProcedureGenerator C0+G1-G6, RBAC,
+   E2E security audit, SRE dead-code cleanup. Next tag = v0.11.x at milestone.]
 
-Tests:   667 collected, 5 deselected (slow/FAISS) — `pytest --co -m "not slow"`, 3.58s
-         (was 457+ at v0.8.5; ~210 added across Sprints 6-10 + HMI tracks)
+Tests:   690 passed, 5 deselected (slow/FAISS) — full untargeted pytest, 41s, 0 fail
+         (was 667 at v0.10.13; +23 from ProcedureGenerator G1-G6 + RBAC tests).
+         DC-EPMS-039 lifespan hang eradicated — the suite runs end-to-end.
 
 Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
   - Numba JIT cold compile: 4.8 ms
@@ -49,9 +54,11 @@ Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
 Runtime: backend = `python backend\main.py` on :8080 (native, NOT docker).
          epms-db container = TimescaleDB pg16 — DB `dcepms`, user `epms`.
 
-V9 scope: feature-complete. Live backlog = docs/ROADMAP-V11.md (locked
-2026-05-10): Tier 1 = demo readiness (browser-validate B1 Mission Control,
-DEMO_SCRIPT v5, OBS recording). Tiers 2/3/Hermes queued.
+V9 scope: feature-complete. Post-v0.10.13: ProcedureGenerator sprint (C0 +
+G1-G6 — dual-graph taxonomy / SOP-MOP-EOP-EMP factories / recursive micro-
+LOTO), hyperscale RBAC + promotion gates, E2E security audit + CRITICAL
+remediation, SRE dead-code eradication. Live backlog = docs/ROADMAP-V11.md
+(v11.1, synced 2026-05-17). NOTE: OBS demo-recording descoped by Wilmer.
 ```
 
 **Recent commits (latest at top)**:
@@ -237,13 +244,14 @@ post-C3 or to V10.
 ### Directory layout
 ```
 C:\dev\DC-EPMS_PRO\
-├── backend/                     ← FastAPI + asyncpg — 40 modules
+├── backend/                     ← FastAPI + asyncpg — 40+ modules
 │   ├── main.py                  ← central hub, ~50+ endpoints, lifespan boot
 │   ├── physics_engine.py + physics/   ← facade + 4 first-principles modules (it_thermal, mechanical, electrical, heat_rejection)
 │   ├── agent_copilot.py / agent_engine.py        ← primary tool-calling agent + dual-AI fallback (NeMo + Sonnet)
 │   ├── agent_site_tool.py / agent_graph_tool.py  ← agent tools (site model, GraphRAG)
 │   ├── multi_agent.py / multi_agent_routes.py    ← Sprint 10.1 façade (4 agents + Safety Officer veto)
 │   ├── procedure_engine.py / witness_engine.py   ← MOP 8-state machine + multi-signature drafts
+│   ├── procedure_generator.py / procedure_routes.py  ← SOP/MOP/EOP/EMP factories + recursive micro-LOTO + RBAC gates (post-v0.10.13)
 │   ├── cmms_*.py                ← Sprint 6 CMMS Core: mcp, models, repository, routes, seeder, predictive_trigger, site_enrichment
 │   ├── loto_auditor_*.py        ← 6-pillar validator: agent, models, pillar_helpers, report_renderer, repository, routes
 │   ├── telemetry_simulator.py / telemetry_pipeline.py / cyber_physical_tools.py  ← Sprint 5 Kalman pipeline (WIRED, live)
@@ -252,7 +260,7 @@ C:\dev\DC-EPMS_PRO\
 │   ├── rag_service.py           ← ChromaDB primary, 20-doc 4-tier operational corpus
 │   ├── shift_report.py          ← PDF shift report via /api/shift/report
 │   ├── database.py / bms_connector.py / metrics_router.py  ← persistence + BMS stub + Prometheus
-│   ├── dpo_edge_healing.py      ← 352 lines, STILL ORPHAN (DPO loop — V11 candidate)
+│   ├── migrations/              ← SQL migrations (e.g. 2026_05_W3_g1_taxonomy.sql — taxonomy + Arc Flash columns)
 │   ├── mcp_server.py            ← Claude Desktop stdio subprocess
 │   └── hal/                     ← Cummins, ASCO, Russelectric adapters
 ├── frontend/                    ← Production-grade HMI (modular ES + legacy IIFE)
@@ -273,9 +281,9 @@ C:\dev\DC-EPMS_PRO\
 │   └── bms_tags.yml / scenarios.yml / paperclip_org.yml / config.yml
 ├── data/
 │   └── chroma_db/               ← 20-doc 4-tier corpus (Safety/Vendor/Standards/MOPs)
-├── tests/                       ← 29 files, 667 tests (`pytest --co -m "not slow"`)
+├── tests/                       ← 30+ files, 690 tests (`pytest -m "not slow"`)
 ├── docs/
-│   ├── adr/                     ← 8 ADRs (MADR format)
+│   ├── adr/                     ← 9 ADRs (MADR format; ADR-010 = dual-graph taxonomy)
 │   ├── ROADMAP-V11.md           ← live backlog (locked 2026-05-10)
 │   └── architecture/sre_layers.md
 ├── scripts/
@@ -299,6 +307,7 @@ C:\dev\DC-EPMS_PRO\
 **Witness**: `/api/witness/sign`, `/api/witness/drafts`
 **Agent Copilot**: `/agent/stream` (SSE)
 **MOPs**: `/api/mops` + `/api/mops/{doc_id}` + `/api/mops/generate`
+**Procedure Generator** (post-v0.10.13, via `procedure_routes.py`, commit `11861dc`): SOP/MOP/EOP/EMP generation + RBAC promotion-gate routes
 
 ### LOTO Auditor 6-Pillar architecture
 
@@ -368,6 +377,20 @@ C:\dev\DC-EPMS_PRO\
   schema migration to a live DB MUST be paired with an app restart in the
   same step — a migration is not truly "applied" until the running
   process is reloaded against the new schema.
+
+- **F3-1 / F3-2 / F3-3** (CRITICAL, security) — RESOLVED 2026-05-17 (`b34efb1`).
+  The E2E security audit (`39f217e`; `docs/audit/E2E_Security_Orphan_Audit.md`)
+  found 3 CRITICAL RBAC gaps — CMMS approve/reject, procedure/witness routes,
+  and `/api/bms/write` had no role enforcement. Fix: `assert_can_approve_work_
+  order` on approve/reject, `_require_actor_role` helper on the proc/witness
+  routers, SME_L6 gate on BMS-write. Frontend `actor_role` payload synced in
+  `169457f`. The audit's WARNING-tier findings remain open.
+
+- **Dead-code eradication** — DONE 2026-05-17 (`d495c7b`). Purged 4 confirmed-
+  orphan files (`dpo_edge_healing.py`, `cmms_mcp.py.design-artifact`,
+  `frontend/site_topology_view.html`, `archive/app.js.legacy`; -5706 LOC) and
+  resolved the DC-EPMS-039 test-suite hang. The DPO file is recoverable from
+  git history if V11 T3.8 revives it.
 
 ### Open / Deferred
 
@@ -441,7 +464,7 @@ C:\dev\DC-EPMS_PRO\
   497 passed, 5 deselected (FAISS slow, DC-EPMS-001), 1 unrelated error in
   test_smoke (DC-EPMS-039, pre-existing).
 
-**DC-EPMS-039** (LOW) - NEW (opened 2026-05-09, pre-existing pytest setup error)
+**DC-EPMS-039** (LOW) - RESOLVED 2026-05-17 (cosmetic facet `ebefdb6` + hang facet `d495c7b`)
 - Symptom: `tests/test_smoke.py::test_health_endpoint_reachable` errors during
   fixture setup (NOT test logic). Captured logs show:
   1. `[v8] Agent Copilot mount failed: Field "model_id" in ChatResponse has
@@ -457,6 +480,18 @@ C:\dev\DC-EPMS_PRO\
 - Resolution: (a) add `model_config = ConfigDict(protected_namespaces=())` to
   ChatResponse, (b) wrap PostgreSQL init in test fixture with retry/skip,
   (c) suppress chromadb telemetry. Effort: 30 min surgical. Target: V10.
+
+- RESOLUTION (2026-05-17) — two facets, both closed:
+  1. Cosmetic facet — `ebefdb6` resolved the Pydantic `model_id` protected-
+     namespace conflict (restoring the Copilot mount), silenced chromadb
+     posthog telemetry, and fixed the log-file handle leak (this also closes
+     DC-EPMS-019).
+  2. Hang facet — `d495c7b` found the real suite-killer: `test_smoke.py`'s
+     `client` fixture used `with TestClient(app)`, triggering the full app
+     lifespan (~35s GraphRAG pre-warm + LM-Studio probes) → indefinite freeze.
+     Fixed by dropping the lifespan (plain `TestClient(app)`; the smoke tests
+     are graceful-degradation checks needing no backend state). Full untargeted
+     pytest now: 690 passed, 0 fail, 41s, no hang.
 
 **DC-EPMS-037** (LOW) - RESOLVED 2026-05-09 in Sprint 5 C3 (commit pending)
   Per-channel calibration moved to `config/telemetry_channels.yml`. Pipeline
@@ -506,10 +541,11 @@ C:\dev\DC-EPMS_PRO\
   v0.7.3-sprint5-patches. Forensic reproducibility lost; functional state intact.
 - Target: closed by V9.1 rule adoption + commit (this entry).
 
-**DC-EPMS-019** (LOW) - investigated but mitigation deferred
+**DC-EPMS-019** (LOW) - RESOLVED 2026-05-17 (`ebefdb6`)
 - ResourceWarning on logs/epms_pro.log file held open at module import
 - Root cause: logging.basicConfig in backend/main.py:117 without close on shutdown
-- Mitigation: lifespan cleanup hook in main.py
+- Fix: log-file handle leak closed in `ebefdb6` (the same commit that resolved
+  the DC-EPMS-039 cosmetic facet — Pydantic model_id + chromadb telemetry).
 
 **DC-EPMS-021** (MED) - 90 ruff legacy errors
 - B904, F821, E402, SIM102, RUF005, RUF013 across many files
@@ -541,15 +577,21 @@ section below is a delivery summary; the Sprint 5 1-pager above is historical.
 
 ### Not built — deferred to V11
 
-- **DPO edge-healing** — `dpo_edge_healing.py` (352 LOC) is **still an ORPHAN**.
-  The original "Sprint 6 = DPO" plan was superseded by CMMS Core. V11 candidate.
+- **DPO edge-healing** — `dpo_edge_healing.py` (352 LOC) was **ERADICATED**
+  2026-05-17 (`d495c7b`) as a confirmed orphan: never wired, and the original
+  "Sprint 6 = DPO" plan was superseded by CMMS Core. Recoverable from git
+  history (`git show d495c7b^:backend/dpo_edge_healing.py`) if V11 revives it
+  — see ROADMAP-V11 T3.8. ADR-007 documents the original reuse decision
+  (now amended).
 - **Alarm Storm Mitigation** (Bayesian alarm correlation) — V11 candidate.
 - **EOP Abort < 100 ms** (async event bus, NFPA 70E §130) — V11 candidate.
 
-### V11 Tier 1 — next up (per `docs/ROADMAP-V11.md`)
+### V11 Tier 1 — partially delivered
 
-Demo readiness, ~8h: browser-validate B1 Mission Control on a real WebGL
-canvas, DEMO_SCRIPT v5, 3× OBS recording rehearsals, commit `PRIMER_PROMPT.md`.
+Per `docs/ROADMAP-V11.md` (v11.1): T1.4 (`PRIMER_PROMPT.md`) + T1.5
+(`replay_demo.ps1` twin-script injector) shipped; T2.2 declarative router
+shipped; T2.4/T2.5 partial. OBS demo-recording (T1.1/T1.3) DESCOPED by
+Wilmer 2026-05-17.
 
 ## 🛠️ TOOLING CONSTRAINTS
 
@@ -640,9 +682,22 @@ When making changes that need to coordinate with external services:
 - **Browser**: http://127.0.0.1:8080/ for HMI smoke tests
 - **MCP**: stdio server `dc-epms-pro` for Claude Desktop integration
 
-## 🎬 RECENT SESSION HIGHLIGHTS (2026-05-16)
+## 🎬 RECENT SESSION HIGHLIGHTS (2026-05-17)
 
-**Environment troubleshooting + doc sync**:
+**ProcedureGenerator sprint + security hardening + SRE cleanup** (post-v0.10.13,
+24 commits, HEAD `d495c7b`):
+- C0 + G1-G6: dual-graph hierarchical asset taxonomy (ADR-010), W3 taxonomy
+  migration, SOP/MOP/EOP/EMP procedure factories, recursive containment-tree
+  micro-LOTO isolation, Kalman EOP factory, hyperscale RBAC + promotion gates,
+  HTTP routes, macro-to-micro drill-down UI.
+- E2E read-only security audit (`docs/audit/E2E_Security_Orphan_Audit.md`); the
+  3 CRITICAL RBAC gaps remediated (`b34efb1`); frontend `actor_role` synced.
+- DC-EPMS-040 diagnosed (stale process vs W3 schema). SRE cleanup: 4 dead files
+  eradicated (-5706 LOC); DC-EPMS-039 test-suite hang fixed — full pytest now
+  690 passed, 0 fail, 41s end-to-end.
+- Doc-sync (this commit): CLAUDE.md + ROADMAP-V11 + ADR-007 aligned to reality.
+
+**Prior (2026-05-16) — environment troubleshooting + doc sync**:
 - Found the dev stack down: `epms-db` container `Exited`, backend not running.
 - Brought it up: `docker start epms-db` → healthy; relaunched backend on :8080.
 - Diagnosed + fixed **DC-EPMS-DB-001** (HIGH): PostgreSQL credentials mismatch —
@@ -667,9 +722,9 @@ finding: MOP-ATS-MONTHLY-001 + `ups_a` = NEC 460.6 violation flagged in ~12 ms.
 
 ## 🎯 IMMEDIATE NEXT STEPS (when resuming)
 
-1. **Verify state**: `git log --oneline -n 6` (HEAD must be `7f6ea55` /
-   `v0.10.13-modal-fix` or a descendant), `git status` (only `.claude/` +
-   `PRIMER_PROMPT.md` untracked).
+1. **Verify state**: `git log --oneline -n 6` (HEAD must be `d495c7b` or a
+   descendant), `git status` (only `.claude/` + `PRIMER_PROMPT.md` untracked,
+   `DEMO_SCRIPT.md` modified).
 2. **Bring up the stack**:
    - `docker start epms-db` → wait for `docker inspect --format
      "{{.State.Health.Status}}" epms-db` = `healthy`.
@@ -681,18 +736,21 @@ finding: MOP-ATS-MONTHLY-001 + `ups_a` = NEC 460.6 violation flagged in ~12 ms.
 4. **Read `docs/ROADMAP-V11.md`** — the live backlog. Tier 1 = demo readiness.
 5. **Wait for explicit GO** from Wilmer before starting any V11 work.
 
-## ⏸ PAUSE_STATE (last updated 2026-05-16)
+## ⏸ PAUSE_STATE (last updated 2026-05-17)
 
-> The Sprint-5-era pause record has been superseded. The project ran far past it
-> (v0.8.5 → v0.10.13). There is no active pause: V9 is feature-complete and the
-> live backlog is `docs/ROADMAP-V11.md`. This session (2026-05-16) did
-> environment troubleshooting + this doc sync only — no feature commits.
+> No active pause. V9 is feature-complete; the live backlog is
+> `docs/ROADMAP-V11.md` (v11.1). Since v0.10.13 the project shipped the
+> ProcedureGenerator sprint (C0 + G1-G6), hyperscale RBAC, an E2E security
+> audit + CRITICAL remediation, and an SRE dead-code eradication — 24
+> untagged commits, HEAD `d495c7b`.
 
 ### State at sync time
 
-- HEAD `7f6ea55` (`v0.10.13-modal-fix`), `master` == `origin/master`, tree clean.
-- Dev stack UP: `epms-db` healthy, backend on :8080, PostgreSQL `up` (`dcepms`).
-- `config/.env` now carries the PG credentials (DC-EPMS-DB-001 fix) — local-only,
+- HEAD `d495c7b`; `master` is 24 commits AHEAD of `origin/master` (unpushed)
+  and of tag `v0.10.13-modal-fix`. Tree clean (`.claude/` + `PRIMER_PROMPT.md`
+  + modified `DEMO_SCRIPT.md` aside).
+- Test suite: 690 passed, 0 fail, 41s end-to-end (DC-EPMS-039 hang eradicated).
+- `config/.env` carries the PG credentials (DC-EPMS-DB-001 fix) — local-only,
   gitignored, persistent across restarts.
 
 ### Resumption protocol (next session entry)
@@ -703,12 +761,13 @@ finding: MOP-ATS-MONTHLY-001 + `ups_a` = NEC 460.6 violation flagged in ~12 ms.
 
 ### Open bugs at sync time (see BUGS REGISTRY for detail)
 
-- DC-EPMS-019 (LOW): logging file handle on shutdown.
 - DC-EPMS-021 (MED): ~90 ruff legacy errors.
 - DC-EPMS-022 (LOW): 6 ADRs MD004 asterisks.
 - DC-EPMS-029c (LOW): physics_engine SHI rollup insensitive to some LOTO types.
-- DC-EPMS-039 (LOW): pytest-bootstrap noise — Pydantic `model_id` namespace +
-  chromadb posthog telemetry errors. Still reproduced 2026-05-16 (non-fatal).
+- E2E audit WARNING-tier findings (`docs/audit/E2E_Security_Orphan_Audit.md`) —
+  the 3 CRITICAL RBAC findings are closed (`b34efb1`); WARNINGs remain open.
+
+RESOLVED since the last sync: DC-EPMS-019 + DC-EPMS-039 (`ebefdb6` + `d495c7b`).
 
 ### V9.1 PowerShell Native Mandate (in force after DC-EPMS-035)
 
@@ -777,7 +836,7 @@ finding: MOP-ATS-MONTHLY-001 + `ups_a` = NEC 460.6 violation flagged in ~12 ms.
 - SLM lifecycle pool with VRAM-budget LRU eviction
 - compliance_failsafe.yml preloaded rules survive total LLM failure
 
-### Sprint trajectory mapping (updated 2026-05-16)
+### Sprint trajectory mapping (updated 2026-05-17)
 
 | Sprint | Vision deck items | Status |
 |---|---|---|
@@ -790,6 +849,7 @@ finding: MOP-ATS-MONTHLY-001 + `ups_a` = NEC 460.6 violation flagged in ~12 ms.
 | 10.1 | #6 Multi-Agent façade (4 agents + Safety Officer veto) | ✅ v0.9.12 |
 | 11 | #5 Equinix multi-IBX | design-only (single-laptop) |
 | 12 | #7 Agent AI OS Self-Healing | deferred → V11 |
+| G (post-v0.10.13) | ProcedureGenerator: dual-graph taxonomy (ADR-010) + SOP/MOP/EOP/EMP factories + recursive micro-LOTO + hyperscale RBAC | ✅ d495c7b |
 
 Plus an unplanned HMI / visualization track (v0.10.x): Tier A/B/C polish, B1
 Mission Control (three.js), 2.5D isometric SLD + DAG engine, SCADA asset panel.

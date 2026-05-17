@@ -2,7 +2,7 @@
  * DC-EPMS PRO — core/telemetry_engine.js
  *
  * SSE network handler. Replaces the IIFE-private functions in app.js
- * (legacy at frontend/assets/archive/app.js.legacy):
+ * (legacy IIFE; see git history for archive/app.js.legacy):
  *
  *   - startTelemetryStream()  legacy:122-143
  *   - handleTelemetry(point)  legacy:145-158

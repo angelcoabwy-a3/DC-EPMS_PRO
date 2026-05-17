@@ -1,9 +1,14 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: COMMITTED · Tier 1 next-up · Tier 2 + 3 + Hermes queued
+- **Status**: v11.1 — synced to post-v0.10.13 reality · Tier 1 partially delivered
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10
-- **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-17 (v11.1)
+- **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
+  2026-05-10 lock of this file's own status fields
+- **v11.1 sync (2026-05-17)**: T1.4 / T1.5 / T2.2 marked delivered, T2.4 / T2.5
+  partial; OBS demo-recording (T1.1 / T1.3) descoped by Wilmer; T3.8 DPO source
+  file eradicated (`d495c7b`); Hermes ADR number corrected (ADR-010 → ADR-011,
+  since ADR-010 is now the dual-graph asset taxonomy).
 
 This document is the queued backlog after `v0.10.5-power-sld-v2`. Each
 tier is independently fundable — pick by available time, panel
@@ -57,13 +62,13 @@ OBS Studio split-screen (terminal left, browser right). Three
 rehearsal takes minimum before the actual recording. Final cut to
 DaVinci Resolve / kdenlive for trimming, captions, lower-thirds.
 
-### T1.4 — `PRIMER_PROMPT.md` polishing + commit (~1 h)
+### T1.4 — ✅ DELIVERED `7be472b` — `PRIMER_PROMPT.md` polishing + commit
 
 Untracked file currently. Update it to reflect everything through
 `v0.10.5-power-sld-v2`. Commit so future Claude sessions can absorb
 the project context in 30 seconds without re-reading 50 sprints.
 
-### T1.5 — `replay_demo.ps1` extension (~30 min)
+### T1.5 — ✅ DELIVERED `6b38a16` — `replay_demo.ps1` / twin-script injector
 
 Add:
 - Reset Mission Control simulation state to nominal
@@ -108,7 +113,7 @@ view per session, in order of demo relevance:
 
 **Result**: `app.js` shrinks to ~200 LOC residual (router + bootstrap).
 
-### T2.2 — Declarative router (~3-4 h)
+### T2.2 — ✅ DELIVERED `42ecdf7` — Declarative router
 
 Replace `navigateTo()` switch statement + 5 `setTimeout(0)` LOTO-pattern
 hacks with:
@@ -143,7 +148,7 @@ unlocks 10× dev velocity. Type safety catches the kind of dead-code
 + Cache busting via vite content hashing (no more ?v=8.1.0-s66)
 ```
 
-### T2.4 — Frontend tests (Vitest + happy-dom, ~2 days)
+### T2.4 — 🟡 PARTIAL `6c77f41`/`ec8effb` (Vitest harness + mission_control suite) — Frontend tests (Vitest + happy-dom, ~2 days)
 
 Backend has 549 tests. Frontend has 0. Smoke per view minimum:
 - mission_control: renders 4 buildings + cards bind data correctly
@@ -152,7 +157,7 @@ Backend has 549 tests. Frontend has 0. Smoke per view minimum:
 - maintenance: WO row click opens approve/reject correctly
 - multi_agent: VETO scenario flips banner red
 
-### T2.5 — A11y audit (~1 day)
+### T2.5 — 🟡 PARTIAL `f384937` (A11y-1: focus-trap, keyboard drill-down, skip-link) — A11y audit (~1 day)
 
 Keyboard-only navigation completeness, ARIA labels on every action
 control, focus management on modal open/close, prefers-reduced-motion
@@ -258,12 +263,16 @@ federation({
 single-developer single-laptop, this is over-engineering. Documented
 here as a future option.
 
-### T3.8 — DPO edge healing (~3-4 days)
+### T3.8 — DPO edge healing (~4-5 days)
 
-Sprint 6 deferred capability. `backend/dpo_edge_healing.py` is an
-orphan. Surface it as `POST /api/dpo/capture` (auto-fires on CMMS WO
-rejection) + `POST /api/dpo/recompile` (manual trigger). Edge-local
-LLM fine-tuning loop.
+Sprint 6 deferred capability. `backend/dpo_edge_healing.py` (352 LOC) was
+**eradicated 2026-05-17 in `d495c7b`** as a confirmed orphan — never wired,
+and the "Sprint 6 = DPO" plan was superseded by CMMS Core. Reviving this epic
+now requires first restoring the file from git history
+(`git show d495c7b^:backend/dpo_edge_healing.py`) or re-authoring it, then
+surfacing it as `POST /api/dpo/capture` (auto-fires on CMMS WO rejection) +
+`POST /api/dpo/recompile` (manual trigger). Edge-local LLM fine-tuning loop.
+ADR-007 documents the original reuse decision (amended 2026-05-17).
 
 ### T3.9 — 3D Mission Control orbit camera + Building D walkthrough (~3 days)
 
@@ -318,7 +327,9 @@ The vision is intentionally **deferred until T3.1 + T3.3 land** —
 without those building blocks, Hermes is premature abstraction.
 
 When ready, the Hermes orchestrator gets:
-- Its own ADR (ADR-010) documenting the consensus protocol
+- Its own ADR — **ADR-011** (the original "ADR-010" reservation is void:
+  ADR-010 was assigned to the dual-graph asset taxonomy on 2026-05-17) —
+  documenting the consensus protocol
 - An async test harness simulating 1000 events/sec
 - A backpressure metrics dashboard (built on the existing telemetry
   Activity Strip pattern)

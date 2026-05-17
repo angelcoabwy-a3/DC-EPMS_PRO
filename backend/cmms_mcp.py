@@ -527,7 +527,7 @@ async def tool_draft_cmms_work_order(args: dict) -> dict:
             "This work order will not be dispatched to CMMS until the "
             "board approves at the HMI. The board may modify LOR, "
             "procedure_class, or reject â€” all modifications feed the "
-            "DPO learning loop in dpo_edge_healing.py (Phase 2)."
+            "DPO learning loop (deferred capability per ADR-007)."
         ),
         "_provenance": {
             "lor_computation": "deterministic_rule_based",

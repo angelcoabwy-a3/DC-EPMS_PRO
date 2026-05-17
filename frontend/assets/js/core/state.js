@@ -2,7 +2,7 @@
  * DC-EPMS PRO — core/state.js
  *
  * Reactive state container. Replaces the IIFE-private `state` object
- * in app.js (legacy at frontend/assets/archive/app.js.legacy:27-39).
+ * in app.js (legacy IIFE; see git history for archive/app.js.legacy:27-39).
  *
  * Status: SKELETON — Sprint 5.5 Hybrid Frontend Pivot, Phase 1.0.
  *   Wired: NO (app.js still owns state).

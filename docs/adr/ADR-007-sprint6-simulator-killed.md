@@ -1,6 +1,6 @@
 # ADR-007: Kill Sprint 6 "DPO Spike From Scratch" — Reuse `dpo_edge_healing.py` Capture-Only
 
-- Status: ACCEPTED
+- Status: ACCEPTED — superseded in practice (see Amendment, 2026-05-17)
 - Date: 2026-05-03 (decision taken during archaeological audit + roadmap re-plan, retroactively documented 2026-05-06 in Batch 3)
 - Decision-maker: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
 - Sprint: Affects S6 V9 W7-8 (DPO sprint)
@@ -78,3 +78,21 @@ When S6 starts, verify the following against the orphan file:
 - Adapter versioning (every recompile produces a numbered adapter; CET can roll back).
 - Automated A/B test of new adapter against baseline on held-out CET rejections.
 - Telemetry: emit Prometheus metrics for DPO pair count, recompile duration, approval_rate over time.
+
+## Amendment — 2026-05-17
+
+This ADR's decision was **never executed**. The Sprint 6 slot was taken by
+CMMS Core v1.0 (`v0.8.5`), and the `dpo_edge_healing.py` orphan was never wired
+into the agent surface. On 2026-05-17, commit `d495c7b` **eradicated**
+`backend/dpo_edge_healing.py` (352 LOC) as confirmed dead code during an SRE
+tech-debt purge.
+
+The decision recorded above is preserved as a historical design record. The
+code remains recoverable from git history
+(`git show d495c7b^:backend/dpo_edge_healing.py`). DPO edge-healing is now
+tracked purely as a forward-looking epic in `docs/ROADMAP-V11.md` **T3.8**,
+which notes that reviving it requires restoring or re-authoring the file.
+
+The "HONEST VRAM ACCOUNTING" empirical measurement (~3.3 GB peak) cited in this
+ADR's Consequences section remains valid and citable regardless of the file's
+deletion.

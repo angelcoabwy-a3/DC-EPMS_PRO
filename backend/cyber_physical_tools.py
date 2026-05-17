@@ -24,7 +24,7 @@ Two compression stages on top of each other:
 
 VRAM clarification: Numba @njit compiles to CPU native code. It does
 NOT consume VRAM. The 6 GB VRAM ceiling applies to the Hermes/Gemma
-model and to LoRA training in dpo_edge_healing.py  -  not to this module.
+model and to LoRA training (DPO loop, deferred per ADR-007)  -  not to this module.
 This module's footprint is RAM-bounded (~50 MB for filter state across
 all channels at A3-Alpha).
 
