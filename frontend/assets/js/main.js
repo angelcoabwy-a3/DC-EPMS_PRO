@@ -43,6 +43,7 @@ import { initPowerGrid } from './core/power_grid.js';
 import { initPowerCam } from './core/power_cam.js';
 import { initAssetPanel } from './views/asset_panel.js';
 import { initScenariosView } from './views/scenarios.js';
+import { connectHermes, onHermesStream } from './services/api.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -80,6 +81,12 @@ initPowerCam();
 initAssetPanel();
 // Failure-scenario simulator — T2.1: first IIFE view extracted to an ES module
 initScenariosView();
+
+// Project Hermes — T3.1: multiplexed WebSocket stream. Runs alongside the
+// legacy SSE telemetry engine; the new state key `hermesTelemetry` keeps it
+// collision-free until a later bite completes the REST/SSE cutover.
+onHermesStream('telemetry', (payload) => setState('hermesTelemetry', payload));
+connectHermes();
 
 if (USE_NEW_TELEMETRY_ENGINE) {
     startTelemetry(window.location.origin);

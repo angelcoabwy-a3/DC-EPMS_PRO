@@ -2468,6 +2468,18 @@ except Exception as _s2_e:
 
 
 # ==============================================================
+#  T3.1: Project Hermes - multiplexed WebSocket telemetry stream
+# ==============================================================
+try:
+    from backend import hermes
+
+    app.include_router(hermes.router)
+    log.info("[T3.1] Hermes WebSocket stream mounted at WS /api/hermes")
+except Exception as e:
+    log.error(f"[T3.1] Hermes WebSocket mount failed: {e}")
+
+
+# ==============================================================
 #  Entrypoint
 # ==============================================================
 
