@@ -113,10 +113,10 @@ view per session, in order of demo relevance:
 2. ✅ `views/incidents.js` — postgres audit log (DELIVERED `3aa944b`)
 3. ✅ `views/mops.js` — MOPs/SOPs/EOPs library (DELIVERED `de7404f`)
 4. `views/cooling.js` (~350 LOC) — P&ID renderer
-5. `views/power.js` (~300 LOC) — SLD renderer (Lead-Engineer-Mode upgrade
-   already done as `core/power_sld.js`; this migration moves the
-   IIFE-side `renderPowerView` + telemetry-poll loop into a proper
-   ES module)
+5. ✅ `views/power.js` — SLD data plane extracted; the 2.5D iso engine
+   preserved + enriched to an explicit 5-layer Tier IV topology
+   (paralleling bus N+1), aggressive dark-SCADA restyle, Hermes-bound
+   (DELIVERED `b5a82ed`)
 6. `views/bms.js` (~250 LOC) — BMS connector
 7. `views/copilot.js` (~400 LOC) — full-screen agent chat
 8. `views/site_topology_legacy.js` (~600 LOC) — old tree+detail UI
