@@ -8074,3 +8074,41 @@ body {
     text-anchor: middle;
 }
 .cool-node:hover .cool-sym { stroke: #2ff5a8; cursor: pointer; }
+
+/* ── Cooling L3 — actuators, What-If hazard frame, sparklines (2c) ── */
+.cool-actuator .cool-sym { cursor: pointer; }
+.cool-actuator:hover .cool-sym,
+.cool-actuator:focus-visible .cool-sym {
+    stroke: #2ff5a8;
+    filter: drop-shadow(0 0 6px rgba(47, 245, 168, 0.7));
+}
+#view-cooling.cool-whatif .pid-canvas {
+    position: relative;
+    border-style: solid;
+    border-width: 3px;
+    border-image: repeating-linear-gradient(45deg,
+        #ffb020 0 14px, #1a1205 14px 28px) 3;
+}
+#view-cooling.cool-whatif .pid-canvas::before {
+    content: "\26A0  WHAT-IF SIMULATION \2014 ISOLATED SANDBOX \00B7 no backend writes";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 50;
+    padding: 4px 0;
+    background: rgba(255, 176, 32, 0.94);
+    color: #1a1205;
+    font-family: var(--font-mono, monospace);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.07em;
+    text-align: center;
+}
+.cool-spark {
+    fill: none;
+    stroke: #22d3ee;
+    stroke-width: 1.4;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    opacity: 0.85;
+    filter: drop-shadow(0 0 2px rgba(34, 211, 238, 0.55));
+}

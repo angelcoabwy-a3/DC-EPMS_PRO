@@ -16,10 +16,16 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { registerRoute } from '../core/router.js';
-import { getTopologyState } from '../services/api.js';
+import { getTopologyState, writeBmsTag, onHermesStream } from '../services/api.js';
 
 let _initialized = false;
-let _refreshTimer = null;
+let _mode = 'live';            // 'live' | 'whatif'
+let _unsubTelemetry = null;
+let _modalCmd = null;          // selected START | STOP
+const _history = {};           // nodeId -> rolling mean_z buffer
+const _SPARK_TICKS = 20;
+const _ACTUATOR_TYPES = new Set(['pump']);
+const _SPARK_NODES = new Set(['cooling_tower', 'chiller_1', 'chiller_2']);
 
 // ─── P&ID data binder (port of the legacy applyCoolingPid) ─────────
 function _applyCoolingPid(data) {
@@ -153,10 +159,20 @@ function _coolNode(id, type, label, x, y, metrics) {
     const m = metrics.map((mm, i) =>
         `<text class="cool-metric" data-pid-metric="${mm.key}" x="${x}" `
         + `y="${y + 42 + i * 13}">${mm.text}</text>`).join('');
-    return `<g class="pid-node cool-node" data-node="${id}">`
+    const isAct = _ACTUATOR_TYPES.has(type);
+    const actAttr = isAct ? ' data-actuator="1" tabindex="0" role="button"' : '';
+    let spark = '';
+    if (_SPARK_NODES.has(id)) {
+        const sy = y + 42 + metrics.length * 13 + 11;
+        spark = `<polyline class="cool-spark" data-spark="${id}" `
+            + `data-sx="${x - 26}" data-sy="${sy}" data-sw="52" data-sh="12" `
+            + `points=""/>`;
+    }
+    return `<g class="pid-node cool-node${isAct ? ' cool-actuator' : ''}" `
+        + `data-node="${id}"${actAttr}>`
         + _coolSymbol(type, x, y)
         + `<text class="cool-name" x="${x}" y="${y - 38}">${label}</text>`
-        + m + `</g>`;
+        + m + spark + `</g>`;
 }
 
 // Orthogonal pipe — caller passes axis-aligned waypoints only.
@@ -232,6 +248,219 @@ function _renderCoolingSld() {
     svg.innerHTML = _buildCoolingSld();
 }
 
+// ════════════════════════════════════════════════════════════════
+//  PHASE 2c — L3 control plane (actuation · What-If · sparklines)
+//
+//  Mirrors the Power SLD L3 plane: CHW pumps are clickable actuators
+//  (RBAC-gated /api/bms/write), a LIVE<->WHAT-IF sandbox isolates the
+//  view from the Hermes feed, and critical nodes carry telemetry
+//  sparklines. Cooling has no DAG cascade engine, so a What-If click
+//  toggles a LOCAL simulated fault on the node (no backend write).
+// ════════════════════════════════════════════════════════════════
+function _bmsTagFor(nodeId) {
+    // chwp_1 -> HVAC.CHWP1.STATUS  (ISA-95 registry tag, writable BO).
+    return 'HVAC.' + nodeId.replace('chwp_', 'CHWP').toUpperCase() + '.STATUS';
+}
+
+function _closePumpModal() {
+    const m = document.getElementById('cool-pump-modal');
+    if (m) m.hidden = true;
+}
+
+function _ensurePumpModal() {
+    let modal = document.getElementById('cool-pump-modal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'cool-pump-modal';
+    modal.className = 'pwr-modal-overlay';
+    modal.hidden = true;
+    modal.innerHTML = `
+        <div class="pwr-modal" role="dialog" aria-modal="true" aria-labelledby="cool-modal-title">
+            <div class="pwr-modal-hdr">
+                <span class="pwr-modal-icon">&#10052;</span>
+                <h3 id="cool-modal-title">CHW Pump Control</h3>
+            </div>
+            <div class="pwr-modal-body">
+                <p class="pwr-modal-target">Target pump:
+                    <strong data-field="target">&mdash;</strong></p>
+                <label class="pwr-modal-lbl">Command</label>
+                <div class="pwr-modal-cmds">
+                    <button type="button" class="pwr-cmd-btn" data-cmd="START">START PUMP</button>
+                    <button type="button" class="pwr-cmd-btn" data-cmd="STOP">STOP PUMP</button>
+                </div>
+                <label class="pwr-modal-lbl" for="cool-modal-role">Actor role (RBAC claim)</label>
+                <select id="cool-modal-role" class="pwr-modal-select">
+                    <option value="TECH_L4">TECH_L4</option>
+                    <option value="SENIOR_TECH_L5">SENIOR_TECH_L5</option>
+                    <option value="SME_L6" selected>SME_L6</option>
+                </select>
+                <div class="pwr-modal-result" data-field="result"></div>
+            </div>
+            <div class="pwr-modal-foot">
+                <button type="button" class="btn btn-secondary" data-act="cancel">Cancel</button>
+                <button type="button" class="btn" data-act="confirm" disabled>Confirm actuation</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal || e.target.dataset.act === 'cancel') {
+            _closePumpModal();
+            return;
+        }
+        const cmdBtn = e.target.closest('.pwr-cmd-btn');
+        if (cmdBtn) {
+            _modalCmd = cmdBtn.dataset.cmd;
+            modal.querySelectorAll('.pwr-cmd-btn').forEach((b) =>
+                b.classList.toggle('is-sel', b === cmdBtn));
+            modal.querySelector('[data-act="confirm"]').disabled = false;
+            return;
+        }
+        if (e.target.dataset.act === 'confirm') {
+            _submitPumpCommand(
+                modal.dataset.nodeId, _modalCmd,
+                modal.querySelector('#cool-modal-role').value,
+            );
+        }
+    });
+    return modal;
+}
+
+function _openPumpModal(nodeId, label) {
+    const modal = _ensurePumpModal();
+    _modalCmd = null;
+    modal.dataset.nodeId = nodeId;
+    modal.querySelector('[data-field="target"]').textContent = label || nodeId;
+    const r = modal.querySelector('[data-field="result"]');
+    r.textContent = '';
+    r.className = 'pwr-modal-result';
+    modal.querySelectorAll('.pwr-cmd-btn').forEach((b) => b.classList.remove('is-sel'));
+    modal.querySelector('[data-act="confirm"]').disabled = true;
+    modal.hidden = false;
+}
+
+async function _submitPumpCommand(nodeId, cmd, actorRole) {
+    const modal = document.getElementById('cool-pump-modal');
+    if (!modal || !cmd) return;
+    const result = modal.querySelector('[data-field="result"]');
+    result.className = 'pwr-modal-result is-pending';
+    result.textContent = 'Issuing command to BMS control surface…';
+    const { ok, status, data } = await writeBmsTag({
+        tag_id: _bmsTagFor(nodeId),
+        value: cmd === 'START' ? 'On' : 'Off',
+        user: 'cooling-sld-operator',
+        actor_role: actorRole,
+    });
+    if (status === 403) {
+        result.className = 'pwr-modal-result is-denied';
+        result.textContent = `RBAC DENIED — ${data.detail || 'SME_L6 required for BMS write'}`;
+        return;
+    }
+    if (!ok) {
+        result.className = 'pwr-modal-result is-err';
+        result.textContent = `Command rejected — ${data.detail || ('HTTP ' + status)}`;
+        return;
+    }
+    result.className = 'pwr-modal-result is-ok';
+    result.textContent = `✓ ${cmd} accepted — ${data.message || nodeId}`;
+}
+
+/** SVG click delegation — routes a node click by current mode. */
+function _onCoolClick(e) {
+    const node = e.target.closest('.cool-node');
+    if (!node) return;
+    const id = node.dataset.node;
+    if (_mode === 'whatif') {
+        // Sandbox: toggle a LOCAL simulated fault on the node — no backend.
+        const sym = node.querySelector('.pid-symbol');
+        if (sym) {
+            sym.setAttribute('data-sev',
+                sym.getAttribute('data-sev') === 'critical' ? 'ok' : 'critical');
+        }
+        return;
+    }
+    if (node.dataset.actuator) {
+        const label = node.querySelector('.cool-name');
+        _openPumpModal(id, label ? label.textContent : id);
+    }
+}
+
+// ── What-If sandbox toggle ──
+function _setMode(mode) {
+    _mode = (mode === 'whatif') ? 'whatif' : 'live';
+    const view = document.getElementById('view-cooling');
+    if (view) view.classList.toggle('cool-whatif', _mode === 'whatif');
+    const btn = document.getElementById('cool-mode-toggle');
+    if (btn) {
+        btn.textContent = _mode === 'whatif'
+            ? '⚠ WHAT-IF SIMULATION' : '◉ LIVE TELEMETRY';
+        btn.dataset.mode = _mode;
+    }
+    if (_mode === 'live') _refresh();   // re-sync from live topology
+}
+
+function _buildModeToggle() {
+    if (document.getElementById('cool-mode-toggle')) return;
+    const view = document.getElementById('view-cooling');
+    if (!view) return;
+    const btn = document.createElement('button');
+    btn.id = 'cool-mode-toggle';
+    btn.type = 'button';
+    btn.className = 'pwr-mode-toggle';
+    btn.dataset.mode = 'live';
+    btn.textContent = '◉ LIVE TELEMETRY';
+    btn.title = 'Toggle LIVE telemetry <-> isolated WHAT-IF simulation sandbox';
+    btn.addEventListener('click', () => _setMode(_mode === 'live' ? 'whatif' : 'live'));
+    const bar = view.querySelector('.pid-action-bar') || view;
+    bar.insertBefore(btn, bar.firstChild);
+}
+
+// ── Telemetry sparklines (last 20 Kalman ticks) ──
+function _siteMeanZ(channels) {
+    const ids = channels ? Object.keys(channels) : [];
+    if (!ids.length) return 0;
+    let sum = 0;
+    for (const c of ids) sum += Math.abs(Number(channels[c].mean_z) || 0);
+    return sum / ids.length;
+}
+
+function _sparkPoints(values, sx, sy, sw, sh) {
+    if (!values || values.length < 2) return '';
+    const lo = Math.min(...values);
+    const span = (Math.max(...values) - lo) || 1;
+    const step = sw / (values.length - 1);
+    return values.map((v, i) => {
+        const px = sx + i * step;
+        const py = sy - ((v - lo) / span - 0.5) * sh;
+        return `${px.toFixed(1)},${py.toFixed(1)}`;
+    }).join(' ');
+}
+
+function _updateSparklines(channels) {
+    const ids = channels ? Object.keys(channels) : [];
+    const siteAvg = _siteMeanZ(channels);
+    _SPARK_NODES.forEach((nodeId) => {
+        const poly = document.querySelector(
+            `#view-cooling .pid-svg [data-spark="${nodeId}"]`);
+        if (!poly) return;
+        const matched = ids.filter((c) => c.toLowerCase().includes(nodeId.toLowerCase()));
+        const v = matched.length
+            ? matched.reduce((s, c) => s + Math.abs(Number(channels[c].mean_z) || 0), 0)
+              / matched.length
+            : siteAvg;
+        const hist = _history[nodeId] || (_history[nodeId] = []);
+        hist.push(v);
+        if (hist.length > _SPARK_TICKS) hist.shift();
+        poly.setAttribute('points', _sparkPoints(
+            hist, Number(poly.dataset.sx), Number(poly.dataset.sy),
+            Number(poly.dataset.sw), Number(poly.dataset.sh)));
+    });
+}
+
+function _onTelemetryFrame(payload) {
+    if (_mode === 'whatif') return;   // sandbox — feed disconnected
+    if (payload && payload.channels) _updateSparklines(payload.channels);
+}
+
 // ─── Data refresh + routing ────────────────────────────────────────
 async function _refresh() {
     try {
@@ -242,9 +471,9 @@ async function _refresh() {
 }
 
 function _activate() {
+    // Baseline topology once per activation — the recurring 5 s poll is
+    // eradicated; live trend now arrives on the Hermes telemetry stream.
     _refresh();
-    // Behaviour-preserving 5 s poll (2c replaces this with Hermes).
-    if (!_refreshTimer) _refreshTimer = setInterval(_refresh, 5000);
 }
 
 /** Public entry — called once from main.js at bootstrap. */
@@ -255,11 +484,15 @@ export function initCoolingView() {
         return;
     }
     registerRoute('cooling', { viewId: 'view-cooling', activate: _activate });
-    // Phase 2b: render the orthogonal thermodynamic SLD into .pid-svg,
-    // replacing the hand-authored P&ID SVG.
+    // Phase 2b: render the orthogonal thermodynamic SLD into .pid-svg.
     _renderCoolingSld();
+    // Phase 2c L3: clickable actuators + What-If sandbox + Hermes sparklines.
+    const svg = document.querySelector('#view-cooling .pid-svg');
+    if (svg) svg.addEventListener('click', _onCoolClick);
+    _buildModeToggle();
+    _unsubTelemetry = onHermesStream('telemetry', _onTelemetryFrame);
     _initialized = true;
-    console.log('[cooling] view ready (orthogonal thermodynamic SCADA SLD — T2.1)');
+    console.log('[cooling] view ready (L3 thermodynamic SCADA SLD — T2.1)');
 }
 
 // ─── Test surface ──────────────────────────────────────────────────
@@ -267,8 +500,21 @@ export const __cooling_test__ = {
     applyCoolingPid: _applyCoolingPid,
     buildCoolingSld: _buildCoolingSld,
     renderCoolingSld: _renderCoolingSld,
+    bmsTagFor: _bmsTagFor,
+    openPumpModal: _openPumpModal,
+    submitPumpCommand: _submitPumpCommand,
+    onCoolClick: _onCoolClick,
+    setMode: _setMode,
+    getMode: () => _mode,
+    buildModeToggle: _buildModeToggle,
+    sparkPoints: _sparkPoints,
+    updateSparklines: _updateSparklines,
     reset: () => {
         _initialized = false;
-        if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null; }
+        _mode = 'live';
+        if (_unsubTelemetry) { _unsubTelemetry(); _unsubTelemetry = null; }
+        const modal = document.getElementById('cool-pump-modal');
+        if (modal) modal.remove();
+        for (const k of Object.keys(_history)) delete _history[k];
     },
 };

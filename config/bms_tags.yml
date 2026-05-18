@@ -49,6 +49,16 @@ tags:
     writable: false
     description: "Cumulative pump run time"
 
+  - id: HVAC.CHWP2.STATUS
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [Off, On]
+    source: { type: static, value: "On" }
+    writable: true
+    description: "Secondary chilled water pump 2 - run command"
+    location: "Mech Room B"
+
   - id: HVAC.CDU_A.SUPPLY_TEMP
     protocol: BACnet
     object_type: AI
