@@ -19,9 +19,10 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-18)
 
 ```
-HEAD:  807185e (+ this doc-sync)  branch master  —  pushed 2026-05-18.
+HEAD:  3b98449 (+ this doc-sync)  branch master  —  pushed 2026-05-18.
        Stable baseline = v0.11.0 (cut 2026-05-18 — first release tag since
-       v0.10.13-modal-fix). Post-release: T2.1 Vector 1 (BMS extraction).
+       v0.10.13-modal-fix). Post-release: T2.1 Vectors 1-3 (BMS extract,
+       LOTO extract, legacy Site Topology eradicated).
        Tag = v0.11.x patch / v0.12.0 next.
 Working tree: .claude/ untracked (intentional).
 
@@ -52,10 +53,10 @@ Tags chronological (39 total):
    plane, Cooling orthogonal SCADA SLD + L3 control plane.
 
 Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~41s, 0 fail.
-         frontend 153 passed — Vitest (npm test): mission_control + scenarios +
-         incidents + mops + power + cooling + copilot + bms + sanitize + hermes
-         (slice / cutover / EDA) + maintenance + rack_heatmap. Both green.
-         ruff: 0 violations in backend/.
+         frontend 158 passed — Vitest (npm test): mission_control + scenarios +
+         incidents + mops + power + cooling + copilot + bms + loto + sanitize +
+         hermes (slice / cutover / EDA) + maintenance + rack_heatmap +
+         site_topology. Both green. ruff: 0 violations in backend/.
 
 Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
   - Numba JIT cold compile: 4.8 ms
@@ -88,17 +89,24 @@ an L3 control plane (RBAC pump actuation, What-If sandbox, sparklines).
 Copilot sprint (2026-05-18): the Facility Co-Pilot agent view extracted
 to views/copilot.js — LLM-authored DOM surfaces routed through the F3-5
 sanitizeHTML XSS filter, wired to the Hermes hermes:agent-consensus EDA
-event. T2.1 Vector 1 (2026-05-18, post-v0.11.0): the BMS Connector view
-extracted to views/bms.js; showBmsAudit re-exposed on window so the
-copilot audit deep-link survives the extraction. The post-v0.11.0
-SitRep audit corrected the T2.1 registry — 5 legacy surfaces remain
-(BMS done; LOTO Auditor, Topology HLD/LLD, Site-Topology-legacy,
-Overview dashboard pending). Live backlog = docs/ROADMAP-V11.md
+event. T2.1 monolith-eradication vectors (2026-05-18, post-v0.11.0):
+V1 — the BMS Connector view extracted to views/bms.js (showBmsAudit
+re-exposed on window so the copilot audit deep-link survives); V2 —
+the LOTO Auditor view extracted to views/loto.js (the legacy
+click-delegation zombie-router hack retired for core/router.js
+registerRoute); V3 — the legacy Site Topology tree+detail view
+ADJUDICATED as dead code (force-directed views/site_topology.js owns
+the route) and ERADICATED (-277 LOC). The post-v0.11.0 SitRep audit
+corrected the T2.1 registry to 5 legacy surfaces — V1/V2/V3 now done;
+the HLD/LLD Topology view + the Overview dashboard remain (Vector 4).
+app.js: 2600 → 1448 LOC. Live backlog = docs/ROADMAP-V11.md
 (v11.6, 2026-05-18). NOTE: OBS demo-recording descoped.
 ```
 
 **Recent commits (latest at top)**:
 ```
+3b98449  refactor(ui): adjudicate and eradicate legacy Site Topology (Vector 3)
+fc3ead6  refactor(ui): extract LOTO Auditor view from monolith (Vector 2)
 807185e  refactor(ui): extract BMS Connector view from monolith + preserve copilot deep-link (T2.1)
 7619c8d  docs: update ROADMAP-V11 T2.1 to reflect discovered hidden technical debt
 0fb7168  chore(release): bump internal manifests and documentation to v0.11.0  [tag v0.11.0]

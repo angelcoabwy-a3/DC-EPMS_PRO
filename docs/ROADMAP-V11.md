@@ -141,27 +141,33 @@ checklist. The list below is corrected to the real surface inventory.
    filter, wired to the Hermes `hermes:agent-consensus` EDA event
    (DELIVERED `38605d3`)
 
-**Phase B — REMAINING (the 5 discovered legacy surfaces — eradication vectors):**
+**Phase B — eradication vectors (the 5 discovered legacy surfaces):**
 
-- **V1.** `views/bms.js` (~609 LOC, route `bms`) — BMS Connector: tag
-  registry, table, RBAC write-modal, NIST SP 800-82 audit modal.
-  Caveat: must re-expose `showBmsAudit` for the `copilot.js` deep-link.
-- **V2.** `views/loto.js` (~280 LOC) — LOTO Auditor view. *Was missing
-  from this registry entirely* — self-wired, never on the checklist.
-- **V3.** `views/site_topology_legacy.js` (~270 LOC, route
-  `site_topology`) — old tree+detail UI. Likely **DELETE** rather than
-  extract: superseded by the force-directed `views/site_topology.js`.
-  Decision gate: audit the Power-tab + LOTO-Impact-tab for unique value.
+- ✅ **V1.** `views/bms.js` — BMS Connector: tag registry, table, RBAC
+  write-modal, NIST SP 800-82 audit modal. `showBmsAudit` re-exposed on
+  `window` for the `copilot.js` deep-link. (DELIVERED `807185e`)
+- ✅ **V2.** `views/loto.js` — LOTO Auditor view (was missing from the
+  original registry). The legacy click-delegation + `setTimeout(0)`
+  zombie-router hack retired for `core/router.js` `registerRoute`.
+  (DELIVERED `fc3ead6`)
+- ✅ **V3.** Legacy Site Topology tree+detail — ADJUDICATED as dead
+  code (the force-directed `views/site_topology.js` owns the
+  `site_topology` route via `core/router.js`, so the legacy
+  `renderSiteTopologyView` was unreachable) and ERADICATED (−277 LOC),
+  not migrated. Follow-up: the per-rack LOTO-Impact breakdown is not in
+  the force-graph detail panel — a clean future feature ticket, the
+  `/api/site/loto-impact` endpoint already exists. (DELIVERED `3b98449`)
 - **V4.** `views/overview.js` (~900+ LOC) — the Overview/landing
   dashboard + the HLD/LLD Topology view (`renderTopologyView`). The
   hardest, most-entangled extraction; do last. Pre-step: delete the
   dormant legacy SSE path (`startTelemetryStream`/`handleTelemetry` —
   superseded by `core/telemetry_engine.js`) + legacy `escapeHtml`.
 
-**Result**: after V1-V4, `app.js` shrinks to ~250 LOC residual
-(`MODULES` + `navigateTo` delegation + `setupRouter`/`boot`) — at which
-point it is either kept as the documented bootstrap or promoted to
-`core/bootstrap.js` and deleted, closing Epic T2.1.
+**Result**: after V4, `app.js` shrinks to ~250 LOC residual (`MODULES`
++ `navigateTo` delegation + `setupRouter`/`boot`) — at which point it
+is either kept as the documented bootstrap or promoted to
+`core/bootstrap.js` and deleted, closing Epic T2.1. Post-V1/V2/V3
+app.js is **1448 LOC** (from 4003 at T2.1 open).
 
 ### T2.2 — ✅ DELIVERED `42ecdf7` — Declarative router
 
