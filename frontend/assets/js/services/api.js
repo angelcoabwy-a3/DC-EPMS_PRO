@@ -110,6 +110,15 @@ export async function generateMop(spec) {
     });
 }
 
+/**
+ * Power-topology state — the physics-validated SLD rollup: per-node
+ * severity + metrics, ΣP power balance, redundancy mode, site health.
+ * @returns {Promise<object>}
+ */
+export async function getTopologyState() {
+    return apiFetch('/api/topology/state');
+}
+
 
 /* ════════════════════════════════════════════════════════════════
  *  Project Hermes — multiplexed WebSocket stream (ROADMAP V11 T3.1)

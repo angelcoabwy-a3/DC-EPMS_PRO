@@ -7634,3 +7634,178 @@ body {
     color: var(--text-dim, #5A6270);
     font-family: var(--font-mono, monospace);
 }
+
+/* ════════════════════════════════════════════════════════════════
+ *  TIER IV SCADA RESTYLE — Power & UPS SLD   (ROADMAP V11, 2026-05-18)
+ *
+ *  Aggressive dark-HMI reskin of the 2.5D isometric SLD. SKIN ONLY:
+ *  every transform / position / perspective / animation rule from the
+ *  v0.10.x rendering engine is left intact — this block overrides only
+ *  colour, glow, border, shadow, fill and stroke, scoped under
+ *  #sld-iso-stage for guaranteed override specificity. The result
+ *  reads like a 67 MW facility control screen.
+ * ════════════════════════════════════════════════════════════════ */
+#sld-iso-stage {
+    --scada-bg:      #090d14;
+    --scada-floor:   #0d1320;
+    --scada-grid:    rgba(70, 96, 132, 0.18);
+    --scada-panel-1: #131b29;
+    --scada-panel-2: #0e141f;
+    --scada-edge:    #2a3850;
+    --scada-a:       #27d3ee;   /* Path A energized — utility cyan      */
+    --scada-b:       #b06cf7;   /* Path B energized — utility violet    */
+    --scada-live:    #2ff5a8;   /* nominal / healthy neon-green accent  */
+    --scada-amber:   #ffb020;   /* warning / on-battery                 */
+    --scada-fault:   #ff4d4d;   /* active fault — critical red          */
+    --scada-dead:    #39424f;   /* de-energized / cold gray             */
+    --scada-ink:     #e9eef7;
+}
+
+/* ── Stage + floor — deep control-room dark, gridded plane ───────── */
+#view-power .pid-canvas { background: var(--scada-bg) !important; }
+
+#sld-iso-stage,
+#sld-iso-stage .sld-iso-world { background: transparent !important; }
+
+#sld-iso-stage .sld-iso-floor {
+    background-color: var(--scada-floor) !important;
+    /* layer rails (5 bands) + fine engineering grid */
+    background-image:
+        linear-gradient(90deg,
+            rgba(39,211,238,0.05) 0 20%, transparent 20% 32%,
+            rgba(255,176,32,0.04) 32% 41%, transparent 41% 53%,
+            rgba(176,108,247,0.05) 53% 100%),
+        linear-gradient(var(--scada-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--scada-grid) 1px, transparent 1px) !important;
+    background-size: 100% 100%, 40px 40px, 40px 40px !important;
+    box-shadow: inset 0 0 140px rgba(0,0,0,0.85) !important;
+    border: 1px solid var(--scada-edge) !important;
+}
+
+/* ── Equipment blocks — sharp dark glass panels ─────────────────── */
+#sld-iso-stage .sld-iso-block {
+    background: linear-gradient(155deg, var(--scada-panel-1), var(--scada-panel-2)) !important;
+    border: 1px solid var(--scada-edge) !important;
+    border-radius: 3px !important;
+    box-shadow:
+        0 2px 10px rgba(0,0,0,0.6),
+        inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+#sld-iso-stage .sld-iso-block::before,
+#sld-iso-stage .sld-iso-block::after {
+    background: linear-gradient(160deg, #1a2435, #0b101a) !important;
+    border-color: var(--scada-edge) !important;
+}
+
+/* Path-coded energized edge glow */
+#sld-iso-stage .sld-iso-block.iso-path-a {
+    border-color: rgba(39,211,238,0.55) !important;
+    box-shadow:
+        0 0 14px rgba(39,211,238,0.28),
+        0 2px 10px rgba(0,0,0,0.6),
+        inset 0 1px 0 rgba(255,255,255,0.06) !important;
+}
+#sld-iso-stage .sld-iso-block.iso-path-b {
+    border-color: rgba(176,108,247,0.55) !important;
+    box-shadow:
+        0 0 14px rgba(176,108,247,0.28),
+        0 2px 10px rgba(0,0,0,0.6),
+        inset 0 1px 0 rgba(255,255,255,0.06) !important;
+}
+
+/* Layer-2 paralleling bus — distinct flat bus-bar look */
+#sld-iso-stage .sld-iso-block.iso-parbus {
+    background: linear-gradient(180deg, #1d2738, #11192a) !important;
+    border-color: rgba(255,176,32,0.45) !important;
+    box-shadow: 0 0 10px rgba(255,176,32,0.18), 0 2px 8px rgba(0,0,0,0.6) !important;
+}
+
+/* ── Typography — sharp, legible instrument labels ──────────────── */
+#sld-iso-stage .iso-block-title {
+    color: var(--scada-ink) !important;
+    font-family: var(--font-mono, monospace) !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.04em !important;
+    text-shadow: 0 0 6px rgba(0,0,0,0.9) !important;
+}
+#sld-iso-stage .iso-metric {
+    color: #9fb4cf !important;
+    font-family: var(--font-mono, monospace) !important;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.9) !important;
+}
+#sld-iso-stage .iso-path-a .iso-metric { color: #8ee9f6 !important; }
+#sld-iso-stage .iso-path-b .iso-metric { color: #d6b8fb !important; }
+
+/* ── TRIP breaker pips — sharp industrial buttons ───────────────── */
+#sld-iso-stage .iso-trip-pip {
+    background: #1a2230 !important;
+    color: #8fa4bf !important;
+    border: 1px solid var(--scada-edge) !important;
+    border-radius: 2px !important;
+    font-family: var(--font-mono, monospace) !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.08em !important;
+}
+#sld-iso-stage .iso-trip-pip:hover {
+    background: var(--scada-fault) !important;
+    color: #fff !important;
+    box-shadow: 0 0 12px rgba(255,77,77,0.6) !important;
+}
+
+/* ── Energy-flow lines — neon glow on live, dead-gray on cold ───── */
+#sld-iso-stage .sld-iso-flow .iso-line { stroke-width: 2.4 !important; }
+#sld-iso-stage .sld-iso-flow .iso-line.sld-line-flow-a {
+    stroke: var(--scada-a) !important;
+    filter: drop-shadow(0 0 5px rgba(39,211,238,0.85)) !important;
+}
+#sld-iso-stage .sld-iso-flow .iso-line.sld-line-flow-b {
+    stroke: var(--scada-b) !important;
+    filter: drop-shadow(0 0 5px rgba(176,108,247,0.85)) !important;
+}
+#sld-iso-stage .sld-iso-flow .iso-line.sld-line-battery {
+    stroke: var(--scada-amber) !important;
+    filter: drop-shadow(0 0 5px rgba(255,176,32,0.8)) !important;
+}
+#sld-iso-stage .sld-iso-flow .iso-line.sld-line-cold,
+#sld-iso-stage .sld-iso-flow .iso-line.is-dead {
+    stroke: var(--scada-dead) !important;
+    filter: none !important;
+    opacity: 0.55 !important;
+}
+
+/* ── Fault / state contrasts — severe, high-contrast SCADA cues ─── */
+#sld-iso-stage .sld-iso-block.is-dead {
+    filter: grayscale(0.85) brightness(0.55) !important;
+    border-color: var(--scada-dead) !important;
+    box-shadow: none !important;
+}
+#sld-iso-stage .sld-iso-block.stress-amber,
+#sld-iso-stage .sld-iso-block[data-sev="warning"] {
+    border-color: var(--scada-amber) !important;
+    box-shadow: 0 0 16px rgba(255,176,32,0.42), 0 2px 10px rgba(0,0,0,0.6) !important;
+}
+#sld-iso-stage .sld-iso-block.stress-red,
+#sld-iso-stage .sld-iso-block.is-tripped,
+#sld-iso-stage .sld-iso-block[data-sev="critical"] {
+    border-color: var(--scada-fault) !important;
+    animation: scada-fault-flash 0.9s steps(1, end) infinite !important;
+}
+@keyframes scada-fault-flash {
+    0%, 100% { box-shadow: 0 0 22px rgba(255,77,77,0.75), 0 2px 10px rgba(0,0,0,0.6); }
+    50%      { box-shadow: 0 0 6px  rgba(255,77,77,0.25), 0 2px 10px rgba(0,0,0,0.6); }
+}
+#sld-iso-stage .sld-iso-flow .iso-line.is-tripped {
+    stroke: var(--scada-fault) !important;
+    filter: drop-shadow(0 0 6px rgba(255,77,77,0.9)) !important;
+}
+
+/* ── Selection ring ─────────────────────────────────────────────── */
+#sld-iso-stage .sld-iso-block.is-selected {
+    border-color: var(--scada-live) !important;
+    box-shadow: 0 0 0 1px var(--scada-live), 0 0 20px rgba(47,245,168,0.5) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+    #sld-iso-stage .sld-iso-block.stress-red,
+    #sld-iso-stage .sld-iso-block.is-tripped,
+    #sld-iso-stage .sld-iso-block[data-sev="critical"] { animation: none !important; }
+}

@@ -82,6 +82,10 @@ const NODES = [
       metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '23.4 °C', jitter: true } ] },
     { id: 'ddu_b6', type: 'ddu', path: 'B', x: 1005, y: 450, w: 22, h: 32, label: 'DDU-B6',
       metrics: [ { k: 'kw', t: '142 kW', jitter: true }, { k: 'inlet', t: '23.1 °C', jitter: true } ] },
+    // Layer 2 — Genset paralleling bus (N+1). Standby gear; the rung at
+    // which additional genset capacity ties in. One bus per 2N path.
+    { id: 'par_bus_a', type: 'parbus', path: 'A', x: 290, y: 138, w: 80, h: 14, label: 'Paralleling Bus A · N+1', metrics: [{ k: 'state', t: 'STANDBY', jitter: false }] },
+    { id: 'par_bus_b', type: 'parbus', path: 'B', x: 290, y: 478, w: 80, h: 14, label: 'Paralleling Bus B · N+1', metrics: [{ k: 'state', t: 'STANDBY', jitter: false }] },
 ];
 
 // ─── Catalogue: 16 lines with exact endpoints (x1,y1)→(x2,y2)
@@ -116,6 +120,9 @@ const LINES = [
     { id: 'busway_b-ddu_b4',  x1: 956, y1: 428, x2: 956, y2: 450, path: 'B', kind: 'flow'    },
     { id: 'busway_b-ddu_b5',  x1: 986, y1: 428, x2: 986, y2: 450, path: 'B', kind: 'flow'    },
     { id: 'busway_b-ddu_b6',  x1: 1016, y1: 428, x2: 1016, y2: 450, path: 'B', kind: 'flow'  },
+    // Genset -> paralleling-bus tie (standby until a genset is called).
+    { id: 'genset_a-par_bus_a', x1: 315, y1: 125, x2: 330, y2: 138, path: 'A', kind: 'cold' },
+    { id: 'genset_b-par_bus_b', x1: 315, y1: 465, x2: 330, y2: 478, path: 'B', kind: 'cold' },
 ];
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
