@@ -203,4 +203,82 @@ describe('T2.1 — views/power.js buildFlatMarkup() orthogonal SLD', () => {
         expect(svg.innerHTML).toContain('data-sld-node="ups_a"');
         expect(svg.getAttribute('viewBox')).toBe('0 0 1200 720');
     });
+
+    it('tags ATS + RPP nodes as operable breakers', () => {
+        const svg = buildFlatMarkup();
+        expect(svg).toMatch(/data-sld-node="ats_a"[^>]*data-breaker="1"/);
+        expect(svg).toMatch(/data-sld-node="rpp_a1"[^>]*data-breaker="1"/);
+        // utility is NOT a breaker
+        expect(svg).not.toMatch(/data-sld-node="util_a"[^>]*data-breaker/);
+    });
+});
+
+// ════════════════════════════════════════════════════════════════
+//  views/power.js — L3 Phase 1: breaker actuation control plane
+// ════════════════════════════════════════════════════════════════
+describe('L3-1 — views/power.js breaker actuation', () => {
+    const { renderFlatSld, openBreakerModal, submitBreakerCommand, onFlatClick, reset } =
+        __power_test__;
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+        document.body.innerHTML = '';
+        reset();
+    });
+
+    it('openBreakerModal mounts a visible confirmation dialog', () => {
+        openBreakerModal('ats_a', 'ATS-A');
+        const modal = document.getElementById('pwr-breaker-modal');
+        expect(modal).not.toBeNull();
+        expect(modal.hidden).toBe(false);
+        expect(modal.querySelector('[data-field="target"]').textContent).toBe('ATS-A');
+        expect(modal.dataset.nodeId).toBe('ats_a');
+    });
+
+    it('a click on a flat breaker node opens the modal (live mode)', () => {
+        document.body.innerHTML = '<div id="view-power"><svg class="pid-svg"></svg></div>';
+        renderFlatSld();
+        const breaker = document.querySelector('.pf-node[data-breaker]');
+        expect(breaker).not.toBeNull();
+        onFlatClick({ target: breaker.querySelector('.pf-name') || breaker });
+        expect(document.getElementById('pwr-breaker-modal').hidden).toBe(false);
+    });
+
+    it('a click on a non-breaker node does NOT open the modal', () => {
+        document.body.innerHTML = '<div id="view-power"><svg class="pid-svg"></svg></div>';
+        renderFlatSld();
+        const util = document.querySelector('.pf-node[data-sld-node="util_a"]');
+        onFlatClick({ target: util });
+        expect(document.getElementById('pwr-breaker-modal')).toBeNull();
+    });
+
+    it('submitBreakerCommand POSTs to /api/bms/write with the actor_role claim', async () => {
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({ success: true, message: 'breaker.ats_a.cmd <- OPEN' }),
+        }));
+        vi.stubGlobal('fetch', spy);
+        openBreakerModal('ats_a', 'ATS-A');
+        await submitBreakerCommand('ats_a', 'OPEN', 'SME_L6');
+        expect(spy).toHaveBeenCalledTimes(1);
+        const [path, opts] = spy.mock.calls[0];
+        expect(path).toBe('/api/bms/write');
+        const body = JSON.parse(opts.body);
+        expect(body).toMatchObject({ value: 'OPEN', actor_role: 'SME_L6' });
+        expect(body.tag_id).toContain('ats_a');
+        expect(document.querySelector('.pwr-modal-result').className).toContain('is-ok');
+    });
+
+    it('surfaces a 403 RBAC denial in the modal for a sub-SME_L6 role', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: false, status: 403,
+            json: async () => ({ detail: 'BMS write requires SME_L6' }),
+        })));
+        openBreakerModal('rpp_a1', 'RPP-A');
+        await submitBreakerCommand('rpp_a1', 'OPEN', 'TECH_L4');
+        const result = document.querySelector('.pwr-modal-result');
+        expect(result.className).toContain('is-denied');
+        expect(result.textContent).toContain('RBAC DENIED');
+    });
 });

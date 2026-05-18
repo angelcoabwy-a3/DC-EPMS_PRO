@@ -119,6 +119,32 @@ export async function getTopologyState() {
     return apiFetch('/api/topology/state');
 }
 
+/**
+ * Issue a write command against a BMS control tag (breaker actuation).
+ * STATUS-AWARE — unlike apiFetch this never throws: it resolves to
+ * { ok, status, data } so the caller can distinguish a 403 RBAC denial
+ * (F3-2: /api/bms/write requires the SME_L6 actor_role) from other
+ * failures and surface each honestly in the UI.
+ *
+ * @param {{tag_id:string, value:*, user:string, actor_role:string}} payload
+ * @returns {Promise<{ok:boolean, status:number, data:object}>}
+ */
+export async function writeBmsTag(payload) {
+    let resp;
+    try {
+        resp = await fetch('/api/bms/write', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+    } catch (e) {
+        return { ok: false, status: 0, data: { detail: `network error: ${e.message}` } };
+    }
+    let data = {};
+    try { data = await resp.json(); } catch (_e) { /* body unreadable */ }
+    return { ok: resp.ok, status: resp.status, data };
+}
+
 
 /* ════════════════════════════════════════════════════════════════
  *  Project Hermes — multiplexed WebSocket stream (ROADMAP V11 T3.1)

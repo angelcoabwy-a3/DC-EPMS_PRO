@@ -22,10 +22,11 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { registerRoute } from '../core/router.js';
-import { onHermesStream, getTopologyState } from '../services/api.js';
+import { onHermesStream, getTopologyState, writeBmsTag } from '../services/api.js';
 
 let _initialized = false;
 let _unsubTelemetry = null;
+let _mode = 'live';   // 'live' | 'whatif' — set by the Phase 2 sandbox toggle
 
 // SLD-node-id -> /api/topology/state hld_nodes key.
 const _NODE_MAP = {
@@ -228,6 +229,9 @@ const _FLAT = {
     SVG_NS: 'http://www.w3.org/2000/svg',
 };
 
+// Node types that are operable breakers — clickable in the control plane.
+const _BREAKER_TYPES = new Set(['ats', 'rpp']);
+
 // One equipment node: IEEE-ish symbol + name (above) + metric (below).
 function _flatNode(id, type, label, x, y, metrics) {
     const m = metrics
@@ -247,7 +251,11 @@ function _flatNode(id, type, label, x, y, metrics) {
         sym = `<rect class="pf-sym pid-symbol" data-sev="ok" x="${x - 40}" y="${y - 23}" `
             + `width="80" height="46" rx="2.5"/>`;
     }
-    return `<g class="sld-node pf-node" data-sld-node="${id}">`
+    const isBreaker = _BREAKER_TYPES.has(type);
+    const breakerAttr = isBreaker
+        ? ' data-breaker="1" tabindex="0" role="button"' : '';
+    return `<g class="sld-node pf-node${isBreaker ? ' pf-breaker' : ''}" `
+        + `data-sld-node="${id}"${breakerAttr}>`
         + sym
         + `<text class="pf-name" x="${x}" y="${y - 34}">${label}</text>`
         + m
@@ -332,6 +340,131 @@ function _renderFlatSld() {
     svg.innerHTML = _buildFlatMarkup();
 }
 
+// ════════════════════════════════════════════════════════════════
+//  PHASE 1 — interactive control plane (breaker actuation)
+//
+//  Breaker nodes (ATS / RPP) are clickable. A confirmation modal POSTs
+//  an OPEN/CLOSE command to /api/bms/write, sending the actor_role
+//  claim so the SME_L6 RBAC gate (F3-2) is enforced and visibly
+//  surfaced — a sub-SME_L6 role yields an in-modal "RBAC DENIED".
+// ════════════════════════════════════════════════════════════════
+let _modalCmd = null;   // currently-selected OPEN | CLOSE
+
+function _closeBreakerModal() {
+    const modal = document.getElementById('pwr-breaker-modal');
+    if (modal) modal.hidden = true;
+}
+
+function _ensureBreakerModal() {
+    let modal = document.getElementById('pwr-breaker-modal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'pwr-breaker-modal';
+    modal.className = 'pwr-modal-overlay';
+    modal.hidden = true;
+    modal.innerHTML = `
+        <div class="pwr-modal" role="dialog" aria-modal="true" aria-labelledby="pwr-modal-title">
+            <div class="pwr-modal-hdr">
+                <span class="pwr-modal-icon">&#9889;</span>
+                <h3 id="pwr-modal-title">Breaker Control</h3>
+            </div>
+            <div class="pwr-modal-body">
+                <p class="pwr-modal-target">Target breaker:
+                    <strong data-field="target">&mdash;</strong></p>
+                <label class="pwr-modal-lbl">Command</label>
+                <div class="pwr-modal-cmds">
+                    <button type="button" class="pwr-cmd-btn" data-cmd="OPEN">OPEN BREAKER</button>
+                    <button type="button" class="pwr-cmd-btn" data-cmd="CLOSE">CLOSE BREAKER</button>
+                </div>
+                <label class="pwr-modal-lbl" for="pwr-modal-role">Actor role (RBAC claim)</label>
+                <select id="pwr-modal-role" class="pwr-modal-select">
+                    <option value="TECH_L4">TECH_L4</option>
+                    <option value="SENIOR_TECH_L5">SENIOR_TECH_L5</option>
+                    <option value="SME_L6" selected>SME_L6</option>
+                </select>
+                <div class="pwr-modal-result" data-field="result"></div>
+            </div>
+            <div class="pwr-modal-foot">
+                <button type="button" class="btn btn-secondary" data-act="cancel">Cancel</button>
+                <button type="button" class="btn" data-act="confirm" disabled>Confirm actuation</button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal || e.target.dataset.act === 'cancel') {
+            _closeBreakerModal();
+            return;
+        }
+        const cmdBtn = e.target.closest('.pwr-cmd-btn');
+        if (cmdBtn) {
+            _modalCmd = cmdBtn.dataset.cmd;
+            modal.querySelectorAll('.pwr-cmd-btn').forEach((b) =>
+                b.classList.toggle('is-sel', b === cmdBtn));
+            modal.querySelector('[data-act="confirm"]').disabled = false;
+            return;
+        }
+        if (e.target.dataset.act === 'confirm') {
+            _submitBreakerCommand(
+                modal.dataset.nodeId, _modalCmd,
+                modal.querySelector('#pwr-modal-role').value,
+            );
+        }
+    });
+    return modal;
+}
+
+function _openBreakerModal(nodeId, label) {
+    const modal = _ensureBreakerModal();
+    _modalCmd = null;
+    modal.dataset.nodeId = nodeId;
+    modal.querySelector('[data-field="target"]').textContent = label || nodeId;
+    const result = modal.querySelector('[data-field="result"]');
+    result.textContent = '';
+    result.className = 'pwr-modal-result';
+    modal.querySelectorAll('.pwr-cmd-btn').forEach((b) => b.classList.remove('is-sel'));
+    modal.querySelector('[data-act="confirm"]').disabled = true;
+    modal.hidden = false;
+}
+
+async function _submitBreakerCommand(nodeId, cmd, actorRole) {
+    const modal = document.getElementById('pwr-breaker-modal');
+    if (!modal || !cmd) return;
+    const result = modal.querySelector('[data-field="result"]');
+    result.className = 'pwr-modal-result is-pending';
+    result.textContent = 'Issuing command to BMS control surface…';
+
+    const { ok, status, data } = await writeBmsTag({
+        tag_id: `breaker.${nodeId}.cmd`,
+        value: cmd,
+        user: 'power-sld-operator',
+        actor_role: actorRole,
+    });
+    if (status === 403) {
+        result.className = 'pwr-modal-result is-denied';
+        result.textContent = `RBAC DENIED — ${data.detail || 'SME_L6 required for BMS write'}`;
+        return;
+    }
+    if (!ok) {
+        result.className = 'pwr-modal-result is-err';
+        result.textContent = `Command rejected — ${data.detail || ('HTTP ' + status)}`;
+        return;
+    }
+    result.className = 'pwr-modal-result is-ok';
+    result.textContent = `✓ ${cmd} accepted — ${data.message || nodeId}`;
+}
+
+/** Flat-SVG click delegation — routes a breaker click by current mode. */
+function _onFlatClick(e) {
+    const node = e.target.closest('.pf-node[data-breaker]');
+    if (!node) return;
+    const label = node.querySelector('.pf-name');
+    if (_mode === 'live') {
+        _openBreakerModal(node.dataset.sldNode, label ? label.textContent : node.dataset.sldNode);
+    }
+    // 'whatif' branch is added by Phase 2 (local DAG simulation).
+}
+
 function _activate() {
     // Baseline physics-validated topology — fetched once per activation,
     // NOT polled. Live updates arrive on the Hermes telemetry stream.
@@ -349,6 +482,10 @@ export function initPowerView() {
     // T2.1 reinvention: render the orthogonal flat SLD into .pid-svg,
     // replacing the hand-authored static SVG (spaghetti routing).
     _renderFlatSld();
+    // L3 Phase 1: breaker nodes are interactive actuators. Delegated on
+    // the .pid-svg element so it survives _renderFlatSld() re-renders.
+    const flatSvg = document.querySelector('#view-power .pid-svg');
+    if (flatSvg) flatSvg.addEventListener('click', _onFlatClick);
     // T3.1: live severity from the Hermes telemetry stream — the legacy
     // 5 s setInterval poll is eradicated.
     _unsubTelemetry = onHermesStream('telemetry', _onTelemetryFrame);
@@ -365,8 +502,16 @@ export const __power_test__ = {
     onTelemetryFrame: _onTelemetryFrame,
     buildFlatMarkup: _buildFlatMarkup,
     renderFlatSld: _renderFlatSld,
+    openBreakerModal: _openBreakerModal,
+    submitBreakerCommand: _submitBreakerCommand,
+    onFlatClick: _onFlatClick,
+    setMode: (m) => { _mode = m; },
+    getMode: () => _mode,
     reset: () => {
         _initialized = false;
+        _mode = 'live';
         if (_unsubTelemetry) { _unsubTelemetry(); _unsubTelemetry = null; }
+        const modal = document.getElementById('pwr-breaker-modal');
+        if (modal) modal.remove();
     },
 };
