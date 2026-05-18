@@ -1,14 +1,17 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.1 — synced to post-v0.10.13 reality · Tier 1 partially delivered
+- **Status**: v11.2 — Hermes (T3.1) delivered · Tier 1 partial · Tier 2 in progress
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-17 (v11.1)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-17 (v11.2)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
-- **v11.1 sync (2026-05-17)**: T1.4 / T1.5 / T2.2 marked delivered, T2.4 / T2.5
-  partial; OBS demo-recording (T1.1 / T1.3) descoped by Wilmer; T3.8 DPO source
-  file eradicated (`d495c7b`); Hermes ADR number corrected (ADR-010 → ADR-011,
-  since ADR-010 is now the dual-graph asset taxonomy).
+- **v11.2 sync (2026-05-17)**: T3.1 Project Hermes DELIVERED — multiplexed WS
+  EDA plane (telemetry + cmms_alerts + agent_consensus), SSE→WS telemetry
+  cutover, CET-gated edge-healing engine, and the maintenance.js poll→event
+  cutover. T2.1 advanced (scenarios + maintenance views off the IIFE).
+- **v11.1 sync (2026-05-17)**: T1.4 / T1.5 / T2.2 delivered; T2.4 / T2.5 partial;
+  OBS demo-recording (T1.1 / T1.3) descoped; T3.8 DPO file eradicated; Hermes
+  ADR corrected to ADR-011.
 
 This document is the queued backlog after `v0.10.5-power-sld-v2`. Each
 tier is independently fundable — pick by available time, panel
@@ -176,11 +179,18 @@ self-busts.
 The capabilities that push **past** demo-ready into a competitive
 differentiator. Pick selectively; do NOT attempt all in one push.
 
-### T3.1 — WebSocket Hermes pipeline (~5-7 days) ⭐ priority
+### T3.1 — WebSocket Hermes pipeline — ✅ DELIVERED 2026-05-17
 
-**The architectural inflection point.** Replace REST+polling for PUE
-+ CMMS + Multi-Agent + Power SLD with a single multiplexed WebSocket
-stream:
+**The architectural inflection point — shipped.** Delivered across
+`caf5cc1` (WS vertical slice) → `bf20042` (live Kalman tap + SSE→WS
+telemetry cutover) → `66abc30` (unified EDA plane: cmms_alerts +
+agent_consensus + CET-gated edge-healing) → maintenance.js poll→event
+cutover. Still open: retiring the remaining per-view polls
+(`mission_control.js`), and PUE / power_sld over the socket. The
+original plan below is kept as the design record.
+
+Replace REST+polling for PUE + CMMS + Multi-Agent + Power SLD with a
+single multiplexed WebSocket stream:
 
 ```
 GET   /api/physics/pue                  ← 15 s polling → REPLACE

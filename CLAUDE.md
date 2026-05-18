@@ -19,10 +19,9 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-17)
 
 ```
-HEAD:  d495c7b  branch master  —  24 commits AHEAD of tag v0.10.13-modal-fix
-       (UNTAGGED), and master is AHEAD of origin/master (unpushed).
-Working tree: .claude/ + PRIMER_PROMPT.md untracked + DEMO_SCRIPT.md modified
-(all intentional — not part of any committed bite).
+HEAD:  45ae83a  branch master  ==  origin/master (synced + pushed 2026-05-17).
+       30+ commits AHEAD of tag v0.10.13-modal-fix (UNTAGGED).
+Working tree: .claude/ + PRIMER_PROMPT.md untracked (intentional).
 
 Tags chronological (38 total):
   v0.5.0 .. v0.8.5-cmms-core-v1               foundation → Sprint 6 CMMS Core
@@ -39,12 +38,13 @@ Tags chronological (38 total):
   v0.10.6..v0.10.8                            2.5D isometric SLD + DAG engine + iso camera
   v0.10.9..v0.10.11                           SCADA asset panel, PBR polish, DDU/busway expansion
   v0.10.12-maint-fix / v0.10.13-modal-fix     maintenance routing + closure-modal fixes
-  [+ 24 UNTAGGED commits post-v0.10.13 — ProcedureGenerator C0+G1-G6, RBAC,
-   E2E security audit, SRE dead-code cleanup. Next tag = v0.11.x at milestone.]
+  [+ 30+ UNTAGGED commits post-v0.10.13 — ProcedureGenerator C0+G1-G6, RBAC,
+   E2E security audit, SRE cleanup, T2.1 IIFE dismantle (scenarios + maintenance),
+   T3.1 Hermes WebSocket EDA plane + CET-gated edge healing. Tag = v0.11.x next.]
 
-Tests:   690 passed, 5 deselected (slow/FAISS) — full untargeted pytest, 41s, 0 fail
-         (was 667 at v0.10.13; +23 from ProcedureGenerator G1-G6 + RBAC tests).
-         DC-EPMS-039 lifespan hang eradicated — the suite runs end-to-end.
+Tests:   backend 706 passed, 5 deselected (slow/FAISS) — full pytest ~43s, 0 fail.
+         frontend 45 passed — Vitest (npm test): mission_control + scenarios +
+         hermes (slice / cutover / EDA) + maintenance. Both suites green at 45ae83a.
 
 Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
   - Numba JIT cold compile: 4.8 ms
@@ -54,11 +54,14 @@ Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
 Runtime: backend = `python backend\main.py` on :8080 (native, NOT docker).
          epms-db container = TimescaleDB pg16 — DB `dcepms`, user `epms`.
 
-V9 scope: feature-complete. Post-v0.10.13: ProcedureGenerator sprint (C0 +
-G1-G6 — dual-graph taxonomy / SOP-MOP-EOP-EMP factories / recursive micro-
-LOTO), hyperscale RBAC + promotion gates, E2E security audit + CRITICAL
-remediation, SRE dead-code eradication. Live backlog = docs/ROADMAP-V11.md
-(v11.1, synced 2026-05-17). NOTE: OBS demo-recording descoped by Wilmer.
+V9 scope: feature-complete. Post-v0.10.13: ProcedureGenerator (C0+G1-G6 —
+dual-graph taxonomy / SOP-MOP-EOP-EMP factories / recursive micro-LOTO),
+hyperscale RBAC, E2E security audit + CRITICAL remediation, SRE cleanup,
+T2.1 (IIFE dismantle: scenarios + maintenance views → ES modules), and
+T3.1 PROJECT HERMES — multiplexed WebSocket EDA plane (telemetry +
+cmms_alerts + agent_consensus), SSE→WS telemetry cutover, and the
+CET-gated closed-loop edge-healing engine. Live backlog = docs/ROADMAP-
+V11.md (v11.2, synced 2026-05-17). NOTE: OBS demo-recording descoped.
 ```
 
 **Recent commits (latest at top)**:

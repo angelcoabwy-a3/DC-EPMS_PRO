@@ -8,9 +8,9 @@
  *   - Work Order backlog (right panel) with filters
  *   - 4 KPI cards on top (totals, overdue, predictive)
  *
- * Polling: every 15s when the view is visible. Pauses when navigated
- * away. No SSE for this MVP — polling cadence matches the SHI panel
- * pattern from app.js.
+ * Live updates: T3.1 event-driven — refreshes on the Hermes
+ * `hermes:cmms-alert` DOM event (Work-Order mutations / edge-healing)
+ * and on becoming visible. Zero HTTP polling (no setInterval).
  *
  * Read-only for now: approve/reject buttons inline are V2 (Sprint 6.5
  * or later). Operators approve via curl/Swagger or the /docs UI today.
@@ -23,11 +23,10 @@ import { playClick } from '../core/sound.js';
 import { registerRoute } from '../core/router.js';
 import { trapFocus } from '../core/focus_trap.js';
 
-const POLL_INTERVAL_MS = 15_000;
 const API_BASE = '';  // same-origin
 
 let _container = null;
-let _intervalId = null;
+let _hermesAlertHandler = null;   // T3.1: bound hermes:cmms-alert listener
 let _isVisible = false;
 let _focusAssetId = null;     // v0.10.12: handoff from #power asset panel
 let _filters = {
@@ -952,8 +951,17 @@ function _onVisibilityChange() {
         _refresh();
     }
     if (!_isVisible && wasVisible) {
-        // Just got hidden — kept the interval but next tick will skip
+        // Just got hidden — refresh triggers skip while hidden
     }
+}
+
+// ─── Hermes event-driven refresh (T3.1) ──────────────────────────
+// Replaces the 15 s HTTP poll: the backend broadcasts a cmms_alerts
+// frame on every Work-Order mutation / edge-healing recommendation,
+// and core/hermes_events.js re-emits it as the `hermes:cmms-alert`
+// DOM event. The grid refreshes the instant something changes.
+function _onHermesAlert() {
+    if (_isVisible) _refresh();
 }
 
 // ─── Filter handlers ──────────────────────────────────────────────
@@ -1273,19 +1281,27 @@ export function initMaintenanceView() {
     const observer = new MutationObserver(_onVisibilityChange);
     observer.observe(_container, { attributes: true, attributeFilter: ['hidden'] });
 
-    // Initial check + interval
+    // Initial render if already visible; event-driven from here on.
     _isVisible = _checkVisibility();
     if (_isVisible) _refresh();
 
-    if (_intervalId) clearInterval(_intervalId);
-    _intervalId = setInterval(() => {
-        if (_isVisible) _refresh();
-    }, POLL_INTERVAL_MS);
+    // T3.1 cutover: subscribe to the Hermes cmms_alerts stream instead
+    // of polling. core/hermes_events.js dispatches `hermes:cmms-alert`
+    // on `document` for every WO mutation / edge-healing recommendation.
+    _hermesAlertHandler = _onHermesAlert;
+    document.addEventListener('hermes:cmms-alert', _hermesAlertHandler);
 }
 
 export function stopMaintenanceView() {
-    if (_intervalId) {
-        clearInterval(_intervalId);
-        _intervalId = null;
+    if (_hermesAlertHandler) {
+        document.removeEventListener('hermes:cmms-alert', _hermesAlertHandler);
+        _hermesAlertHandler = null;
     }
 }
+
+// ─── Test surface ─────────────────────────────────────────────────
+export const __maintenance_test__ = {
+    onHermesAlert: _onHermesAlert,
+    setVisible(v) { _isVisible = v; },
+    isWired: () => _hermesAlertHandler !== null,
+};
