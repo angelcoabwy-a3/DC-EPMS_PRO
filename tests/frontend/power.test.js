@@ -282,3 +282,80 @@ describe('L3-1 — views/power.js breaker actuation', () => {
         expect(result.textContent).toContain('RBAC DENIED');
     });
 });
+
+// ════════════════════════════════════════════════════════════════
+//  views/power.js — L3 Phase 2: What-If simulation sandbox
+// ════════════════════════════════════════════════════════════════
+describe('L3-2 — views/power.js What-If sandbox', () => {
+    const { renderFlatSld, setMode, getMode, buildModeToggle, applyGrid,
+        onTelemetryFrame, reset } = __power_test__;
+
+    function mountView() {
+        document.body.innerHTML =
+            '<div id="view-power"><div class="pid-action-bar"></div>'
+            + '<svg class="pid-svg"></svg></div>';
+    }
+    afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+        document.body.innerHTML = '';
+        reset();
+    });
+
+    it('setMode(whatif) flips the mode and marks the view as a sandbox', () => {
+        mountView();
+        buildModeToggle();
+        setMode('whatif');
+        expect(getMode()).toBe('whatif');
+        expect(document.getElementById('view-power').classList.contains('pwr-whatif'))
+            .toBe(true);
+        expect(document.getElementById('pwr-mode-toggle').dataset.mode).toBe('whatif');
+    });
+
+    it('setMode(live) exits the sandbox and clears the hazard indicator', () => {
+        mountView();
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true, status: 200, json: async () => ({ hld_nodes: {} }),
+        })));
+        buildModeToggle();
+        setMode('whatif');
+        setMode('live');
+        expect(getMode()).toBe('live');
+        expect(document.getElementById('view-power').classList.contains('pwr-whatif'))
+            .toBe(false);
+    });
+
+    it('buildModeToggle mounts the LIVE/WHAT-IF toggle into the action bar', () => {
+        mountView();
+        buildModeToggle();
+        const btn = document.getElementById('pwr-mode-toggle');
+        expect(btn).not.toBeNull();
+        expect(btn.dataset.mode).toBe('live');
+    });
+
+    it('applyGrid renders the local DAG cascade onto the flat SLD nodes', () => {
+        mountView();
+        renderFlatSld();
+        applyGrid({
+            ats_a: { tripped: true, alive: false },
+            ups_a: { tripped: false, alive: true, on_battery: true },
+        });
+        const atsSym = document.querySelector('[data-sld-node="ats_a"] .pid-symbol');
+        const upsSym = document.querySelector('[data-sld-node="ups_a"] .pid-symbol');
+        expect(atsSym.getAttribute('data-sev')).toBe('critical');
+        expect(upsSym.getAttribute('data-sev')).toBe('warning');
+        expect(document.querySelector('[data-sld-node="ats_a"]')
+            .classList.contains('pf-tripped')).toBe(true);
+    });
+
+    it('onTelemetryFrame is a no-op while in the What-If sandbox (feed disconnected)', () => {
+        mountView();
+        document.querySelector('#view-power').insertAdjacentHTML(
+            'beforeend', '<div class="sld-iso-block" data-sld-node="ups_a"></div>');
+        buildModeToggle();
+        setMode('whatif');
+        onTelemetryFrame({ channels: { 'ups_a_soc': { is_anomalous: true } } });
+        expect(document.querySelector('[data-sld-node="ups_a"]').dataset.sev)
+            .toBeUndefined();
+    });
+});

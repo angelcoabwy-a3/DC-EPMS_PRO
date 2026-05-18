@@ -7944,3 +7944,52 @@ body {
     padding: 12px 18px;
     border-top: 1px solid #33455f;
 }
+
+/* ════════════════════════════════════════════════════════════════
+ *  L3 PHASE 2 — What-If simulation sandbox  (toggle + hazard frame)
+ * ════════════════════════════════════════════════════════════════ */
+.pwr-mode-toggle {
+    font-family: var(--font-mono, monospace);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 6px 14px;
+    margin-right: 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 160ms, border-color 160ms, color 160ms;
+}
+.pwr-mode-toggle[data-mode="live"] {
+    background: #102a30;
+    border: 1px solid #27d3ee;
+    color: #8ee9f6;
+}
+.pwr-mode-toggle[data-mode="whatif"] {
+    background: #2e2410;
+    border: 1px solid #ffb020;
+    color: #ffd98a;
+}
+
+/* Hazard-stripe frame — an unmistakable "you are in a sandbox" cue */
+#view-power.pwr-whatif .pid-canvas {
+    position: relative;
+    border-style: solid;
+    border-width: 3px;
+    border-image: repeating-linear-gradient(45deg,
+        #ffb020 0 14px, #1a1205 14px 28px) 3;
+}
+#view-power.pwr-whatif .pid-canvas::before {
+    content: "\26A0  WHAT-IF SIMULATION \2014 ISOLATED SANDBOX \00B7 no backend writes";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 50;
+    padding: 4px 0;
+    background: rgba(255, 176, 32, 0.94);
+    color: #1a1205;
+    font-family: var(--font-mono, monospace);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.07em;
+    text-align: center;
+}
+.pf-node.pf-tripped { opacity: 0.97; }

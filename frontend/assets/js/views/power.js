@@ -23,6 +23,8 @@
 
 import { registerRoute } from '../core/router.js';
 import { onHermesStream, getTopologyState, writeBmsTag } from '../services/api.js';
+import { subscribe } from '../core/state.js';
+import { toggleTrip, restoreAll } from '../core/power_grid.js';
 
 let _initialized = false;
 let _unsubTelemetry = null;
@@ -208,6 +210,9 @@ async function _refresh() {
 }
 
 function _onTelemetryFrame(payload) {
+    // What-if sandbox: the SLD is disconnected from the live feed —
+    // frozen state, no telemetry-driven updates until LIVE is restored.
+    if (_mode === 'whatif') return;
     // Hermes `telemetry` frame: { schema, channels, anomaly_count_60min, ts }.
     if (payload && payload.channels) _applyTelemetry(payload.channels);
 }
@@ -454,15 +459,79 @@ async function _submitBreakerCommand(nodeId, cmd, actorRole) {
     result.textContent = `✓ ${cmd} accepted — ${data.message || nodeId}`;
 }
 
-/** Flat-SVG click delegation — routes a breaker click by current mode. */
+/** Flat-SVG click delegation — routes a node click by current mode. */
 function _onFlatClick(e) {
-    const node = e.target.closest('.pf-node[data-breaker]');
+    const node = e.target.closest('.pf-node');
     if (!node) return;
-    const label = node.querySelector('.pf-name');
-    if (_mode === 'live') {
-        _openBreakerModal(node.dataset.sldNode, label ? label.textContent : node.dataset.sldNode);
+    const id = node.dataset.sldNode;
+    if (_mode === 'whatif') {
+        // Sandbox: any node-click injects a simulated fault into the
+        // LOCAL DAG engine — the cascade is computed in frontend memory,
+        // zero bytes to the backend.
+        toggleTrip(id);
+        return;
     }
-    // 'whatif' branch is added by Phase 2 (local DAG simulation).
+    // Live mode: only breakers are operable, via the actuation modal.
+    if (node.dataset.breaker) {
+        const label = node.querySelector('.pf-name');
+        _openBreakerModal(id, label ? label.textContent : id);
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  PHASE 2 — predictive What-If simulation sandbox
+//
+//  A LIVE <-> WHAT-IF toggle. In WHAT-IF the SLD disconnects from the
+//  Hermes telemetry feed (frozen state), the view gains a hazard-stripe
+//  border, and any node-click injects a simulated fault into the LOCAL
+//  DAG fault-cascade engine — computed + rendered purely in frontend
+//  memory. Returning to LIVE clears the simulated trips and re-syncs.
+// ════════════════════════════════════════════════════════════════
+function _setMode(mode) {
+    _mode = (mode === 'whatif') ? 'whatif' : 'live';
+    const view = document.getElementById('view-power');
+    if (view) view.classList.toggle('pwr-whatif', _mode === 'whatif');
+    const btn = document.getElementById('pwr-mode-toggle');
+    if (btn) {
+        btn.textContent = _mode === 'whatif'
+            ? '⚠ WHAT-IF SIMULATION' : '◉ LIVE TELEMETRY';
+        btn.dataset.mode = _mode;
+    }
+    if (_mode === 'live') {
+        // Leaving the sandbox — clear simulated trips, re-sync to live.
+        restoreAll();
+        _refresh();
+    }
+}
+
+function _buildModeToggle() {
+    if (document.getElementById('pwr-mode-toggle')) return;
+    const view = document.getElementById('view-power');
+    if (!view) return;
+    const btn = document.createElement('button');
+    btn.id = 'pwr-mode-toggle';
+    btn.type = 'button';
+    btn.className = 'pwr-mode-toggle';
+    btn.dataset.mode = 'live';
+    btn.textContent = '◉ LIVE TELEMETRY';
+    btn.title = 'Toggle LIVE telemetry <-> isolated WHAT-IF simulation sandbox';
+    btn.addEventListener('click', () => _setMode(_mode === 'live' ? 'whatif' : 'live'));
+    const bar = view.querySelector('.pid-action-bar') || view;
+    bar.insertBefore(btn, bar.firstChild);
+}
+
+/** Render the local DAG grid state (the fault cascade) onto the flat SLD. */
+function _applyGrid(grid) {
+    if (!grid) return;
+    document.querySelectorAll('#view-power .pid-svg .pf-node').forEach((node) => {
+        const n = grid[node.dataset.sldNode];
+        if (!n) return;
+        let sev = 'ok';
+        if (n.tripped || n.alive === false) sev = 'critical';
+        else if (n.on_battery || n.energized_by === 'genset') sev = 'warning';
+        node.querySelectorAll('.pid-symbol').forEach((s) => s.setAttribute('data-sev', sev));
+        node.classList.toggle('pf-tripped', !!n.tripped);
+    });
 }
 
 function _activate() {
@@ -486,6 +555,10 @@ export function initPowerView() {
     // the .pid-svg element so it survives _renderFlatSld() re-renders.
     const flatSvg = document.querySelector('#view-power .pid-svg');
     if (flatSvg) flatSvg.addEventListener('click', _onFlatClick);
+    // L3 Phase 2: LIVE <-> WHAT-IF toggle + flat-SLD render of the local
+    // DAG fault-cascade (the sandbox's simulated faults become visible).
+    _buildModeToggle();
+    subscribe('grid', _applyGrid);
     // T3.1: live severity from the Hermes telemetry stream — the legacy
     // 5 s setInterval poll is eradicated.
     _unsubTelemetry = onHermesStream('telemetry', _onTelemetryFrame);
@@ -505,8 +578,10 @@ export const __power_test__ = {
     openBreakerModal: _openBreakerModal,
     submitBreakerCommand: _submitBreakerCommand,
     onFlatClick: _onFlatClick,
-    setMode: (m) => { _mode = m; },
+    setMode: _setMode,
     getMode: () => _mode,
+    buildModeToggle: _buildModeToggle,
+    applyGrid: _applyGrid,
     reset: () => {
         _initialized = false;
         _mode = 'live';
