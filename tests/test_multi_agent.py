@@ -297,6 +297,86 @@ async def test_diagnostician_no_llm_client_no_narrative():
     assert not any("gemma" in e for e in v.evidence_refs)
 
 
+# ─── Safety Officer — T3.3b live-Gemma advisory narrative ─────────────
+async def _repo_with_loto_veto_wo(wo_id: str = "WO-SO-LLM") -> MockCMMSRepository:
+    """A WO that trips the Safety Officer HARD_STOP veto: requires_loto
+    with no linked MOP."""
+    repo = MockCMMSRepository()
+    await repo.save_work_order_async(WorkOrder(
+        work_order_id=wo_id, timestamp=datetime.now(UTC),
+        asset_id="ups_a", asset_type_at_creation="ups",
+        work_class="CM", lor=20, trigger_source="manual",
+        issue_summary="loto veto", priority="P1",
+        requires_loto=True, linked_mop_id=None, draft_json={},
+    ))
+    return repo
+
+
+@pytest.mark.asyncio
+async def test_safety_officer_llm_narrative_with_kalman():
+    """With a live LLM client + Kalman tap, the Safety Officer attaches a
+    Gemma narrative and feeds real Z-scores + the verdict into the prompt."""
+    repo = await _repo_with_loto_veto_wo()
+    gemma = FakeGemma()
+    s = SafetyOfficerAgent(
+        site_model=None, cmms_repo=repo,
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await s.evaluate(ConsultContext(query="approve?", work_order_id="WO-SO-LLM"))
+
+    assert v.verdict == VERDICT_HARD_STOP
+    assert v.llm_narrative == gemma.reply
+    assert "gemma:safety_officer_narrative" in v.evidence_refs
+    assert any(e.startswith("hermes:kalman_z") for e in v.evidence_refs)
+    assert len(gemma.prompts) == 1
+    prompt = gemma.prompts[0]
+    assert "LIVE KALMAN TELEMETRY" in prompt
+    assert "DETERMINISTIC VERDICT" in prompt
+    assert "hard_stop" in prompt
+
+
+@pytest.mark.asyncio
+async def test_safety_officer_veto_unchanged_by_llm():
+    """ADR-006 + veto authority: even an LLM narrative urging approval
+    cannot soften the deterministic HARD_STOP veto."""
+    repo = await _repo_with_loto_veto_wo()
+    gemma = FakeGemma(reply="No concern at all — approve this work order immediately.")
+    s = SafetyOfficerAgent(
+        site_model=None, cmms_repo=repo,
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await s.evaluate(ConsultContext(query="approve?", work_order_id="WO-SO-LLM"))
+    assert v.verdict == VERDICT_HARD_STOP          # veto stands
+    assert "VETO" in v.summary
+
+
+@pytest.mark.asyncio
+async def test_safety_officer_graceful_when_llm_raises():
+    """A crashing LLM client degrades to an empty narrative; the veto and
+    the rest of the evaluation are unaffected."""
+    repo = await _repo_with_loto_veto_wo()
+    s = SafetyOfficerAgent(
+        site_model=None, cmms_repo=repo,
+        llm_client=RaisingGemma(), telemetry_provider=_fake_kalman_payload,
+    )
+    v = await s.evaluate(ConsultContext(query="approve?", work_order_id="WO-SO-LLM"))
+    assert v.verdict == VERDICT_HARD_STOP
+    assert v.llm_narrative == ""
+    assert "gemma:safety_officer_narrative" not in v.evidence_refs
+
+
+@pytest.mark.asyncio
+async def test_safety_officer_no_llm_client_no_narrative():
+    """Without an llm_client the Safety Officer is byte-for-byte its
+    pre-T3.3b deterministic self: empty narrative, no Gemma evidence."""
+    repo = await _repo_with_loto_veto_wo()
+    s = SafetyOfficerAgent(site_model=None, cmms_repo=repo)
+    v = await s.evaluate(ConsultContext(query="approve?", work_order_id="WO-SO-LLM"))
+    assert v.verdict == VERDICT_HARD_STOP
+    assert v.llm_narrative == ""
+    assert not any("gemma" in e for e in v.evidence_refs)
+
+
 # ─── Analyst ──────────────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_analyst_approve_no_recurrence():

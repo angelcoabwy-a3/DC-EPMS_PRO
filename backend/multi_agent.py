@@ -131,6 +131,85 @@ def _verdict_rank(v: str) -> int:
     }.get(v, 0)
 
 
+# ─── T3.3+ shared live-Gemma advisory-narrative helpers ────────────────
+# Used by the Diagnostician (T3.3) and the Safety Officer (T3.3b). Per
+# ADR-006 the narrative is advisory ONLY: every agent's verdict is
+# computed deterministically before either helper runs.
+_KALMAN_TOP_N = 4
+
+
+async def _collect_kalman_lines(
+    telemetry_provider: Any | None,
+    asset_id: str | None,
+    top_n: int = _KALMAN_TOP_N,
+) -> list[str]:
+    """Render asset-relevant + site-anomalous live Kalman channels as
+    human-readable Z-score lines for a Gemma grounding prompt.
+
+    Best-effort: any provider failure / empty payload yields []. The
+    injected telemetry_provider may be sync or async.
+    """
+    if telemetry_provider is None:
+        return []
+    try:
+        payload = telemetry_provider()
+        if inspect.isawaitable(payload):
+            payload = await payload
+    except Exception as e:
+        log.debug("[multi_agent] telemetry provider failed: %s", e)
+        return []
+    if not isinstance(payload, dict) or not payload:
+        return []
+
+    def _maxz(ch: str) -> float:
+        try:
+            return float(payload.get(ch, {}).get("max_z", 0.0) or 0.0)
+        except (TypeError, ValueError, AttributeError):
+            return 0.0
+
+    aid = (asset_id or "").lower()
+    asset_chs = sorted(
+        (c for c in payload if aid and aid in c.lower()),
+        key=_maxz, reverse=True,
+    )[:top_n]
+    lines: list[str] = []
+    for ch in asset_chs:
+        f = payload[ch]
+        flag = " ANOMALOUS" if f.get("is_anomalous") else ""
+        mean_z = float(f.get("mean_z", 0.0) or 0.0)
+        lines.append(
+            f"[asset] {ch}: max_z={_maxz(ch):.2f} mean_z={mean_z:.2f}{flag}"
+        )
+    for ch in sorted(payload, key=_maxz, reverse=True)[:top_n]:
+        if ch in asset_chs:
+            continue
+        f = payload[ch]
+        flag = " ANOMALOUS" if f.get("is_anomalous") else ""
+        lines.append(f"[site]  {ch}: max_z={_maxz(ch):.2f}{flag}")
+    return lines
+
+
+async def _gemma_complete(
+    llm_client: Any | None, prompt: str, max_tokens: int = 240,
+) -> str:
+    """Call the local Gemma model with a pre-built prompt.
+
+    Best-effort: returns "" on a missing / !complete_gemma client, any
+    exception, or the LM Studio '[Gemma error ...]' sentinel string.
+    """
+    if llm_client is None or not hasattr(llm_client, "complete_gemma"):
+        return ""
+    try:
+        text = (await llm_client.complete_gemma(prompt, max_tokens=max_tokens)) or ""
+    except Exception as e:
+        log.debug("[multi_agent] Gemma synthesis failed: %s", e)
+        return ""
+    text = text.strip()
+    if not text or text.startswith(("[Gemma error", "[Gemma stream error")):
+        return ""
+    return text
+
+
 # ─── Agent: Architect ──────────────────────────────────────────────────
 class ArchitectAgent:
     """Topology + redundancy impact perspective.
@@ -295,9 +374,20 @@ class SafetyOfficerAgent:
 
     name = "Safety Officer"
 
-    def __init__(self, site_model: Any | None, cmms_repo: Any | None):
+    def __init__(
+        self,
+        site_model: Any | None,
+        cmms_repo: Any | None,
+        llm_client: Any | None = None,
+        telemetry_provider: Any | None = None,
+    ):
         self._site = site_model
         self._cmms_repo = cmms_repo
+        # T3.3b: optional live-Gemma advisory layer. The verdict stays
+        # deterministic (see _finalize). Both default None -> existing
+        # call sites + unit tests unaffected.
+        self._llm_client = llm_client
+        self._telemetry_provider = telemetry_provider
 
     async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
         t0 = time.perf_counter()
@@ -318,12 +408,11 @@ class SafetyOfficerAgent:
                     f"linked_mop_id={linked_mop or 'NONE'}."
                 )
                 if requires_loto and not linked_mop:
-                    return AgentVerdict(
-                        agent_name=self.name, verdict=VERDICT_HARD_STOP,
-                        summary="LOTO required but no MOP linked — VETO",
-                        reasoning=[*reasoning, "ADR-006 Deterministic Sandbox: requires_loto=true " "without a linked_mop_id is non-compliant; the WO " "cannot be approved until a MOP is attached and " "validated by the LOTO Auditor.", "Standard reference: CSA Z462-24 §4.2 + NFPA 70E §130."],
-                        evidence_refs=evidence,
-                        decision_time_ms=_ms_since(t0),
+                    return await self._finalize(
+                        ctx, t0, VERDICT_HARD_STOP,
+                        "LOTO required but no MOP linked — VETO",
+                        [*reasoning, "ADR-006 Deterministic Sandbox: requires_loto=true " "without a linked_mop_id is non-compliant; the WO " "cannot be approved until a MOP is attached and " "validated by the LOTO Auditor.", "Standard reference: CSA Z462-24 §4.2 + NFPA 70E §130."],
+                        evidence,
                     )
             except Exception as e:
                 reasoning.append(f"WO lookup failed: {e}")
@@ -343,12 +432,11 @@ class SafetyOfficerAgent:
                         f"NEC 460.6 capacitor discharge mandatory."
                     )
                     if not ctx.procedure_id:
-                        return AgentVerdict(
-                            agent_name=self.name, verdict=VERDICT_HARD_STOP,
-                            summary="Capacitor-class asset with no procedure — VETO",
-                            reasoning=[*reasoning, "No procedure_id supplied. CSA Z462 requires " "an approved MOP referencing capacitor discharge " "before any work on this class of asset."],
-                            evidence_refs=evidence,
-                            decision_time_ms=_ms_since(t0),
+                        return await self._finalize(
+                            ctx, t0, VERDICT_HARD_STOP,
+                            "Capacitor-class asset with no procedure — VETO",
+                            [*reasoning, "No procedure_id supplied. CSA Z462 requires " "an approved MOP referencing capacitor discharge " "before any work on this class of asset."],
+                            evidence,
                         )
                 if voltage:
                     reasoning.append(
@@ -360,23 +448,93 @@ class SafetyOfficerAgent:
 
         # If we made it here, no veto fired. Default conservative.
         if ctx.work_order_id or ctx.procedure_id or ctx.asset_id:
-            return AgentVerdict(
-                agent_name=self.name, verdict=VERDICT_CAUTION,
-                summary="LOTO-eligible context — CET sign-off mandatory",
-                reasoning=[*reasoning, "No HARD_STOP triggers fired, but all energized work " "requires CET signature per ADR-006. Safety Officer " "never auto-approves."],
-                evidence_refs=evidence,
-                decision_time_ms=_ms_since(t0),
+            return await self._finalize(
+                ctx, t0, VERDICT_CAUTION,
+                "LOTO-eligible context — CET sign-off mandatory",
+                [*reasoning, "No HARD_STOP triggers fired, but all energized work " "requires CET signature per ADR-006. Safety Officer " "never auto-approves."],
+                evidence,
             )
 
         # No specific subject — generic advisory
-        return AgentVerdict(
-            agent_name=self.name, verdict=VERDICT_APPROVE,
-            summary="No safety-critical context in query",
-            reasoning=["Query has no asset/procedure/WO subject; "
-                       "Safety Officer has no scope to evaluate."],
-            evidence_refs=evidence,
-            decision_time_ms=_ms_since(t0),
+        return await self._finalize(
+            ctx, t0, VERDICT_APPROVE,
+            "No safety-critical context in query",
+            ["Query has no asset/procedure/WO subject; "
+             "Safety Officer has no scope to evaluate."],
+            evidence,
         )
+
+    # ── T3.3b: advisory Gemma narrative + verdict finalizer ────────────
+    async def _finalize(
+        self,
+        ctx: ConsultContext,
+        t0: float,
+        verdict: str,
+        summary: str,
+        reasoning: list[str],
+        evidence: list[str],
+    ) -> AgentVerdict:
+        """Build the AgentVerdict, attaching an advisory Gemma narrative
+        when an llm_client is configured.
+
+        ADR-006: the narrative is advisory ONLY. The verdict — including
+        any HARD_STOP veto, which outranks every other agent — is already
+        decided by the caller and is never altered here.
+        """
+        llm_narrative = ""
+        if self._llm_client is not None:
+            kalman_lines = await _collect_kalman_lines(
+                self._telemetry_provider, ctx.asset_id,
+            )
+            if kalman_lines:
+                evidence = [*evidence, f"hermes:kalman_z ({len(kalman_lines)} ch)"]
+            llm_narrative = await self._synthesize_narrative(
+                ctx, verdict, summary, kalman_lines,
+            )
+            if llm_narrative:
+                evidence = [*evidence, "gemma:safety_officer_narrative"]
+                reasoning = [*reasoning, f"Gemma narrative: {llm_narrative}"]
+        return AgentVerdict(
+            agent_name=self.name, verdict=verdict, summary=summary,
+            reasoning=reasoning, evidence_refs=evidence,
+            decision_time_ms=_ms_since(t0), llm_narrative=llm_narrative,
+        )
+
+    async def _synthesize_narrative(
+        self,
+        ctx: ConsultContext,
+        verdict: str,
+        summary: str,
+        kalman_lines: list[str],
+    ) -> str:
+        """Build the Safety Officer's Gemma prompt and call the model.
+
+        ADR-006: advisory ONLY. ``verdict`` is already decided; the prompt
+        explicitly forbids the model from overriding it.
+        """
+        kalman_block = (
+            "\n".join(f"  {ln}" for ln in kalman_lines)
+            if kalman_lines
+            else "  (live Kalman tap unavailable this tick)"
+        )
+        prompt = (
+            "You are the Safety Officer agent of a Tier IV AI-factory "
+            "operations platform, governing LOTO and PPE compliance under "
+            "CSA Z462 / NFPA 70E / NEC 460.6. In 2-3 sentences give an "
+            "advisory safety narrative for the assessment below. Ground "
+            "every claim strictly in the data provided; do not invent "
+            "values. Be concise and factual.\n\n"
+            f"ASSET: {ctx.asset_id or 'n/a'}\n"
+            f"WORK ORDER: {ctx.work_order_id or 'n/a'}   "
+            f"PROCEDURE: {ctx.procedure_id or 'n/a'}\n"
+            f"DETERMINISTIC VERDICT (already decided, do not override): "
+            f"{verdict}\n"
+            f"VERDICT HEADLINE: {summary}\n"
+            "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
+            "anomaly):\n"
+            f"{kalman_block}\n"
+        )
+        return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
 
 # ─── Agent: Diagnostician ──────────────────────────────────────────────
@@ -497,7 +655,9 @@ class DiagnosticianAgent:
         # Runs AFTER the deterministic verdict; never alters it (ADR-006).
         llm_narrative = ""
         if self._llm_client is not None and verdict != VERDICT_DEGRADED:
-            kalman_lines = await self._live_kalman_lines(ctx.asset_id)
+            kalman_lines = await _collect_kalman_lines(
+                self._telemetry_provider, ctx.asset_id,
+            )
             if kalman_lines:
                 evidence.append(
                     f"hermes:kalman_z:{ctx.asset_id} ({len(kalman_lines)} ch)"
@@ -524,53 +684,7 @@ class DiagnosticianAgent:
             llm_narrative=llm_narrative,
         )
 
-    # ── T3.3: live-Gemma advisory narrative (verdict-independent) ──────
-    async def _live_kalman_lines(self, asset_id: str) -> list[str]:
-        """Render asset-relevant + site-anomalous live Kalman channels as
-        human-readable Z-score lines for the Gemma grounding prompt.
-
-        Best-effort: any provider failure / empty payload yields []. The
-        injected telemetry_provider may be sync or async.
-        """
-        if self._telemetry_provider is None:
-            return []
-        try:
-            payload = self._telemetry_provider()
-            if inspect.isawaitable(payload):
-                payload = await payload
-        except Exception as e:
-            log.debug("[Diagnostician] telemetry provider failed: %s", e)
-            return []
-        if not isinstance(payload, dict) or not payload:
-            return []
-
-        def _maxz(ch: str) -> float:
-            try:
-                return float(payload.get(ch, {}).get("max_z", 0.0) or 0.0)
-            except (TypeError, ValueError, AttributeError):
-                return 0.0
-
-        aid = (asset_id or "").lower()
-        asset_chs = sorted(
-            (c for c in payload if aid and aid in c.lower()),
-            key=_maxz, reverse=True,
-        )[: self.KALMAN_TOP_N]
-        lines: list[str] = []
-        for ch in asset_chs:
-            f = payload[ch]
-            flag = " ANOMALOUS" if f.get("is_anomalous") else ""
-            mean_z = float(f.get("mean_z", 0.0) or 0.0)
-            lines.append(
-                f"[asset] {ch}: max_z={_maxz(ch):.2f} mean_z={mean_z:.2f}{flag}"
-            )
-        for ch in sorted(payload, key=_maxz, reverse=True)[: self.KALMAN_TOP_N]:
-            if ch in asset_chs:
-                continue
-            f = payload[ch]
-            flag = " ANOMALOUS" if f.get("is_anomalous") else ""
-            lines.append(f"[site]  {ch}: max_z={_maxz(ch):.2f}{flag}")
-        return lines
-
+    # ── T3.3: advisory Gemma narrative (verdict-independent) ───────────
     async def _synthesize_narrative(
         self,
         ctx: ConsultContext,
@@ -578,14 +692,11 @@ class DiagnosticianAgent:
         history_line: str,
         kalman_lines: list[str],
     ) -> str:
-        """Call the local Gemma model for an advisory diagnostic narrative.
+        """Build the Diagnostician's Gemma prompt and call the model.
 
         ADR-006: advisory ONLY. ``verdict`` is already decided and is
-        passed in purely as prompt context. Best-effort: returns "" on any
-        LLM failure, including the LM Studio '[Gemma error ...]' sentinel.
+        passed in purely as prompt context.
         """
-        if self._llm_client is None or not hasattr(self._llm_client, "complete_gemma"):
-            return ""
         kalman_block = (
             "\n".join(f"  {ln}" for ln in kalman_lines)
             if kalman_lines
@@ -605,15 +716,7 @@ class DiagnosticianAgent:
             "anomaly):\n"
             f"{kalman_block}\n"
         )
-        try:
-            text = (await self._llm_client.complete_gemma(prompt, max_tokens=240)) or ""
-        except Exception as e:
-            log.debug("[Diagnostician] Gemma synthesis failed: %s", e)
-            return ""
-        text = text.strip()
-        if not text or text.startswith(("[Gemma error", "[Gemma stream error")):
-            return ""
-        return text
+        return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
 
 # ─── Agent: Analyst ────────────────────────────────────────────────────
@@ -748,7 +851,10 @@ class MultiAgentOrchestrator:
         telemetry_provider: Any | None = None,
     ):
         self._architect    = ArchitectAgent(site_model, graphrag, cmms_repo=cmms_repo)
-        self._safety       = SafetyOfficerAgent(site_model, cmms_repo)
+        self._safety       = SafetyOfficerAgent(
+            site_model, cmms_repo,
+            llm_client=llm_client, telemetry_provider=telemetry_provider,
+        )
         self._diagnostician = DiagnosticianAgent(
             cmms_repo, rag_service,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
