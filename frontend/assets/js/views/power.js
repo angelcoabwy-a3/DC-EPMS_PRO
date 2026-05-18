@@ -510,8 +510,10 @@ async function _submitBreakerCommand(nodeId, cmd, actorRole) {
     result.className = 'pwr-modal-result is-pending';
     result.textContent = 'Issuing command to BMS control surface…';
 
+    // Phase 1: real ISA-95 BMS tag id from config/bms_tags.yml
+    // (PWR.<NODE>.BREAKER, writable BO) — so the write returns HTTP 200.
     const { ok, status, data } = await writeBmsTag({
-        tag_id: `breaker.${nodeId}.cmd`,
+        tag_id: `PWR.${nodeId.toUpperCase()}.BREAKER`,
         value: cmd,
         user: 'power-sld-operator',
         actor_role: actorRole,

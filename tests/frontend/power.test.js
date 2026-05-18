@@ -266,7 +266,8 @@ describe('L3-1 — views/power.js breaker actuation', () => {
         expect(path).toBe('/api/bms/write');
         const body = JSON.parse(opts.body);
         expect(body).toMatchObject({ value: 'OPEN', actor_role: 'SME_L6' });
-        expect(body.tag_id).toContain('ats_a');
+        // Phase 1: maps to the real seeded ISA-95 registry tag.
+        expect(body.tag_id).toBe('PWR.ATS_A.BREAKER');
         expect(document.querySelector('.pwr-modal-result').className).toContain('is-ok');
     });
 

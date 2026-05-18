@@ -304,6 +304,49 @@ tags:
     writable: false
     description: "RPP A1 load (1/3 of facility IT)"
 
+  # ──────────── Power SLD breaker actuators (L3 control plane) ────────────
+  # Writable BO command points for the interactive Power SLD breakers.
+  # The HMI (views/power.js) POSTs OPEN/CLOSE here via /api/bms/write.
+  - id: PWR.ATS_A.BREAKER
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [OPEN, CLOSE]
+    source: { type: static, value: "CLOSE" }
+    writable: true
+    description: "ATS-A automatic transfer switch breaker - operate command"
+    location: "Electrical Room A"
+
+  - id: PWR.ATS_B.BREAKER
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [OPEN, CLOSE]
+    source: { type: static, value: "CLOSE" }
+    writable: true
+    description: "ATS-B automatic transfer switch breaker - operate command"
+    location: "Electrical Room B"
+
+  - id: PWR.RPP_A1.BREAKER
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [OPEN, CLOSE]
+    source: { type: static, value: "CLOSE" }
+    writable: true
+    description: "RPP-A1 remote power panel feed breaker - operate command"
+    location: "Data Hall A"
+
+  - id: PWR.RPP_B1.BREAKER
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [OPEN, CLOSE]
+    source: { type: static, value: "CLOSE" }
+    writable: true
+    description: "RPP-B1 remote power panel feed breaker - operate command"
+    location: "Data Hall B"
+
   # ──────────── IT / White Space ────────────
   - id: IT.HALL1.IT_LOAD_KW
     protocol: Modbus
