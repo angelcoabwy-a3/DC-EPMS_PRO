@@ -19,8 +19,8 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-18)
 
 ```
-HEAD:  b5a82ed (+ this doc-sync)  branch master  —  pushed 2026-05-18.
-       46+ commits AHEAD of tag v0.10.13-modal-fix (UNTAGGED). Tag = v0.11.x next.
+HEAD:  41d1206 (+ this doc-sync)  branch master  —  pushed 2026-05-18.
+       47+ commits AHEAD of tag v0.10.13-modal-fix (UNTAGGED). Tag = v0.11.x next.
 Working tree: .claude/ + PRIMER_PROMPT.md untracked (intentional).
 
 Tags chronological (38 total):
@@ -47,8 +47,8 @@ Tags chronological (38 total):
    Safety Officer, Tier IV Power SLD upgrade (5-layer + paralleling bus +
    aggressive SCADA restyle + Hermes binding). v0.11.x next.]
 
-Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~48s, 0 fail.
-         frontend 107 passed — Vitest (npm test): mission_control + scenarios +
+Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~44s, 0 fail.
+         frontend 110 passed — Vitest (npm test): mission_control + scenarios +
          incidents + mops + power + sanitize + hermes (slice / cutover / EDA) +
          maintenance + rack_heatmap. Both green. ruff: 0 violations in backend/.
 
@@ -80,6 +80,7 @@ NOTE: OBS demo-recording descoped.
 
 **Recent commits (latest at top)**:
 ```
+41d1206  feat(ui): reinvent iso + flat Power SLD rendering — orthogonal routing, label legibility
 b5a82ed  feat(ui): extract Power view, upgrade SLD to Tier IV 5-layer topology + Hermes bind
 de7404f  refactor(ui): extract MOPs view from monolith into ES6 module (T2.1)
 10fd664  feat(ai): expand live Gemma ML to the Safety Officer agent (T3.3b)
