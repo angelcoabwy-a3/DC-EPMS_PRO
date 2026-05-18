@@ -50,6 +50,7 @@ import { initPowerView } from './views/power.js';
 import { initCoolingView } from './views/cooling.js';
 import { initCopilotView } from './views/copilot.js';
 import { initBmsView } from './views/bms.js';
+import { initLotoView } from './views/loto.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -101,6 +102,9 @@ initCopilotView();
 // BMS Connector — T2.1 Vector 1: tag registry + RBAC write modal +
 // NIST SP 800-82 audit; re-exposes window.showBmsAudit for copilot
 initBmsView();
+// LOTO Auditor — T2.1 Vector 2: 6-pillar audit; declarative route
+// (retires the legacy click-delegation zombie-router hack)
+initLotoView();
 
 // Project Hermes EDA — T3.1: route cmms_alerts + agent_consensus streams
 // into reactive state + decoupled DOM events for the HMI.
