@@ -1,10 +1,15 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.4 (2026-05-17) — T3.3 delivered · DC-EPMS-021 hygiene · T2.1 incidents view
+- **Status**: v11.5 (2026-05-18) — structural compaction · T3.3b Safety Officer · T2.1 mops view
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-17 (v11.4)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-18 (v11.5)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.5 sync (2026-05-18)**: consolidation sprint — structural compaction
+  (4 duplicated CMMS helpers consolidated to `backend/cmms_classification.py`,
+  5 frontend `_escape` copies to `core/sanitize.js`, 3 orphan functions purged),
+  T3.3b live-Gemma Safety Officer (advisory narrative; VETO stays deterministic),
+  T2.1 `mops` view extracted to an ES module.
 - **v11.4 sync (2026-05-17)**: master-pipeline sprint — DC-EPMS-021 ruff hygiene
   (124 → 0 violations), T3.3 live-Gemma Diagnostician delivered, T2.1 `incidents`
   view extracted to an ES module. DC-EPMS-022 closed (verified stale).
@@ -106,7 +111,7 @@ view per session, in order of demo relevance:
 
 1. ✅ `views/scenarios.js` — failure scenario simulator (DELIVERED `480f03b`)
 2. ✅ `views/incidents.js` — postgres audit log (DELIVERED `3aa944b`)
-3. `views/mops.js` (~180 LOC) — MOPs library
+3. ✅ `views/mops.js` — MOPs/SOPs/EOPs library (DELIVERED `de7404f`)
 4. `views/cooling.js` (~350 LOC) — P&ID renderer
 5. `views/power.js` (~300 LOC) — SLD renderer (Lead-Engineer-Mode upgrade
    already done as `core/power_sld.js`; this migration moves the
@@ -243,8 +248,16 @@ Delivered:
 
 NOTE: the original brief proposed RAG-corpus-chunk grounding; the
 delivered cut grounds on live Kalman telemetry instead — closer to the
-real physical state and consistent with the Hermes EDA plane. Architect,
-Safety Officer, Analyst remain fully deterministic.
+real physical state and consistent with the Hermes EDA plane.
+
+**T3.3b — ✅ DELIVERED 2026-05-18 (`10fd664`)**: the same advisory-narrative
+pattern extended to the **Safety Officer**. Two shared helpers
+(`_collect_kalman_lines` / `_gemma_complete`) were extracted; the
+Diagnostician was slimmed onto them. The Safety Officer's verdict —
+including its HARD_STOP **VETO**, which outranks every other agent —
+stays 100% deterministic; Gemma only writes the advisory narrative in a
+verdict-independent `_finalize()`. 4 LLM-mocked tests. Architect and
+Analyst remain fully deterministic with no LLM layer.
 
 ### T3.4 — Power flow live tied to current_a (~1 day)
 

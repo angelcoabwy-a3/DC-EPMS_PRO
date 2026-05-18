@@ -16,11 +16,11 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 
 **Vocabulary discipline (CRITICAL)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is unipolar (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in panel review.
 
-## 📊 CURRENT STATE (synced 2026-05-17)
+## 📊 CURRENT STATE (synced 2026-05-18)
 
 ```
-HEAD:  3aa944b (+ this doc-sync)  branch master  —  pushed 2026-05-17.
-       40+ commits AHEAD of tag v0.10.13-modal-fix (UNTAGGED). Tag = v0.11.x next.
+HEAD:  de7404f (+ this doc-sync)  branch master  —  pushed 2026-05-18.
+       45+ commits AHEAD of tag v0.10.13-modal-fix (UNTAGGED). Tag = v0.11.x next.
 Working tree: .claude/ + PRIMER_PROMPT.md untracked (intentional).
 
 Tags chronological (38 total):
@@ -38,16 +38,18 @@ Tags chronological (38 total):
   v0.10.6..v0.10.8                            2.5D isometric SLD + DAG engine + iso camera
   v0.10.9..v0.10.11                           SCADA asset panel, PBR polish, DDU/busway expansion
   v0.10.12-maint-fix / v0.10.13-modal-fix     maintenance routing + closure-modal fixes
-  [+ 40+ UNTAGGED commits post-v0.10.13 — ProcedureGenerator C0+G1-G6, RBAC,
+  [+ 45+ UNTAGGED commits post-v0.10.13 — ProcedureGenerator C0+G1-G6, RBAC,
    E2E security audit + F3-4/F3-5/F3-6 remediation (claim-RBAC, XSS sanitizer,
-   externalized DB creds), SRE cleanup, DC-EPMS-021 ruff hygiene, T2.1 IIFE
-   dismantle (scenarios + maintenance + incidents), T3.1 Hermes WebSocket EDA
-   plane + CET-gated edge healing, T3.3 live-Gemma Diagnostician. v0.11.x next.]
+   externalized DB creds), SRE cleanup, DC-EPMS-021 ruff hygiene, structural
+   compaction (cmms_classification dedup + orphan purge), T2.1 IIFE dismantle
+   (scenarios + maintenance + incidents + mops), T3.1 Hermes WebSocket EDA
+   plane + CET-gated edge healing, T3.3/T3.3b live-Gemma Diagnostician +
+   Safety Officer. v0.11.x next.]
 
-Tests:   backend 716 passed, 5 deselected (slow/FAISS) — full pytest ~42s, 0 fail.
-         frontend 81 passed — Vitest (npm test): mission_control + scenarios +
-         incidents + sanitize + hermes (slice / cutover / EDA) + maintenance +
-         rack_heatmap. Both green. ruff: 0 violations in backend/.
+Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~44s, 0 fail.
+         frontend 94 passed — Vitest (npm test): mission_control + scenarios +
+         incidents + mops + sanitize + hermes (slice / cutover / EDA) +
+         maintenance + rack_heatmap. Both green. ruff: 0 violations in backend/.
 
 Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
   - Numba JIT cold compile: 4.8 ms
@@ -65,22 +67,23 @@ T3.1 PROJECT HERMES — multiplexed WebSocket EDA plane (telemetry +
 cmms_alerts + agent_consensus), SSE→WS telemetry cutover, CET-gated
 closed-loop edge-healing, and T3.6 (anomaly heatmap on live Kalman
 z-scores). ALL client-side HTTP polling now eliminated — mission_control
-+ maintenance refresh on Hermes events. Master-pipeline sprint (2026-05-17):
-DC-EPMS-021 ruff hygiene (124 → 0 violations), T3.3 live-Gemma Diagnostician
-(advisory narrative on live Kalman Z-scores; verdict stays deterministic per
-ADR-006), T2.1 incidents view extracted to an ES module. Live backlog =
-docs/ROADMAP-V11.md (v11.3, synced 2026-05-17). NOTE: OBS demo-recording descoped.
++ maintenance refresh on Hermes events. Consolidation sprint (2026-05-18):
+structural compaction (4 duplicated CMMS helpers → backend/cmms_classification.py,
+5 frontend `_escape` copies → core/sanitize.js `escapeHTML`, 3 orphan functions
+purged), T3.3b live-Gemma Safety Officer (advisory narrative; the VETO stays
+deterministic per ADR-006), T2.1 mops view extracted to an ES module. Live
+backlog = docs/ROADMAP-V11.md (v11.5, 2026-05-18). NOTE: OBS demo-recording descoped.
 ```
 
 **Recent commits (latest at top)**:
 ```
+de7404f  refactor(ui): extract MOPs view from monolith into ES6 module (T2.1)
+10fd664  feat(ai): expand live Gemma ML to the Safety Officer agent (T3.3b)
+81a8909  refactor(core): consolidate duplicated utilities + purge orphaned functions
 3aa944b  refactor(ui): extract incidents view from monolith into ES6 module (T2.1)
 c811865  feat(ai): wire Diagnostician agent to live Gemma + Kalman telemetry (T3.3)
 136c7ef  chore(hygiene): eradicate ruff static analysis errors (DC-EPMS-021, DC-EPMS-022)
 5ed2409  fix(security): client-side XSS sanitization + externalize dev DB creds (F3-5, F3-6)
-d3e333e  fix(security): claim-based RBAC gates across 14 mutating endpoints (F3-4)
-8f656ff  feat(hmi): dismantle final mission_control poll + live Kalman heatmap (T3.6)
-45ae83a  test(hermes): tri-stream WebSocket verification utility
 ```
 
 ## 🛰 [HISTORICAL] Sprint 5 C0 Architecture (delivered — preserved as design record)
