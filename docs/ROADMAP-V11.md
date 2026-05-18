@@ -1,6 +1,6 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.2 — Hermes (T3.1) delivered · Tier 1 partial · Tier 2 in progress
+- **Status**: v11.3 (2026-05-17) — T3.1 + T3.6 delivered · all client HTTP polling eliminated
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
 - **Locked**: 2026-05-10 · **Synced**: 2026-05-17 (v11.2)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
@@ -248,11 +248,14 @@ the floating cards instead of HTML overlay (eliminates the
 projection math each frame). **Risk**: bloom is the kitsch knife
 edge; if it crosses, kill it.
 
-### T3.6 — Anomaly heatmap real-time integration (~2 days)
+### T3.6 — Anomaly heatmap real-time integration — ✅ DELIVERED 2026-05-17
 
-Currently the heatmap simulator runs at 1 Hz with deterministic
-sinusoidal Tj. Replace with real subscriber to `telemetry.kalman`
-WS messages from Hermes (T3.1).
+`views/rack_heatmap.js` now subscribes to the `channels` state key (the
+Hermes `telemetry` channel_innovations payload) and maps each rack's
+real Kalman `max_z` + `last_emission` onto the cell color band + anomaly
+blink. The deterministic sinusoid is retained only as a stale-fallback
+(resumes after a 15 s live-data gap). The last client-side `setInterval`
+HTTP poll was also eliminated — `mission_control.js` → Hermes events.
 
 ### T3.7 — Module Federation (~5-7 days)
 

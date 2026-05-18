@@ -30,7 +30,6 @@ import { subscribe } from '../core/state.js';
 import { registerRoute } from '../core/router.js';
 
 const API_BASE = '';
-const POLL_LIVE_DATA_MS = 15_000;
 
 // ─── State ───────────────────────────────────────────────────────
 let _initialized = false;
@@ -55,7 +54,7 @@ let _liveData = {
     phase_1: { pue: null, racks: 0, mw: 0, anomaly: 0 },
     phase_2: { pue: null, racks: 0, mw: 0, anomaly: 0 },
 };
-let _liveTimer = null;
+let _hermesAlertHandler = null;   // T3.1: bound hermes:cmms-alert / :agent-consensus listener
 let _transitioning = false;
 let _transitionWatchdog = null;   // fail-safe timer for _transitioning (see _animateDrillDown)
 
@@ -924,12 +923,17 @@ async function _boot() {
         _hudSetup();   // B1 HUD MODE — fixed/draggable panels + connectors
         try { subscribe('latestTelemetry', () => { /* future: real-time card refresh */ }); } catch {}
 
-        // Initial live-data fetch + poll
+        // Initial live-data fetch, then event-driven from Hermes.
         await _fetchLiveData();
-        if (_liveTimer) clearInterval(_liveTimer);
-        _liveTimer = setInterval(_fetchLiveData, POLL_LIVE_DATA_MS);
 
-        _setStatus(`ready · three.js r${THREE.REVISION} · 4 buildings · live data ${POLL_LIVE_DATA_MS / 1000}s poll`, 'ok');
+        // T3.1 cutover: no HTTP poll. The overlay cards / badges refresh
+        // on the Hermes cmms_alerts + agent_consensus DOM events that
+        // core/hermes_events.js dispatches — instant, zero interval.
+        _hermesAlertHandler = () => { _fetchLiveData(); };
+        document.addEventListener('hermes:cmms-alert', _hermesAlertHandler);
+        document.addEventListener('hermes:agent-consensus', _hermesAlertHandler);
+
+        _setStatus(`ready · three.js r${THREE.REVISION} · 4 buildings · live data via Hermes WS`, 'ok');
 
         _lastFrameTs = 0;
         _fpsBuffer = [];
@@ -942,7 +946,11 @@ async function _boot() {
 
 function _stop() {
     if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
-    if (_liveTimer) { clearInterval(_liveTimer); _liveTimer = null; }
+    if (_hermesAlertHandler) {
+        document.removeEventListener('hermes:cmms-alert', _hermesAlertHandler);
+        document.removeEventListener('hermes:agent-consensus', _hermesAlertHandler);
+        _hermesAlertHandler = null;
+    }
     // Fail-safe: never leave a transition flag stuck across a stop.
     clearTimeout(_transitionWatchdog);
     _transitioning = false;

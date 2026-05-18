@@ -12,10 +12,12 @@
  * Data sources:
  *   - Rack inventory: GET /api/cmms/assets?asset_type=it_rack
  *   - WO history: GET /api/cmms/work-orders?asset_id=…&only_open=true
- *   - Live Tj + z-score: subscribed via state.js bus when telemetry
- *     emits per-rack channels. Falls back to deterministic
- *     simulation (sinusoid + jitter) so the view is always alive
- *     during demos even without real telemetry.
+ *   - Live Tj + Kalman z-score: T3.6 — subscribed to the `channels`
+ *     state key (the Hermes `telemetry` channel_innovations payload).
+ *     Real per-rack max_z drives the cell color band + anomaly blink.
+ *     The deterministic sinusoid is now a STALE-FALLBACK only: it runs
+ *     solely when no live channel data has arrived for
+ *     LIVE_FALLBACK_GRACE_MS (e.g. the WS dropped).
  *
  * The Tesla Megapack / SpaceX Starlink Operations aesthetic — every
  * cell is one fleet element, the wall is the fleet, anomalies pop
@@ -29,7 +31,8 @@ import { registerRoute } from '../core/router.js';
 
 const API_BASE = '';
 const SPARK_LEN = 60;
-const SIM_PERIOD_MS = 1000;     // 1 Hz tick when no live telemetry
+const SIM_PERIOD_MS = 1000;            // 1 Hz fallback heartbeat
+const LIVE_FALLBACK_GRACE_MS = 15_000; // sim resumes only after this live-data gap
 const Z_THRESHOLD_ANOMALY = 3.0;
 
 // ─── State ───────────────────────────────────────────────────────
@@ -38,6 +41,7 @@ let _racks = [];                // Array<{ asset_id, ..., tj, z, sparkline:[], w
 let _byId = new Map();
 let _selectedId = null;
 let _simTimer = null;
+let _lastLiveTs = 0;            // T3.6: ts of the last live channels payload
 
 // ─── HTML escape ─────────────────────────────────────────────────
 function _esc(s) {
@@ -100,11 +104,27 @@ function _maybeBurst(rackId, tjC) {
     return { tj: 88 + (rackId.charCodeAt(rackId.length - 1) % 6), z: 5.5 };
 }
 
-// ─── Tick: refresh per-rack Tj + z + render ──────────────────────
-function _tick() {
-    const t = Date.now() / 1000;
+// ─── Render: aggregate per-rack tj/z into meta counters + paint ──
+function _renderAll() {
     let hot = 0, anomalous = 0;
     let tjMin = Infinity, tjMax = -Infinity;
+    for (const r of _racks) {
+        if (r.band === 'warn' || r.band === 'crit') hot++;
+        if (r.z >= Z_THRESHOLD_ANOMALY) anomalous++;
+        if (r.tj < tjMin) tjMin = r.tj;
+        if (r.tj > tjMax) tjMax = r.tj;
+    }
+    _renderGrid();
+    _renderMeta(_racks.length, anomalous, hot, tjMin, tjMax);
+    if (_selectedId) _renderDetail();
+}
+
+// ─── Sim-fallback tick ───────────────────────────────────────────
+// T3.6: runs ONLY when live channel data has gone stale for
+// LIVE_FALLBACK_GRACE_MS — live Hermes telemetry is the primary source.
+function _tick() {
+    if (Date.now() - _lastLiveTs < LIVE_FALLBACK_GRACE_MS) return;
+    const t = Date.now() / 1000;
     for (const r of _racks) {
         const burst = _maybeBurst(r.asset_id, r.tj);
         let tj, z;
@@ -117,18 +137,10 @@ function _tick() {
         r.tj = tj;
         r.z = z;
         r.band = _bandFor(tj);
-        // Sparkline buffer
         r.sparkline.push(tj);
         if (r.sparkline.length > SPARK_LEN) r.sparkline.shift();
-
-        if (r.band === 'warn' || r.band === 'crit') hot++;
-        if (z >= Z_THRESHOLD_ANOMALY) anomalous++;
-        if (tj < tjMin) tjMin = tj;
-        if (tj > tjMax) tjMax = tj;
     }
-    _renderGrid();
-    _renderMeta(_racks.length, anomalous, hot, tjMin, tjMax);
-    if (_selectedId) _renderDetail();
+    _renderAll();
 }
 
 // ─── Render ──────────────────────────────────────────────────────
@@ -300,25 +312,32 @@ function _onRefresh() {
     _loadRacks();
 }
 
-// ─── Telemetry hook (state bus) ──────────────────────────────────
-function _onTelemetry(point) {
-    if (!point || !point.metrics) return;
-    // Look for per-rack Tj fields (e.g. "rack_a_01_05:gpu_tj_max")
-    const m = point.metrics;
+// ─── Live Kalman hook (T3.6) ─────────────────────────────────────
+// Subscribes to the `channels` state key — the Hermes telemetry
+// channel_innovations payload. Maps each rack's gpu_Tj_c channel:
+// last_emission → cell temperature, max_z → Kalman z-score (which
+// drives the cell color band + anomaly blink). Real data supersedes
+// the deterministic simulator.
+function _onChannels(channels) {
+    if (!channels || typeof channels !== 'object') return;
     let touched = false;
-    for (const [k, v] of Object.entries(m)) {
-        const match = k.match(/^(rack_[a-z]_\d+_\d+):gpu_tj_max$/);
-        if (!match) continue;
-        const rackId = match[1];
-        const r = _byId.get(rackId);
-        if (!r) continue;
-        if (typeof v === 'number') {
-            r.tj = v;
-            r.band = _bandFor(v);
-            touched = true;
+    for (const r of _racks) {
+        // Channel ids are scoped '<asset_id>:<metric>' by the simulator.
+        const ch = channels[`${r.asset_id}:gpu_Tj_c`];
+        if (!ch) continue;
+        if (typeof ch.last_emission === 'number') {
+            r.tj = ch.last_emission;
+            r.band = _bandFor(r.tj);
         }
+        if (typeof ch.max_z === 'number') r.z = ch.max_z;
+        r.sparkline.push(r.tj);
+        if (r.sparkline.length > SPARK_LEN) r.sparkline.shift();
+        touched = true;
     }
-    if (touched) _renderGrid();
+    if (touched) {
+        _lastLiveTs = Date.now();
+        _renderAll();
+    }
 }
 
 // ─── Bootstrap ───────────────────────────────────────────────────
@@ -359,7 +378,8 @@ function _wireEvents() {
     document.getElementById('rack-heatmap-detail-close')?.addEventListener('click', _onDetailClose);
     document.getElementById('rack-heatmap-simulate')?.addEventListener('click', _onSimulateBurst);
     document.getElementById('rack-heatmap-refresh')?.addEventListener('click', _onRefresh);
-    try { subscribe('latestTelemetry', _onTelemetry); } catch {}
+    // T3.6: live Kalman channel_innovations from the Hermes telemetry stream.
+    try { subscribe('channels', _onChannels); } catch { /* state bus optional */ }
 }
 
 function _wireRouting() {
@@ -387,3 +407,20 @@ export function initRackHeatmapView() {
 export function stopRackHeatmap() {
     if (_simTimer) { clearInterval(_simTimer); _simTimer = null; }
 }
+
+// ─── Test surface (T3.6) ─────────────────────────────────────────
+export const __rack_heatmap_test__ = {
+    onChannels: _onChannels,
+    bandFor: _bandFor,
+    seedRacks(rackArr) {
+        _racks = rackArr.map(a => ({
+            asset_id: a.asset_id, path: a.path || 'A',
+            _baseline_tj: 70, tj: 70, z: 1.0, band: 'normal',
+            sparkline: [], wos: [],
+        }));
+        _byId = new Map(_racks.map(r => [r.asset_id, r]));
+    },
+    getRack(id) { return _byId.get(id); },
+    lastLiveTs() { return _lastLiveTs; },
+    reset() { _racks = []; _byId = new Map(); _selectedId = null; _lastLiveTs = 0; },
+};

@@ -43,8 +43,8 @@ Tags chronological (38 total):
    T3.1 Hermes WebSocket EDA plane + CET-gated edge healing. Tag = v0.11.x next.]
 
 Tests:   backend 706 passed, 5 deselected (slow/FAISS) — full pytest ~43s, 0 fail.
-         frontend 45 passed — Vitest (npm test): mission_control + scenarios +
-         hermes (slice / cutover / EDA) + maintenance. Both suites green at 45ae83a.
+         frontend 49 passed — Vitest (npm test): mission_control + scenarios +
+         hermes (slice / cutover / EDA) + maintenance + rack_heatmap. Both green.
 
 Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
   - Numba JIT cold compile: 4.8 ms
@@ -59,9 +59,11 @@ dual-graph taxonomy / SOP-MOP-EOP-EMP factories / recursive micro-LOTO),
 hyperscale RBAC, E2E security audit + CRITICAL remediation, SRE cleanup,
 T2.1 (IIFE dismantle: scenarios + maintenance views → ES modules), and
 T3.1 PROJECT HERMES — multiplexed WebSocket EDA plane (telemetry +
-cmms_alerts + agent_consensus), SSE→WS telemetry cutover, and the
-CET-gated closed-loop edge-healing engine. Live backlog = docs/ROADMAP-
-V11.md (v11.2, synced 2026-05-17). NOTE: OBS demo-recording descoped.
+cmms_alerts + agent_consensus), SSE→WS telemetry cutover, CET-gated
+closed-loop edge-healing, and T3.6 (anomaly heatmap on live Kalman
+z-scores). ALL client-side HTTP polling now eliminated — mission_control
++ maintenance refresh on Hermes events. Live backlog = docs/ROADMAP-
+V11.md (v11.3, synced 2026-05-17). NOTE: OBS demo-recording descoped.
 ```
 
 **Recent commits (latest at top)**:
