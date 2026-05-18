@@ -49,6 +49,7 @@ import { initMopsView } from './views/mops.js';
 import { initPowerView } from './views/power.js';
 import { initCoolingView } from './views/cooling.js';
 import { initCopilotView } from './views/copilot.js';
+import { initBmsView } from './views/bms.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -97,6 +98,9 @@ initCoolingView();
 // Facility Co-Pilot AI — T2.1: agent chat extracted; LLM surfaces
 // XSS-sanitized (F3-5); subscribes to hermes:agent-consensus (T3.1)
 initCopilotView();
+// BMS Connector — T2.1 Vector 1: tag registry + RBAC write modal +
+// NIST SP 800-82 audit; re-exposes window.showBmsAudit for copilot
+initBmsView();
 
 // Project Hermes EDA — T3.1: route cmms_alerts + agent_consensus streams
 // into reactive state + decoupled DOM events for the HMI.
