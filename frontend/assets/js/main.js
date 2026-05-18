@@ -45,6 +45,7 @@ import { initPowerCam } from './core/power_cam.js';
 import { initAssetPanel } from './views/asset_panel.js';
 import { initScenariosView } from './views/scenarios.js';
 import { initIncidentsView } from './views/incidents.js';
+import { initMopsView } from './views/mops.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -84,6 +85,8 @@ initAssetPanel();
 initScenariosView();
 // Incident audit log — T2.1: second IIFE view extracted to an ES module
 initIncidentsView();
+// MOP/SOP/EOP library — T2.1: third IIFE view extracted to an ES module
+initMopsView();
 
 // Project Hermes EDA — T3.1: route cmms_alerts + agent_consensus streams
 // into reactive state + decoupled DOM events for the HMI.

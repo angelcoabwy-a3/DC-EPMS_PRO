@@ -80,6 +80,36 @@ export async function getIncidents(limit = 50) {
     return data.rows || [];
 }
 
+/**
+ * MOP / SOP / EOP procedure library — corpus-indexed.
+ * @returns {Promise<object>} { mops: [...], count, by_type }
+ */
+export async function getMops() {
+    return apiFetch('/api/mops');
+}
+
+/**
+ * Fetch one procedure document by id (metadata + parsed steps + body).
+ * @param {string} docId
+ * @returns {Promise<object>}
+ */
+export async function getMop(docId) {
+    return apiFetch(`/api/mops/${encodeURIComponent(docId)}`);
+}
+
+/**
+ * AI-generate a new procedure draft from a topic spec.
+ * @param {{topic:string, doc_type:string, equipment:string, duration:string}} spec
+ * @returns {Promise<object>} the generated procedure (steps + raw_markdown)
+ */
+export async function generateMop(spec) {
+    return apiFetch('/api/mops/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(spec),
+    });
+}
+
 
 /* ════════════════════════════════════════════════════════════════
  *  Project Hermes — multiplexed WebSocket stream (ROADMAP V11 T3.1)
