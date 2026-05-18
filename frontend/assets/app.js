@@ -1267,127 +1267,9 @@
         panel.hidden = false;
     }
 
-    // ── Cooling P&ID view (v5.0) ──────────────────────────
-    let coolingRefreshInterval = null;
-
-    async function renderCoolingView() {
-        await fetchCoolingPid();
-        if (!coolingRefreshInterval) {
-            coolingRefreshInterval = setInterval(fetchCoolingPid, 5000);
-        }
-    }
-
-    async function fetchCoolingPid() {
-        try {
-            const resp = await fetch(`${API_BASE}/api/topology/state`);
-            if (!resp.ok) throw new Error('topology state ' + resp.status);
-            const d = await resp.json();
-            applyCoolingPid(d);
-        } catch (e) {
-            console.warn('[cooling P&ID] fetch failed:', e.message);
-        }
-    }
-
-    function applyCoolingPid(data) {
-        if (!data) return;
-        const nodes = data.hld_nodes || {};
-
-        // Severity → CSS class on each P&ID node
-        const sevMap = {
-            'cooling_tower':  'cooling_tower',
-            'chiller_1':      'chiller_1',
-            'chiller_2':      'chiller_2',
-            'cdu_a':          'cdu_a',
-            'cdu_b':          'cdu_b',
-            'xfmr_a_p':       'xfmr_a',
-            'xfmr_b_p':       'xfmr_b',
-            'grid_a':         'utility_north',
-            'grid_b':         'utility_south',
-        };
-        Object.entries(sevMap).forEach(([pidNodeId, dataNodeId]) => {
-            const nodeData = nodes[dataNodeId];
-            if (!nodeData) return;
-            const el = document.querySelector(`.pid-node[data-node="${pidNodeId}"]`);
-            if (!el) return;
-            const symbol = el.querySelector('.pid-symbol');
-            if (symbol) {
-                symbol.setAttribute('data-sev', nodeData.severity || 'ok');
-            }
-        });
-
-        // Update metric texts
-        const ct = nodes.cooling_tower;
-        const ch1 = nodes.chiller_1;
-        const ch2 = nodes.chiller_2;
-        const cda = nodes.cdu_a;
-        const cdb = nodes.cdu_b;
-        const xfa = nodes.xfmr_a;
-        const xfb = nodes.xfmr_b;
-        const ga = nodes.utility_north;
-        const gb = nodes.utility_south;
-        const h1 = nodes.hall_1;
-
-        const set = (k, v) => {
-            const el = document.querySelector(`[data-pid-metric="${k}"]`);
-            if (el) el.textContent = v;
-        };
-        if (ct) {
-            set('ct-wb', 'WB ' + (ct.metrics.wb_c?.toFixed(1) ?? '—') + '°C');
-            set('ct-ecwt', 'ECWT ' + (ct.metrics.ecwt_c?.toFixed(1) ?? '—') + '°C');
-        }
-        if (ch1) set('ch1-cop', 'COP ' + (ch1.metrics.cop?.toFixed(1) ?? '—'));
-        if (ch2) set('ch2-cop', 'COP ' + (ch2.metrics.cop?.toFixed(1) ?? '—'));
-        if (cda) {
-            set('cdua-q', Math.round(cda.metrics.q_kw ?? 0).toLocaleString() + ' kW');
-            set('cdua-supply', 'SUP ' + (h1?.metrics.inlet_c?.toFixed(0) ?? '18') + '°C');
-        }
-        if (cdb) {
-            set('cdub-q', Math.round(cdb.metrics.q_kw ?? 0).toLocaleString() + ' kW');
-            set('cdub-supply', 'SUP ' + (h1?.metrics.inlet_c?.toFixed(0) ?? '18') + '°C');
-        }
-        if (xfa) set('xfmr-a-c', (xfa.metrics.winding_c?.toFixed(0) ?? '—') + '°C');
-        if (xfb) set('xfmr-b-c', (xfb.metrics.winding_c?.toFixed(0) ?? '—') + '°C');
-        if (ga) set('grid-a-kw', Math.round(ga.metrics.kw ?? 0).toLocaleString() + ' kW');
-        if (gb) set('grid-b-kw', Math.round(gb.metrics.kw ?? 0).toLocaleString() + ' kW');
-
-        // GPU Tj from rack data
-        if (Array.isArray(data.lld_racks) && data.lld_racks.length > 0) {
-            const maxTj = Math.max(...data.lld_racks.map(r => r.gpu_tj_c || 0));
-            set('rack-tj', 'GPU Tj max: ' + maxTj.toFixed(1) + '°C');
-        }
-
-        // Failover & redundancy banner
-        const banner = $('pid-banner-mode');
-        const bannerSub = $('pid-banner-sub');
-        const bannerShi = $('pid-banner-shi');
-        const failLine = $('pid-failover-line');
-        const failText = $('pid-failover-text');
-
-        const mode = data.redundancy_mode || '2N';
-        if (banner) {
-            banner.textContent = mode;
-            banner.setAttribute('data-mode', mode);
-        }
-        if (bannerSub) {
-            bannerSub.textContent = ({
-                '2N':   'Path Diversity Active',
-                'N+1':  'One side degraded',
-                'N':    'NON-REDUNDANT — investigate',
-            })[mode] || mode;
-        }
-        if (bannerShi) bannerShi.textContent = (data.site_health ?? 0).toFixed(2);
-
-        // Show failover line when in N mode (Path A failed → going through B)
-        const showFailover = (mode === 'N');
-        if (failLine) failLine.setAttribute('opacity', showFailover ? '0.9' : '0');
-        if (failText) failText.setAttribute('opacity', showFailover ? '1' : '0');
-
-        // Meta line at top
-        const meta = $('pid-meta');
-        if (meta) {
-            meta.innerHTML = `<strong>${mode}</strong> · SHI ${(data.site_health ?? 0).toFixed(2)} · weakest <em>${data.weakest_module || '—'}</em>`;
-        }
-    }
+    // MIGRATED (ROADMAP V11 T2.1): the Cooling (DLC) P&ID view now
+    // lives in views/cooling.js (ES module) + services/api.js. Route
+    // ownership moved to core/router.js; this IIFE no longer renders it.
 
     // MIGRATED (ROADMAP V11 T2.1): the Power & UPS SLD data plane now
     // lives in views/power.js (ES module) + services/api.js. The 2.5D
@@ -2552,10 +2434,6 @@
             const v = $('view-topology');
             if (v) v.removeAttribute('hidden');
             renderTopologyView();
-        } else if (cfg.kind === 'cooling') {
-            const v = $('view-cooling');
-            if (v) v.removeAttribute('hidden');
-            renderCoolingView();
         } else if (cfg.kind === 'bms') {
             const v = $('view-bms');
             if (v) v.removeAttribute('hidden');

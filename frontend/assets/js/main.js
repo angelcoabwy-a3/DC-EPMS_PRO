@@ -47,6 +47,7 @@ import { initScenariosView } from './views/scenarios.js';
 import { initIncidentsView } from './views/incidents.js';
 import { initMopsView } from './views/mops.js';
 import { initPowerView } from './views/power.js';
+import { initCoolingView } from './views/cooling.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -90,6 +91,8 @@ initIncidentsView();
 initMopsView();
 // Power & UPS SLD — T2.1: data plane extracted; Hermes-bound (T3.1)
 initPowerView();
+// Cooling (DLC) P&ID — T2.1: view extracted to an ES module
+initCoolingView();
 
 // Project Hermes EDA — T3.1: route cmms_alerts + agent_consensus streams
 // into reactive state + decoupled DOM events for the HMI.
