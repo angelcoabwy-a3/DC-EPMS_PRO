@@ -111,10 +111,19 @@ For Senior+/Staff Engineer interview ammunition. The platform is
 demonstrable; the architecture has visible debt that a deep-dive
 reviewer can find in 30 seconds with DevTools.
 
-### T2.1 — Dismantle `app.js` IIFE (4003 LOC) — 8 vistas legacy (~3-4 days)
+### T2.1 — Dismantle `app.js` IIFE — legacy views (~3-4 days)
 
 The single largest visible piece of architectural debt. Migrate one
-view per session, in order of demo relevance:
+view per session, in order of demo relevance.
+
+**Registry reality-check (2026-05-18, post-v0.11.0 SitRep).** The
+original "8 vistas legacy" list undercounted: a code-level audit of
+`app.js` (2,600 LOC post-v0.11.0, from 4,003) found **5 legacy
+surfaces still un-extracted** — not 2. The HLD/LLD Topology view, the
+LOTO Auditor view and the Overview/landing dashboard were never on the
+checklist. The list below is corrected to the real surface inventory.
+
+**Phase A — DELIVERED (6 views off the monolith):**
 
 1. ✅ `views/scenarios.js` — failure scenario simulator (DELIVERED `480f03b`)
 2. ✅ `views/incidents.js` — postgres audit log (DELIVERED `3aa944b`)
@@ -127,15 +136,32 @@ view per session, in order of demo relevance:
    preserved + enriched to an explicit 5-layer Tier IV topology
    (paralleling bus N+1), aggressive dark-SCADA restyle, Hermes-bound
    (DELIVERED `b5a82ed`)
-6. `views/bms.js` (~250 LOC) — BMS connector
-7. ✅ `views/copilot.js` — Facility Co-Pilot agent chat + HITL drafts;
+6. ✅ `views/copilot.js` — Facility Co-Pilot agent chat + HITL drafts;
    LLM-authored DOM surfaces routed through the F3-5 `sanitizeHTML` XSS
    filter, wired to the Hermes `hermes:agent-consensus` EDA event
    (DELIVERED `38605d3`)
-8. `views/site_topology_legacy.js` (~600 LOC) — old tree+detail UI
-   (current force-directed is in `views/site_topology.js`)
 
-**Result**: `app.js` shrinks to ~200 LOC residual (router + bootstrap).
+**Phase B — REMAINING (the 5 discovered legacy surfaces — eradication vectors):**
+
+- **V1.** `views/bms.js` (~609 LOC, route `bms`) — BMS Connector: tag
+  registry, table, RBAC write-modal, NIST SP 800-82 audit modal.
+  Caveat: must re-expose `showBmsAudit` for the `copilot.js` deep-link.
+- **V2.** `views/loto.js` (~280 LOC) — LOTO Auditor view. *Was missing
+  from this registry entirely* — self-wired, never on the checklist.
+- **V3.** `views/site_topology_legacy.js` (~270 LOC, route
+  `site_topology`) — old tree+detail UI. Likely **DELETE** rather than
+  extract: superseded by the force-directed `views/site_topology.js`.
+  Decision gate: audit the Power-tab + LOTO-Impact-tab for unique value.
+- **V4.** `views/overview.js` (~900+ LOC) — the Overview/landing
+  dashboard + the HLD/LLD Topology view (`renderTopologyView`). The
+  hardest, most-entangled extraction; do last. Pre-step: delete the
+  dormant legacy SSE path (`startTelemetryStream`/`handleTelemetry` —
+  superseded by `core/telemetry_engine.js`) + legacy `escapeHtml`.
+
+**Result**: after V1-V4, `app.js` shrinks to ~250 LOC residual
+(`MODULES` + `navigateTo` delegation + `setupRouter`/`boot`) — at which
+point it is either kept as the documented bootstrap or promoted to
+`core/bootstrap.js` and deleted, closing Epic T2.1.
 
 ### T2.2 — ✅ DELIVERED `42ecdf7` — Declarative router
 
