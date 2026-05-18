@@ -19,8 +19,8 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-17)
 
 ```
-HEAD:  45ae83a  branch master  ==  origin/master (synced + pushed 2026-05-17).
-       30+ commits AHEAD of tag v0.10.13-modal-fix (UNTAGGED).
+HEAD:  3aa944b (+ this doc-sync)  branch master  —  pushed 2026-05-17.
+       40+ commits AHEAD of tag v0.10.13-modal-fix (UNTAGGED). Tag = v0.11.x next.
 Working tree: .claude/ + PRIMER_PROMPT.md untracked (intentional).
 
 Tags chronological (38 total):
@@ -38,13 +38,16 @@ Tags chronological (38 total):
   v0.10.6..v0.10.8                            2.5D isometric SLD + DAG engine + iso camera
   v0.10.9..v0.10.11                           SCADA asset panel, PBR polish, DDU/busway expansion
   v0.10.12-maint-fix / v0.10.13-modal-fix     maintenance routing + closure-modal fixes
-  [+ 30+ UNTAGGED commits post-v0.10.13 — ProcedureGenerator C0+G1-G6, RBAC,
-   E2E security audit, SRE cleanup, T2.1 IIFE dismantle (scenarios + maintenance),
-   T3.1 Hermes WebSocket EDA plane + CET-gated edge healing. Tag = v0.11.x next.]
+  [+ 40+ UNTAGGED commits post-v0.10.13 — ProcedureGenerator C0+G1-G6, RBAC,
+   E2E security audit + F3-4/F3-5/F3-6 remediation (claim-RBAC, XSS sanitizer,
+   externalized DB creds), SRE cleanup, DC-EPMS-021 ruff hygiene, T2.1 IIFE
+   dismantle (scenarios + maintenance + incidents), T3.1 Hermes WebSocket EDA
+   plane + CET-gated edge healing, T3.3 live-Gemma Diagnostician. v0.11.x next.]
 
-Tests:   backend 706 passed, 5 deselected (slow/FAISS) — full pytest ~43s, 0 fail.
-         frontend 49 passed — Vitest (npm test): mission_control + scenarios +
-         hermes (slice / cutover / EDA) + maintenance + rack_heatmap. Both green.
+Tests:   backend 716 passed, 5 deselected (slow/FAISS) — full pytest ~42s, 0 fail.
+         frontend 81 passed — Vitest (npm test): mission_control + scenarios +
+         incidents + sanitize + hermes (slice / cutover / EDA) + maintenance +
+         rack_heatmap. Both green. ruff: 0 violations in backend/.
 
 Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
   - Numba JIT cold compile: 4.8 ms
@@ -62,19 +65,22 @@ T3.1 PROJECT HERMES — multiplexed WebSocket EDA plane (telemetry +
 cmms_alerts + agent_consensus), SSE→WS telemetry cutover, CET-gated
 closed-loop edge-healing, and T3.6 (anomaly heatmap on live Kalman
 z-scores). ALL client-side HTTP polling now eliminated — mission_control
-+ maintenance refresh on Hermes events. Live backlog = docs/ROADMAP-
-V11.md (v11.3, synced 2026-05-17). NOTE: OBS demo-recording descoped.
++ maintenance refresh on Hermes events. Master-pipeline sprint (2026-05-17):
+DC-EPMS-021 ruff hygiene (124 → 0 violations), T3.3 live-Gemma Diagnostician
+(advisory narrative on live Kalman Z-scores; verdict stays deterministic per
+ADR-006), T2.1 incidents view extracted to an ES module. Live backlog =
+docs/ROADMAP-V11.md (v11.3, synced 2026-05-17). NOTE: OBS demo-recording descoped.
 ```
 
 **Recent commits (latest at top)**:
 ```
-7f6ea55 (tag: v0.10.13-modal-fix)        fix(maintenance): closure modal — zombie + validation + auto-close
-409e695 (tag: v0.10.12-maint-fix)        fix(maintenance): close 2 routing bugs (DC-EPMS-MAINT-001/002)
-62489dd (tag: v0.10.11-ddu-busway)       feat(sld): DDU + busway expansion — 12 GB200 NVL72 rack drops
-79942f7 (tag: v0.10.10-aesthetic-polish) feat(sld): PBR brushed-metal + JetBrains Mono typography
-576ddec (tag: v0.10.9-asset-panel)       feat(asset-panel): Phase 4 contextual SCADA info panel
-85c0b44 (tag: v0.10.8-power-cam)         feat(power-cam): bounded iso camera controls
-2dd409d (tag: v0.10.7-dag-engine)        feat(power-grid): DAG electrical propagation + fault injection
+3aa944b  refactor(ui): extract incidents view from monolith into ES6 module (T2.1)
+c811865  feat(ai): wire Diagnostician agent to live Gemma + Kalman telemetry (T3.3)
+136c7ef  chore(hygiene): eradicate ruff static analysis errors (DC-EPMS-021, DC-EPMS-022)
+5ed2409  fix(security): client-side XSS sanitization + externalize dev DB creds (F3-5, F3-6)
+d3e333e  fix(security): claim-based RBAC gates across 14 mutating endpoints (F3-4)
+8f656ff  feat(hmi): dismantle final mission_control poll + live Kalman heatmap (T3.6)
+45ae83a  test(hermes): tri-stream WebSocket verification utility
 ```
 
 ## 🛰 [HISTORICAL] Sprint 5 C0 Architecture (delivered — preserved as design record)
@@ -552,12 +558,21 @@ C:\dev\DC-EPMS_PRO\
 - Fix: log-file handle leak closed in `ebefdb6` (the same commit that resolved
   the DC-EPMS-039 cosmetic facet — Pydantic model_id + chromadb telemetry).
 
-**DC-EPMS-021** (MED) - 90 ruff legacy errors
-- B904, F821, E402, SIM102, RUF005, RUF013 across many files
-- Pre-existing tech debt, target Batch 3.6 (~6-8h)
+**DC-EPMS-021** (MED) - RESOLVED 2026-05-17 (`136c7ef`)
+- 124 ruff violations in backend/ cleared to 0. 66 auto-fixed (`ruff
+  --fix` + `--unsafe-fixes`); 56 B904 fixed by an AST orchestrator
+  (`scripts/_fix_b904.py` — attributes each re-raise to its nearest
+  except handler, appends `from <exc>` / `from None`); 17 manual
+  (SIM117/SIM102 collapse, N818 RBACDenied→RBACDeniedError rename across
+  5 files, F821/F401 imports, E402 `import threading` hoist, RUF006
+  `_BACKGROUND_TASKS` strong-ref set, B005 lstrip dedup, B027 + N802
+  per-line noqa on the optional-override hook + the dT/dt ODE-derivative
+  functions). pytest 712 held green.
 
-**DC-EPMS-022** (LOW) - 6 ADRs use asterisk bullets violating MD004
-- 5 min mass sed replacement, target Batch 3.6
+**DC-EPMS-022** (LOW) - RESOLVED 2026-05-17 (stale entry — no change needed)
+- Audit found `docs/adr/*.md` already use dash bullets and
+  `.markdownlint.json` enforces `MD004: style=dash`; no asterisk/plus
+  bullets exist. The registry entry was stale; closed by verification.
 
 ## 🗺️ ROADMAP — V9 delivered, V11 is the live backlog
 
@@ -766,13 +781,12 @@ finding: MOP-ATS-MONTHLY-001 + `ups_a` = NEC 460.6 violation flagged in ~12 ms.
 
 ### Open bugs at sync time (see BUGS REGISTRY for detail)
 
-- DC-EPMS-021 (MED): ~90 ruff legacy errors.
-- DC-EPMS-022 (LOW): 6 ADRs MD004 asterisks.
 - DC-EPMS-029c (LOW): physics_engine SHI rollup insensitive to some LOTO types.
 - E2E audit WARNING-tier findings (`docs/audit/E2E_Security_Orphan_Audit.md`) —
   the 3 CRITICAL RBAC findings are closed (`b34efb1`); WARNINGs remain open.
 
-RESOLVED since the last sync: DC-EPMS-019 + DC-EPMS-039 (`ebefdb6` + `d495c7b`).
+RESOLVED since the last sync: DC-EPMS-021 + DC-EPMS-022 (`136c7ef`);
+DC-EPMS-019 + DC-EPMS-039 (`ebefdb6` + `d495c7b`).
 
 ### V9.1 PowerShell Native Mandate (in force after DC-EPMS-035)
 

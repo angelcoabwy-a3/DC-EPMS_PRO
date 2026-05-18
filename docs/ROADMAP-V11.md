@@ -1,10 +1,13 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.3 (2026-05-17) — T3.1 + T3.6 delivered · all client HTTP polling eliminated
+- **Status**: v11.4 (2026-05-17) — T3.3 delivered · DC-EPMS-021 hygiene · T2.1 incidents view
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-17 (v11.2)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-17 (v11.4)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.4 sync (2026-05-17)**: master-pipeline sprint — DC-EPMS-021 ruff hygiene
+  (124 → 0 violations), T3.3 live-Gemma Diagnostician delivered, T2.1 `incidents`
+  view extracted to an ES module. DC-EPMS-022 closed (verified stale).
 - **v11.2 sync (2026-05-17)**: T3.1 Project Hermes DELIVERED — multiplexed WS
   EDA plane (telemetry + cmms_alerts + agent_consensus), SSE→WS telemetry
   cutover, CET-gated edge-healing engine, and the maintenance.js poll→event
@@ -101,8 +104,8 @@ reviewer can find in 30 seconds with DevTools.
 The single largest visible piece of architectural debt. Migrate one
 view per session, in order of demo relevance:
 
-1. `views/scenarios.js` (~250 LOC) — failure scenario simulator
-2. `views/incidents.js` (~200 LOC) — postgres audit log
+1. ✅ `views/scenarios.js` — failure scenario simulator (DELIVERED `480f03b`)
+2. ✅ `views/incidents.js` — postgres audit log (DELIVERED `3aa944b`)
 3. `views/mops.js` (~180 LOC) — MOPs library
 4. `views/cooling.js` (~350 LOC) — P&ID renderer
 5. `views/power.js` (~300 LOC) — SLD renderer (Lead-Engineer-Mode upgrade
@@ -219,20 +222,29 @@ Sprint 7.1c V2: integrate `faster-whisper` (already a Python dep)
 behind `POST /api/tech-assist/closure/{wo_id}/transcribe-and-dictate`.
 Frontend audio capture via MediaRecorder + WebRTC.
 
-### T3.3 — Multi-Agent ML upgrade (~3 days)
+### T3.3 — Multi-Agent ML upgrade — ✅ DELIVERED 2026-05-17 (`c811865`)
 
-The 4 agents are deterministic stubs today. Add a real LLM call to the
-**Diagnostician**:
+The Diagnostician now makes a real call to the local Gemma model. The
+agent's VERDICT stays pure-Python deterministic (ADR-006 — no LLM in the
+critical decision path); Gemma is wired as an *advisory narrative* layer
+that runs AFTER the verdict and never alters it.
 
-```python
-# Diagnostician.evaluate(): retrieve top-3 corpus chunks for the asset
-# class via rag_service, compose a tier-aware prompt, ask gemma for
-# a recurrence-pattern analysis, surface confidence + cited chunks.
-```
+Delivered:
+  - `AgentEngine.complete_gemma()` — non-streaming Gemma completion.
+  - `hermes.latest_kalman_channels()` — public live Kalman Z-score tap.
+  - `DiagnosticianAgent` takes an `llm_client` + `telemetry_provider`;
+    after the deterministic verdict it grounds a prompt in the asset's
+    live Kalman Z-scores and stores the synthesized narrative in
+    `AgentVerdict.llm_narrative`. Any LLM/telemetry failure degrades to
+    an empty narrative.
+  - 4 tests mock the external LLM call (narrative grounding, verdict
+    immutability under a contradicting LLM, graceful degradation,
+    no-client baseline).
 
-Architect, Safety Officer, Analyst remain deterministic (the brief
-calls for that). Diagnostician is the natural place to let an LLM
-deepen the reasoning.
+NOTE: the original brief proposed RAG-corpus-chunk grounding; the
+delivered cut grounds on live Kalman telemetry instead — closer to the
+real physical state and consistent with the Hermes EDA plane. Architect,
+Safety Officer, Analyst remain fully deterministic.
 
 ### T3.4 — Power flow live tied to current_a (~1 day)
 
