@@ -19,11 +19,12 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-18)
 
 ```
-HEAD:  38605d3 (+ this doc-sync)  branch master  —  pushed 2026-05-18.
-       55+ commits AHEAD of tag v0.10.13-modal-fix (UNTAGGED). Tag = v0.11.x next.
-Working tree: .claude/ + PRIMER_PROMPT.md untracked (intentional).
+HEAD:  v0.11.0 release commit  branch master  —  pushed 2026-05-18.
+       Stable baseline = v0.11.0 (cut 2026-05-18 — first release tag since
+       v0.10.13-modal-fix, 56 commits prior). Tag = v0.11.x patch / v0.12.0 next.
+Working tree: .claude/ untracked (intentional).
 
-Tags chronological (38 total):
+Tags chronological (39 total):
   v0.5.0 .. v0.8.5-cmms-core-v1               foundation → Sprint 6 CMMS Core
   v0.9.0-cmms-predictive                      Sprint 9.1 predictive WO trigger (Kalman→auto-WO)
   v0.9.5..v0.9.9-tech-assist*                 Sprint 7.1a-d Tech Assist (QA, PDF ingest, voice, OCR) + view
@@ -38,15 +39,16 @@ Tags chronological (38 total):
   v0.10.6..v0.10.8                            2.5D isometric SLD + DAG engine + iso camera
   v0.10.9..v0.10.11                           SCADA asset panel, PBR polish, DDU/busway expansion
   v0.10.12-maint-fix / v0.10.13-modal-fix     maintenance routing + closure-modal fixes
-  [+ 45+ UNTAGGED commits post-v0.10.13 — ProcedureGenerator C0+G1-G6, RBAC,
+  v0.11.0  (2026-05-18)                       RELEASE "Monolith Deconstruction" —
+   56 commits post-v0.10.13: ProcedureGenerator C0+G1-G6, hyperscale RBAC,
    E2E security audit + F3-4/F3-5/F3-6 remediation (claim-RBAC, XSS sanitizer,
    externalized DB creds), SRE cleanup, DC-EPMS-021 ruff hygiene, structural
    compaction (cmms_classification dedup + orphan purge), T2.1 IIFE dismantle
    (scenarios + maintenance + incidents + mops + power + cooling + copilot),
    T3.1 Hermes WebSocket EDA plane + CET-gated edge healing, T3.3/T3.3b
    live-Gemma Diagnostician + Safety Officer, Tier IV Power SLD upgrade
-   (5-layer + paralleling bus + aggressive SCADA restyle + Hermes binding),
-   Cooling orthogonal SCADA SLD + L3 control plane. v0.11.x next.]
+   (5-layer + paralleling bus + SCADA restyle + Hermes binding) + L3 control
+   plane, Cooling orthogonal SCADA SLD + L3 control plane.
 
 Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~45s, 0 fail.
          frontend 146 passed — Vitest (npm test): mission_control + scenarios +

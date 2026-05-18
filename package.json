@@ -1,6 +1,6 @@
 {
   "name": "dc-epms-pro-frontend-tests",
-  "version": "0.0.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "description": "DC-EPMS PRO - frontend test harness (Vitest + happy-dom). ROADMAP V11 T2.4. Does not affect the Python backend or FastAPI static serving.",
