@@ -48,6 +48,7 @@ import { initIncidentsView } from './views/incidents.js';
 import { initMopsView } from './views/mops.js';
 import { initPowerView } from './views/power.js';
 import { initCoolingView } from './views/cooling.js';
+import { initCopilotView } from './views/copilot.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -93,6 +94,9 @@ initMopsView();
 initPowerView();
 // Cooling (DLC) P&ID — T2.1: view extracted to an ES module
 initCoolingView();
+// Facility Co-Pilot AI — T2.1: agent chat extracted; LLM surfaces
+// XSS-sanitized (F3-5); subscribes to hermes:agent-consensus (T3.1)
+initCopilotView();
 
 // Project Hermes EDA — T3.1: route cmms_alerts + agent_consensus streams
 // into reactive state + decoupled DOM events for the HMI.
