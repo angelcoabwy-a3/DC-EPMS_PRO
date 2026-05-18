@@ -3054,40 +3054,9 @@
         });
     }
 
-    async function renderIncidentsView() {
-        try {
-            const resp = await fetch(`${API_BASE}/api/incidents?limit=50`);
-            if (!resp.ok) return;
-            const data = await resp.json();
-            const rows = data.rows || [];
-
-            $('inc-total').textContent = rows.length;
-            $('inc-crit').textContent  = rows.filter(r => (r.severity||'').toLowerCase().startsWith('crit')).length;
-            $('inc-warn').textContent  = rows.filter(r => (r.severity||'').toLowerCase().startsWith('warn')).length;
-            $('inc-open').textContent  = rows.filter(r => (r.status||'').toUpperCase() === 'OPEN').length;
-
-            const tbl = $('inc-table');
-            if (rows.length === 0) {
-                tbl.innerHTML = '<div style="padding:30px;text-align:center;color:var(--text-dim)">No incidents recorded yet. Run the simulator with --incidents.</div>';
-                return;
-            }
-            tbl.innerHTML = rows.map(r => {
-                const cls = severityClass(r.severity);
-                const sev = (r.severity || 'info').toUpperCase();
-                const color = cls === 'info' ? 'var(--accent)' : 'var(--' + cls + ')';
-                return `<div class="inc-table-row ${cls}">
-                    <span class="id">${escapeHtml(r.incident_id || '')}</span>
-                    <span class="ts-col">${fmt.time(r.ts)}</span>
-                    <span class="sev-col" style="color:${color}">${escapeHtml(sev.slice(0,4))}</span>
-                    <span class="src-col">${escapeHtml(r.source || '')}</span>
-                    <span class="title-col" title="${escapeHtml(r.title||'')}">${escapeHtml(r.title || '')}</span>
-                    <span class="status-col">${escapeHtml(r.status || 'OPEN')}</span>
-                </div>`;
-            }).join('');
-        } catch (e) {
-            console.warn('incidents view fetch failed:', e);
-        }
-    }
+    // NOTE: the Incidents view was extracted to views/incidents.js
+    // (ROADMAP V11 T2.1). core/router.js owns the 'incidents' route;
+    // navigateTo() below delegates it before the legacy switch.
 
     function navigateTo(routeKey) {
         if (!routeKey) routeKey = 'overview';
@@ -3143,10 +3112,6 @@
             const v = $('view-copilot');
             if (v) v.removeAttribute('hidden');
             renderCopilotView();
-        } else if (cfg.kind === 'incidents') {
-            const v = $('view-incidents');
-            if (v) v.removeAttribute('hidden');
-            renderIncidentsView();
         } else if (cfg.kind === 'maintenance') {
             // v0.10.12: hand control to the ES-module renderer.
             // We unhide here so MutationObserver in views/maintenance.js
@@ -3442,15 +3407,8 @@
                 if (route) navigateTo(route);
             });
         });
-
-        // Refresh button in incidents view
-        const refreshBtn = $('inc-refresh');
-        if (refreshBtn) {
-            refreshBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                renderIncidentsView();
-            });
-        }
+        // Incidents view (incl. its refresh button) is owned by
+        // views/incidents.js since T2.1 — nothing to wire here.
     }
 
     // ── Wire up UI ─────────────────────────────────────────

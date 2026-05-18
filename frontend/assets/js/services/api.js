@@ -69,6 +69,17 @@ export async function runScenario(scenarioId, horizonS = 900) {
     return apiFetch(path, { method: 'POST' });
 }
 
+/**
+ * Incident audit log — every event PostgreSQL has recorded, newest first.
+ * @param {number} [limit=50] max rows to return
+ * @returns {Promise<Array>} the incidents array (degrades to [] if the
+ *                           payload omits the key — never null)
+ */
+export async function getIncidents(limit = 50) {
+    const data = await apiFetch(`/api/incidents?limit=${encodeURIComponent(limit)}`);
+    return data.rows || [];
+}
+
 
 /* ════════════════════════════════════════════════════════════════
  *  Project Hermes — multiplexed WebSocket stream (ROADMAP V11 T3.1)

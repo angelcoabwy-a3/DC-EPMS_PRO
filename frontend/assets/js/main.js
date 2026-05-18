@@ -44,6 +44,7 @@ import { initPowerGrid } from './core/power_grid.js';
 import { initPowerCam } from './core/power_cam.js';
 import { initAssetPanel } from './views/asset_panel.js';
 import { initScenariosView } from './views/scenarios.js';
+import { initIncidentsView } from './views/incidents.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -81,6 +82,8 @@ initPowerCam();
 initAssetPanel();
 // Failure-scenario simulator — T2.1: first IIFE view extracted to an ES module
 initScenariosView();
+// Incident audit log — T2.1: second IIFE view extracted to an ES module
+initIncidentsView();
 
 // Project Hermes EDA — T3.1: route cmms_alerts + agent_consensus streams
 // into reactive state + decoupled DOM events for the HMI.
