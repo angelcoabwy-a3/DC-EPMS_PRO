@@ -48,7 +48,7 @@ const LIMITS = Object.freeze({
     yaw:  [-60, 0],
 });
 
-const ISO_BASE_SCALE = 0.78;  // matches the static CSS rule baseline
+const ISO_BASE_SCALE = 0.95;  // flat 2.5D fills the stage (T2.1, was 0.78 for the rotated plane)
 
 const _cam = { ...DEFAULTS };
 let _initialized = false;
@@ -70,9 +70,11 @@ function _applyCam() {
         if (stage) stage.style.display = '';
         if (flatSvg) flatSvg.classList.add('sld-legacy-hidden');
         const finalScale = (_cam.zoom * ISO_BASE_SCALE).toFixed(3);
+        // T2.1 reinvention: flat 2.5D — no rotateX/rotateZ. Pan + zoom
+        // only; pitch/yaw state is retained but no longer tilts the plane,
+        // so node labels stay flat-to-screen and legible.
         world.style.transform =
             `translate3d(${_cam.panX}px, ${_cam.panY}px, 0) ` +
-            `rotateX(${_cam.pitch}deg) rotateZ(${_cam.yaw}deg) ` +
             `scale(${finalScale})`;
     }
 

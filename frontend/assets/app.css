@@ -6558,8 +6558,10 @@ body {
 .sld-iso-world {
     position: absolute;
     inset: 0;
-    transform-style: preserve-3d;
-    transform: rotateX(55deg) rotateZ(-30deg) scale(0.78);
+    /* T2.1 reinvention: flat 2.5D — the heavy CSS-3D world rotation
+       (rotateX/rotateZ) is removed. Depth now reads from card shadows,
+       not a tilted plane, so node labels render flat + 100% legible. */
+    transform: scale(0.96);
     transform-origin: 50% 50%;
 }
 
@@ -6572,104 +6574,41 @@ body {
 /* Floor — gridded plane with cyan grid lines */
 .sld-iso-floor {
     inset: 0;
+    /* T2.1: floor grid toned to 0.05 opacity so the nodes pop. */
     background:
-        repeating-linear-gradient(0deg,  transparent 0 39px, rgba(0, 184, 212, 0.08) 39px 40px),
-        repeating-linear-gradient(90deg, transparent 0 39px, rgba(0, 184, 212, 0.08) 39px 40px),
-        radial-gradient(ellipse at 50% 50%, rgba(0, 184, 212, 0.05), transparent 70%);
-    border: 1px solid rgba(0, 184, 212, 0.20);
-    box-shadow:
-        inset 0 0 40px rgba(0, 184, 212, 0.06),
-        inset 0 0 120px rgba(0, 0, 0, 0.4);
+        repeating-linear-gradient(0deg,  transparent 0 47px, rgba(120, 150, 190, 0.05) 47px 48px),
+        repeating-linear-gradient(90deg, transparent 0 47px, rgba(120, 150, 190, 0.05) 47px 48px);
+    border: 1px solid rgba(70, 96, 132, 0.22);
+    box-shadow: inset 0 0 160px rgba(0, 0, 0, 0.8);
 }
 
 /* ─── ISO BLOCK (3D cube via stacked box-shadow + pseudo faces) */
 
 .sld-iso-block {
-    /* Base position from coordinates (--x, --y) inside the 1200x720 grid.
-       The world's scale(0.78) slightly compresses the layout to fit. */
+    /* Position from (--x, --y) within the 1200x720 grid — unchanged. */
     left:  calc(var(--x, 0) * 100% / 1200);
     top:   calc(var(--y, 0) * 100% / 720);
     width: calc(var(--w, 60) * 100% / 1200);
     height:calc(var(--h, 50) * 100% / 720);
-
-    /* PBR-style brushed-metal cyan base (v0.10.10).
-       Five layers stacked back-to-front:
-         1. Brush striations (vertical hairlines, reads as anisotropic metal)
-         2. Specular shine (corner-to-corner highlight)
-         3. Edge sheen (top edge brighter — light from above)
-         4. Mid tone (color band)
-         5. Base color (saturated bottom)
-       Together they fake a cyan-anodized brushed aluminium look without
-       requiring three.js / shader work. */
-    background:
-        repeating-linear-gradient(180deg,
-            rgba(255, 255, 255, 0.00) 0px,
-            rgba(255, 255, 255, 0.05) 1px,
-            rgba(255, 255, 255, 0.00) 2px),
-        linear-gradient(135deg,
-            rgba(255, 255, 255, 0.22) 0%,
-            rgba(255, 255, 255, 0.04) 28%,
-            rgba(255, 255, 255, 0.00) 55%,
-            rgba(255, 255, 255, 0.08) 100%),
-        linear-gradient(180deg,
-            rgba(255, 255, 255, 0.10) 0%,
-            rgba(0, 0, 0, 0.10) 100%),
-        linear-gradient(135deg,
-            rgba(0, 184, 212, 0.55) 0%,
-            rgba(0, 184, 212, 0.18) 60%,
-            rgba(0, 184, 212, 0.40) 100%);
-    border: 1px solid rgba(0, 229, 255, 0.95);
-    border-top-color: rgba(255, 255, 255, 0.55);   /* light hits top edge */
-    border-radius: 2px;
-    backdrop-filter: blur(2px);
-
-    /* Cube extrusion fake — stacked drop shadows w/ NO blur create
-       the illusion of solid depth on the rotated plane */
-    --shadow-color: rgba(0, 184, 212, 0.55);
-    --glow-color:   rgba(0, 184, 212, calc(0.30 + var(--stress, 0.12) * 0.55));
+    /* T2.1 reinvention: a crisp, minimalist industrial equipment card —
+       no brushed-metal kitsch, no 8-layer box-shadow cube fake, no
+       breathing pulse. One tasteful drop-shadow + a bright top edge.
+       The #sld-iso-stage SCADA-restyle block layers the path glow on. */
+    background: linear-gradient(165deg, #1b2536 0%, #0f1622 100%);
+    border: 1px solid #36475f;
+    border-top-color: #58708f;
+    border-radius: 3px;
     box-shadow:
-        0  1px 0 var(--shadow-color),
-        0  2px 0 var(--shadow-color),
-        0  3px 0 var(--shadow-color),
-        0  4px 0 var(--shadow-color),
-        0  5px 0 var(--shadow-color),
-        0  6px 0 var(--shadow-color),
-        0  7px 0 var(--shadow-color),
-        0  8px 0 var(--shadow-color),
-        0 14px 28px var(--glow-color);
-
-    /* Living organism: breathing pulse — duration shrinks with stress */
-    animation: iso-breathe calc(2.4s - var(--stress, 0.12) * 1.6s) ease-in-out infinite;
-
+        0 5px 14px rgba(0, 0, 0, 0.6),
+        inset 0 1px 0 rgba(255, 255, 255, 0.07);
     cursor: pointer;
-    transition: filter 200ms, border-color 300ms;
+    transition: filter 180ms, border-color 220ms, box-shadow 220ms;
 }
 
-.sld-iso-block::before {
-    /* Right side face — projected via rotateY illusion using gradient skew */
-    content: "";
-    position: absolute;
-    top: 1px; right: -8px;
-    width: 9px; height: calc(100% - 2px);
-    background: linear-gradient(90deg, rgba(0, 184, 212, 0.55), rgba(0, 184, 212, 0.20));
-    border-right: 1px solid rgba(0, 184, 212, 0.7);
-    transform: skewY(-25deg);
-    transform-origin: top left;
-    pointer-events: none;
-}
-
-.sld-iso-block::after {
-    /* Front face — fake using gradient skew */
-    content: "";
-    position: absolute;
-    left: 1px; bottom: -8px;
-    width: calc(100% - 2px); height: 9px;
-    background: linear-gradient(180deg, rgba(0, 184, 212, 0.40), rgba(0, 184, 212, 0.15));
-    border-bottom: 1px solid rgba(0, 184, 212, 0.7);
-    transform: skewX(-25deg);
-    transform-origin: top left;
-    pointer-events: none;
-}
+/* T2.1: the fake skewed 3D side-faces are removed — the world is no
+   longer rotated, so the extrusion read as clutter. Clean flat cards. */
+.sld-iso-block::before,
+.sld-iso-block::after { display: none; }
 
 .sld-iso-block:hover {
     filter: brightness(1.4);
@@ -6761,8 +6700,8 @@ body {
 .iso-block-title,
 .iso-block-metrics,
 .iso-metric {
-    transform: rotateZ(30deg) rotateX(-55deg);
-    transform-origin: center;
+    /* T2.1: counter-rotation removed — the world is flat, so labels and
+       telemetry numbers render flat-to-screen and stay 100% legible. */
     pointer-events: none;
 }
 
@@ -7808,4 +7747,90 @@ body {
     #sld-iso-stage .sld-iso-block.stress-red,
     #sld-iso-stage .sld-iso-block.is-tripped,
     #sld-iso-stage .sld-iso-block[data-sev="critical"] { animation: none !important; }
+}
+
+/* ════════════════════════════════════════════════════════════════
+ *  FLAT SLD — orthogonal ETAP / AutoCAD-style schematic  (T2.1)
+ *
+ *  Styles the programmatic flat SVG generated by views/power.js into
+ *  .pid-svg. 5 fixed tier columns, one horizontal spine per 2N path,
+ *  pure-90° connectors. Sharp IEEE symbology on a deep dark canvas.
+ * ════════════════════════════════════════════════════════════════ */
+.pf-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #090d14;
+    font-family: var(--font-mono, monospace);
+}
+
+/* Tier rails + headers — the 5-layer grid scaffold */
+.pf-tier-rail {
+    stroke: rgba(70, 96, 132, 0.20);
+    stroke-width: 1;
+    stroke-dasharray: 2 7;
+}
+.pf-tier-label {
+    fill: #6b7f9c;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-anchor: middle;
+}
+
+/* Orthogonal connectors — neon-glow energized, dead-gray cold */
+.pf-wire {
+    fill: none;
+    stroke-width: 2.4;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+.pf-wire.pf-a    { stroke: #27d3ee; filter: drop-shadow(0 0 4px rgba(39,211,238,0.8)); }
+.pf-wire.pf-b    { stroke: #b06cf7; filter: drop-shadow(0 0 4px rgba(176,108,247,0.8)); }
+.pf-wire.pf-cold { stroke: #39424f; opacity: 0.7; }
+
+/* Equipment symbols — sharp IEEE-style geometry */
+.pf-sym {
+    fill: #141d2b;
+    stroke: #4a5e7e;
+    stroke-width: 1.8;
+    transition: stroke 200ms, fill 200ms;
+}
+.pf-bus { fill: #2a3a52; stroke: #6b86ad; }
+.pf-glyph {
+    fill: #cfe0f5;
+    font-size: 18px;
+    font-weight: 700;
+    text-anchor: middle;
+}
+/* Live severity — driven by power.js _applyTopology (data-sev) */
+.pf-sym[data-sev="warning"]  { stroke: #ffb020; fill: #2a2410; }
+.pf-sym[data-sev="critical"] { stroke: #ff4d4d; fill: #2c1414;
+    filter: drop-shadow(0 0 5px rgba(255,77,77,0.7)); }
+
+/* Node typography — names above, telemetry below; never on a wire */
+.pf-name {
+    fill: #e9eef7;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-anchor: middle;
+}
+.pf-metric {
+    fill: #8ba3c4;
+    font-size: 10.5px;
+    text-anchor: middle;
+}
+.pf-node:hover .pf-sym { stroke: #2ff5a8; cursor: pointer; }
+
+/* 2N tie line — surfaced by _applyTopology only in N (degraded) mode */
+.pf-tie {
+    stroke: #ff4d4d;
+    stroke-width: 2;
+    stroke-dasharray: 6 5;
+}
+.pf-tie-label {
+    fill: #ff4d4d;
+    font-size: 10px;
+    font-weight: 700;
 }

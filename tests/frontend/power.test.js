@@ -158,3 +158,49 @@ describe('T2.1 — views/power.js applyTopology()', () => {
         expect(() => applyTopology(null)).not.toThrow();
     });
 });
+
+// ════════════════════════════════════════════════════════════════
+//  views/power.js — flat SLD generator (orthogonal SCADA)
+// ════════════════════════════════════════════════════════════════
+describe('T2.1 — views/power.js buildFlatMarkup() orthogonal SLD', () => {
+    const { buildFlatMarkup, renderFlatSld } = __power_test__;
+
+    afterEach(() => { document.body.innerHTML = ''; });
+
+    it('emits every 5-layer tier node for both 2N paths', () => {
+        const svg = buildFlatMarkup();
+        for (const id of [
+            'util_a', 'genset_a', 'par_bus_a', 'ats_a', 'ups_a', 'rpp_a1',
+            'util_b', 'genset_b', 'ats_b', 'ups_b', 'rpp_b1',
+        ]) {
+            expect(svg).toContain(`data-sld-node="${id}"`);
+        }
+        expect(svg).toContain('GENSET / N+1');
+        expect(svg).toContain('ATS / STS');
+    });
+
+    it('routes every connector strictly orthogonally (no diagonals)', () => {
+        const svg = buildFlatMarkup();
+        const ds = [...svg.matchAll(/<path class="pf-wire[^"]*" d="([^"]+)"/g)]
+            .map((m) => m[1]);
+        expect(ds.length).toBeGreaterThan(0);
+        for (const d of ds) {
+            const pts = d.trim().split(/[ML]\s*/).filter(Boolean)
+                .map((p) => p.trim().split(/\s+/).map(Number));
+            for (let i = 1; i < pts.length; i += 1) {
+                const [x1, y1] = pts[i - 1];
+                const [x2, y2] = pts[i];
+                // a segment is orthogonal iff it shares an x or a y
+                expect(x1 === x2 || y1 === y2).toBe(true);
+            }
+        }
+    });
+
+    it('renderFlatSld injects the SLD into the .pid-svg container', () => {
+        document.body.innerHTML = '<div id="view-power"><svg class="pid-svg"></svg></div>';
+        renderFlatSld();
+        const svg = document.querySelector('#view-power .pid-svg');
+        expect(svg.innerHTML).toContain('data-sld-node="ups_a"');
+        expect(svg.getAttribute('viewBox')).toBe('0 0 1200 720');
+    });
+});

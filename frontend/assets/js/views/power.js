@@ -39,8 +39,10 @@ const _NODE_MAP = {
 
 // ─── Helpers ───────────────────────────────────────────────────────
 function _setMetric(key, value) {
-    const el = document.querySelector(`[data-sld-metric="${key}"]`);
-    if (el) el.textContent = value;
+    // Updates BOTH surfaces — the iso block metric span and the flat
+    // SVG <text> — wherever the metric key appears.
+    document.querySelectorAll(`[data-sld-metric="${key}"]`)
+        .forEach((el) => { el.textContent = value; });
 }
 
 /**
@@ -63,13 +65,12 @@ function _applyTopology(data) {
     if (!data) return;
     const nodes = data.hld_nodes || {};
 
-    // Severity on the static-SVG fallback symbols (legacy print layer).
+    // Severity on every flat-SLD symbol carrying the node id.
     Object.entries(_NODE_MAP).forEach(([sldId, dataId]) => {
         const nodeData = nodes[dataId];
         if (!nodeData) return;
-        const el = document.querySelector(`.sld-node[data-sld-node="${sldId}"]`);
-        const symbol = el && el.querySelector('.pid-symbol');
-        if (symbol) symbol.setAttribute('data-sev', nodeData.severity || 'ok');
+        document.querySelectorAll(`.sld-node[data-sld-node="${sldId}"] .pid-symbol`)
+            .forEach((sym) => sym.setAttribute('data-sev', nodeData.severity || 'ok'));
     });
 
     const ua = nodes.utility_north, ub = nodes.utility_south;
@@ -210,6 +211,127 @@ function _onTelemetryFrame(payload) {
     if (payload && payload.channels) _applyTelemetry(payload.channels);
 }
 
+// ════════════════════════════════════════════════════════════════
+//  FLAT view — programmatic orthogonal SCADA SLD (T2.1 reinvention)
+//
+//  Replaces the hand-authored static SVG that had "diagonal spaghetti"
+//  routing + misaligned tiers. Built by construction so the defects
+//  cannot recur: 5 strict tier columns at FIXED x (grid-aligned), one
+//  horizontal spine per 2N path, and every connector a pure 90° run
+//  (H or V only — no diagonals). Node labels sit in reserved zones
+//  above / below the symbol band; spine lines pass behind the symbol,
+//  never through text. Mimics an ETAP / AutoCAD 2D single-line.
+// ════════════════════════════════════════════════════════════════
+const _FLAT = {
+    tierX: { util: 150, xfmr: 268, gen: 392, ats: 602, ups: 820, pdu: 1052 },
+    spineY: { A: 232, B: 540 },
+    SVG_NS: 'http://www.w3.org/2000/svg',
+};
+
+// One equipment node: IEEE-ish symbol + name (above) + metric (below).
+function _flatNode(id, type, label, x, y, metrics) {
+    const m = metrics
+        .map((mm, i) => `<text class="pf-metric" data-sld-metric="${mm.key}" `
+            + `x="${x}" y="${y + 40 + i * 13}">${mm.text}</text>`).join('');
+    let sym;
+    if (type === 'xfmr') {
+        sym = `<circle class="pf-sym pid-symbol" data-sev="ok" cx="${x}" cy="${y - 8}" r="14"/>`
+            + `<circle class="pf-sym pid-symbol" data-sev="ok" cx="${x}" cy="${y + 8}" r="14"/>`;
+    } else if (type === 'genset') {
+        sym = `<circle class="pf-sym pid-symbol" data-sev="ok" cx="${x}" cy="${y}" r="23"/>`
+            + `<text class="pf-glyph" x="${x}" y="${y + 6}">G</text>`;
+    } else if (type === 'parbus') {
+        sym = `<rect class="pf-sym pid-symbol pf-bus" data-sev="ok" x="${x - 52}" y="${y - 5}" `
+            + `width="104" height="10" rx="2"/>`;
+    } else {
+        sym = `<rect class="pf-sym pid-symbol" data-sev="ok" x="${x - 40}" y="${y - 23}" `
+            + `width="80" height="46" rx="2.5"/>`;
+    }
+    return `<g class="sld-node pf-node" data-sld-node="${id}">`
+        + sym
+        + `<text class="pf-name" x="${x}" y="${y - 34}">${label}</text>`
+        + m
+        + `</g>`;
+}
+
+// Orthogonal connector — accepts a list of [x,y] waypoints; the caller
+// supplies only axis-aligned points so the path is 90° by construction.
+function _flatWire(points, cls) {
+    const d = points.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
+    return `<path class="pf-wire ${cls}" d="${d}"/>`;
+}
+
+function _flatPath(suffix, S, energized) {
+    const T = _FLAT.tierX;
+    const cls = energized; // 'pf-a' | 'pf-b'
+    const genY = S - 116;
+    const busY = S - 64;
+    const battY = S + 96;
+    // ── orthogonal wiring (spine + branches) ──
+    const wires = [
+        _flatWire([[T.util + 40, S], [T.ats - 40, S]], cls),          // utility spine -> ATS
+        _flatWire([[T.gen, genY + 23], [T.gen, busY - 5]], cls),       // genset -> paralleling bus
+        _flatWire([[T.gen, busY + 5], [T.gen, S]], 'pf-cold'),         // bus -> spine (standby)
+        _flatWire([[T.ats + 40, S], [T.ups - 40, S]], cls),            // ATS -> UPS
+        _flatWire([[T.ups - 40, S], [T.ups + 40, S]], cls),            // through UPS
+        _flatWire([[T.ups + 40, S], [T.pdu - 40, S]], cls),            // UPS -> PDU
+        _flatWire([[T.ups, battY - 23], [T.ups, S + 23]], cls),        // battery -> UPS
+    ].join('');
+    // ── nodes ──
+    const nodes = [
+        _flatNode('util_' + suffix, 'util', 'UTILITY ' + suffix.toUpperCase(),
+            T.util, S, [{ key: 'util_' + suffix + '-kv', text: '27.5 kV' },
+                        { key: 'util_' + suffix + '-kw', text: '— kW' }]),
+        _flatNode('xfmr_' + suffix, 'xfmr', 'XFMR ' + suffix.toUpperCase(),
+            T.xfmr, S, [{ key: 'xfmr_' + suffix + '-load', text: '— kVA' }]),
+        _flatNode('genset_' + suffix, 'genset', 'GENSET ' + suffix.toUpperCase(),
+            T.gen, genY, [{ key: 'genset_' + suffix + '-state', text: 'STANDBY' }]),
+        _flatNode('par_bus_' + suffix, 'parbus', 'PARALLELING BUS · N+1',
+            T.gen, busY, []),
+        _flatNode('ats_' + suffix, 'ats', 'ATS-' + suffix.toUpperCase(),
+            T.ats, S, [{ key: 'ats_' + suffix + '-pos', text: 'UTILITY' }]),
+        _flatNode('ups_' + suffix, 'ups', 'UPS GALAXY VX ' + suffix.toUpperCase(),
+            T.ups, S, [{ key: 'ups_' + suffix + '-mode', text: 'ONLINE' },
+                       { key: 'ups_' + suffix + '-load', text: '— kW' }]),
+        _flatNode('batt_' + suffix, 'batt', 'BATTERY ' + suffix.toUpperCase(),
+            T.ups, battY, [{ key: 'batt_' + suffix + '-soc', text: 'SOC 100%' }]),
+        _flatNode('rpp_' + suffix + '1', 'rpp', 'RPP / PDU ' + suffix.toUpperCase(),
+            T.pdu, S, [{ key: 'rpp_' + suffix + '1-kw', text: '— kW' }]),
+    ].join('');
+    return `<g class="pf-pathgroup">${wires}${nodes}</g>`;
+}
+
+/** Build the full flat-SLD SVG inner markup from the 5-tier topology. */
+function _buildFlatMarkup() {
+    const T = _FLAT.tierX;
+    const tierLabels = [
+        ['UTILITY', T.util], ['GENSET / N+1', T.gen],
+        ['ATS / STS', T.ats], ['UPS 2N', T.ups], ['PDU / RPP', T.pdu],
+    ];
+    const rails = tierLabels.map(([name, x]) =>
+        `<line class="pf-tier-rail" x1="${x}" y1="48" x2="${x}" y2="690"/>`
+        + `<text class="pf-tier-label" x="${x}" y="34">${name}</text>`).join('');
+    // 2N tie-line (bound by _applyTopology: visible only in N mode).
+    const tie = `<line id="sld-tie-line" class="pf-tie" x1="${T.pdu}" y1="${_FLAT.spineY.A}" `
+        + `x2="${T.pdu}" y2="${_FLAT.spineY.B}" opacity="0"/>`
+        + `<text id="sld-tie-text" class="pf-tie-label" x="${T.pdu + 12}" `
+        + `y="${(_FLAT.spineY.A + _FLAT.spineY.B) / 2}" opacity="0">2N TIE</text>`;
+    return rails
+        + _flatPath('a', _FLAT.spineY.A, 'pf-a')
+        + _flatPath('b', _FLAT.spineY.B, 'pf-b')
+        + tie;
+}
+
+/** Render the orthogonal flat SLD into the legacy .pid-svg container. */
+function _renderFlatSld() {
+    const svg = document.querySelector('#view-power .pid-svg');
+    if (!svg) return;
+    svg.setAttribute('viewBox', '0 0 1200 720');
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.classList.add('pf-svg');
+    svg.innerHTML = _buildFlatMarkup();
+}
+
 function _activate() {
     // Baseline physics-validated topology — fetched once per activation,
     // NOT polled. Live updates arrive on the Hermes telemetry stream.
@@ -224,6 +346,9 @@ export function initPowerView() {
         return;
     }
     registerRoute('power', { viewId: 'view-power', activate: _activate });
+    // T2.1 reinvention: render the orthogonal flat SLD into .pid-svg,
+    // replacing the hand-authored static SVG (spaghetti routing).
+    _renderFlatSld();
     // T3.1: live severity from the Hermes telemetry stream — the legacy
     // 5 s setInterval poll is eradicated.
     _unsubTelemetry = onHermesStream('telemetry', _onTelemetryFrame);
@@ -238,6 +363,8 @@ export const __power_test__ = {
     applyTopology: _applyTopology,
     applyTelemetry: _applyTelemetry,
     onTelemetryFrame: _onTelemetryFrame,
+    buildFlatMarkup: _buildFlatMarkup,
+    renderFlatSld: _renderFlatSld,
     reset: () => {
         _initialized = false;
         if (_unsubTelemetry) { _unsubTelemetry(); _unsubTelemetry = null; }
