@@ -8006,3 +8006,71 @@ body {
 }
 .pf-node[data-sld-node^="ups"]    .pf-spark { stroke: #2ff5a8; }
 .pf-node[data-sld-node^="genset"] .pf-spark { stroke: #ffb020; }
+
+/* ════════════════════════════════════════════════════════════════
+ *  COOLING SLD — orthogonal thermodynamic SCADA  (T2.1 Phase 2b)
+ *
+ *  Chilled-water SUPPLY glows blue; warm RETURN glows warm-orange.
+ *  Sharp ISA-style equipment symbology on a deep dark canvas, 5 fixed
+ *  tier columns, pure-90° piping.
+ * ════════════════════════════════════════════════════════════════ */
+.cool-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #090d14;
+    font-family: var(--font-mono, monospace);
+}
+.cool-tier-rail {
+    stroke: rgba(70, 96, 132, 0.20);
+    stroke-width: 1;
+    stroke-dasharray: 2 7;
+}
+.cool-tier-label {
+    fill: #6b7f9c;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-anchor: middle;
+}
+.cool-pipe {
+    fill: none;
+    stroke-width: 3;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+}
+.cool-pipe.cool-supply {
+    stroke: #22d3ee;
+    filter: drop-shadow(0 0 5px rgba(34, 211, 238, 0.85));
+}
+.cool-pipe.cool-return {
+    stroke: #ff7847;
+    filter: drop-shadow(0 0 5px rgba(255, 120, 71, 0.8));
+}
+.cool-sym {
+    fill: #141d2b;
+    stroke: #4a5e7e;
+    stroke-width: 1.8;
+    transition: stroke 200ms, fill 200ms;
+}
+.cool-fin { stroke: #5b7393; stroke-width: 1.4; fill: none; }
+.cool-glyph { fill: #cfe0f5; }
+.cool-sym[data-sev="warning"]  { stroke: #ffb020; fill: #2a2410; }
+.cool-sym[data-sev="critical"] {
+    stroke: #ff4d4d;
+    fill: #2c1414;
+    filter: drop-shadow(0 0 5px rgba(255, 77, 77, 0.7));
+}
+.cool-name {
+    fill: #e9eef7;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-anchor: middle;
+}
+.cool-metric {
+    fill: #8ba3c4;
+    font-size: 10.5px;
+    text-anchor: middle;
+}
+.cool-node:hover .cool-sym { stroke: #2ff5a8; cursor: pointer; }

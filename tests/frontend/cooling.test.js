@@ -58,3 +58,52 @@ describe('T2.1 Phase 2a — views/cooling.js applyCoolingPid()', () => {
         expect(() => applyCoolingPid(null)).not.toThrow();
     });
 });
+
+// ════════════════════════════════════════════════════════════════
+//  views/cooling.js — Phase 2b: orthogonal thermodynamic SCADA SLD
+// ════════════════════════════════════════════════════════════════
+describe('T2.1 Phase 2b — views/cooling.js buildCoolingSld()', () => {
+    const { buildCoolingSld, renderCoolingSld } = __cooling_test__;
+
+    afterEach(() => { document.body.innerHTML = ''; });
+
+    it('emits the cooling equipment chain with data-binder hooks intact', () => {
+        const svg = buildCoolingSld();
+        for (const id of [
+            'cooling_tower', 'chiller_1', 'chiller_2', 'chwp_1', 'chwp_2',
+            'cdu_a', 'cdu_b', 'data_hall', 'crah_1', 'crah_2',
+        ]) {
+            expect(svg).toContain(`data-node="${id}"`);
+        }
+        // _applyCoolingPid binds severity on .pid-symbol + text on data-pid-metric
+        expect(svg).toContain('class="pid-symbol cool-sym"');
+        expect(svg).toContain('data-pid-metric="ch1-cop"');
+    });
+
+    it('routes every pipe strictly orthogonally and tags supply vs return', () => {
+        const svg = buildCoolingSld();
+        const pipes = [...svg.matchAll(/<path class="cool-pipe[^"]*" d="([^"]+)"/g)]
+            .map((m) => m[1]);
+        expect(pipes.length).toBeGreaterThan(0);
+        for (const d of pipes) {
+            const pts = d.trim().split(/[ML]\s*/).filter(Boolean)
+                .map((p) => p.trim().split(/\s+/).map(Number));
+            for (let i = 1; i < pts.length; i += 1) {
+                const [x1, y1] = pts[i - 1];
+                const [x2, y2] = pts[i];
+                expect(x1 === x2 || y1 === y2).toBe(true);
+            }
+        }
+        expect(svg).toContain('cool-pipe cool-supply');
+        expect(svg).toContain('cool-pipe cool-return');
+    });
+
+    it('renderCoolingSld injects the SLD into the .pid-svg container', () => {
+        document.body.innerHTML =
+            '<div id="view-cooling"><svg class="pid-svg"></svg></div>';
+        renderCoolingSld();
+        const svg = document.querySelector('#view-cooling .pid-svg');
+        expect(svg.innerHTML).toContain('data-node="chiller_1"');
+        expect(svg.getAttribute('viewBox')).toBe('0 0 1040 620');
+    });
+});
