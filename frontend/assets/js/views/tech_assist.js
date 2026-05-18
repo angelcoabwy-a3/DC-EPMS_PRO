@@ -24,6 +24,7 @@
 
 import { registerRoute } from '../core/router.js';
 import { trapFocus } from '../core/focus_trap.js';
+import { sanitizeHTML } from '../core/sanitize.js';
 
 const API_BASE = '';
 
@@ -275,8 +276,12 @@ function _renderTroubleshootResult(container, data) {
         ? `<div class="ta-ts-safety">⚠ Safety keywords: ${safety.map(_escape).join(', ')}</div>`
         : '';
 
+    // F3-5: final-stage XSS gate on AI-authored output. _renderInlineMarkdown
+    // escapes per line today, but routing the rendered LLM HTML through the
+    // audited allowlist sanitiser makes that guarantee explicit and immune to
+    // a future markdown transform (link/image support) silently reopening it.
     const llmHTML = data.llm_answer
-        ? `<div class="ta-ts-answer">${_renderInlineMarkdown(data.llm_answer)}</div>`
+        ? `<div class="ta-ts-answer">${sanitizeHTML(_renderInlineMarkdown(data.llm_answer))}</div>`
         : `<div class="ta-empty">LLM synthesis status: ${_escape(data.llm_synthesis_status)}${data.llm_model ? ` (${_escape(data.llm_model)})` : ''}</div>`;
 
     const tierLabel = (t) => {

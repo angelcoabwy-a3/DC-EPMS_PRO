@@ -90,14 +90,27 @@ def _load_env():
 _load_env()
 
 # --------------------------------------------------------------
-# [FIX 1] PG_DSN is forced to URI format with explicit db=epms.
-#          Never fall back to the default "postgres" DB.
+# [FIX 1 / F3-6] PG_DSN -- env-sourced credentials.
+#   Every field is read from the environment first (config/.env is
+#   loaded by _load_env() above; gitignored, local-only). The
+#   fallbacks are the *dev-only* values provisioned by
+#   docker-compose.yml: they let the local loop boot healthy with NO
+#   manual .env and carry no production secret (the password literally
+#   self-documents as "change_me"). This also eradicates the stale
+#   hardcoded fallbacks ("postgres" / "epms" / "epms2026") that were
+#   the root cause of DC-EPMS-DB-001 -- they pointed at a role + DB
+#   that never existed, so a missing .env booted silent-degraded.
+#   Any non-local deploy MUST export PG_* (or DEV_DB_PASSWORD).
 # --------------------------------------------------------------
 _PG_HOST = os.environ.get("PG_HOST", "localhost")
 _PG_PORT = os.environ.get("PG_PORT", "5432")
-_PG_DB = os.environ.get("PG_DB", "epms")  # <-- explicit
-_PG_USER = os.environ.get("PG_USER", "postgres")
-_PG_PWD = os.environ.get("PG_PASSWORD", "epms2026")
+_PG_DB = os.environ.get("PG_DB", "dcepms")
+_PG_USER = os.environ.get("PG_USER", "epms")
+_PG_PWD = (
+    os.environ.get("PG_PASSWORD")
+    or os.environ.get("DEV_DB_PASSWORD")
+    or "epms_dev_only_change_me"
+)
 PG_DSN = f"postgresql://{_PG_USER}:{_PG_PWD}@{_PG_HOST}:{_PG_PORT}/{_PG_DB}"
 
 LM_STUDIO_URL = os.environ.get("LM_STUDIO_URL", "http://127.0.0.1:1234")
