@@ -19,9 +19,10 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-18)
 
 ```
-HEAD:  v0.11.0 release commit  branch master  —  pushed 2026-05-18.
+HEAD:  807185e (+ this doc-sync)  branch master  —  pushed 2026-05-18.
        Stable baseline = v0.11.0 (cut 2026-05-18 — first release tag since
-       v0.10.13-modal-fix, 56 commits prior). Tag = v0.11.x patch / v0.12.0 next.
+       v0.10.13-modal-fix). Post-release: T2.1 Vector 1 (BMS extraction).
+       Tag = v0.11.x patch / v0.12.0 next.
 Working tree: .claude/ untracked (intentional).
 
 Tags chronological (39 total):
@@ -50,9 +51,9 @@ Tags chronological (39 total):
    (5-layer + paralleling bus + SCADA restyle + Hermes binding) + L3 control
    plane, Cooling orthogonal SCADA SLD + L3 control plane.
 
-Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~45s, 0 fail.
-         frontend 146 passed — Vitest (npm test): mission_control + scenarios +
-         incidents + mops + power + cooling + copilot + sanitize + hermes
+Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~41s, 0 fail.
+         frontend 153 passed — Vitest (npm test): mission_control + scenarios +
+         incidents + mops + power + cooling + copilot + bms + sanitize + hermes
          (slice / cutover / EDA) + maintenance + rack_heatmap. Both green.
          ruff: 0 violations in backend/.
 
@@ -87,17 +88,25 @@ an L3 control plane (RBAC pump actuation, What-If sandbox, sparklines).
 Copilot sprint (2026-05-18): the Facility Co-Pilot agent view extracted
 to views/copilot.js — LLM-authored DOM surfaces routed through the F3-5
 sanitizeHTML XSS filter, wired to the Hermes hermes:agent-consensus EDA
-event. Live backlog = docs/ROADMAP-V11.md (v11.5, 2026-05-18).
-NOTE: OBS demo-recording descoped.
+event. T2.1 Vector 1 (2026-05-18, post-v0.11.0): the BMS Connector view
+extracted to views/bms.js; showBmsAudit re-exposed on window so the
+copilot audit deep-link survives the extraction. The post-v0.11.0
+SitRep audit corrected the T2.1 registry — 5 legacy surfaces remain
+(BMS done; LOTO Auditor, Topology HLD/LLD, Site-Topology-legacy,
+Overview dashboard pending). Live backlog = docs/ROADMAP-V11.md
+(v11.6, 2026-05-18). NOTE: OBS demo-recording descoped.
 ```
 
 **Recent commits (latest at top)**:
 ```
+807185e  refactor(ui): extract BMS Connector view from monolith + preserve copilot deep-link (T2.1)
+7619c8d  docs: update ROADMAP-V11 T2.1 to reflect discovered hidden technical debt
+0fb7168  chore(release): bump internal manifests and documentation to v0.11.0  [tag v0.11.0]
+35a22a9  docs: synchronize compass post-multi-epic extraction sprint
 38605d3  refactor(ui): extract Copilot AI view from monolith — XSS-sanitized ES6 module (T2.1)
 bb10e4e  feat(ui): Cooling L3 control plane — RBAC actuation + What-If sandbox + sparklines
 33e7459  feat(ui): rebuild Cooling as an orthogonal thermodynamic SCADA SLD
 7b85ab9  refactor(ui): extract Cooling view from monolith into ES6 module (T2.1)
-3edafc2  fix(ui/bms): map Power SLD actuators to real seeded BMS tag registry
 50ab979  docs: sync compass — Power SLD L3 control plane (frontend 125 Vitest)
 098ecac  feat(ui): inject real-time telemetry sparklines into Power SLD (L3 Phase 3)
 2cd3b96  feat(ui): isolated What-If predictive simulation sandbox — local DAG engine (L3 Phase 2)
