@@ -192,6 +192,8 @@ async def enrich_asset(
     asset row is preserved. `serial` and `voltage_v` flow into
     `metadata_json` to align with the matcher's lookup keys.
     """
+    from backend.rbac import require_actor_role
+    require_actor_role(body.actor_role, 5, "enriching an asset")
     repo = _get_repo(request)
     try:
         asset = await repo.get_asset_async(asset_id)
@@ -285,6 +287,8 @@ async def get_work_order(request: Request, wo_id: str) -> dict[str, Any]:
 @router.post("/work-orders")
 async def create_work_order(request: Request, body: CreateWorkOrderRequest) -> dict[str, Any]:
     """Create a new WO. Always lands in pending_approval (ADR-006)."""
+    from backend.rbac import require_actor_role
+    require_actor_role(body.actor_role, 4, "creating a work order")
     repo = _get_repo(request)
 
     # Resolve asset (validates asset_id exists)

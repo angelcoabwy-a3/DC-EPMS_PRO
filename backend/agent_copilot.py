@@ -908,6 +908,7 @@ class ChatResponse(BaseModel):
 class DraftActionRequest(BaseModel):
     operator: str = Field(..., description="CET user id, recorded in audit")
     reason: str | None = Field(None, description="Required for reject")
+    actor_role: str | None = Field(None, description="RBAC F3-4 claim; None -> gate not enforced")
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -971,6 +972,8 @@ async def approve_draft(draft_id: str, req: DraftActionRequest) -> dict:
     is filtered through the same validation (safety bounds, rate limits,
     alarm preconditions) that operator-originated writes pass through.
     """
+    from backend.rbac import require_actor_role
+    require_actor_role(req.actor_role, 5, "approving a copilot draft")
     draft = DraftStore.approve(draft_id, req.operator)
     if draft is None:
         raise HTTPException(
@@ -1014,6 +1017,8 @@ async def approve_draft(draft_id: str, req: DraftActionRequest) -> dict:
 async def reject_draft(draft_id: str, req: DraftActionRequest) -> dict:
     """Operator rejects the draft with a reason. The reason is recorded
     so future v6 retraining cycles can use it as a hard-negative signal."""
+    from backend.rbac import require_actor_role
+    require_actor_role(req.actor_role, 5, "rejecting a copilot draft")
     if not req.reason:
         raise HTTPException(status_code=400, detail="reason required for reject")
     draft = DraftStore.reject(draft_id, req.operator, req.reason)

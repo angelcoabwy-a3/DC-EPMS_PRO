@@ -113,6 +113,8 @@ async def post_audit(
     repo: Any = Depends(get_repository),
 ) -> LotoAuditReport:
     """Run audit + persist report."""
+    from backend.rbac import require_actor_role
+    require_actor_role(body.actor_role, 4, "running a LOTO audit")
     log.info(
         "POST /api/loto/audit procedure=%s target=%s cet=%s",
         body.procedure_id,

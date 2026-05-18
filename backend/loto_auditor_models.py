@@ -125,6 +125,7 @@ class LotoAuditRequest(BaseModel):
         min_length=1,
         max_length=128,
     )
+    actor_role: str | None = None   # RBAC F3-4 claim; None -> gate not enforced
     as_of_timestamp: datetime | None = Field(
         default=None,
         description=(

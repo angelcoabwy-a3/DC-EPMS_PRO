@@ -108,6 +108,7 @@ async def ingest_pdf(
     asset_id: str | None = Form(default=None),
     vendor: str | None = Form(default=None),
     uploaded_by: str | None = Form(default=None),
+    actor_role: str | None = Form(default=None),
 ) -> dict[str, Any]:
     """Ingest a PDF manual into the knowledge corpus (Sprint 7.1b).
 
@@ -122,6 +123,8 @@ async def ingest_pdf(
       3 = Standard (ASHRAE, IEC, NFPA, ISO)
       4 = a3semi-specific MOP/EOP (default)
     """
+    from backend.rbac import require_actor_role
+    require_actor_role(actor_role, 4, "ingesting a PDF")
     ing = _get_ingester(request)
     if not file.filename:
         raise HTTPException(status_code=400, detail="missing filename")
@@ -193,8 +196,12 @@ async def list_documents(request: Request) -> dict[str, Any]:
 
 
 @router.delete("/documents/{document_id}")
-async def delete_document(request: Request, document_id: str) -> dict[str, Any]:
+async def delete_document(
+    request: Request, document_id: str, actor_role: str | None = None,
+) -> dict[str, Any]:
     """Remove all chunks for a document_id from the corpus."""
+    from backend.rbac import require_actor_role
+    require_actor_role(actor_role, 5, "deleting a document")
     ing = _get_ingester(request)
     deleted = ing.remove_document(document_id)
     return {"document_id": document_id, "chunks_deleted": deleted}
@@ -204,6 +211,7 @@ async def delete_document(request: Request, document_id: str) -> dict[str, Any]:
 class DictateClosureRequest(BaseModel):
     """Body for POST /closure/{wo_id}/dictate (text-mode MVP)."""
     model_config = ConfigDict(extra="forbid")
+    actor_role: str | None = None  # RBAC F3-4 claim; None -> gate not enforced
     cet_id: str = Field(..., min_length=1, max_length=120)
     notes_text: str = Field(..., min_length=10, max_length=8000)
     complete_wo: bool = Field(default=False,
@@ -236,6 +244,8 @@ async def dictate_closure(
     Audio mode (multipart/form-data with audio/wav) is reserved for
     Sprint 7.1c-vox when faster-whisper is installed.
     """
+    from backend.rbac import require_actor_role
+    require_actor_role(body.actor_role, 5, "dictating a WO closure")
     cp = _get_closure_processor(request)
     try:
         result = await cp.process(

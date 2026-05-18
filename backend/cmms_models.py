@@ -280,6 +280,7 @@ class CreateWorkOrderRequest(BaseModel):
     predictive_metadata: dict[str, Any] | None = None
     telemetry_snapshot_json: dict[str, Any] | None = None
     due_at: datetime | None = None
+    actor_role: str | None = None        # RBAC F3-4 claim; None -> gate not enforced
 
 
 class ApproveRejectRequest(BaseModel):
@@ -305,6 +306,7 @@ class AssetEnrichRequest(BaseModel):
     """
     model_config = ConfigDict(extra="forbid")
 
+    actor_role: str | None = None        # RBAC F3-4 claim; None -> gate not enforced
     vendor: str | None = Field(default=None, max_length=80)
     model: str | None = Field(default=None, max_length=120)
     serial: str | None = Field(default=None, max_length=120)

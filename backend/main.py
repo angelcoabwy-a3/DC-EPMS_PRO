@@ -164,6 +164,7 @@ class IncidentPayload(BaseModel):
     severity: str = Field(default="info", pattern="^(info|warning|warn|critical|crit)$")
     status: str = Field(default="OPEN")
     physics_json: str = Field(default="{}")
+    actor_role: str | None = None        # RBAC F3-4 claim; None -> gate not enforced
 
 
 class AgentQuery(BaseModel):
@@ -722,6 +723,8 @@ async def telemetry_stream(request: Request):
 # ==============================================================
 @app.post("/api/incidents")
 async def create_incident(incident: IncidentPayload):
+    from backend.rbac import require_actor_role
+    require_actor_role(incident.actor_role, 4, "creating an incident")
     if not db_manager:
         return JSONResponse({"written": False, "error": "DB unavailable"})
     try:
@@ -1110,8 +1113,10 @@ async def list_scenarios():
 
 
 @app.post("/api/scenarios/{scenario_id}/run")
-async def run_scenario(scenario_id: str, horizon_s: int = 900):
+async def run_scenario(scenario_id: str, horizon_s: int = 900, actor_role: str | None = None):
     """Execute a named scenario and return the trajectory."""
+    from backend.rbac import require_actor_role
+    require_actor_role(actor_role, 4, "running a scenario")
     if not PHYSICS_AVAILABLE:
         raise HTTPException(503, "Physics engine unavailable")
 
@@ -1360,6 +1365,8 @@ async def generate_mop_endpoint(payload: dict = Body(...)):
           "duration": str  - estimated duration
         }
     """
+    from backend.rbac import require_actor_role
+    require_actor_role(payload.get("actor_role"), 5, "generating a MOP")
     topic = (payload.get("topic") or "").strip()
     if not topic:
         raise HTTPException(400, "Field 'topic' is required")
@@ -1880,6 +1887,8 @@ async def topology_whatif(payload: dict = Body(...)):
     Computes what the topology + SHI would look like with the given component
     out of service. Used by the Emergency Simulation Mode in the UI.
     """
+    from backend.rbac import require_actor_role
+    require_actor_role(payload.get("actor_role"), 4, "running a what-if simulation")
     if not PHYSICS_AVAILABLE:
         raise HTTPException(503, "Physics engine unavailable")
 
