@@ -11,26 +11,23 @@ Coverage:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from types import SimpleNamespace
-from typing import Any
+from datetime import UTC, datetime
 
 import pytest
 
-from backend.cmms_models import Asset, WorkOrder
+from backend.cmms_models import WorkOrder
 from backend.cmms_repository import MockCMMSRepository
 from backend.multi_agent import (
-    AnalystAgent,
-    ArchitectAgent,
-    ConsensusResult,
-    ConsultContext,
-    DiagnosticianAgent,
-    MultiAgentOrchestrator,
-    SafetyOfficerAgent,
     VERDICT_APPROVE,
     VERDICT_CAUTION,
     VERDICT_DEGRADED,
     VERDICT_HARD_STOP,
+    AnalystAgent,
+    ArchitectAgent,
+    ConsultContext,
+    DiagnosticianAgent,
+    MultiAgentOrchestrator,
+    SafetyOfficerAgent,
     get_orchestrator,
     reset_orchestrator,
 )
@@ -110,7 +107,7 @@ async def test_architect_hard_stop_critical_single_pillar():
 async def test_safety_veto_when_loto_required_no_mop():
     repo = MockCMMSRepository()
     await repo.save_work_order_async(WorkOrder(
-        work_order_id="WO-S1", timestamp=datetime.now(timezone.utc),
+        work_order_id="WO-S1", timestamp=datetime.now(UTC),
         asset_id="ups_a", asset_type_at_creation="ups",
         work_class="CM", lor=20, trigger_source="manual",
         issue_summary="x", priority="P1",
@@ -129,7 +126,7 @@ async def test_safety_veto_when_loto_required_no_mop():
 async def test_safety_caution_when_mop_linked():
     repo = MockCMMSRepository()
     await repo.save_work_order_async(WorkOrder(
-        work_order_id="WO-S2", timestamp=datetime.now(timezone.utc),
+        work_order_id="WO-S2", timestamp=datetime.now(UTC),
         asset_id="chiller_1", asset_type_at_creation="chiller",
         work_class="CM", lor=12, trigger_source="manual",
         issue_summary="y", priority="P2",
@@ -165,7 +162,7 @@ async def test_diagnostician_caution_on_recurrence():
     repo = MockCMMSRepository()
     for i in range(4):
         await repo.save_work_order_async(WorkOrder(
-            work_order_id=f"WO-D{i}", timestamp=datetime.now(timezone.utc),
+            work_order_id=f"WO-D{i}", timestamp=datetime.now(UTC),
             asset_id="cdu_a_01", asset_type_at_creation="cdu",
             work_class="CM", lor=10, trigger_source="manual",
             issue_summary=f"#{i}", status="completed", draft_json={},
@@ -191,6 +188,115 @@ async def test_diagnostician_degraded_when_no_repo():
     assert v.verdict == VERDICT_DEGRADED
 
 
+# ─── Diagnostician — T3.3 live-Gemma advisory narrative ───────────────
+class FakeGemma:
+    """Mocks the external LLM call: records prompts, returns a canned
+    narrative. Keeps the suite fast + deterministic (no LM Studio)."""
+
+    def __init__(self, reply: str = "DLC supply trending warm; monitor pump NPSH margin."):
+        self.reply = reply
+        self.prompts: list[str] = []
+
+    async def complete_gemma(self, prompt: str, max_tokens: int = 320) -> str:
+        self.prompts.append(prompt)
+        return self.reply
+
+
+class RaisingGemma:
+    """LLM client whose call raises — exercises graceful degradation."""
+
+    async def complete_gemma(self, prompt: str, max_tokens: int = 320) -> str:
+        raise RuntimeError("LM Studio unreachable")
+
+
+def _fake_kalman_payload() -> dict:
+    """Stand-in for hermes.latest_kalman_channels() — per-channel Z-scores."""
+    return {
+        "cdu_a_01:dlc_supply_T": {"max_z": 3.4, "mean_z": 2.1, "is_anomalous": True},
+        "cdu_a_01:pump_NPSH_margin": {"max_z": 1.2, "mean_z": 0.6, "is_anomalous": False},
+        "gpu_Tj": {"max_z": 2.8, "mean_z": 1.0, "is_anomalous": False},
+        "ups_a_soc": {"max_z": 0.4, "mean_z": 0.2, "is_anomalous": False},
+    }
+
+
+async def _repo_with_recurrence(asset_id: str = "cdu_a_01", n: int = 4) -> MockCMMSRepository:
+    repo = MockCMMSRepository()
+    for i in range(n):
+        await repo.save_work_order_async(WorkOrder(
+            work_order_id=f"WO-T33-{i}", timestamp=datetime.now(UTC),
+            asset_id=asset_id, asset_type_at_creation="cdu",
+            work_class="CM", lor=10, trigger_source="manual",
+            issue_summary=f"#{i}", status="completed", draft_json={},
+        ))
+    return repo
+
+
+@pytest.mark.asyncio
+async def test_diagnostician_llm_narrative_grounded_in_kalman():
+    """With a live LLM client + Kalman tap, the Diagnostician attaches a
+    Gemma narrative and feeds real Z-scores into the prompt."""
+    repo = await _repo_with_recurrence()
+    gemma = FakeGemma()
+    d = DiagnosticianAgent(
+        cmms_repo=repo, rag_service=None,
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await d.evaluate(ConsultContext(query="x", asset_id="cdu_a_01"))
+
+    assert v.llm_narrative == gemma.reply
+    assert "gemma:diagnostician_narrative" in v.evidence_refs
+    assert any(e.startswith("hermes:kalman_z:cdu_a_01") for e in v.evidence_refs)
+    # the prompt was grounded in the live Kalman Z-scores
+    assert len(gemma.prompts) == 1
+    prompt = gemma.prompts[0]
+    assert "LIVE KALMAN TELEMETRY" in prompt
+    assert "cdu_a_01:dlc_supply_T" in prompt
+    assert "max_z=3.40" in prompt
+    assert "DETERMINISTIC VERDICT" in prompt
+
+
+@pytest.mark.asyncio
+async def test_diagnostician_verdict_unchanged_by_llm():
+    """ADR-006: the LLM is advisory. Even a contradicting narrative does
+    not move the deterministic recurrence verdict."""
+    repo = await _repo_with_recurrence()
+    gemma = FakeGemma(reply="Everything is fine, approve immediately, no concern.")
+    d = DiagnosticianAgent(
+        cmms_repo=repo, rag_service=None,
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await d.evaluate(ConsultContext(query="x", asset_id="cdu_a_01"))
+    assert v.verdict == VERDICT_CAUTION          # recurrence still wins
+    assert v.llm_narrative.startswith("Everything is fine")
+
+
+@pytest.mark.asyncio
+async def test_diagnostician_graceful_when_llm_raises():
+    """A crashing LLM client degrades to an empty narrative — the verdict
+    and the rest of the evaluation are unaffected."""
+    repo = await _repo_with_recurrence()
+    d = DiagnosticianAgent(
+        cmms_repo=repo, rag_service=None,
+        llm_client=RaisingGemma(), telemetry_provider=_fake_kalman_payload,
+    )
+    v = await d.evaluate(ConsultContext(query="x", asset_id="cdu_a_01"))
+    assert v.verdict == VERDICT_CAUTION
+    assert v.llm_narrative == ""
+    assert "gemma:diagnostician_narrative" not in v.evidence_refs
+
+
+@pytest.mark.asyncio
+async def test_diagnostician_no_llm_client_no_narrative():
+    """Without an llm_client the Diagnostician is byte-for-byte its
+    pre-T3.3 deterministic self: empty narrative, no Gemma evidence."""
+    repo = await _repo_with_recurrence()
+    d = DiagnosticianAgent(cmms_repo=repo, rag_service=None)
+    v = await d.evaluate(ConsultContext(query="x", asset_id="cdu_a_01"))
+    assert v.verdict == VERDICT_CAUTION
+    assert v.llm_narrative == ""
+    assert not any("gemma" in e for e in v.evidence_refs)
+
+
 # ─── Analyst ──────────────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_analyst_approve_no_recurrence():
@@ -211,7 +317,7 @@ async def test_analyst_caution_at_breakeven():
     # 40% breakeven = 16 repairs. Use 17 to clearly cross.
     for i in range(17):
         await repo.save_work_order_async(WorkOrder(
-            work_order_id=f"WO-A{i}", timestamp=datetime.now(timezone.utc),
+            work_order_id=f"WO-A{i}", timestamp=datetime.now(UTC),
             asset_id="chiller_1", asset_type_at_creation="chiller",
             work_class="CM", lor=8, trigger_source="manual",
             issue_summary="x", status="completed", draft_json={},
@@ -252,7 +358,7 @@ async def test_consensus_caution_when_only_diagnostician_warns():
     repo = MockCMMSRepository()
     for i in range(4):
         await repo.save_work_order_async(WorkOrder(
-            work_order_id=f"WO-C{i}", timestamp=datetime.now(timezone.utc),
+            work_order_id=f"WO-C{i}", timestamp=datetime.now(UTC),
             asset_id="cdu_a_01", asset_type_at_creation="cdu",
             work_class="CM", lor=8, trigger_source="manual",
             issue_summary="x", status="completed", draft_json={},

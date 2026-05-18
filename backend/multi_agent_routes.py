@@ -130,13 +130,22 @@ def register_multi_agent_routes(
     graphrag: Any | None = None,
     cmms_repo: Any | None = None,
     rag_service: Any | None = None,
+    llm_client: Any | None = None,
+    telemetry_provider: Any | None = None,
 ) -> None:
-    """Mount the router and stash a singleton orchestrator on app.state."""
+    """Mount the router and stash a singleton orchestrator on app.state.
+
+    T3.3: ``llm_client`` (local Gemma) and ``telemetry_provider`` (live
+    Hermes Kalman tap) are forwarded to the Diagnostician for its advisory
+    narrative. Both optional -- absent them the agents stay deterministic.
+    """
     orchestrator = get_orchestrator(
         site_model=site_model,
         graphrag=graphrag,
         cmms_repo=cmms_repo,
         rag_service=rag_service,
+        llm_client=llm_client,
+        telemetry_provider=telemetry_provider,
     )
     app.state.multi_agent_orchestrator = orchestrator
     if not getattr(app.state, "_multi_agent_router_registered", False):

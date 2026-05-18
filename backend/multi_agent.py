@@ -24,6 +24,10 @@ Agents
   Diagnostician       Recurrence + corpus-grounded historical context
                       reads: cmms_repository (WO history) + rag_service
                       (4-tier corpus). Flags accelerated wear patterns.
+                      T3.3: also synthesizes an advisory diagnostic
+                      narrative via the local Gemma model, grounded in
+                      live Hermes Kalman Z-scores. The narrative is
+                      advisory ONLY -- the verdict stays deterministic.
 
   Analyst             LOR-weighted KPIs + CapEx-vs-OpEx framing
                       reads: cmms_repository (asset + open WOs)
@@ -36,14 +40,18 @@ Consensus rule (deterministic)
   3. Else if any agent == 'caution'    -> consensus = 'caution'.
   4. Else                              -> consensus = 'approve'.
 
-Per ADR-006 Deterministic Sandbox: all agents are pure Python,
-no LLM in the critical path. The output is advisory; the operator
-remains the approver. The orchestrator never mutates state.
+Per ADR-006 Deterministic Sandbox: every agent VERDICT is computed by
+pure-Python deterministic logic -- no LLM in the critical decision path.
+The Diagnostician (T3.3) may attach a Gemma-generated narrative, but
+that text is advisory only and never alters the verdict or the
+consensus rule. The output is advisory; the operator remains the
+approver. The orchestrator never mutates state.
 """
 
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 from dataclasses import asdict, dataclass, field
@@ -81,6 +89,9 @@ class AgentVerdict:
     reasoning: list[str]   # bullet points the operator can read
     evidence_refs: list[str]   # provenance markers (e.g. "site_model:ups_a")
     decision_time_ms: int
+    # T3.3: optional advisory LLM narrative (Diagnostician only). Empty
+    # for deterministic-only agents. NEVER an input to the verdict.
+    llm_narrative: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -372,20 +383,38 @@ class SafetyOfficerAgent:
 class DiagnosticianAgent:
     """Recurrence + corpus-grounded historical context.
 
-    Verdict basis:
+    Verdict basis (deterministic):
       - CAUTION  if asset has 3+ completed WOs in trailing 18 months OR
                  if open WO count >= 2 already
       - APPROVE  otherwise (with the historical context surfaced)
+
+    T3.3 -- when an ``llm_client`` (local Gemma) and a
+    ``telemetry_provider`` (live Hermes Kalman tap) are injected, the
+    agent additionally calls Gemma to synthesize an advisory diagnostic
+    narrative grounded in the asset's live Kalman Z-scores. Per ADR-006
+    that narrative is advisory ONLY: the ``verdict`` above is computed
+    before the LLM is consulted and is never altered by it.
     """
 
     name = "Diagnostician"
 
     RECURRENCE_THRESHOLD = 3   # WOs in trailing 18 months
     OPEN_BACKLOG_THRESHOLD = 2
+    KALMAN_TOP_N = 4           # channels surfaced into the Gemma prompt
 
-    def __init__(self, cmms_repo: Any | None, rag_service: Any | None):
+    def __init__(
+        self,
+        cmms_repo: Any | None,
+        rag_service: Any | None,
+        llm_client: Any | None = None,
+        telemetry_provider: Any | None = None,
+    ):
         self._cmms_repo = cmms_repo
         self._rag = rag_service
+        # T3.3: optional live-Gemma narrative layer. Both default to None
+        # so every existing call site and unit test is unaffected.
+        self._llm_client = llm_client
+        self._telemetry_provider = telemetry_provider
 
     async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
         t0 = time.perf_counter()
@@ -414,6 +443,7 @@ class DiagnosticianAgent:
 
         # Recurrence check via WO history
         verdict = VERDICT_APPROVE
+        total_wo = completed_wo = open_wo = 0
         try:
             history = await self._cmms_repo.list_work_orders_async(
                 asset_id=ctx.asset_id, limit=50,
@@ -424,6 +454,7 @@ class DiagnosticianAgent:
             open_now = [w for w in history
                         if getattr(w, "status", "") in
                         ("pending_approval", "approved", "scheduled", "in_progress")]
+            total_wo, completed_wo, open_wo = len(history), len(completed), len(open_now)
             reasoning.append(
                 f"WO history for {ctx.asset_id}: {len(history)} total, "
                 f"{len(completed)} completed, {len(open_now)} currently open."
@@ -462,6 +493,25 @@ class DiagnosticianAgent:
             except Exception as e:
                 reasoning.append(f"RAG lookup failed: {e}")
 
+        # T3.3: advisory Gemma narrative grounded in live Kalman Z-scores.
+        # Runs AFTER the deterministic verdict; never alters it (ADR-006).
+        llm_narrative = ""
+        if self._llm_client is not None and verdict != VERDICT_DEGRADED:
+            kalman_lines = await self._live_kalman_lines(ctx.asset_id)
+            if kalman_lines:
+                evidence.append(
+                    f"hermes:kalman_z:{ctx.asset_id} ({len(kalman_lines)} ch)"
+                )
+            history_line = (
+                f"{total_wo} total, {completed_wo} completed, {open_wo} open"
+            )
+            llm_narrative = await self._synthesize_narrative(
+                ctx, verdict, history_line, kalman_lines,
+            )
+            if llm_narrative:
+                evidence.append("gemma:diagnostician_narrative")
+                reasoning.append(f"Gemma narrative: {llm_narrative}")
+
         summary = (
             "Recurrence detected — investigate root cause"
             if verdict == VERDICT_CAUTION
@@ -471,7 +521,99 @@ class DiagnosticianAgent:
             agent_name=self.name, verdict=verdict,
             summary=summary, reasoning=reasoning,
             evidence_refs=evidence, decision_time_ms=_ms_since(t0),
+            llm_narrative=llm_narrative,
         )
+
+    # ── T3.3: live-Gemma advisory narrative (verdict-independent) ──────
+    async def _live_kalman_lines(self, asset_id: str) -> list[str]:
+        """Render asset-relevant + site-anomalous live Kalman channels as
+        human-readable Z-score lines for the Gemma grounding prompt.
+
+        Best-effort: any provider failure / empty payload yields []. The
+        injected telemetry_provider may be sync or async.
+        """
+        if self._telemetry_provider is None:
+            return []
+        try:
+            payload = self._telemetry_provider()
+            if inspect.isawaitable(payload):
+                payload = await payload
+        except Exception as e:
+            log.debug("[Diagnostician] telemetry provider failed: %s", e)
+            return []
+        if not isinstance(payload, dict) or not payload:
+            return []
+
+        def _maxz(ch: str) -> float:
+            try:
+                return float(payload.get(ch, {}).get("max_z", 0.0) or 0.0)
+            except (TypeError, ValueError, AttributeError):
+                return 0.0
+
+        aid = (asset_id or "").lower()
+        asset_chs = sorted(
+            (c for c in payload if aid and aid in c.lower()),
+            key=_maxz, reverse=True,
+        )[: self.KALMAN_TOP_N]
+        lines: list[str] = []
+        for ch in asset_chs:
+            f = payload[ch]
+            flag = " ANOMALOUS" if f.get("is_anomalous") else ""
+            mean_z = float(f.get("mean_z", 0.0) or 0.0)
+            lines.append(
+                f"[asset] {ch}: max_z={_maxz(ch):.2f} mean_z={mean_z:.2f}{flag}"
+            )
+        for ch in sorted(payload, key=_maxz, reverse=True)[: self.KALMAN_TOP_N]:
+            if ch in asset_chs:
+                continue
+            f = payload[ch]
+            flag = " ANOMALOUS" if f.get("is_anomalous") else ""
+            lines.append(f"[site]  {ch}: max_z={_maxz(ch):.2f}{flag}")
+        return lines
+
+    async def _synthesize_narrative(
+        self,
+        ctx: ConsultContext,
+        verdict: str,
+        history_line: str,
+        kalman_lines: list[str],
+    ) -> str:
+        """Call the local Gemma model for an advisory diagnostic narrative.
+
+        ADR-006: advisory ONLY. ``verdict`` is already decided and is
+        passed in purely as prompt context. Best-effort: returns "" on any
+        LLM failure, including the LM Studio '[Gemma error ...]' sentinel.
+        """
+        if self._llm_client is None or not hasattr(self._llm_client, "complete_gemma"):
+            return ""
+        kalman_block = (
+            "\n".join(f"  {ln}" for ln in kalman_lines)
+            if kalman_lines
+            else "  (live Kalman tap unavailable this tick)"
+        )
+        prompt = (
+            "You are the Diagnostician agent of a Tier IV AI-factory "
+            "operations platform. In 2-3 sentences give a maintenance-"
+            "engineering diagnostic narrative for the asset below. Ground "
+            "every claim strictly in the data provided; do not invent "
+            "values. Be concise and factual.\n\n"
+            f"ASSET: {ctx.asset_id}\n"
+            f"DETERMINISTIC VERDICT (already decided, do not override): "
+            f"{verdict}\n"
+            f"WORK-ORDER HISTORY: {history_line}\n"
+            "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
+            "anomaly):\n"
+            f"{kalman_block}\n"
+        )
+        try:
+            text = (await self._llm_client.complete_gemma(prompt, max_tokens=240)) or ""
+        except Exception as e:
+            log.debug("[Diagnostician] Gemma synthesis failed: %s", e)
+            return ""
+        text = text.strip()
+        if not text or text.startswith(("[Gemma error", "[Gemma stream error")):
+            return ""
+        return text
 
 
 # ─── Agent: Analyst ────────────────────────────────────────────────────
@@ -602,10 +744,15 @@ class MultiAgentOrchestrator:
         graphrag: Any | None = None,
         cmms_repo: Any | None = None,
         rag_service: Any | None = None,
+        llm_client: Any | None = None,
+        telemetry_provider: Any | None = None,
     ):
         self._architect    = ArchitectAgent(site_model, graphrag, cmms_repo=cmms_repo)
         self._safety       = SafetyOfficerAgent(site_model, cmms_repo)
-        self._diagnostician = DiagnosticianAgent(cmms_repo, rag_service)
+        self._diagnostician = DiagnosticianAgent(
+            cmms_repo, rag_service,
+            llm_client=llm_client, telemetry_provider=telemetry_provider,
+        )
         self._analyst      = AnalystAgent(site_model, cmms_repo)
 
     @property
@@ -687,12 +834,15 @@ def get_orchestrator(
     graphrag: Any | None = None,
     cmms_repo: Any | None = None,
     rag_service: Any | None = None,
+    llm_client: Any | None = None,
+    telemetry_provider: Any | None = None,
 ) -> MultiAgentOrchestrator:
     global _orchestrator
     if _orchestrator is None:
         _orchestrator = MultiAgentOrchestrator(
             site_model=site_model, graphrag=graphrag,
             cmms_repo=cmms_repo, rag_service=rag_service,
+            llm_client=llm_client, telemetry_provider=telemetry_provider,
         )
         log.info(
             "[multi_agent] orchestrator initialized "

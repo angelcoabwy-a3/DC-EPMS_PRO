@@ -215,6 +215,22 @@ def _real_telemetry_frame() -> dict:
     }
 
 
+def latest_kalman_channels() -> dict:
+    """Public tap for the latest per-channel Kalman payload.
+
+    Returns ``{channel_id: {max_z, mean_z, is_anomalous, ...}}`` from a
+    fresh Path C2 simulator + pipeline tick. Used by the multi-agent
+    Diagnostician (T3.3) to ground its advisory Gemma narrative in live
+    physical state. Best-effort: returns ``{}`` if the live tap is
+    unavailable, so callers never need to guard the import.
+    """
+    try:
+        return _real_telemetry_frame().get("channels", {})
+    except Exception as e:
+        log.debug("[hermes] latest_kalman_channels unavailable: %s", e)
+        return {}
+
+
 def _telemetry_snapshot(seq: int) -> dict:
     """A representative Path C2 telemetry frame body -- the graceful
     fallback when the live Kalman tap is unavailable."""

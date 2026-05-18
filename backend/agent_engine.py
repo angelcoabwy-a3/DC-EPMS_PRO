@@ -262,6 +262,21 @@ class AgentEngine:
         except Exception as e:
             yield f"[Gemma stream error: {e}]"
 
+    async def complete_gemma(self, prompt: str, max_tokens: int = 320) -> str:
+        """Non-streaming Gemma completion.
+
+        Drains the `_stream_gemma` token stream into a single string for
+        callers that need a whole answer rather than an SSE token feed
+        (e.g. the multi-agent Diagnostician's advisory narrative, T3.3).
+        Reuses the same LM Studio client + model probe as the streaming
+        path. The LM Studio sentinel ('[Gemma error ...]') is returned
+        unchanged on failure so the caller can detect and discard it.
+        """
+        chunks: list[str] = []
+        async for token in self._stream_gemma(prompt, max_tokens):
+            chunks.append(token)
+        return "".join(chunks)
+
     # -- Claude streaming via Anthropic API -------------------
     async def _stream_claude(self, prompt: str, max_tokens: int) -> AsyncIterator[str]:
         if not self.anthropic_api_key:

@@ -302,6 +302,7 @@ async def lifespan(app: FastAPI):
             # references are bound later in lifespan; we resolve them
             # lazily from globals() at registration time.
             try:
+                from backend import hermes as _hermes
                 from backend.multi_agent_routes import register_multi_agent_routes
                 register_multi_agent_routes(
                     app,
@@ -309,9 +310,14 @@ async def lifespan(app: FastAPI):
                     graphrag=globals().get("_s2_service"),
                     cmms_repo=_cmms_repo_instance,
                     rag_service=rag_service,
+                    # T3.3: live Gemma + Kalman tap for the Diagnostician.
+                    llm_client=agent,
+                    telemetry_provider=_hermes.latest_kalman_channels,
                 )
                 log.info("[BOOT] Multi-Agent façade active (4 agents, "
-                         "Safety Officer veto, deterministic consensus)")
+                         "Safety Officer veto, deterministic consensus; "
+                         "Diagnostician live-Gemma narrative %s)",
+                         "ON" if agent is not None else "OFF")
             except Exception as e:
                 log.error("[BOOT] Multi-Agent init failed: %s", e, exc_info=True)
         else:
