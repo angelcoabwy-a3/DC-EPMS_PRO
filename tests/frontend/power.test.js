@@ -359,3 +359,43 @@ describe('L3-2 — views/power.js What-If sandbox', () => {
             .toBeUndefined();
     });
 });
+
+// ════════════════════════════════════════════════════════════════
+//  views/power.js — L3 Phase 3: telemetry micro-trend sparklines
+// ════════════════════════════════════════════════════════════════
+describe('L3-3 — views/power.js telemetry sparklines', () => {
+    const { renderFlatSld, buildFlatMarkup, sparkPoints, updateSparklines, reset } =
+        __power_test__;
+
+    afterEach(() => { document.body.innerHTML = ''; reset(); });
+
+    it('sparkPoints maps a value buffer to one SVG point per sample', () => {
+        const pts = sparkPoints([1, 4, 2, 5], 0, 10, 30, 10);
+        expect(pts.split(' ')).toHaveLength(4);
+        expect(pts).toMatch(/^[\d.]+,[\d.]+ /);
+    });
+
+    it('sparkPoints returns empty for a buffer of fewer than 2 samples', () => {
+        expect(sparkPoints([], 0, 0, 30, 10)).toBe('');
+        expect(sparkPoints([3], 0, 0, 30, 10)).toBe('');
+    });
+
+    it('flat SLD attaches a sparkline polyline only to critical nodes', () => {
+        const svg = buildFlatMarkup();
+        expect(svg).toContain('data-spark="ups_a"');
+        expect(svg).toContain('data-spark="genset_a"');
+        expect(svg).not.toContain('data-spark="xfmr_a"');
+    });
+
+    it('updateSparklines accumulates Kalman ticks and draws the trend', () => {
+        document.body.innerHTML = '<div id="view-power"><svg class="pid-svg"></svg></div>';
+        renderFlatSld();
+        updateSparklines({ 'ups_a_soc': { mean_z: 1.2 }, 'gpu_Tj': { mean_z: 0.4 } });
+        updateSparklines({ 'ups_a_soc': { mean_z: 2.6 }, 'gpu_Tj': { mean_z: 0.5 } });
+        const poly = document.querySelector('[data-spark="ups_a"]');
+        expect(poly).not.toBeNull();
+        const pts = poly.getAttribute('points').trim();
+        expect(pts.length).toBeGreaterThan(0);
+        expect(pts.split(' ')).toHaveLength(2);   // two ticks -> two points
+    });
+});

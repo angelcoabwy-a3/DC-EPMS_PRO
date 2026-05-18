@@ -7993,3 +7993,16 @@ body {
     text-align: center;
 }
 .pf-node.pf-tripped { opacity: 0.97; }
+
+/* ════ L3 Phase 3 — inline micro-trend sparklines ════ */
+.pf-spark {
+    fill: none;
+    stroke: #27d3ee;
+    stroke-width: 1.4;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    opacity: 0.85;
+    filter: drop-shadow(0 0 2px rgba(39, 211, 238, 0.55));
+}
+.pf-node[data-sld-node^="ups"]    .pf-spark { stroke: #2ff5a8; }
+.pf-node[data-sld-node^="genset"] .pf-spark { stroke: #ffb020; }

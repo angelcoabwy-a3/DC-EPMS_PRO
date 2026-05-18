@@ -214,7 +214,61 @@ function _onTelemetryFrame(payload) {
     // frozen state, no telemetry-driven updates until LIVE is restored.
     if (_mode === 'whatif') return;
     // Hermes `telemetry` frame: { schema, channels, anomaly_count_60min, ts }.
-    if (payload && payload.channels) _applyTelemetry(payload.channels);
+    if (payload && payload.channels) {
+        _applyTelemetry(payload.channels);
+        _updateSparklines(payload.channels);
+    }
+}
+
+// ════════════════════════════════════════════════════════════════
+//  PHASE 3 — inline micro-trend sparklines (visual data density)
+//
+//  Critical nodes (Utility / UPS / Genset) get a tiny SVG <polyline>
+//  trend of the last 20 Kalman ticks, rendered below the instantaneous
+//  telemetry numbers — hyperscale data density at a glance.
+// ════════════════════════════════════════════════════════════════
+function _siteMeanZ(channels) {
+    const ids = channels ? Object.keys(channels) : [];
+    if (!ids.length) return 0;
+    let sum = 0;
+    for (const c of ids) sum += Math.abs(Number(channels[c].mean_z) || 0);
+    return sum / ids.length;
+}
+
+/** Map a value buffer to an SVG polyline `points` string within a box. */
+function _sparkPoints(values, sx, sy, sw, sh) {
+    if (!values || values.length < 2) return '';
+    const lo = Math.min(...values);
+    const span = (Math.max(...values) - lo) || 1;
+    const step = sw / (values.length - 1);
+    return values.map((v, i) => {
+        const px = sx + i * step;
+        // sy is the box centre; high value -> top of the box.
+        const py = sy - ((v - lo) / span - 0.5) * sh;
+        return `${px.toFixed(1)},${py.toFixed(1)}`;
+    }).join(' ');
+}
+
+/** Push one Kalman tick per critical node and redraw its sparkline. */
+function _updateSparklines(channels) {
+    const ids = channels ? Object.keys(channels) : [];
+    const siteAvg = _siteMeanZ(channels);
+    _SPARK_NODES.forEach((nodeId) => {
+        const poly = document.querySelector(
+            `#view-power .pid-svg [data-spark="${nodeId}"]`);
+        if (!poly) return;
+        const matched = ids.filter((c) => c.toLowerCase().includes(nodeId.toLowerCase()));
+        const v = matched.length
+            ? matched.reduce((s, c) => s + Math.abs(Number(channels[c].mean_z) || 0), 0)
+              / matched.length
+            : siteAvg;
+        const hist = _history[nodeId] || (_history[nodeId] = []);
+        hist.push(v);
+        if (hist.length > _SPARK_TICKS) hist.shift();
+        poly.setAttribute('points', _sparkPoints(
+            hist, Number(poly.dataset.sx), Number(poly.dataset.sy),
+            Number(poly.dataset.sw), Number(poly.dataset.sh)));
+    });
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -236,6 +290,13 @@ const _FLAT = {
 
 // Node types that are operable breakers — clickable in the control plane.
 const _BREAKER_TYPES = new Set(['ats', 'rpp']);
+
+// Critical nodes that carry an inline micro-trend sparkline.
+const _SPARK_NODES = new Set([
+    'util_a', 'util_b', 'ups_a', 'ups_b', 'genset_a', 'genset_b',
+]);
+const _SPARK_TICKS = 20;   // rolling window — last 20 Kalman ticks
+const _history = {};       // nodeId -> number[] rolling buffer of mean_z
 
 // One equipment node: IEEE-ish symbol + name (above) + metric (below).
 function _flatNode(id, type, label, x, y, metrics) {
@@ -259,11 +320,21 @@ function _flatNode(id, type, label, x, y, metrics) {
     const isBreaker = _BREAKER_TYPES.has(type);
     const breakerAttr = isBreaker
         ? ' data-breaker="1" tabindex="0" role="button"' : '';
+    // Phase 3: critical nodes carry an inline micro-trend sparkline,
+    // drawn below the telemetry numbers. The box geometry is stamped on
+    // the <polyline> so _updateSparklines can plot into it.
+    let spark = '';
+    if (_SPARK_NODES.has(id)) {
+        const sy = y + 40 + metrics.length * 13 + 10;
+        spark = `<polyline class="pf-spark" data-spark="${id}" `
+            + `data-sx="${x - 26}" data-sy="${sy}" data-sw="52" data-sh="12" `
+            + `points=""/>`;
+    }
     return `<g class="sld-node pf-node${isBreaker ? ' pf-breaker' : ''}" `
         + `data-sld-node="${id}"${breakerAttr}>`
         + sym
         + `<text class="pf-name" x="${x}" y="${y - 34}">${label}</text>`
-        + m
+        + m + spark
         + `</g>`;
 }
 
@@ -582,11 +653,14 @@ export const __power_test__ = {
     getMode: () => _mode,
     buildModeToggle: _buildModeToggle,
     applyGrid: _applyGrid,
+    sparkPoints: _sparkPoints,
+    updateSparklines: _updateSparklines,
     reset: () => {
         _initialized = false;
         _mode = 'live';
         if (_unsubTelemetry) { _unsubTelemetry(); _unsubTelemetry = null; }
         const modal = document.getElementById('pwr-breaker-modal');
         if (modal) modal.remove();
+        for (const k of Object.keys(_history)) delete _history[k];
     },
 };
