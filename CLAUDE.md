@@ -19,8 +19,8 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-18)
 
 ```
-HEAD:  098ecac (+ this doc-sync)  branch master  —  pushed 2026-05-18.
-       50+ commits AHEAD of tag v0.10.13-modal-fix (UNTAGGED). Tag = v0.11.x next.
+HEAD:  38605d3 (+ this doc-sync)  branch master  —  pushed 2026-05-18.
+       55+ commits AHEAD of tag v0.10.13-modal-fix (UNTAGGED). Tag = v0.11.x next.
 Working tree: .claude/ + PRIMER_PROMPT.md untracked (intentional).
 
 Tags chronological (38 total):
@@ -42,15 +42,17 @@ Tags chronological (38 total):
    E2E security audit + F3-4/F3-5/F3-6 remediation (claim-RBAC, XSS sanitizer,
    externalized DB creds), SRE cleanup, DC-EPMS-021 ruff hygiene, structural
    compaction (cmms_classification dedup + orphan purge), T2.1 IIFE dismantle
-   (scenarios + maintenance + incidents + mops + power), T3.1 Hermes WebSocket
-   EDA plane + CET-gated edge healing, T3.3/T3.3b live-Gemma Diagnostician +
-   Safety Officer, Tier IV Power SLD upgrade (5-layer + paralleling bus +
-   aggressive SCADA restyle + Hermes binding). v0.11.x next.]
+   (scenarios + maintenance + incidents + mops + power + cooling + copilot),
+   T3.1 Hermes WebSocket EDA plane + CET-gated edge healing, T3.3/T3.3b
+   live-Gemma Diagnostician + Safety Officer, Tier IV Power SLD upgrade
+   (5-layer + paralleling bus + aggressive SCADA restyle + Hermes binding),
+   Cooling orthogonal SCADA SLD + L3 control plane. v0.11.x next.]
 
-Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~44s, 0 fail.
-         frontend 125 passed — Vitest (npm test): mission_control + scenarios +
-         incidents + mops + power + sanitize + hermes (slice / cutover / EDA) +
-         maintenance + rack_heatmap. Both green. ruff: 0 violations in backend/.
+Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~45s, 0 fail.
+         frontend 146 passed — Vitest (npm test): mission_control + scenarios +
+         incidents + mops + power + cooling + copilot + sanitize + hermes
+         (slice / cutover / EDA) + maintenance + rack_heatmap. Both green.
+         ruff: 0 violations in backend/.
 
 Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
   - Numba JIT cold compile: 4.8 ms
@@ -77,22 +79,28 @@ eradicated → bound to the Hermes telemetry stream (live Kalman Z-score →
 node severity); the iso + flat renderers reinvented (orthogonal SVG SLD,
 flat 2.5D); L3 control plane — RBAC-gated breaker actuation to
 /api/bms/write, isolated What-If DAG simulation sandbox, telemetry
-sparklines. Live backlog = docs/ROADMAP-V11.md (v11.5, 2026-05-18).
+sparklines. Cooling sprint (2026-05-18): the DLC P&ID view extracted to
+views/cooling.js, rebuilt as an orthogonal thermodynamic SCADA SLD, +
+an L3 control plane (RBAC pump actuation, What-If sandbox, sparklines).
+Copilot sprint (2026-05-18): the Facility Co-Pilot agent view extracted
+to views/copilot.js — LLM-authored DOM surfaces routed through the F3-5
+sanitizeHTML XSS filter, wired to the Hermes hermes:agent-consensus EDA
+event. Live backlog = docs/ROADMAP-V11.md (v11.5, 2026-05-18).
 NOTE: OBS demo-recording descoped.
 ```
 
 **Recent commits (latest at top)**:
 ```
+38605d3  refactor(ui): extract Copilot AI view from monolith — XSS-sanitized ES6 module (T2.1)
+bb10e4e  feat(ui): Cooling L3 control plane — RBAC actuation + What-If sandbox + sparklines
+33e7459  feat(ui): rebuild Cooling as an orthogonal thermodynamic SCADA SLD
+7b85ab9  refactor(ui): extract Cooling view from monolith into ES6 module (T2.1)
+3edafc2  fix(ui/bms): map Power SLD actuators to real seeded BMS tag registry
+50ab979  docs: sync compass — Power SLD L3 control plane (frontend 125 Vitest)
 098ecac  feat(ui): inject real-time telemetry sparklines into Power SLD (L3 Phase 3)
 2cd3b96  feat(ui): isolated What-If predictive simulation sandbox — local DAG engine (L3 Phase 2)
 bc060d9  feat(ui): interactive Power SLD breaker actuators wired to RBAC-secured BMS (L3 Phase 1)
 41d1206  feat(ui): reinvent iso + flat Power SLD rendering — orthogonal routing, label legibility
-b5a82ed  feat(ui): extract Power view, upgrade SLD to Tier IV 5-layer topology + Hermes bind
-10fd664  feat(ai): expand live Gemma ML to the Safety Officer agent (T3.3b)
-81a8909  refactor(core): consolidate duplicated utilities + purge orphaned functions
-3aa944b  refactor(ui): extract incidents view from monolith into ES6 module (T2.1)
-136c7ef  chore(hygiene): eradicate ruff static analysis errors (DC-EPMS-021, DC-EPMS-022)
-5ed2409  fix(security): client-side XSS sanitization + externalize dev DB creds (F3-5, F3-6)
 ```
 
 ## 🛰 [HISTORICAL] Sprint 5 C0 Architecture (delivered — preserved as design record)

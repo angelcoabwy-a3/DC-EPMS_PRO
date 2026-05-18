@@ -1,10 +1,17 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.5 (2026-05-18) — structural compaction · T3.3b Safety Officer · T2.1 mops view
+- **Status**: v11.6 (2026-05-18) — Power SLD L3 · Cooling SCADA + L3 · Copilot extraction
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-18 (v11.5)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-18 (v11.6)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.6 sync (2026-05-18)**: multi-epic extraction sprint — Power SLD L3
+  control plane (RBAC breaker actuation + What-If DAG sandbox + sparklines),
+  the BMS-tag registry mapped to real seeded ISA-95 tags, T2.1 `cooling` view
+  extracted then rebuilt as an orthogonal thermodynamic SCADA SLD + L3 control
+  plane, and T2.1 `copilot` view extracted — LLM-authored DOM surfaces routed
+  through the F3-5 `sanitizeHTML` XSS filter, wired to `hermes:agent-consensus`.
+  Frontend Vitest: 146 passed.
 - **v11.5 sync (2026-05-18)**: consolidation sprint — structural compaction
   (4 duplicated CMMS helpers consolidated to `backend/cmms_classification.py`,
   5 frontend `_escape` copies to `core/sanitize.js`, 3 orphan functions purged),
@@ -112,13 +119,19 @@ view per session, in order of demo relevance:
 1. ✅ `views/scenarios.js` — failure scenario simulator (DELIVERED `480f03b`)
 2. ✅ `views/incidents.js` — postgres audit log (DELIVERED `3aa944b`)
 3. ✅ `views/mops.js` — MOPs/SOPs/EOPs library (DELIVERED `de7404f`)
-4. `views/cooling.js` (~350 LOC) — P&ID renderer
+4. ✅ `views/cooling.js` — extracted, then rebuilt as an orthogonal
+   thermodynamic SCADA SLD + an L3 control plane (RBAC pump actuation,
+   What-If sandbox, telemetry sparklines) (DELIVERED `7b85ab9` /
+   `33e7459` / `bb10e4e`)
 5. ✅ `views/power.js` — SLD data plane extracted; the 2.5D iso engine
    preserved + enriched to an explicit 5-layer Tier IV topology
    (paralleling bus N+1), aggressive dark-SCADA restyle, Hermes-bound
    (DELIVERED `b5a82ed`)
 6. `views/bms.js` (~250 LOC) — BMS connector
-7. `views/copilot.js` (~400 LOC) — full-screen agent chat
+7. ✅ `views/copilot.js` — Facility Co-Pilot agent chat + HITL drafts;
+   LLM-authored DOM surfaces routed through the F3-5 `sanitizeHTML` XSS
+   filter, wired to the Hermes `hermes:agent-consensus` EDA event
+   (DELIVERED `38605d3`)
 8. `views/site_topology_legacy.js` (~600 LOC) — old tree+detail UI
    (current force-directed is in `views/site_topology.js`)
 
