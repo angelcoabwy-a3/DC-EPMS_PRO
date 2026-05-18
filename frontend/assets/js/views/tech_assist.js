@@ -24,7 +24,7 @@
 
 import { registerRoute } from '../core/router.js';
 import { trapFocus } from '../core/focus_trap.js';
-import { sanitizeHTML } from '../core/sanitize.js';
+import { sanitizeHTML, escapeHTML as _escape } from '../core/sanitize.js';
 
 const API_BASE = '';
 
@@ -43,17 +43,6 @@ let _initialized = false;
 // enrich modal can pre-fill without re-running the regex.
 let _lastExtractedFields = {};
 let _libraryLoaded = false;
-
-// ─── HTML escape helper (XSS-safe rendering) ──────────────────────
-function _escape(s) {
-    if (s === null || s === undefined) return '';
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
 
 function _fmtNum(v, digits = 2) {
     if (v === null || v === undefined) return '—';

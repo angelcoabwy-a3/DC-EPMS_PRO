@@ -51,10 +51,15 @@ ADR-006 Deterministic Sandbox compliance:
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from backend.cmms_classification import (
+    compute_lor as _compute_lor,
+    derive_priority as _derive_priority,
+    derive_procedure_class as _derive_procedure_class,
+    new_work_order_id as _wo_id,
+)
 from backend.cmms_models import WorkOrder
 from backend.cmms_repository import (
     AssetNotFoundError,
@@ -71,39 +76,9 @@ DEFAULT_LIKELIHOOD_IDX    = 4   # 1-5 scale; predictive = "happening"
 DEFAULT_CONSEQUENCE_IDX   = 4   # critical asset escalates further
 
 
-# ─── Priority + class derivation (mirrors cmms_routes helpers) ─────────
-def _compute_lor(likelihood: int, consequence: int) -> int:
-    return max(1, min(25, likelihood * consequence))
-
-
-def _derive_priority(lor: int, criticality: str) -> str:
-    if lor >= 20:
-        base = "P1"
-    elif lor >= 12:
-        base = "P2"
-    elif lor >= 6:
-        base = "P3"
-    else:
-        base = "P4"
-    if criticality == "critical" and base in ("P3", "P4"):
-        base = "P2"
-    if criticality == "critical" and base == "P2" and lor >= 15:
-        base = "P1"
-    return base
-
-
-def _derive_procedure_class(work_class: str, requires_loto: bool) -> str:
-    if work_class == "EM":
-        return "EOP"
-    if requires_loto:
-        return "DMOP"
-    if work_class == "CM":
-        return "MOP"
-    return "SOP"
-
-
-def _wo_id() -> str:
-    return f"WO-{datetime.now(UTC).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
+# ─── Priority + class derivation ───────────────────────────────────────
+# _compute_lor / _derive_priority / _derive_procedure_class / _wo_id are
+# consolidated in backend/cmms_classification.py (Phase 1) — imported above.
 
 
 # ─── Predictive trigger state machine ──────────────────────────────────

@@ -25,7 +25,6 @@ from backend.telemetry_simulator import (
     PHASE1_BASELINES,
     REGION_PROFILES,
     TelemetrySimulator,
-    build_placeholder_payload,
     reset_simulator,
 )
 
@@ -73,7 +72,7 @@ def test_window_shape_matches_n_samples(sim):
 def test_channel_id_format_is_component_scoped(sim):
     """Channel IDs must be '<component_id>:<metric>' to disambiguate."""
     window = sim.get_window(n_samples=1)
-    for ch_id in window.keys():
+    for ch_id in window:
         assert ":" in ch_id, f"channel id {ch_id!r} missing component scope"
         parts = ch_id.split(":")
         assert len(parts) == 2, f"channel id {ch_id!r} has unexpected format"
@@ -169,7 +168,7 @@ def test_different_seed_produces_different_samples(site_model):
 # ─────────────────────────────────────────────────────────────────────
 #  Anomaly injection
 # ─────────────────────────────────────────────────────────────────────
-def test_inject_thermal_runaway_visible_in_gpu_Tj(sim):
+def test_inject_thermal_runaway_visible_in_gpu_Tj(sim):  # noqa: N802 - gpu_Tj channel id
     """Injected thermal_runaway pushes gpu_Tj far above baseline."""
     rack_id = "rack_a_01_05"
     n_affected = sim.inject_anomaly(rack_id, "thermal_runaway", magnitude=1.0)
@@ -226,32 +225,6 @@ def test_inject_on_non_emitting_component_returns_zero(sim):
 # ─────────────────────────────────────────────────────────────────────
 #  Placeholder payload (frontend contract)
 # ─────────────────────────────────────────────────────────────────────
-def test_placeholder_payload_matches_frontend_schema(sim):
-    """build_placeholder_payload output must match SCHEMA_CHANNEL_INNOVATIONS."""
-    window = sim.get_window(n_samples=5)
-    payload = build_placeholder_payload(window)
-    assert isinstance(payload, dict)
-    assert len(payload) == len(window)
-    # Inspect one entry's shape
-    ch_id, fields = next(iter(payload.items()))
-    expected_keys = {"n_emissions", "max_z", "mean_z", "is_anomalous", "last_emission"}
-    assert set(fields.keys()) == expected_keys, (
-        f"payload entry {ch_id} missing keys: {expected_keys - set(fields.keys())}"
-    )
-    assert fields["n_emissions"] == 5
-    assert fields["max_z"] == 0.0  # C1 placeholder; C2 fills with real Kalman z
-    assert fields["mean_z"] == 0.0
-    assert fields["is_anomalous"] is False
-    assert isinstance(fields["last_emission"], float)
-
-
-def test_placeholder_payload_skips_empty_arrays():
-    """Empty samples arrays must be skipped (defensive)."""
-    window = {"empty:metric": np.array([], dtype=np.float64)}
-    payload = build_placeholder_payload(window)
-    assert "empty:metric" not in payload
-
-
 # ─────────────────────────────────────────────────────────────────────
 #  Anomaly profile validity
 # ─────────────────────────────────────────────────────────────────────
@@ -267,7 +240,7 @@ def test_all_anomaly_profiles_target_known_metrics():
     }
     known = set(PHASE1_BASELINES) | region_metrics
     for kind, profile in ANOMALY_PROFILES.items():
-        for metric in profile.keys():
+        for metric in profile:
             assert metric in known, (
                 f"anomaly {kind} targets metric {metric!r} "
                 f"that is not in PHASE1_BASELINES or REGION_PROFILES"

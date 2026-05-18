@@ -26,12 +26,17 @@ Per ADR-006 Deterministic Sandbox: WO creation always lands in
 from __future__ import annotations
 
 import logging
-import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 
+from backend.cmms_classification import (
+    compute_lor as _compute_lor,
+    derive_priority as _derive_priority,
+    derive_procedure_class as _derive_procedure_class,
+    new_work_order_id as _wo_id,
+)
 from backend.cmms_models import (
     ApproveRejectRequest,
     AssetEnrichRequest,
@@ -62,42 +67,9 @@ def _get_repo(request: Request) -> PostgresCMMSRepository:
     return repo
 
 
-def _wo_id() -> str:
-    """Format: WO-YYYYMMDD-uuid8"""
-    return f"WO-{datetime.now(UTC).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
-
-
-def _compute_lor(likelihood_idx: int, consequence_idx: int) -> int:
-    """LOR = L * C, capped 1..25. Mirrors cmms_mcp.compute_lor minimal form."""
-    return max(1, min(25, likelihood_idx * consequence_idx))
-
-
-def _derive_priority(lor: int, criticality: str) -> str:
-    """Priority from LOR x asset.criticality. Critical assets escalate."""
-    base = "P3"
-    if lor >= 20:
-        base = "P1"
-    elif lor >= 12:
-        base = "P2"
-    elif lor >= 6:
-        base = "P3"
-    else:
-        base = "P4"
-    if criticality == "critical" and base in ("P3", "P4"):
-        base = "P2"
-    if criticality == "critical" and base == "P2" and lor >= 15:
-        base = "P1"
-    return base
-
-
-def _derive_procedure_class(work_class: str, requires_loto: bool) -> str:
-    if work_class == "EM":
-        return "EOP"
-    if requires_loto:
-        return "DMOP"
-    if work_class == "CM":
-        return "MOP"
-    return "SOP"
+# WO-classification helpers (_wo_id / _compute_lor / _derive_priority /
+# _derive_procedure_class) consolidated into backend/cmms_classification.py
+# (Phase 1 structural compaction) and imported above.
 
 
 # ═══════════════════════════════════════════════════════════════════════

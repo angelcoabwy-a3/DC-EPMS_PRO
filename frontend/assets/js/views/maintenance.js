@@ -22,6 +22,7 @@
 import { playClick } from '../core/sound.js';
 import { registerRoute } from '../core/router.js';
 import { trapFocus } from '../core/focus_trap.js';
+import { escapeHTML as _escape } from '../core/sanitize.js';
 
 const API_BASE = '';  // same-origin
 
@@ -546,13 +547,6 @@ function _ageText(isoTimestamp) {
     const hr = Math.floor(min / 60);
     if (hr < 24) return `${hr}h`;
     return `${Math.floor(hr / 24)}d`;
-}
-
-function _escape(s) {
-    if (s == null) return '';
-    return String(s).replace(/[&<>"']/g, c => (
-        {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]
-    ));
 }
 
 // ─── KPI cards ────────────────────────────────────────────────────

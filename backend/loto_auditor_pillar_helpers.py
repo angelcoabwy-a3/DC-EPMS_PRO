@@ -447,44 +447,6 @@ def detect_ups_path_spof(
     return None
 
 
-def classify_redundancy_degradation(
-    tier_pre: str,
-    paths_lost: int = 1,
-) -> tuple[str, bool, str | None]:
-    """Pillar 2 — classify how far a LOTO isolation degrades redundancy.
-
-    Given the redundancy tier BEFORE isolation and how many independent
-    paths the LOTO removes, return (tier_post, is_critical, alert).
-
-    A drop to bare `N` (1N — a single unprotected path) is a CRITICAL
-    finding: the surviving sub-system has zero remaining redundancy and
-    any further fault causes load loss.
-
-    tier_pre accepts RedundancyTier values: "N", "N+1", "2N", "2N+1".
-    """
-    ladder = ["N", "N+1", "2N", "2N+1"]
-    try:
-        idx = ladder.index(tier_pre)
-    except ValueError:
-        log.debug("[pillar2] unknown redundancy tier %r", tier_pre)
-        return (tier_pre, False, f"unknown redundancy tier '{tier_pre}' - cannot classify")
-
-    # A 2N / 2N+1 sub-system loses a WHOLE independent path per isolation
-    # (two ladder rungs); an N+1 system loses only its component spare.
-    steps_down = (2 * paths_lost) if tier_pre in ("2N", "2N+1") else paths_lost
-    tier_post = ladder[max(0, idx - steps_down)]
-
-    is_critical = (tier_post == "N" and tier_pre != "N")
-    alert = None
-    if is_critical:
-        alert = (
-            f"CRITICAL: LOTO isolation degrades redundancy {tier_pre} -> "
-            f"{tier_post} (1N). The surviving sub-system is unprotected - "
-            "any further fault causes load loss. Witness + risk sign-off required."
-        )
-    return (tier_post, is_critical, alert)
-
-
 # =============================================================================
 #  Capacitor discharge requirement classifier (Pillar 3 support)
 # =============================================================================

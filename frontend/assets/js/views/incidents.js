@@ -22,21 +22,11 @@
 
 import { registerRoute } from '../core/router.js';
 import { getIncidents } from '../services/api.js';
+import { escapeHTML as _escape } from '../core/sanitize.js';
 
 const INCIDENT_LIMIT = 50;
 
 let _initialized = false;
-
-// ─── HTML escape (regex form — import-safe, needs no document) ─────
-function _escape(s) {
-    if (s === null || s === undefined) return '';
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
 
 // ─── Pure presentation helpers (the __incidents_test__ surface) ────
 /** Map a raw severity string to a CSS class — mirrors the legacy

@@ -23,6 +23,7 @@
 
 import { playVeto, playClick } from '../core/sound.js';
 import { registerRoute } from '../core/router.js';
+import { escapeHTML as _escape } from '../core/sanitize.js';
 
 const API_BASE = '';
 
@@ -48,17 +49,6 @@ const SCENARIOS = {
 };
 
 let _initialized = false;
-
-// ─── HTML escape ──────────────────────────────────────────────────
-function _escape(s) {
-    if (s === null || s === undefined) return '';
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
 
 // ─── Verdict styling helpers ──────────────────────────────────────
 function _verdictClass(v) {

@@ -42,12 +42,10 @@ Anomalies persist for `duration_samples` future calls to get_window()
 then auto-clear. Tests use this to verify Pillar 4 / Kalman behavior
 without waiting for natural anomalies.
 
-C1 closure: this module is the SOURCE of synthetic samples. C2 will
-add the Kalman+SoD pipeline (telemetry_pipeline.py) that consumes
-get_window() and produces the actual {n_emissions, max_z, mean_z,
-is_anomalous} payload. C1 emits a placeholder shape via
-build_placeholder_payload() so the frontend Activity Strip already
-flips Schema field to "channel_innovations" upon C1 deployment.
+This module is the SOURCE of synthetic samples. The Kalman+SoD pipeline
+(telemetry_pipeline.py) consumes get_window() and produces the
+{n_emissions, max_z, mean_z, is_anomalous} payload that the frontend
+Activity Strip reads under the "channel_innovations" schema.
 """
 
 from __future__ import annotations
@@ -446,32 +444,3 @@ def reset_simulator() -> None:
     """Test helper — discard singleton so tests get fresh instance."""
     global _simulator
     _simulator = None
-
-
-# ─────────────────────────────────────────────────────────────────────
-#  Frontend payload builder
-# ─────────────────────────────────────────────────────────────────────
-def build_placeholder_payload(window: dict[str, np.ndarray]) -> dict[str, dict]:
-    """Convert raw simulator window to channel_innovations payload shape.
-
-    C1: emits frontend-compatible placeholder payload. The Kalman+SoD
-    pipeline (Bite C2, telemetry_pipeline.py) will replace this with
-    real innovation residuals computed by cyber_physical_tools.
-
-    Returns {channel_id: {n_emissions, max_z, mean_z, is_anomalous,
-                          last_emission}}
-    matching the contract that frontend/assets/js/core/telemetry_engine.js
-    expects under SCHEMA_CHANNEL_INNOVATIONS.
-    """
-    out: dict[str, dict] = {}
-    for ch_id, samples in window.items():
-        if samples.size == 0:
-            continue
-        out[ch_id] = {
-            "n_emissions": int(samples.size),
-            "max_z": 0.0,            # C2: real Kalman z-score
-            "mean_z": 0.0,           # C2: real Kalman mean z
-            "is_anomalous": False,   # C2: max_z >= ANOMALY_Z_THRESHOLD
-            "last_emission": float(samples[-1]),
-        }
-    return out

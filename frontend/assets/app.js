@@ -73,13 +73,6 @@
         },
     };
 
-    function severityClass(sev) {
-        sev = (sev || '').toLowerCase();
-        if (sev === 'critical' || sev === 'crit') return 'crit';
-        if (sev === 'warning' || sev === 'warn') return 'warn';
-        return 'info';
-    }
-
     function escapeHtml(s) {
         const div = document.createElement('div');
         div.textContent = s || '';

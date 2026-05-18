@@ -22,20 +22,10 @@
 
 import { registerRoute } from '../core/router.js';
 import { getScenarios, runScenario } from '../services/api.js';
+import { escapeHTML as _escape } from '../core/sanitize.js';
 
 let _cache = null;          // scenarios array — fetched once, then reused
 let _initialized = false;
-
-// ─── HTML escape (regex form — import-safe, needs no document) ─────
-function _escape(s) {
-    if (s === null || s === undefined) return '';
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
 
 // ─── Pure presentation helpers (the __scenarios_test__ surface) ────
 const _MOD_ICONS = {

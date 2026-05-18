@@ -114,9 +114,15 @@ function _scrub(parent) {
     }
 }
 
-/** Escape-only fallback for non-DOM contexts (SSR / unit harness with
- *  no document). Renders the input as inert visible text. */
-function _escapeText(s) {
+/**
+ * HTML-escape a value for safe text interpolation. The shared escaper —
+ * view modules import this (aliased to `_escape`) instead of each
+ * re-declaring a local copy (Phase 1 structural compaction). null /
+ * undefined collapse to '' (matching every prior per-view copy). Also
+ * serves as sanitizeHTML()'s escape-only fallback in a non-DOM context.
+ */
+export function escapeHTML(s) {
+    if (s === null || s === undefined) return '';
     return String(s).replace(/[&<>"']/g, (c) => (
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
     ));
@@ -134,7 +140,7 @@ export function sanitizeHTML(dirty) {
     if (dirty === null || dirty === undefined) return '';
     const input = String(dirty);
     if (typeof document === 'undefined' || !document.createElement) {
-        return _escapeText(input);                         // defensive fallback
+        return escapeHTML(input);                          // defensive fallback
     }
     const tpl = document.createElement('template');
     tpl.innerHTML = input;            // inert: nothing loads or executes
@@ -142,6 +148,6 @@ export function sanitizeHTML(dirty) {
     return tpl.innerHTML;
 }
 
-export const __sanitize_test__ = { _isDangerousURL, _escapeText, TAG_ALLOW, TAG_DROP };
+export const __sanitize_test__ = { _isDangerousURL, escapeHTML, TAG_ALLOW, TAG_DROP };
 
 export default sanitizeHTML;
