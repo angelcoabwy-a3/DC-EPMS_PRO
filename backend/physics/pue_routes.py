@@ -54,7 +54,7 @@ async def pue_both() -> dict[str, Any]:
     try:
         cfg = PUEConfig.get()
     except RuntimeError:
-        raise HTTPException(status_code=503, detail="PUEConfig not initialized")
+        raise HTTPException(status_code=503, detail="PUEConfig not initialized") from None
     snaps = compute_pue_both_phases(cfg)
     return {
         "phase_1": snaps["phase_1"].to_dict(),
@@ -70,7 +70,7 @@ async def pue_single(phase: str) -> dict[str, Any]:
     try:
         cfg = PUEConfig.get()
     except RuntimeError:
-        raise HTTPException(status_code=503, detail="PUEConfig not initialized")
+        raise HTTPException(status_code=503, detail="PUEConfig not initialized") from None
     is_design = (phase == "phase_2")
     snap = compute_pue_for_phase(phase, cfg, is_design_target=is_design)
     return snap.to_dict()

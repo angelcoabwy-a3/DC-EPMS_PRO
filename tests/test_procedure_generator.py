@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from backend.cmms_models import PROCEDURE_CLASSES, RBACDenied, UserRole
+from backend.cmms_models import PROCEDURE_CLASSES, RBACDeniedError, UserRole
 from backend.procedure_engine import promote_procedure
 from backend.procedure_generator import (
     generate_emp,
@@ -219,7 +219,7 @@ def test_rbac_promotion_gate_allows_l5_l6():
 
 def test_rbac_promotion_gate_blocks_l4():
     draft = generate_eop("gen_desync", "genset_a_01")
-    with pytest.raises(RBACDenied):
+    with pytest.raises(RBACDeniedError):
         promote_procedure(draft, UserRole.TECH_L4)
     # the draft is untouched after a blocked promotion
     assert draft["status"] == "DRAFT"

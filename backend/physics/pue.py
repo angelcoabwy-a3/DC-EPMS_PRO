@@ -36,7 +36,8 @@ from __future__ import annotations
 import logging
 import math
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -92,7 +93,7 @@ class PUESnapshot:
 class PUEConfig:
     """Singleton-style loader for config/pue_targets.yml."""
 
-    _instance: "PUEConfig | None" = None
+    _instance: PUEConfig | None = None
 
     def __init__(self, config_path: Path):
         if not config_path.is_file():
@@ -105,12 +106,12 @@ class PUEConfig:
         log.info("[pue] loaded config from %s", config_path.name)
 
     @classmethod
-    def load(cls, config_path: Path) -> "PUEConfig":
+    def load(cls, config_path: Path) -> PUEConfig:
         cls._instance = cls(config_path)
         return cls._instance
 
     @classmethod
-    def get(cls) -> "PUEConfig":
+    def get(cls) -> PUEConfig:
         if cls._instance is None:
             raise RuntimeError("PUEConfig not loaded; call PUEConfig.load() first")
         return cls._instance
@@ -253,7 +254,7 @@ def compute_pue_for_phase(
     crit = float(phase_cfg["crit_threshold"])
     state = classify_pue_state(pue, target, warn, crit, is_design_target)
 
-    from datetime import datetime, timezone
+    from datetime import datetime
     snapshot = PUESnapshot(
         phase=phase_name,
         description=phase_cfg["description"],
@@ -269,7 +270,7 @@ def compute_pue_for_phase(
         first_law_residual_pct=round(residual_pct, 3),
         first_law_state=fl_state,
         is_design_target=is_design_target,
-        timestamp_iso=datetime.now(timezone.utc).isoformat(),
+        timestamp_iso=datetime.now(UTC).isoformat(),
     )
     return snapshot
 

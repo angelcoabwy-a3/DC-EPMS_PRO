@@ -63,7 +63,7 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 log = logging.getLogger(__name__)
 
@@ -183,11 +183,14 @@ class HardwareAdapter:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-#  Re-export concrete adapters
+#  Re-export concrete adapters. Intentionally below the base classes
+#  (HardwareAdapter / FailureMode): the adapter modules import those base
+#  classes from this package, so importing the adapters earlier would be a
+#  circular import. E402 is suppressed per-line for exactly that reason.
 # ─────────────────────────────────────────────────────────────────────────
-from .asco_adapter import AscoAdapter, MockBACnetBackend
-from .cummins_adapter import CumminsAdapter, MockModbusBackend
-from .russelectric_adapter import MockBypassBackend, RusselectricAdapter
+from .asco_adapter import AscoAdapter, MockBACnetBackend  # noqa: E402
+from .cummins_adapter import CumminsAdapter, MockModbusBackend  # noqa: E402
+from .russelectric_adapter import MockBypassBackend, RusselectricAdapter  # noqa: E402
 
 __all__ = [
     "AscoAdapter",

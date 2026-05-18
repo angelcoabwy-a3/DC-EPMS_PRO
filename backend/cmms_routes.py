@@ -27,18 +27,16 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request
 
 from backend.cmms_models import (
     ApproveRejectRequest,
-    Asset,
     AssetEnrichRequest,
-    AssetHealthAggregate,
     CreateWorkOrderRequest,
-    RBACDenied,
+    RBACDeniedError,
     WorkOrder,
     assert_can_approve_work_order,
 )
@@ -66,7 +64,7 @@ def _get_repo(request: Request) -> PostgresCMMSRepository:
 
 def _wo_id() -> str:
     """Format: WO-YYYYMMDD-uuid8"""
-    return f"WO-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
+    return f"WO-{datetime.now(UTC).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
 
 
 def _compute_lor(likelihood_idx: int, consequence_idx: int) -> int:
@@ -144,7 +142,7 @@ async def list_assets(
             limit=limit,
         )
     except CMMSRepositoryError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     return {"count": len(assets), "assets": [a.model_dump(mode="json") for a in assets]}
 
 
@@ -155,7 +153,7 @@ async def health_aggregate(request: Request) -> dict[str, Any]:
     try:
         rows = await repo.get_health_aggregate_async()
     except CMMSRepositoryError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     return {"rows": [r.model_dump(mode="json") for r in rows]}
 
 
@@ -165,9 +163,9 @@ async def get_asset(request: Request, asset_id: str) -> dict[str, Any]:
     try:
         asset = await repo.get_asset_async(asset_id)
     except AssetNotFoundError:
-        raise HTTPException(status_code=404, detail=f"asset '{asset_id}' not found")
+        raise HTTPException(status_code=404, detail=f"asset '{asset_id}' not found") from None
     except CMMSRepositoryError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     open_wos = await repo.list_work_orders_async(asset_id=asset_id, only_open=True, limit=20)
     return {
         "asset": asset.model_dump(mode="json"),
@@ -198,9 +196,9 @@ async def enrich_asset(
     try:
         asset = await repo.get_asset_async(asset_id)
     except AssetNotFoundError:
-        raise HTTPException(status_code=404, detail=f"asset '{asset_id}' not found")
+        raise HTTPException(status_code=404, detail=f"asset '{asset_id}' not found") from None
     except CMMSRepositoryError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
     # Build the merge: copy existing asset, overlay only present fields
     # from the body, with serial + voltage_v going into metadata_json.
@@ -232,7 +230,7 @@ async def enrich_asset(
     try:
         await repo.upsert_asset_async(enriched)
     except CMMSRepositoryError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
     log.info("Enriched %s with fields: %s",
              asset_id, sorted(updates.keys()))
@@ -268,7 +266,7 @@ async def list_work_orders(
             limit=limit,
         )
     except CMMSRepositoryError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     return {"count": len(wos), "work_orders": [w.model_dump(mode="json") for w in wos]}
 
 
@@ -278,9 +276,9 @@ async def get_work_order(request: Request, wo_id: str) -> dict[str, Any]:
     try:
         wo = await repo.get_work_order_async(wo_id)
     except WorkOrderNotFoundError:
-        raise HTTPException(status_code=404, detail=f"work_order '{wo_id}' not found")
+        raise HTTPException(status_code=404, detail=f"work_order '{wo_id}' not found") from None
     except CMMSRepositoryError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     return wo.model_dump(mode="json")
 
 
@@ -295,7 +293,7 @@ async def create_work_order(request: Request, body: CreateWorkOrderRequest) -> d
     try:
         asset = await repo.get_asset_async(body.asset_id)
     except AssetNotFoundError:
-        raise HTTPException(status_code=404, detail=f"asset '{body.asset_id}' not found")
+        raise HTTPException(status_code=404, detail=f"asset '{body.asset_id}' not found") from None
 
     lor = _compute_lor(body.likelihood_idx, body.consequence_idx)
     priority = _derive_priority(lor, asset.criticality_class)
@@ -303,7 +301,7 @@ async def create_work_order(request: Request, body: CreateWorkOrderRequest) -> d
     linked_mop = asset.linked_mop_id or ASSET_TYPE_TO_MOP.get(asset.asset_type)
     mop_method = "hardcoded" if linked_mop else None
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     wo = WorkOrder(
         work_order_id=_wo_id(),
         timestamp=now,
@@ -341,7 +339,7 @@ async def create_work_order(request: Request, body: CreateWorkOrderRequest) -> d
     try:
         await repo.save_work_order_async(wo)
     except CMMSRepositoryError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     log.info("Created WO %s for %s (priority=%s, lor=%d)",
              wo.work_order_id, body.asset_id, priority, lor)
     return wo.model_dump(mode="json")
@@ -356,13 +354,13 @@ async def approve_wo(
     # a missing / TECH_L4 actor_role is rejected with HTTP 403.
     try:
         assert_can_approve_work_order(body.actor_role)
-    except RBACDenied as e:
+    except RBACDeniedError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
     repo = _get_repo(request)
     try:
         wo = await repo.transition_status_async(wo_id, "approved", body.cet_id)
     except WorkOrderNotFoundError:
-        raise HTTPException(status_code=404, detail=f"work_order '{wo_id}' not found")
+        raise HTTPException(status_code=404, detail=f"work_order '{wo_id}' not found") from None
     except WorkOrderStateConflictError as e:
         # ADR-006: refuse to overwrite an existing CET signature.
         raise HTTPException(status_code=409, detail={
@@ -371,9 +369,9 @@ async def approve_wo(
             "current_status": e.current_status,
             "current_approved_by_cet": e.current_cet,
             "attempted": e.attempted,
-        })
+        }) from e
     except CMMSRepositoryError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     return wo.model_dump(mode="json")
 
 
@@ -385,7 +383,7 @@ async def reject_wo(
     # gated to SENIOR_TECH_L5 / SME_L6 like approve.
     try:
         assert_can_approve_work_order(body.actor_role)
-    except RBACDenied as e:
+    except RBACDeniedError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
     if not body.rejection_reason:
         raise HTTPException(status_code=400, detail="rejection_reason required for reject")
@@ -395,16 +393,16 @@ async def reject_wo(
             wo_id, "rejected", body.cet_id, rejection_reason=body.rejection_reason,
         )
     except WorkOrderNotFoundError:
-        raise HTTPException(status_code=404, detail=f"work_order '{wo_id}' not found")
+        raise HTTPException(status_code=404, detail=f"work_order '{wo_id}' not found") from None
     except WorkOrderStateConflictError as e:
         raise HTTPException(status_code=409, detail={
             "error": "state_conflict",
             "message": str(e),
             "current_status": e.current_status,
             "attempted": e.attempted,
-        })
+        }) from e
     except CMMSRepositoryError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     return wo.model_dump(mode="json")
 
 
@@ -419,7 +417,7 @@ async def trigger_maintenance(
     try:
         asset = await repo.get_asset_async(body.asset_id)
     except AssetNotFoundError:
-        raise HTTPException(status_code=404, detail=f"asset '{body.asset_id}' not found")
+        raise HTTPException(status_code=404, detail=f"asset '{body.asset_id}' not found") from None
 
     if body.work_class_hint == "PM" and asset.health_state == "degraded":
         body = body.model_copy(update={"work_class_hint": "CM"})

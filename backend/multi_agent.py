@@ -310,13 +310,7 @@ class SafetyOfficerAgent:
                     return AgentVerdict(
                         agent_name=self.name, verdict=VERDICT_HARD_STOP,
                         summary="LOTO required but no MOP linked — VETO",
-                        reasoning=reasoning + [
-                            "ADR-006 Deterministic Sandbox: requires_loto=true "
-                            "without a linked_mop_id is non-compliant; the WO "
-                            "cannot be approved until a MOP is attached and "
-                            "validated by the LOTO Auditor.",
-                            "Standard reference: CSA Z462-24 §4.2 + NFPA 70E §130.",
-                        ],
+                        reasoning=[*reasoning, "ADR-006 Deterministic Sandbox: requires_loto=true " "without a linked_mop_id is non-compliant; the WO " "cannot be approved until a MOP is attached and " "validated by the LOTO Auditor.", "Standard reference: CSA Z462-24 §4.2 + NFPA 70E §130."],
                         evidence_refs=evidence,
                         decision_time_ms=_ms_since(t0),
                     )
@@ -331,7 +325,7 @@ class SafetyOfficerAgent:
                 meta = comp.metadata or {}
                 voltage = meta.get("voltage_v") or meta.get("voltage_nominal") or 0
                 has_dc_link = bool(meta.get("has_dc_link") or meta.get("dc_link"))
-                if has_dc_link or (isinstance(voltage, (int, float)) and voltage >= 600):
+                if has_dc_link or (isinstance(voltage, int | float) and voltage >= 600):
                     reasoning.append(
                         f"Asset has DC link or voltage >= 600V "
                         f"(voltage_v={voltage}, has_dc_link={has_dc_link}). "
@@ -341,11 +335,7 @@ class SafetyOfficerAgent:
                         return AgentVerdict(
                             agent_name=self.name, verdict=VERDICT_HARD_STOP,
                             summary="Capacitor-class asset with no procedure — VETO",
-                            reasoning=reasoning + [
-                                "No procedure_id supplied. CSA Z462 requires "
-                                "an approved MOP referencing capacitor discharge "
-                                "before any work on this class of asset."
-                            ],
+                            reasoning=[*reasoning, "No procedure_id supplied. CSA Z462 requires " "an approved MOP referencing capacitor discharge " "before any work on this class of asset."],
                             evidence_refs=evidence,
                             decision_time_ms=_ms_since(t0),
                         )
@@ -362,11 +352,7 @@ class SafetyOfficerAgent:
             return AgentVerdict(
                 agent_name=self.name, verdict=VERDICT_CAUTION,
                 summary="LOTO-eligible context — CET sign-off mandatory",
-                reasoning=reasoning + [
-                    "No HARD_STOP triggers fired, but all energized work "
-                    "requires CET signature per ADR-006. Safety Officer "
-                    "never auto-approves.",
-                ],
+                reasoning=[*reasoning, "No HARD_STOP triggers fired, but all energized work " "requires CET signature per ADR-006. Safety Officer " "never auto-approves."],
                 evidence_refs=evidence,
                 decision_time_ms=_ms_since(t0),
             )
@@ -636,7 +622,7 @@ class MultiAgentOrchestrator:
         results = await asyncio.gather(*coros, return_exceptions=True)
 
         verdicts: list[AgentVerdict] = []
-        for agent, res in zip(self.agents, results):
+        for agent, res in zip(self.agents, results, strict=False):
             if isinstance(res, Exception):
                 log.warning("[multi_agent] %s crashed: %s", agent.name, res)
                 verdicts.append(AgentVerdict(

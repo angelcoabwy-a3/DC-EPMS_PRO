@@ -53,7 +53,7 @@ import re
 import time
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -63,7 +63,6 @@ from backend.cmms_repository import (
     AssetNotFoundError,
     CMMSRepositoryError,
     PostgresCMMSRepository,
-    WorkOrderNotFoundError,
 )
 
 log = logging.getLogger(__name__)
@@ -290,7 +289,7 @@ class ClosureNormalizer:
 
 # ─── Closure processor (orchestrator) ──────────────────────────────────
 def _wo_id() -> str:
-    return f"WO-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
+    return f"WO-{datetime.now(UTC).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
 
 
 class ClosureProcessor:
@@ -353,7 +352,7 @@ class ClosureProcessor:
             "raw_notes": notes_text.strip(),
             "normalized": normalized,
             "cet_id": cet_id,
-            "dictated_at": datetime.now(timezone.utc).isoformat(),
+            "dictated_at": datetime.now(UTC).isoformat(),
             "complete_wo": complete_wo,
         }
         wo_updated = wo.model_copy(update={"result_json": result_json})
@@ -432,7 +431,7 @@ class ClosureProcessor:
             priority = "P1"
 
         proc_class = "EOP" if wclass == "EM" else ("MOP" if wclass == "CM" else "SOP")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         new_wo = WorkOrder(
             work_order_id=_wo_id(),

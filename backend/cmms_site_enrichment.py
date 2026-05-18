@@ -36,6 +36,7 @@ hasn't been deployed yet.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ log = logging.getLogger(__name__)
 def enrich_wo_with_location(
     wo_draft: dict,
     target_component_id: str,
-    project_root: Path | None = None,  # type: ignore[name-defined]
+    project_root: Path | None = None,
 ) -> dict:
     """Add location and component metadata to a CMMS work order draft.
 
@@ -87,10 +88,8 @@ def enrich_wo_with_location(
         # If the singleton was already initialized at app startup, this
         # returns it; otherwise we have to provide a project_root.
         if project_root is None:
-            from pathlib import Path as _Path
-
             # Fallback: assume we're in <project>/backend/ and config is sibling
-            project_root = _Path(__file__).resolve().parent.parent
+            project_root = Path(__file__).resolve().parent.parent
         model = get_site_model(project_root)
     except (RuntimeError, SiteModelError) as e:
         log.warning(

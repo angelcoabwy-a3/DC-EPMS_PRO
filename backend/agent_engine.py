@@ -239,27 +239,26 @@ class AgentEngine:
             ],
         }
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                async with client.stream(
-                    "POST", url, json=payload, headers={"Content-Type": "application/json"}
-                ) as resp:
-                    if resp.status_code != 200:
-                        yield f"[Gemma error {resp.status_code}]"
-                        return
-                    async for line in resp.aiter_lines():
-                        if not line or not line.startswith("data: "):
-                            continue
-                        data = line[6:].strip()
-                        if data == "[DONE]":
-                            break
-                        try:
-                            obj = json.loads(data)
-                            delta = obj.get("choices", [{}])[0].get("delta", {})
-                            token = delta.get("content", "")
-                            if token:
-                                yield token
-                        except json.JSONDecodeError:
-                            continue
+            async with httpx.AsyncClient(timeout=120.0) as client, client.stream(
+                "POST", url, json=payload, headers={"Content-Type": "application/json"}
+            ) as resp:
+                if resp.status_code != 200:
+                    yield f"[Gemma error {resp.status_code}]"
+                    return
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data = line[6:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        obj = json.loads(data)
+                        delta = obj.get("choices", [{}])[0].get("delta", {})
+                        token = delta.get("content", "")
+                        if token:
+                            yield token
+                    except json.JSONDecodeError:
+                        continue
         except Exception as e:
             yield f"[Gemma stream error: {e}]"
 
@@ -283,25 +282,27 @@ class AgentEngine:
             "Anthropic-Version": "2023-06-01",
         }
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                async with client.stream("POST", url, json=payload, headers=headers) as resp:
-                    if resp.status_code != 200:
-                        yield f"[Claude error {resp.status_code}]"
-                        return
-                    async for line in resp.aiter_lines():
-                        if not line or not line.startswith("data: "):
-                            continue
-                        data = line[6:].strip()
-                        try:
-                            obj = json.loads(data)
-                            if obj.get("type") == "content_block_delta":
-                                token = obj.get("delta", {}).get("text", "")
-                                if token:
-                                    yield token
-                            elif obj.get("type") == "message_stop":
-                                break
-                        except json.JSONDecodeError:
-                            continue
+            async with (
+                httpx.AsyncClient(timeout=120.0) as client,
+                client.stream("POST", url, json=payload, headers=headers) as resp,
+            ):
+                if resp.status_code != 200:
+                    yield f"[Claude error {resp.status_code}]"
+                    return
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    data = line[6:].strip()
+                    try:
+                        obj = json.loads(data)
+                        if obj.get("type") == "content_block_delta":
+                            token = obj.get("delta", {}).get("text", "")
+                            if token:
+                                yield token
+                        elif obj.get("type") == "message_stop":
+                            break
+                    except json.JSONDecodeError:
+                        continue
         except Exception as e:
             yield f"[Claude stream error: {e}]"
 

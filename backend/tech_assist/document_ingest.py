@@ -42,7 +42,7 @@ import re
 import time
 import uuid
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -69,7 +69,7 @@ class PDFParseError(DocumentIngestError):
 class Chunk:
     """One chunk of extracted text ready for embedding."""
 
-    __slots__ = ("text", "page_idx", "char_offset", "char_length")
+    __slots__ = ("char_length", "char_offset", "page_idx", "text")
 
     def __init__(self, text: str, page_idx: int, char_offset: int):
         self.text = text
@@ -200,7 +200,7 @@ def chunk_pages(
 # ─── Document Ingester ─────────────────────────────────────────────────
 def _document_id(prefix: str = "DOC") -> str:
     """DOC-YYYYMMDD-uuid8."""
-    return f"{prefix}-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
+    return f"{prefix}-{datetime.now(UTC).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
 
 
 class DocumentIngester:
@@ -318,7 +318,7 @@ class DocumentIngester:
             "vendor": vendor,
             "saved_path": saved_path,
             "elapsed_ms": elapsed_ms,
-            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "uploaded_at": datetime.now(UTC).isoformat(),
         }
         log.info(
             "[document_ingest] %s ingested: %d pages -> %d chunks in %d ms",
@@ -361,7 +361,7 @@ class DocumentIngester:
             "original_filename": original_filename,
             "tier": int(tier),
             "priority": priority,
-            "uploaded_at": datetime.now(timezone.utc).isoformat(),
+            "uploaded_at": datetime.now(UTC).isoformat(),
         }
         if asset_id:
             base_meta["asset_id"] = asset_id

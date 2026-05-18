@@ -98,7 +98,7 @@ class RusselectricAdapter(HardwareAdapter):
         # No connection state — the BMS connector is independently managed.
         # Validate that each target's status point reads.
         try:
-            for name, cfg in self.targets.items():
+            for _name, cfg in self.targets.items():
                 await self.backend.read_point(cfg["status_point"])
             self._connected = True
             return True

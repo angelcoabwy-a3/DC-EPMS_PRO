@@ -206,7 +206,7 @@ class ElectricalModule(PhysicsModule):
         r = ValidationResult(module=self.module_name)
 
         utility_kw = float(measurements.get("utility_kw", 17_400.0))
-        facility_it_kw = float(measurements.get("facility_it_kw", 16_756.0))
+        float(measurements.get("facility_it_kw", 16_756.0))
         ups_load_kw = float(measurements.get("ups_load_kw", 16_756.0))
         ups_mode = str(measurements.get("ups_mode", "online"))
         ups_input_kw = float(measurements.get("ups_input_kw", 17_450.0))
@@ -497,12 +497,15 @@ class ElectricalModule(PhysicsModule):
         base_drain_per_s = 1.0 / (BATT_RUNTIME_FULL_LOAD_MIN * 60.0)
         drain_per_s = base_drain_per_s * load_ratio
 
-        def dSOCdt(t, soc):
+        def dSOCdt(t, soc):  # noqa: N802 - ODE derivative dSOC/dt
             t_s = float(t)
             on_battery = False
-            if utility_fail and t_s >= start_s:
-                if gen_start_s is None or t_s < float(gen_start_s):
-                    on_battery = True
+            if (
+                utility_fail
+                and t_s >= start_s
+                and (gen_start_s is None or t_s < float(gen_start_s))
+            ):
+                on_battery = True
             if not on_battery:
                 # Utility/generator carrying load: recharge at 5C_10 rate
                 # (i.e. full charge in 5 hours)

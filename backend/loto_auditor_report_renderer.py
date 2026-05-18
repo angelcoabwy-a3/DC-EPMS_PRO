@@ -44,7 +44,7 @@ def _marker(outcome: PillarOutcome) -> str:
 
 
 def _render_header(report: LotoAuditReport) -> str:
-    status_text = report.status.value.upper().replace("_", " ")
+    report.status.value.upper().replace("_", " ")
     banner = ""
     if report.status == AuditStatus.PENDING_APPROVAL:
         banner = (

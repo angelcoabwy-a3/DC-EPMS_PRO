@@ -52,7 +52,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from backend.cmms_models import WorkOrder
@@ -103,7 +103,7 @@ def _derive_procedure_class(work_class: str, requires_loto: bool) -> str:
 
 
 def _wo_id() -> str:
-    return f"WO-{datetime.now(timezone.utc).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
+    return f"WO-{datetime.now(UTC).strftime('%Y%m%d')}-{uuid.uuid4().hex[:8]}"
 
 
 # ─── Predictive trigger state machine ──────────────────────────────────
@@ -185,7 +185,7 @@ class PredictiveTrigger:
         self._last_metadata[ch_id] = dict(fields)
         if ch_id not in self._sustain_counts or self._sustain_counts[ch_id] == 0:
             # First anomalous window in this streak
-            self._first_anomaly_at[ch_id] = datetime.now(timezone.utc)
+            self._first_anomaly_at[ch_id] = datetime.now(UTC)
         self._sustain_counts[ch_id] = self._sustain_counts.get(ch_id, 0) + 1
 
     def _reset_sustain(self, ch_id: str) -> None:
@@ -267,7 +267,7 @@ class PredictiveTrigger:
             f"Last emission: {last_em:.3f}."
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         wo = WorkOrder(
             work_order_id=_wo_id(),
             timestamp=now,

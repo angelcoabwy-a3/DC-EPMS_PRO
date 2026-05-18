@@ -11,7 +11,7 @@ existing procedure-engine router):
 /generate routes to the procedure_generator factories via
 compile_procedure(). /activate routes to procedure_engine.promote_procedure
 and maps its RBAC / state exceptions to clean HTTP status codes:
-  RBACDenied             -> 403 Forbidden
+  RBACDeniedError             -> 403 Forbidden
   InvalidTransitionError -> 400 Bad Request
   ValueError (bad input) -> 400 Bad Request
 
@@ -28,7 +28,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.cmms_models import RBACDenied
+from backend.cmms_models import RBACDeniedError
 from backend.procedure_engine import InvalidTransitionError, promote_procedure
 from backend.procedure_generator import compile_procedure
 
@@ -94,7 +94,7 @@ def activate_procedure(procedure_id: str, req: ActivateRequest) -> dict[str, Any
         )
     try:
         promoted = promote_procedure(req.procedure, req.actor_role)
-    except RBACDenied as exc:
+    except RBACDeniedError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except InvalidTransitionError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

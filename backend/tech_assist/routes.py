@@ -38,14 +38,14 @@ from backend.tech_assist.document_ingest import (
     DocumentIngestError,
 )
 from backend.tech_assist.models import TroubleshootRequest, TroubleshootResponse
-from backend.tech_assist.troubleshoot import TroubleshootAgent
-from backend.tech_assist.voice_closure import (
-    ClosureProcessor,
-    ClosureNormalizer,
-)
 from backend.tech_assist.nameplate_ocr import (
     LLMNameplateFallback,
     NameplateProcessor,
+)
+from backend.tech_assist.troubleshoot import TroubleshootAgent
+from backend.tech_assist.voice_closure import (
+    ClosureNormalizer,
+    ClosureProcessor,
 )
 
 log = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ async def troubleshoot(request: Request, body: TroubleshootRequest) -> Troublesh
         return await agent.answer(body)
     except Exception as e:
         log.exception("troubleshoot failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"troubleshoot error: {e}")
+        raise HTTPException(status_code=500, detail=f"troubleshoot error: {e}") from e
 
 
 @router.post("/ingest-pdf")
@@ -142,10 +142,10 @@ async def ingest_pdf(
         )
         return result
     except DocumentIngestError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         log.exception("ingest_pdf failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"ingest error: {e}")
+        raise HTTPException(status_code=500, detail=f"ingest error: {e}") from e
 
 
 @router.get("/documents")
@@ -162,7 +162,7 @@ async def list_documents(request: Request) -> dict[str, Any]:
     try:
         result = rag.collection.get(where={"source": "uploaded_pdf"})
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"query failed: {e}")
+        raise HTTPException(status_code=500, detail=f"query failed: {e}") from e
 
     metas = result.get("metadatas") or []
     docs: dict[str, dict[str, Any]] = {}
@@ -259,14 +259,14 @@ async def dictate_closure(
         return result
     except WorkOrderNotFoundError:
         raise HTTPException(status_code=404,
-                            detail=f"work_order '{work_order_id}' not found")
+                            detail=f"work_order '{work_order_id}' not found") from None
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except NotImplementedError as e:
-        raise HTTPException(status_code=501, detail=str(e))
+        raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
         log.exception("dictate_closure failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"closure error: {e}")
+        raise HTTPException(status_code=500, detail=f"closure error: {e}") from e
 
 
 # ─── Sprint 7.1d: Nameplate OCR ───────────────────────────────────────
@@ -315,12 +315,12 @@ async def nameplate_extract(
             asset_type_hint=body.asset_type_hint,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except NotImplementedError as e:
-        raise HTTPException(status_code=501, detail=str(e))
+        raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
         log.exception("nameplate_extract failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"nameplate error: {e}")
+        raise HTTPException(status_code=500, detail=f"nameplate error: {e}") from e
 
 
 def register_tech_assist_routes(

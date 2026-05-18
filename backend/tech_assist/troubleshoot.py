@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -244,7 +244,7 @@ class TroubleshootAgent:
             return None, []
 
         # WO history
-        cutoff = datetime.now(timezone.utc) - timedelta(days=30 * req.history_months)
+        cutoff = datetime.now(UTC) - timedelta(days=30 * req.history_months)
         try:
             wos = await self.cmms_repo.list_work_orders_async(
                 asset_id=req.asset_id,

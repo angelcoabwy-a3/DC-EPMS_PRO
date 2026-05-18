@@ -110,7 +110,7 @@ class TelemetryChannelConfig:
         self._channels = channels
 
     @classmethod
-    def load(cls, yaml_path: Path) -> "TelemetryChannelConfig":
+    def load(cls, yaml_path: Path) -> TelemetryChannelConfig:
         if not yaml_path.exists():
             log.warning(
                 "[telemetry_pipeline] config %s not found; using fallback defaults",

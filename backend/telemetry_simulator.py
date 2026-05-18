@@ -53,8 +53,8 @@ flips Schema field to "channel_innovations" upon C1 deployment.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 
@@ -396,7 +396,7 @@ class TelemetrySimulator:
         # Probe channel names without advancing RNG significantly
         sample_channels = gen(comp, 1, self._rng)
         affected = 0
-        for metric in sample_channels.keys():
+        for metric in sample_channels:
             if metric not in ANOMALY_PROFILES[kind]:
                 continue  # this anomaly does not affect this metric
             ch_id = f"{component_id}:{metric}"

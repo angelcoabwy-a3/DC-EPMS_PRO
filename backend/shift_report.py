@@ -116,8 +116,8 @@ class ShiftReportGenerator:
         shift_end: datetime,
         telemetry_rows: list[dict],
         incidents: list[dict],
-        procedures_completed: list[dict] = None,
-        open_items: list[str] = None,
+        procedures_completed: list[dict] | None = None,
+        open_items: list[str] | None = None,
     ) -> bytes:
         """Render PDF and return as bytes."""
         buf = io.BytesIO()

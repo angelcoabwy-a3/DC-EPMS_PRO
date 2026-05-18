@@ -245,5 +245,5 @@ class PhysicsModule(ABC):
         """
         ...
 
-    def reset_defaults(self) -> None:
+    def reset_defaults(self) -> None:  # noqa: B027 - intentional optional-override hook, not abstract
         """Reset any instance-level cached state. Default no-op."""

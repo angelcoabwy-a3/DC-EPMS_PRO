@@ -43,7 +43,7 @@ from typing import Any
 import yaml
 
 from backend.cmms_models import (
-    RBACDenied,
+    RBACDeniedError,
     UserRole,
     can_approve_work_order,
     can_arm_critical_procedure,
@@ -202,7 +202,7 @@ class ProcedureExecution:
                     self.execution_id[:8],
                 )
             elif not can_arm_critical_procedure(actor_role, high_risk=high_risk):
-                raise RBACDenied(
+                raise RBACDeniedError(
                     f"role {actor_role} cannot ARM procedure {self.procedure_id} "
                     f"(high_risk={high_risk}) - "
                     f"{'SME_L6' if high_risk else 'SENIOR_TECH_L5 or SME_L6'} required."
@@ -285,7 +285,7 @@ def log_vendor_stage(
             f"{_VENDOR_STAGE_ORDER[idx - 1].value} is complete"
         )
     if stage is VendorSupervisionStage.POST_WORK_QA_SIGNOFF and not can_qa_signoff_vendor(actor_role):
-        raise RBACDenied(
+        raise RBACDeniedError(
             f"role {actor_role or 'NONE'} cannot sign off vendor QA "
             "(closes the LOTO) — SENIOR_TECH_L5 or SME_L6 required."
         )
@@ -310,7 +310,7 @@ def promote_procedure(procedure: dict, actor_role: UserRole | str) -> dict:
     RBAC gate (Multi-Tier framework): only SENIOR_TECH_L5 or SME_L6 may
     activate a procedure. A TECH_L4 may draft or compile one (the
     procedure_generator factories) but cannot promote it -- the attempt
-    raises RBACDenied with a descriptive message.
+    raises RBACDeniedError with a descriptive message.
 
     Returns a promoted copy (status ACTIVE, version 1.0, activated_by_role
     audit stamp); the input dict is not mutated.
@@ -326,7 +326,7 @@ def promote_procedure(procedure: dict, actor_role: UserRole | str) -> dict:
     role_name = (actor_role.value if isinstance(actor_role, UserRole)
                  else str(actor_role))
     if not can_approve_work_order(actor_role):
-        raise RBACDenied(
+        raise RBACDeniedError(
             f"role {role_name} cannot promote a procedure to ACTIVE -- "
             "SENIOR_TECH_L5 or SME_L6 signature is required. A TECH_L4 may "
             "draft or compile a procedure but may not activate it."

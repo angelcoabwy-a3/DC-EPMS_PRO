@@ -38,9 +38,9 @@ import yaml
 from backend.cmms_models import PROCEDURE_CLASSES, UserRole
 from backend.site_model import ComponentNotFoundError, get_site_model
 from backend.telemetry_simulator import (
+    _GENERATORS,
     PHASE1_BASELINES,
     REGION_PROFILES,
-    _GENERATORS,
 )
 
 log = logging.getLogger(__name__)

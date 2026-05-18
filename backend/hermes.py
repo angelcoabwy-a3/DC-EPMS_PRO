@@ -407,7 +407,7 @@ async def _stop_producers_if_idle() -> None:
     global _telemetry_task, _event_task
     if manager.active_count > 0:
         return
-    for name, task in (("telemetry", _telemetry_task), ("event", _event_task)):
+    for _name, task in (("telemetry", _telemetry_task), ("event", _event_task)):
         if task is not None:
             task.cancel()
             with contextlib.suppress(BaseException):

@@ -44,6 +44,7 @@ Design choices:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -226,10 +227,8 @@ def regex_extract(ocr_text: str) -> NameplateFields:
     # Frequency
     m = RE_HZ.search(ocr_text)
     if m:
-        try:
+        with contextlib.suppress(ValueError):
             fields.frequency_hz = float(m.group(1))
-        except ValueError:
-            pass
 
     # Manufacture date (YYYY-MM preferred; fallback to "mfg ..." prose)
     m = RE_DATE_YYYY_MM.search(ocr_text)

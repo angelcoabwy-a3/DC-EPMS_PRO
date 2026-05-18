@@ -120,7 +120,7 @@ async def multi_agent_consult(
         return result.to_dict()
     except Exception as e:
         log.exception("multi-agent consult failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"consult error: {e}")
+        raise HTTPException(status_code=500, detail=f"consult error: {e}") from e
 
 
 # ─── Registration ──────────────────────────────────────────────────────

@@ -520,7 +520,7 @@ class ITThermalModule(PhysicsModule):
         Q_cooling_nominal = Q_to_air_nominal  # at t=0 we're at steady state
 
         # --- The ODE function ---
-        def dTdt(t: float, T: np.ndarray) -> np.ndarray:
+        def dTdt(t: float, T: np.ndarray) -> np.ndarray:  # noqa: N802 - ODE derivative dT/dt
             """Hall air temperature ODE.
 
             Governing equation accounts for two mechanisms:

@@ -208,8 +208,8 @@ class MechanicalModule(PhysicsModule):
         pump_hz = float(measurements.get("pump_speed_hz", 60.0))
         pump_suct_bar = float(measurements.get("pump_suction_bar", 1.8))
         pump_power_kw = float(measurements.get("pump_power_kw", 45.0))
-        rack_count = int(measurements.get("rack_count", 40))
-        rack_kw = float(measurements.get("rack_tdp_kw", 142.0))
+        int(measurements.get("rack_count", 40))
+        float(measurements.get("rack_tdp_kw", 142.0))
 
         # ============ Check 1: Darcy-Weisbach pressure drop ==============
         dp_expected_pa = _darcy_pressure_drop_pa(flow)
@@ -480,7 +480,7 @@ class MechanicalModule(PhysicsModule):
         # coolant through it. Q_removed ~= flow * cp * (T_return - T_supply).
         # So if flow drops, T_return must rise to maintain balance.
 
-        def dTdt(t, T):
+        def dTdt(t, T):  # noqa: N802 - ODE derivative dT/dt
             t_s = float(t)
             fault_active = start_s <= t_s < (start_s + duration_s)
             ff = flow_factor if fault_active else 1.0

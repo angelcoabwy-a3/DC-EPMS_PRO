@@ -57,7 +57,7 @@ def _model():
         return get_site_model(_PROJECT_ROOT)
     except SiteModelError as e:
         log.exception("[site_routes] failed to load site model")
-        raise HTTPException(status_code=500, detail=f"site model load failed: {e}")
+        raise HTTPException(status_code=500, detail=f"site model load failed: {e}") from e
 
 
 router = APIRouter(prefix="/api/site", tags=["site"])
@@ -150,7 +150,7 @@ def get_component(canonical_id: str):
     try:
         comp = m.get_component(canonical_id)
     except ComponentNotFoundError:
-        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found")
+        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found") from None
     return comp.to_dict()
 
 
@@ -162,7 +162,7 @@ def locate(canonical_id: str):
         loc = m.locate(canonical_id)
         comp = m.get_component(canonical_id)
     except ComponentNotFoundError:
-        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found")
+        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found") from None
     return {
         "canonical_id": canonical_id,
         "display": comp.display,
@@ -255,7 +255,7 @@ def power_chain(canonical_id: str):
     try:
         return m.power_chain_for(canonical_id)
     except ComponentNotFoundError:
-        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found")
+        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found") from None
 
 
 @router.get("/impact/{canonical_id}")
@@ -272,9 +272,9 @@ def impact(
         result = m.impact_set(canonical_id, chain=chain)
         return result.to_dict()
     except ComponentNotFoundError:
-        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found")
+        raise HTTPException(status_code=404, detail=f"component '{canonical_id}' not found") from None
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/loto-impact/{canonical_id}")

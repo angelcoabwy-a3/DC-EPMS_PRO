@@ -101,7 +101,7 @@ class AscoAdapter(HardwareAdapter):
         # BACnet is connectionless (UDP); presence verified by reading a
         # well-known property like Object_List from the device.
         try:
-            for name, cfg in self.targets.items():
+            for _name, cfg in self.targets.items():
                 # Probe each device with a System Status read
                 await self.backend.read(
                     address=cfg["address"],

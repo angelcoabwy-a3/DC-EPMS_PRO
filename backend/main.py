@@ -570,6 +570,11 @@ async def _pue_advisory_task(point: dict) -> None:
         log.error("PUE advisory task failed: %s", e)
 
 
+# Strong refs to fire-and-forget tasks so the event loop cannot GC them
+# mid-flight (RUF006); each task drops itself from the set on completion.
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
 # ==============================================================
 #  Telemetry endpoints
 # ==============================================================
@@ -582,7 +587,9 @@ async def write_telemetry(point: TelemetryPoint):
         pue_breach = point.pue > PUE_ALERT_THRESHOLD
         # Fase 2: autonomous RAG advisory
         if pue_breach:
-            asyncio.create_task(_pue_advisory_task(point.model_dump()))
+            _advisory = asyncio.create_task(_pue_advisory_task(point.model_dump()))
+            _BACKGROUND_TASKS.add(_advisory)
+            _advisory.add_done_callback(_BACKGROUND_TASKS.discard)
         return JSONResponse(
             {
                 "written": True,
@@ -654,9 +661,9 @@ async def telemetry_stream(request: Request):
     pipeline = None
     if use_simulator:
         try:
-            from telemetry_simulator import get_simulator
-            from telemetry_pipeline import get_pipeline
             from site_model import get_site_model as _sm_get
+            from telemetry_pipeline import get_pipeline
+            from telemetry_simulator import get_simulator
             sim = get_simulator(_sm_get())
             pipeline = get_pipeline(dt_seconds=1.0)
             log.info(
@@ -868,7 +875,7 @@ async def lm_proxy_post(path: str, request: Request):
                 return JSONResponse(content=resp.json(), status_code=resp.status_code)
             return Response(content=resp.content, status_code=resp.status_code, media_type=ct)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"LM Studio unreachable: {e}")
+        raise HTTPException(status_code=502, detail=f"LM Studio unreachable: {e}") from e
 
 
 @app.get("/lm/{path:path}")
@@ -881,7 +888,7 @@ async def lm_proxy_get(path: str):
             resp = await client.get(url)
             return JSONResponse(content=resp.json(), status_code=resp.status_code)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"LM Studio unreachable: {e}")
+        raise HTTPException(status_code=502, detail=f"LM Studio unreachable: {e}") from e
 
 
 # ==============================================================
@@ -940,7 +947,7 @@ async def generate_shift_report(req: ShiftReportRequest):
         )
     except Exception as e:
         log.error("shift_report generation failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}") from e
 
     filename = f"shift_report_{shift_id}.pdf"
     return Response(
@@ -1294,7 +1301,7 @@ def _extract_mop_steps(body: str) -> list[dict]:
                 if not title:
                     title = f"Step {step_num_counter}"
                 # Strip any leading colon or dash
-                title = title.lstrip(": -  - -").strip()
+                title = title.lstrip(": -").strip()
                 current_step = {
                     "step_num": int(num_from_header) if num_from_header else step_num_counter,
                     "title": title,
@@ -1319,7 +1326,7 @@ async def list_mops_endpoint():
         "mops": mops,
         "count": len(mops),
         "by_type": {
-            t: sum(1 for m in mops if m["doc_type"] == t) for t in set(m["doc_type"] for m in mops)
+            t: sum(1 for m in mops if m["doc_type"] == t) for t in {m["doc_type"] for m in mops}
         }
         if mops
         else {},
@@ -1482,7 +1489,7 @@ End the procedure here. Do not add commentary outside the document."""
         }
     except Exception as e:
         log.error("MOP generation failed: %s", e)
-        raise HTTPException(500, f"MOP generation failed: {str(e)[:200]}")
+        raise HTTPException(500, f"MOP generation failed: {str(e)[:200]}") from e
 
 
 # ==============================================================
@@ -2250,7 +2257,6 @@ except Exception as e:
 try:
     from fastapi import APIRouter, HTTPException
     from procedure_engine import (
-        InvalidTransitionError,
         ProcedureNotFoundError,
         build_default_orchestrator,
     )
@@ -2299,7 +2305,7 @@ try:
         try:
             return _proc_orch.registry.get(procedure_id)
         except ProcedureNotFoundError:
-            raise HTTPException(status_code=404, detail=f"procedure {procedure_id} not found")
+            raise HTTPException(status_code=404, detail=f"procedure {procedure_id} not found") from None
 
     @_proc_router.get("/executions/list")
     async def list_executions():
@@ -2316,7 +2322,7 @@ try:
             d["state"] = ex.state.value
             return d
         except KeyError:
-            raise HTTPException(status_code=404, detail=f"execution {exec_id} not found")
+            raise HTTPException(status_code=404, detail=f"execution {exec_id} not found") from None
 
     @_proc_router.post("/{procedure_id}/start")
     async def start_procedure(procedure_id: str, body: dict):
@@ -2333,7 +2339,7 @@ try:
             d["state"] = ex.state.value
             return d
         except ProcedureNotFoundError:
-            raise HTTPException(status_code=404, detail=f"procedure {procedure_id} not found")
+            raise HTTPException(status_code=404, detail=f"procedure {procedure_id} not found") from None
 
     @_proc_router.post("/executions/{exec_id}/advance")
     async def advance_execution(exec_id: str, body: dict):
@@ -2350,9 +2356,9 @@ try:
             d["state"] = ex.state.value
             return d
         except KeyError:
-            raise HTTPException(status_code=404, detail=f"execution {exec_id} not found")
+            raise HTTPException(status_code=404, detail=f"execution {exec_id} not found") from None
         except RuntimeError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
     @_proc_router.post("/executions/{exec_id}/abort")
     async def abort_execution(exec_id: str, body: dict):
@@ -2368,7 +2374,7 @@ try:
             d["state"] = ex.state.value
             return d
         except KeyError:
-            raise HTTPException(status_code=404, detail=f"execution {exec_id} not found")
+            raise HTTPException(status_code=404, detail=f"execution {exec_id} not found") from None
 
     # â"€â"€ Witness endpoints â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
     @_witness_router.get("/pending")
@@ -2386,7 +2392,7 @@ try:
         try:
             return _serialize_witness(_witness_store.get(request_id))
         except WitnessRequestNotFoundError:
-            raise HTTPException(status_code=404, detail=f"witness request {request_id} not found")
+            raise HTTPException(status_code=404, detail=f"witness request {request_id} not found") from None
 
     @_witness_router.post("/{request_id}/sign")
     async def sign_witness(request_id: str, body: dict):
@@ -2397,11 +2403,11 @@ try:
             req = _witness_store.sign(request_id, witness_id)
             return _serialize_witness(req)
         except IdentityCollisionError as e:
-            raise HTTPException(status_code=403, detail=str(e))
+            raise HTTPException(status_code=403, detail=str(e)) from e
         except WitnessRequestNotPendingError as e:
-            raise HTTPException(status_code=409, detail=str(e))
+            raise HTTPException(status_code=409, detail=str(e)) from e
         except WitnessRequestNotFoundError:
-            raise HTTPException(status_code=404, detail=f"witness request {request_id} not found")
+            raise HTTPException(status_code=404, detail=f"witness request {request_id} not found") from None
 
     @_witness_router.post("/{request_id}/reject")
     async def reject_witness(request_id: str, body: dict):
@@ -2412,11 +2418,11 @@ try:
             req = _witness_store.reject(request_id, witness_id, reason)
             return _serialize_witness(req)
         except IdentityCollisionError as e:
-            raise HTTPException(status_code=403, detail=str(e))
+            raise HTTPException(status_code=403, detail=str(e)) from e
         except WitnessRequestNotPendingError as e:
-            raise HTTPException(status_code=409, detail=str(e))
+            raise HTTPException(status_code=409, detail=str(e)) from e
         except WitnessRequestNotFoundError:
-            raise HTTPException(status_code=404, detail=f"witness request {request_id} not found")
+            raise HTTPException(status_code=404, detail=f"witness request {request_id} not found") from None
 
     app.include_router(_proc_router)
     app.include_router(_witness_router)
@@ -2530,7 +2536,6 @@ except Exception as e:
 # Defensive: requires DB pool (db_manager); falls back gracefully.
 try:
     from backend.cmms_repository import PostgresCMMSRepository
-    from backend.cmms_routes import register_cmms_routes
 
     _cmms_repo: PostgresCMMSRepository | None = None
     # Pool will be injected during lifespan after db_manager.connect().

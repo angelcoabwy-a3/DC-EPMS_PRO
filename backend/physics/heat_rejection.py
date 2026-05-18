@@ -441,7 +441,7 @@ class HeatRejectionModule(PhysicsModule):
 
         # ============ Check 5: Overall N+1 redundancy ======================
         total_rejection_kw = ch1_load + ch2_load
-        rated_kw = CHILLER_RATED_CAPACITY_KW * CHILLER_COUNT
+        CHILLER_RATED_CAPACITY_KW * CHILLER_COUNT
         # If total load > 50% of combined capacity, we've lost N+1 margin
         # (a single chiller trip would undersize cooling)
         redundancy_ratio = total_rejection_kw / CHILLER_RATED_CAPACITY_KW

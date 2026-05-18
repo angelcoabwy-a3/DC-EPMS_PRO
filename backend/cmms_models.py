@@ -104,7 +104,7 @@ _ROLE_RANK: dict[UserRole, int] = {
 }
 
 
-class RBACDenied(PermissionError):
+class RBACDeniedError(PermissionError):
     """Raised when an actor role is insufficient for a gated transition."""
 
 
@@ -141,9 +141,9 @@ def can_qa_signoff_vendor(role: UserRole | str | None) -> bool:
 
 
 def assert_can_approve_work_order(role: UserRole | str | None) -> None:
-    """Raise RBACDenied if `role` may not approve a work order."""
+    """Raise RBACDeniedError if `role` may not approve a work order."""
     if not can_approve_work_order(role):
-        raise RBACDenied(
+        raise RBACDeniedError(
             f"role {role or 'NONE'} cannot approve a work order — "
             "SENIOR_TECH_L5 or SME_L6 signature required."
         )

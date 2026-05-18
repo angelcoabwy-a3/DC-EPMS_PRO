@@ -125,7 +125,7 @@ class RAGService:
         # ChromaDB only accepts primitive metadata values
         clean_meta = {}
         for k, v in meta.items():
-            if isinstance(v, (str, int, float, bool)):
+            if isinstance(v, str | int | float | bool):
                 clean_meta[k] = v
             elif isinstance(v, list):
                 clean_meta[k] = ",".join(str(x) for x in v)

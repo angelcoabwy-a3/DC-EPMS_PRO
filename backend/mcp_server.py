@@ -46,6 +46,7 @@ import json
 import logging
 import os
 import sys
+import threading
 from pathlib import Path
 
 # Configure logging to stderr so it doesn't interfere with stdio transport
@@ -521,7 +522,6 @@ async def handle_request(request: dict) -> dict | None:
 # reader that pushes lines onto an asyncio.Queue. This pattern is what the
 # official Anthropic MCP Python SDK uses for stdio transport on Windows.
 # ---------------------------------------------------------------------------
-import threading
 
 
 def _stdin_reader_thread(queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):

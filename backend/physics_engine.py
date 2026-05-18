@@ -409,9 +409,8 @@ def _sanitize_for_json(obj):
         return {k: _sanitize_for_json(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_sanitize_for_json(v) for v in obj]
-    if isinstance(obj, float):
-        if math.isnan(obj) or math.isinf(obj):
-            return -1.0
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return -1.0
     return obj
 
 

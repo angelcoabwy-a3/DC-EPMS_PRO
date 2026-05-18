@@ -158,9 +158,11 @@ def select_procedure_class(
       5. work_class == "PM"             -> SOP
     """
     # Rule 1: thermal emergency overrides everything
-    if thermal_derivative_k_per_s is not None:
-        if abs(thermal_derivative_k_per_s) >= THERMAL_CRITICAL_DT_K_PER_S:
-            return "EOP"
+    if (
+        thermal_derivative_k_per_s is not None
+        and abs(thermal_derivative_k_per_s) >= THERMAL_CRITICAL_DT_K_PER_S
+    ):
+        return "EOP"
 
     # Rule 2: LOTO requirement trumps work class for safety
     if requires_loto or lor >= DEFAULT_LOTO_LOR_THRESHOLD:

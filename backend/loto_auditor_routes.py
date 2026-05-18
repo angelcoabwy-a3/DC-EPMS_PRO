@@ -304,12 +304,12 @@ def register_loto_auditor(
             repository=loto_audit_repo,
         )
     """
-    auditor_kwargs = dict(
-        site_model=site_model,
-        graphrag_service=graphrag_service,
-        physics_engine=physics_engine,
-        witness_engine=witness_engine,
-    )
+    auditor_kwargs = {
+        "site_model": site_model,
+        "graphrag_service": graphrag_service,
+        "physics_engine": physics_engine,
+        "witness_engine": witness_engine,
+    }
     if procedures_dir is not None:
         auditor_kwargs["procedures_dir"] = procedures_dir
     if cmms_service is not None:

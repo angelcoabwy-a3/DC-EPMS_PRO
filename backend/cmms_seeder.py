@@ -21,7 +21,6 @@ from typing import Any
 from backend.cmms_models import Asset
 from backend.cmms_repository import PostgresCMMSRepository
 from backend.site_model import SiteModel
-from backend.telemetry_simulator import _CHANNELS_PER_TYPE  # type: ignore
 
 log = logging.getLogger(__name__)
 
