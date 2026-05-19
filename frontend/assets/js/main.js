@@ -51,6 +51,7 @@ import { initCoolingView } from './views/cooling.js';
 import { initCopilotView } from './views/copilot.js';
 import { initBmsView } from './views/bms.js';
 import { initLotoView } from './views/loto.js';
+import { initTopologyView } from './views/topology.js';
 
 // Feature flag — when false the legacy IIFE in app.js owns the SSE.
 // Toggle in browser console for emergency rollback:
@@ -105,6 +106,9 @@ initBmsView();
 // LOTO Auditor — T2.1 Vector 2: 6-pillar audit; declarative route
 // (retires the legacy click-delegation zombie-router hack)
 initLotoView();
+// HLD/LLD Topology — T2.1 Vector 4a: physics-driven system map +
+// What-If sim + AI Mission Control insights; declarative route
+initTopologyView();
 
 // Project Hermes EDA — T3.1: route cmms_alerts + agent_consensus streams
 // into reactive state + decoupled DOM events for the HMI.
