@@ -1,10 +1,15 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.6 (2026-05-18) — Power SLD L3 · Cooling SCADA + L3 · Copilot extraction
+- **Status**: v11.7 (2026-05-19) — EPIC T2.1 CLOSED · app.js IIFE monolith eradicated
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-18 (v11.6)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.7)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.7 sync (2026-05-19)**: **Epic T2.1 CLOSED.** Vector 4 dismantled the
+  last of the IIFE — `views/topology.js` (4a), `views/overview.js` (4b), and
+  the residual router glue promoted to `core/bootstrap.js` (4c). `app.js` is
+  DELETED: 4003 → 0 LOC. The HMI is now fully modular (12 views + core
+  engines, declarative routing). Frontend Vitest: 176 passed (18 files).
 - **v11.6 sync (2026-05-18)**: multi-epic extraction sprint — Power SLD L3
   control plane (RBAC breaker actuation + What-If DAG sandbox + sparklines),
   the BMS-tag registry mapped to real seeded ISA-95 tags, T2.1 `cooling` view
@@ -157,17 +162,22 @@ checklist. The list below is corrected to the real surface inventory.
   not migrated. Follow-up: the per-rack LOTO-Impact breakdown is not in
   the force-graph detail panel — a clean future feature ticket, the
   `/api/site/loto-impact` endpoint already exists. (DELIVERED `3b98449`)
-- **V4.** `views/overview.js` (~900+ LOC) — the Overview/landing
-  dashboard + the HLD/LLD Topology view (`renderTopologyView`). The
-  hardest, most-entangled extraction; do last. Pre-step: delete the
-  dormant legacy SSE path (`startTelemetryStream`/`handleTelemetry` —
-  superseded by `core/telemetry_engine.js`) + legacy `escapeHtml`.
+- ✅ **V4.** The final two surfaces, in three staged commits:
+  - **4a** — the HLD/LLD Topology view → `views/topology.js`
+    (`registerRoute('topology')`). (DELIVERED `f0a9620`)
+  - **4b** — the Overview/landing dashboard → `views/overview.js`
+    (health, KPIs, PUE chart, agent chat, incidents, voice,
+    shift-report, SHI). The dormant legacy `EventSource` SSE-fallback
+    path was deleted as part of this (`core/telemetry_engine.js` owns
+    the SSE). (DELIVERED `5ae535d`)
+  - **4c** — the IIFE residual (`MODULES` + `navigateTo` + `setupRouter`
+    + `renderPlaceholder`) promoted to `core/bootstrap.js`; `app.js`
+    **DELETED**; `index.html` reduced to a single ES-module entry
+    point. (DELIVERED `5ae535d`)
 
-**Result**: after V4, `app.js` shrinks to ~250 LOC residual (`MODULES`
-+ `navigateTo` delegation + `setupRouter`/`boot`) — at which point it
-is either kept as the documented bootstrap or promoted to
-`core/bootstrap.js` and deleted, closing Epic T2.1. Post-V1/V2/V3
-app.js is **1448 LOC** (from 4003 at T2.1 open).
+**Result — EPIC T2.1 CLOSED.** `app.js`: **4003 → 0 LOC**. The HMI is
+fully modular — 12 `views/*.js` + the `core/*.js` engines, every route
+on the declarative `core/router.js`. No IIFE monolith remains.
 
 ### T2.2 — ✅ DELIVERED `42ecdf7` — Declarative router
 

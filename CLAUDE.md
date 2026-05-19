@@ -19,11 +19,11 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-18)
 
 ```
-HEAD:  3b98449 (+ this doc-sync)  branch master  —  pushed 2026-05-18.
-       Stable baseline = v0.11.0 (cut 2026-05-18 — first release tag since
-       v0.10.13-modal-fix). Post-release: T2.1 Vectors 1-3 (BMS extract,
-       LOTO extract, legacy Site Topology eradicated).
-       Tag = v0.11.x patch / v0.12.0 next.
+HEAD:  5ae535d (+ this doc-sync)  branch master  —  pushed 2026-05-19.
+       Stable baseline = v0.11.0 (cut 2026-05-18). Post-release: T2.1
+       Vectors 1-4 — EPIC T2.1 CLOSED. The app.js IIFE monolith
+       (4003 LOC) is fully dismantled into ES modules and DELETED.
+       Tag = v0.12.0 next ("Monolith Eradicated").
 Working tree: .claude/ untracked (intentional).
 
 Tags chronological (39 total):
@@ -52,11 +52,12 @@ Tags chronological (39 total):
    (5-layer + paralleling bus + SCADA restyle + Hermes binding) + L3 control
    plane, Cooling orthogonal SCADA SLD + L3 control plane.
 
-Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~41s, 0 fail.
-         frontend 158 passed — Vitest (npm test): mission_control + scenarios +
-         incidents + mops + power + cooling + copilot + bms + loto + sanitize +
-         hermes (slice / cutover / EDA) + maintenance + rack_heatmap +
-         site_topology. Both green. ruff: 0 violations in backend/.
+Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~47s, 0 fail.
+         frontend 176 passed — Vitest (npm test, 18 files): mission_control +
+         scenarios + incidents + mops + power + cooling + copilot + bms + loto +
+         topology + overview + bootstrap + sanitize + hermes (slice / cutover /
+         EDA) + maintenance + rack_heatmap + site_topology. Both green.
+         ruff: 0 violations in backend/.
 
 Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
   - Numba JIT cold compile: 4.8 ms
@@ -96,15 +97,21 @@ the LOTO Auditor view extracted to views/loto.js (the legacy
 click-delegation zombie-router hack retired for core/router.js
 registerRoute); V3 — the legacy Site Topology tree+detail view
 ADJUDICATED as dead code (force-directed views/site_topology.js owns
-the route) and ERADICATED (-277 LOC). The post-v0.11.0 SitRep audit
-corrected the T2.1 registry to 5 legacy surfaces — V1/V2/V3 now done;
-the HLD/LLD Topology view + the Overview dashboard remain (Vector 4).
-app.js: 2600 → 1448 LOC. Live backlog = docs/ROADMAP-V11.md
-(v11.6, 2026-05-18). NOTE: OBS demo-recording descoped.
+the route) and ERADICATED (-277 LOC); V4 — the HLD/LLD Topology view
+extracted to views/topology.js (4a), then the Overview/landing
+dashboard extracted to views/overview.js + the IIFE residual promoted
+to core/bootstrap.js (4b/4c). **EPIC T2.1 IS CLOSED**: app.js DELETED
+(4003 → 0 LOC); index.html loads a single ES-module entry point
+(main.js). The HMI is fully modular — 12 views/*.js + core/*.js
+engines, all routed by the declarative core/router.js. Live backlog =
+docs/ROADMAP-V11.md (v11.7, 2026-05-19). NOTE: OBS demo-recording descoped.
 ```
 
 **Recent commits (latest at top)**:
 ```
+5ae535d  refactor(ui): eradicate app.js monolith — Overview + bootstrap to ES modules, Epic T2.1 CLOSED (Vector 4b+4c)
+f0a9620  refactor(ui): extract HLD/LLD Topology view from monolith (Vector 4a)
+1ab76ec  docs: sync compass to T2.1 Vectors 2 + 3 completion
 3b98449  refactor(ui): adjudicate and eradicate legacy Site Topology (Vector 3)
 fc3ead6  refactor(ui): extract LOTO Auditor view from monolith (Vector 2)
 807185e  refactor(ui): extract BMS Connector view from monolith + preserve copilot deep-link (T2.1)
@@ -112,11 +119,6 @@ fc3ead6  refactor(ui): extract LOTO Auditor view from monolith (Vector 2)
 0fb7168  chore(release): bump internal manifests and documentation to v0.11.0  [tag v0.11.0]
 35a22a9  docs: synchronize compass post-multi-epic extraction sprint
 38605d3  refactor(ui): extract Copilot AI view from monolith — XSS-sanitized ES6 module (T2.1)
-bb10e4e  feat(ui): Cooling L3 control plane — RBAC actuation + What-If sandbox + sparklines
-33e7459  feat(ui): rebuild Cooling as an orthogonal thermodynamic SCADA SLD
-7b85ab9  refactor(ui): extract Cooling view from monolith into ES6 module (T2.1)
-50ab979  docs: sync compass — Power SLD L3 control plane (frontend 125 Vitest)
-098ecac  feat(ui): inject real-time telemetry sparklines into Power SLD (L3 Phase 3)
 2cd3b96  feat(ui): isolated What-If predictive simulation sandbox — local DAG engine (L3 Phase 2)
 bc060d9  feat(ui): interactive Power SLD breaker actuators wired to RBAC-secured BMS (L3 Phase 1)
 41d1206  feat(ui): reinvent iso + flat Power SLD rendering — orthogonal routing, label legibility
@@ -313,13 +315,13 @@ C:\dev\DC-EPMS_PRO\
 │   ├── migrations/              ← SQL migrations (e.g. 2026_05_W3_g1_taxonomy.sql — taxonomy + Arc Flash columns)
 │   ├── mcp_server.py            ← Claude Desktop stdio subprocess
 │   └── hal/                     ← Cummins, ASCO, Russelectric adapters
-├── frontend/                    ← Production-grade HMI (modular ES + legacy IIFE)
-│   ├── index.html               ← entry; nav routes incl. LOTO Auditor, Maintenance, Tech Assist
+├── frontend/                    ← Production-grade HMI (fully modular ES — T2.1 closed, no IIFE)
+│   ├── index.html               ← entry; loads a single ES-module entry point (js/main.js)
 │   └── assets/
-│       ├── app.js / app.css     ← legacy IIFE shell (MODULES dict, navigateTo router)
-│       ├── js/main.js           ← ES-module entry
-│       ├── js/core/             ← 13 modules: telemetry_engine, power_sld, power_grid, power_cam, pue_widget, shi_sparkline, heat_overlay, activity_strip, state, sound, keyboard, staleness, asset_metadata
-│       ├── js/views/            ← 8 views: mission_control, site_topology, rack_heatmap, maintenance, asset_panel, tech_assist, multi_agent, power_ups_iso
+│       ├── app.css              ← stylesheet (the app.js IIFE was eradicated — T2.1 Vector 4)
+│       ├── js/main.js           ← the single ES-module entry point
+│       ├── js/core/             ← engines: router, bootstrap, telemetry_engine, hermes_events, power_sld/grid/cam, pue_widget, shi_sparkline, heat_overlay, activity_strip, state, sound, keyboard, staleness, sanitize, asset_metadata
+│       ├── js/views/            ← 12 views: overview, topology, mission_control, site_topology, rack_heatmap, maintenance, asset_panel, tech_assist, multi_agent, power_ups_iso, scenarios, incidents, mops, power, cooling, copilot, bms, loto
 │       └── vendor/              ← chart.umd 4.4.1 + three.module.min.js (local, no CDN)
 ├── config/
 │   ├── site_model.yml           ← 91 components (50 racks Phase 1; DDU/busway expanded v0.10.11)
