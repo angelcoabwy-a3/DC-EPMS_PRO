@@ -1,10 +1,20 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.9 (2026-05-19) — Epic 2 (The Optimizer) DESIGN DEFINED · post-CO+I demo
+- **Status**: v11.10 (2026-05-19) — Epic 2 IN PROGRESS · Batch 2.A delivered (Optimizer core)
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.9)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.10)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.10 sync (2026-05-19)**: **Epic 2 Batch 2.A DELIVERED** (`6a6c786`). The
+  Optimizer deterministic control law (chiller-LWT + CT-fan-VFD heuristics),
+  drift/pacing guards, in-memory audit log, and the asyncio loop scaffold
+  ship behind `DC_EPMS_OPTIMIZER_ENABLED` (default OFF). The
+  Proposer-Pattern invariant is now machine-enforced — 4 AST-scan tests in
+  `tests/test_optimizer.py` fail-loudly on any HTTP client / FastAPI / 
+  `bms_connector` / live `/api/bms/write` reference added to
+  `backend/optimizer.py`. Backend pytest: 726 → 759 (+33). First task
+  executed under the Skill Digestion Harness (citing S-DET-01, S-DET-03,
+  S-TEST-01/03, S-SEC-02, S-COMMIT-01/02). 2.B–2.E pending.
 - **v11.9 sync (2026-05-19)**: **Epic 2 — The Optimizer — DESIGN DEFINED.** Full
   design brief at `docs/architecture/epic-2-optimizer.md`. The Optimizer is a
   proactive edge-agent for PUE/WUE that **proposes** chiller-LWT and CT-fan
@@ -417,8 +427,21 @@ LOTO audit, or PUE report.
 
 ## Epic 2 — The Optimizer (proactive edge-agent for PUE / WUE)
 
-**Status:** DESIGN defined 2026-05-19. Implementation gated **post-CO+I demo**
-(August 2026). Full design brief: **`docs/architecture/epic-2-optimizer.md`**.
+**Status:** IN PROGRESS — design defined 2026-05-19; **Batch 2.A delivered
+2026-05-19 (`6a6c786`)**; 2.B–2.E pending, gated **post-CO+I demo** (August
+2026). Full design brief: **`docs/architecture/epic-2-optimizer.md`**.
+
+**Sub-batch progress:**
+
+- ✅ **2.A** — `backend/optimizer.py` deterministic control law +
+  drift/pacing guards + audit log + asyncio scaffold + 33 unit tests
+  (incl. 4 Proposer-Pattern AST-invariant guards). Default OFF. (`6a6c786`)
+- ⏳ **2.B** — multi-agent consensus integration + proposal queue + Hermes
+  event + lifespan hook.
+- ⏳ **2.C** — `POST /api/optimizer/approve` + `/reject` + RBAC gate +
+  persistent audit chain.
+- ⏳ **2.D** — `views/optimizer.js` HMI + Vitest.
+- ⏳ **2.E** — live smoke test + `v0.13.0` *"Proactive Edge"* tag.
 
 Epic 1 delivered the *reactive* fleet — the four consultative agents that
 respond to operator queries with verdicts + live Gemma narratives. Epic 2

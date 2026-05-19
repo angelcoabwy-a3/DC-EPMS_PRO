@@ -1,6 +1,6 @@
 # Epic 2 — The Optimizer (proactive edge-agent for PUE / WUE)
 
-> **Status:** DESIGN (defined 2026-05-19). Implementation gated post-CO+I demo.
+> **Status:** IN PROGRESS — design defined 2026-05-19; Batch 2.A delivered 2026-05-19 (`6a6c786`); 2.B–2.E pending. Full delivery still gated post-CO+I demo.
 > **Anchor:** ADR-006 Deterministic Sandbox + the Epic 1 multi-agent consensus chain.
 > **Companion:** `docs/engram/main-context.md` §13 (Epic 2 line); `docs/skills/skill-registry.md` (`S-DET-01`, `S-DET-02`, `S-SEC-02`).
 >
@@ -202,16 +202,19 @@ delivery; Epic 2 is the next major architectural sprint.
 
 **Internal sub-batches (each independently shippable):**
 
-| Batch | Scope | ~Effort |
+| Batch | Scope | Status |
 |---|---|---|
-| **2.A** | `backend/optimizer.py` deterministic control law + asyncio task + audit log + unit tests | 3 days |
-| **2.B** | Multi-agent consensus integration + proposal queue + Hermes event emission | 2 days |
-| **2.C** | `POST /api/optimizer/approve` + `/reject` endpoints + RBAC gate + write-chain audit | 1 day |
-| **2.D** | `views/optimizer.js` + Vitest + the proposal queue HMI | 2 days |
-| **2.E** | Live smoke test + `S-RUNTIME-01` boot signature verification + release tag `v0.13.0` *"Proactive Edge"* | 1 day |
+| **2.A** | `backend/optimizer.py` deterministic control law + drift/pacing guards + audit log + asyncio scaffold + 33 unit tests (incl. 4 Proposer-Pattern AST-invariant tests) | ✅ DELIVERED `6a6c786` |
+| **2.B** | Multi-agent consensus integration + proposal queue + Hermes event emission + main.py lifespan hook | pending |
+| **2.C** | `POST /api/optimizer/approve` + `/reject` endpoints + RBAC gate + persistent audit chain | pending |
+| **2.D** | `views/optimizer.js` + Vitest + the proposal queue HMI | pending |
+| **2.E** | Live smoke test + `S-RUNTIME-01` boot signature verification + release tag `v0.13.0` *"Proactive Edge"* | pending |
 
 **Total ~9 days** of focused work; assumes no scope creep into deferred
-surfaces.
+surfaces. **2.A** delivered the deterministic core + the load-bearing
+Proposer-Pattern guard (4 AST-invariant tests that fail-loudly if anyone
+ever adds an HTTP client, a FastAPI router, a `bms_connector` import or
+a live `/api/bms/write` string reference to `backend/optimizer.py`).
 
 ## 10. Open questions (explicitly deferred decisions)
 
