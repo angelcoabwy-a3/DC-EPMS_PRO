@@ -24,9 +24,11 @@ from pathlib import Path
 import pytest
 
 from backend import optimizer as opt
+from backend.multi_agent import VERDICT_APPROVE, VERDICT_HARD_STOP, ConsultContext
 from backend.optimizer import (
     AUDIT_PACED_OUT,
     AUDIT_PROPOSED,
+    AUDIT_SAFETY_VETO,
     SURFACE_CHILLER_LWT,
     SURFACE_CT_FAN_VFD,
     AuditLog,
@@ -35,6 +37,8 @@ from backend.optimizer import (
     OptimizerService,
     PacingGuard,
     Proposal,
+    ProposalQueue,
+    QueuedProposal,
     TelemetryPoint,
     compute_proposal,
     get_service,
@@ -310,6 +314,305 @@ class TestOptimizerServiceTick:
         svc = OptimizerService(telemetry_provider=boom)
         # No raise, no proposals
         assert await svc.tick() == []
+
+
+# ─── 2.B: multi-agent consensus integration (S-DET-02) ────────────────
+class _FakeConsensus:
+    """Duck-types ConsensusResult — only .consensus / .rationale /
+    .safety_officer_veto are read by OptimizerService."""
+
+    def __init__(self, consensus: str = VERDICT_APPROVE,
+                 rationale: str = "ok", veto: bool = False):
+        self.consensus = consensus
+        self.rationale = rationale
+        self.safety_officer_veto = veto
+
+
+class _SustainOnceCfg(OptimizerConfig):
+    """Test config: fire on the first sustained-drift tick."""
+
+    PUE_SUSTAIN_TICKS = 1
+
+
+class TestOptimizerConsensusIntegration:
+    @pytest.mark.asyncio
+    async def test_approve_consensus_enqueues_with_metadata(self):
+        captured: list[ConsultContext] = []
+
+        async def consult(ctx: ConsultContext):
+            captured.append(ctx)
+            return _FakeConsensus(consensus=VERDICT_APPROVE, rationale="all good")
+
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg, consult_fn=consult,
+        )
+        proposals = await svc.tick()
+        assert len(proposals) == 2          # both surfaces survive
+        queued = svc.queue.list()
+        assert len(queued) == 2
+        for qp in queued:
+            assert qp.consensus_verdict == VERDICT_APPROVE
+            assert qp.consensus_rationale == "all good"
+            assert qp.safety_officer_veto is False
+        # ConsultContext built per surface
+        assert len(captured) == 2
+        assert all(ctx.cet_id == "optimizer" for ctx in captured)
+        assert {ctx.asset_id for ctx in captured} == {
+            SURFACE_CHILLER_LWT, SURFACE_CT_FAN_VFD,
+        }
+
+    @pytest.mark.asyncio
+    async def test_hard_stop_discards_proposal_and_audits_veto(self):
+        async def consult(ctx: ConsultContext):
+            return _FakeConsensus(
+                consensus=VERDICT_HARD_STOP,
+                rationale="Safety Officer VETO: capacitor-class asset",
+                veto=True,
+            )
+
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg, consult_fn=consult,
+        )
+        proposals = await svc.tick()
+        assert proposals == []
+        assert svc.queue.size() == 0
+        veto_events = [e for e in svc.audit.entries() if e.event == AUDIT_SAFETY_VETO]
+        assert len(veto_events) == 2
+        # The veto rationale is preserved in the audit detail.
+        assert all("Safety Officer VETO" in e.detail for e in veto_events)
+
+    @pytest.mark.asyncio
+    async def test_consult_exception_does_not_block_proposal(self):
+        async def consult(ctx: ConsultContext):
+            raise RuntimeError("orchestrator down")
+
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg, consult_fn=consult,
+        )
+        # Graceful: consult returns None → no consensus → proposal still
+        # proceeds to the queue (operator approval, 2.C, becomes the gate).
+        proposals = await svc.tick()
+        assert len(proposals) == 2
+        for qp in svc.queue.list():
+            assert qp.consensus_verdict is None
+            assert qp.safety_officer_veto is False
+
+    @pytest.mark.asyncio
+    async def test_no_consult_fn_preserves_2a_backcompat(self):
+        # 2.A back-compat: tick returns proposals, queue is populated
+        # with None consensus, no consult is attempted.
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+        )
+        proposals = await svc.tick()
+        assert len(proposals) == 2
+        for qp in svc.queue.list():
+            assert qp.consensus_verdict is None
+            assert qp.optimizer_narrative == ""
+
+
+# ─── 2.B: advisory Gemma narrative (S-DET-03) ─────────────────────────
+class _FakeGemma:
+    def __init__(self, reply: str = "Lowering LWT cuts compressor load; expected delta-PUE -0.01."):
+        self.reply = reply
+        self.prompts: list[str] = []
+
+    async def complete_gemma(self, prompt: str, max_tokens: int = 240) -> str:
+        self.prompts.append(prompt)
+        return self.reply
+
+
+class _RaisingGemma:
+    async def complete_gemma(self, prompt: str, max_tokens: int = 240) -> str:
+        raise RuntimeError("LM Studio unreachable")
+
+
+def _fake_kalman_payload() -> dict:
+    return {
+        "cooling_tower:wet_bulb": {"max_z": 2.8, "mean_z": 1.4, "is_anomalous": False},
+        "chiller_1:lwt": {"max_z": 3.1, "mean_z": 2.0, "is_anomalous": True},
+        "hall_inlet_T": {"max_z": 0.4, "mean_z": 0.1, "is_anomalous": False},
+        "gpu_Tj": {"max_z": 1.2, "mean_z": 0.6, "is_anomalous": False},
+    }
+
+
+class TestOptimizerNarrative:
+    @pytest.mark.asyncio
+    async def test_narrative_attached_with_llm_and_kalman(self):
+        async def consult(ctx: ConsultContext):
+            return _FakeConsensus(consensus=VERDICT_APPROVE, rationale="ok")
+
+        gemma = _FakeGemma()
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+            consult_fn=consult, llm_client=gemma,
+            kalman_provider=_fake_kalman_payload,
+        )
+        await svc.tick()
+        queued = svc.queue.list()
+        assert len(queued) == 2
+        assert all(qp.optimizer_narrative == gemma.reply for qp in queued)
+        assert len(gemma.prompts) == 2
+        for p in gemma.prompts:
+            assert "DETERMINISTIC PROPOSAL" in p
+            assert "LIVE KALMAN TELEMETRY" in p
+            assert "chiller_1:lwt" in p   # top-Z channel surfaces in prompt
+            assert "do not invent" in p.lower()
+
+    @pytest.mark.asyncio
+    async def test_llm_exception_yields_empty_narrative_but_keeps_queue(self):
+        async def consult(ctx: ConsultContext):
+            return _FakeConsensus()
+
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+            consult_fn=consult, llm_client=_RaisingGemma(),
+            kalman_provider=_fake_kalman_payload,
+        )
+        await svc.tick()
+        for qp in svc.queue.list():
+            assert qp.optimizer_narrative == ""
+        assert svc.queue.size() == 2   # proposals still queued despite LLM failure
+
+    @pytest.mark.asyncio
+    async def test_no_llm_client_yields_empty_narrative(self):
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+        )
+        await svc.tick()
+        for qp in svc.queue.list():
+            assert qp.optimizer_narrative == ""
+
+    @pytest.mark.asyncio
+    async def test_gemma_error_sentinel_treated_as_empty(self):
+        # The shared multi_agent._gemma_complete pattern: any reply
+        # starting with "[Gemma error" or "[Gemma stream error" is
+        # treated as a failed call, narrative empty.
+        gemma = _FakeGemma(reply="[Gemma error: connection refused]")
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+            llm_client=gemma, kalman_provider=_fake_kalman_payload,
+        )
+        await svc.tick()
+        for qp in svc.queue.list():
+            assert qp.optimizer_narrative == ""
+
+
+# ─── 2.B: Hermes event emission ───────────────────────────────────────
+class TestOptimizerEventEmission:
+    @pytest.mark.asyncio
+    async def test_event_emitted_per_queued_proposal(self):
+        events: list[tuple[str, dict]] = []
+
+        def emit(name: str, payload: dict) -> None:
+            events.append((name, payload))
+
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+            event_emitter=emit,
+        )
+        await svc.tick()
+        assert len(events) == 2
+        assert all(name == "optimizer-proposal" for name, _ in events)
+        # Payload carries the serialised proposal
+        assert all("proposal" in payload for _, payload in events)
+        assert {payload["proposal"]["surface"] for _, payload in events} == {
+            SURFACE_CHILLER_LWT, SURFACE_CT_FAN_VFD,
+        }
+
+    @pytest.mark.asyncio
+    async def test_emitter_exception_is_swallowed(self):
+        def boom(name: str, payload: dict) -> None:
+            raise RuntimeError("hermes broken")
+
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg, event_emitter=boom,
+        )
+        # No raise; proposals still queued
+        proposals = await svc.tick()
+        assert len(proposals) == 2
+        assert svc.queue.size() == 2
+
+    @pytest.mark.asyncio
+    async def test_safety_veto_does_not_emit_event(self):
+        events: list[tuple[str, dict]] = []
+
+        def emit(name: str, payload: dict) -> None:
+            events.append((name, payload))
+
+        async def veto(ctx: ConsultContext):
+            return _FakeConsensus(consensus=VERDICT_HARD_STOP, veto=True)
+
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+            consult_fn=veto, event_emitter=emit,
+        )
+        await svc.tick()
+        # Vetoed proposals MUST NOT emit a Hermes event (the HMI should
+        # never see a proposal that the Safety Officer killed).
+        assert events == []
+
+
+# ─── ProposalQueue ────────────────────────────────────────────────────
+def _make_queued(proposal_id: str = "qp1",
+                surface: str = SURFACE_CHILLER_LWT) -> QueuedProposal:
+    return QueuedProposal(
+        proposal=Proposal(
+            proposal_id=proposal_id, surface=surface,
+            current_value=7.5, proposed_value=7.0, delta=-0.5,
+            rationale="r", pue_at_emission=1.35, created_at=1.0,
+        ),
+        consensus_verdict=VERDICT_APPROVE,
+        consensus_rationale="ok",
+        safety_officer_veto=False,
+        optimizer_narrative="",
+        queued_at=2.0,
+    )
+
+
+class TestProposalQueue:
+    def test_enqueue_and_list(self):
+        q = ProposalQueue()
+        q.enqueue(_make_queued("a"))
+        q.enqueue(_make_queued("b"))
+        assert q.size() == 2
+        ids = [qp.proposal.proposal_id for qp in q.list()]
+        assert ids == ["a", "b"]
+
+    def test_pop_by_id_removes_and_returns(self):
+        q = ProposalQueue()
+        q.enqueue(_make_queued("a"))
+        q.enqueue(_make_queued("b"))
+        popped = q.pop_by_id("a")
+        assert popped is not None
+        assert popped.proposal.proposal_id == "a"
+        assert q.size() == 1
+        assert q.pop_by_id("nope") is None
+
+    def test_capacity_sliding_window(self):
+        q = ProposalQueue(max_entries=3)
+        for i in range(5):
+            q.enqueue(_make_queued(f"p{i}"))
+        assert q.size() == 3
+        assert [qp.proposal.proposal_id for qp in q.list()] == ["p2", "p3", "p4"]
+
+    def test_queued_proposal_to_dict_serialises_nested_proposal(self):
+        qp = _make_queued("a")
+        d = qp.to_dict()
+        assert d["consensus_verdict"] == VERDICT_APPROVE
+        assert isinstance(d["proposal"], dict)
+        assert d["proposal"]["proposal_id"] == "a"
 
 
 # ─── Env-flag gating ──────────────────────────────────────────────────

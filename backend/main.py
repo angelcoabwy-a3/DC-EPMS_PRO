@@ -320,6 +320,44 @@ async def lifespan(app: FastAPI):
                          "ON" if agent is not None else "OFF")
             except Exception as e:
                 log.error("[BOOT] Multi-Agent init failed: %s", e, exc_info=True)
+
+            # ─── Epic 2 Batch 2.B: Optimizer service (opt-in) ─────
+            # Proactive edge-agent for PUE/WUE. Default OFF — only
+            # starts when DC_EPMS_OPTIMIZER_ENABLED is set. ADR-006
+            # Proposer Pattern: the service has no actor_role and
+            # cannot reach /api/bms/write (4 AST guards in
+            # tests/test_optimizer.py enforce this at commit-time).
+            try:
+                from backend.optimizer import (
+                    get_service as _get_optimizer,
+                    is_enabled as _optimizer_enabled,
+                )
+                if _optimizer_enabled():
+                    orch = getattr(app.state, "multi_agent_orchestrator", None)
+                    _optimizer_svc = _get_optimizer(
+                        telemetry_provider=None,  # composed in 2.E smoke test
+                        pue_target=1.30,
+                        consult_fn=(orch.consult if orch is not None else None),
+                        llm_client=agent,
+                        kalman_provider=_hermes.latest_kalman_channels,
+                        event_emitter=lambda evt, payload: log.info(
+                            "[optimizer] %s: %s", evt, payload,
+                        ),
+                    )
+                    if _optimizer_svc is not None:
+                        app.state.optimizer_service = _optimizer_svc
+                        _optimizer_svc.start()
+                        log.info(
+                            "[BOOT] Optimizer service STARTED "
+                            "(Epic 2 Batch 2.B — consensus + queue + Hermes)",
+                        )
+                else:
+                    log.info(
+                        "[BOOT] Optimizer service NOT started "
+                        "(DC_EPMS_OPTIMIZER_ENABLED=false — default OFF)",
+                    )
+            except Exception as e:
+                log.error("[BOOT] Optimizer init failed: %s", e, exc_info=True)
         else:
             log.warning("[BOOT] CMMS skipped: db_manager pool unavailable")
     except Exception as e:
@@ -402,6 +440,17 @@ async def lifespan(app: FastAPI):
     yield
 
     log.info("DC-EPMS PRO shutting down...")
+
+    # Stop the Optimizer asyncio task first so it doesn't see a
+    # half-torn-down DB pool. Safe no-op when 2.B is not running.
+    _optimizer_svc = getattr(app.state, "optimizer_service", None)
+    if _optimizer_svc is not None:
+        try:
+            await _optimizer_svc.stop()
+            log.info("[SHUTDOWN] Optimizer service stopped cleanly")
+        except Exception as e:
+            log.warning("[SHUTDOWN] Optimizer stop failed: %s", e)
+
     if db_manager:
         await db_manager.close()
 

@@ -59,7 +59,19 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from backend.multi_agent import VERDICT_HARD_STOP, ConsultContext
+
 log = logging.getLogger(__name__)
+
+# Type alias for the consult callback. We keep the return type loose
+# (Any) because the orchestrator returns a ConsensusResult but we only
+# duck-type its `.consensus`, `.rationale`, and `.safety_officer_veto`
+# fields here — avoiding a hard module-load coupling and keeping the
+# 2.B integration test trivial (a function returning a SimpleNamespace
+# is sufficient).
+ConsultFn = Callable[[ConsultContext], Awaitable[Any]]
+EventEmitter = Callable[[str, dict[str, Any]], Any]
+KalmanProvider = Callable[[], Awaitable[dict[str, Any]] | dict[str, Any]]
 
 
 # ─── Surfaces handled by the V11 cut ──────────────────────────────────
@@ -357,18 +369,79 @@ class AuditLog:
         return len(self._entries)
 
 
-# ─── Optimizer service (2.A — scaffold, no consensus / no BMS write) ─
+# ─── Proposal queue (2.B — in-memory; persistent table in 2.C) ──────
+@dataclass(frozen=True)
+class QueuedProposal:
+    """A proposal that has cleared the consensus gate and is awaiting
+    operator review. Carries the multi-agent consensus + the Optimizer's
+    own advisory narrative. ADR-006: the consensus verdict is the
+    deterministic gate; the narrative is informational only."""
+
+    proposal: Proposal
+    consensus_verdict: str | None       # None when consult_fn not wired
+    consensus_rationale: str
+    safety_officer_veto: bool
+    optimizer_narrative: str
+    queued_at: float
+
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        d["proposal"] = self.proposal.to_dict()
+        return d
+
+
+class ProposalQueue:
+    """Bounded in-memory queue of proposals awaiting operator approval.
+
+    2.C will swap this for a PostgreSQL-backed table joined to the audit
+    log + the operator-approval rows by ``proposal_id``. The interface
+    is shaped so 2.C is a drop-in swap (enqueue / list / pop_by_id /
+    size / clear).
+    """
+
+    def __init__(self, max_entries: int = 200):
+        self._items: list[QueuedProposal] = []
+        self._max = max(1, int(max_entries))
+
+    def enqueue(self, qp: QueuedProposal) -> None:
+        self._items.append(qp)
+        if len(self._items) > self._max:
+            # Drop oldest — keep a sliding window
+            self._items = self._items[-self._max:]
+
+    def list(self, limit: int = 50) -> list[QueuedProposal]:
+        return list(self._items[-max(0, int(limit)):])
+
+    def pop_by_id(self, proposal_id: str) -> QueuedProposal | None:
+        for i, qp in enumerate(self._items):
+            if qp.proposal.proposal_id == proposal_id:
+                return self._items.pop(i)
+        return None
+
+    def size(self) -> int:
+        return len(self._items)
+
+    def clear(self) -> None:
+        self._items.clear()
+
+
+# ─── Optimizer service (2.A core + 2.B consensus / queue / Hermes) ──
 TelemetryProvider = Callable[[], Awaitable[TelemetryPoint | None] | TelemetryPoint | None]
 
 
 class OptimizerService:
-    """The proactive edge-agent. Batch 2.A — deterministic core + loop scaffold.
+    """The proactive edge-agent (Batches 2.A + 2.B).
 
     Per the Epic 2 brief and ADR-006:
       * computes proposal values deterministically (``compute_proposal``);
       * has NO actor_role — cannot call /api/bms/write;
-      * the 2.A loop emits proposals to its in-memory audit log only;
-      * 2.B will wire multi-agent consensus + a real proposal queue;
+      * routes every proposal through ``consult_fn`` (the multi-agent
+        consensus chain); a Safety Officer ``hard_stop`` discards the
+        proposal — audit-logged, never queued, never emitted (S-DET-02);
+      * synthesizes an advisory narrative via Gemma AFTER the proposal
+        value is fixed (S-DET-01 / S-DET-03);
+      * emits ``optimizer-proposal`` events via the injected emitter for
+        the HMI to subscribe to (the Hermes adapter is wired in main.py);
       * 2.C will wire approve/reject endpoints + persistent audit.
     """
 
@@ -377,6 +450,11 @@ class OptimizerService:
         telemetry_provider: TelemetryProvider | None = None,
         pue_target: float = 1.30,
         cfg: type[OptimizerConfig] = OptimizerConfig,
+        # 2.B dependency-injection seams (all default None for back-compat).
+        consult_fn: ConsultFn | None = None,
+        llm_client: Any | None = None,
+        kalman_provider: KalmanProvider | None = None,
+        event_emitter: EventEmitter | None = None,
     ):
         self._telemetry = telemetry_provider
         self._pue_target = float(pue_target)
@@ -384,12 +462,22 @@ class OptimizerService:
         self._drift = DriftTracker(cfg.PUE_SUSTAIN_TICKS)
         self._pacing = PacingGuard(cfg.PACING_SECONDS)
         self._audit = AuditLog()
+        # 2.B: in-memory proposal queue + DI seams.
+        self._queue = ProposalQueue()
+        self._consult_fn = consult_fn
+        self._llm_client = llm_client
+        self._kalman_provider = kalman_provider
+        self._event_emitter = event_emitter
         self._task: asyncio.Task[None] | None = None
         self._running = False
 
     @property
     def audit(self) -> AuditLog:
         return self._audit
+
+    @property
+    def queue(self) -> ProposalQueue:
+        return self._queue
 
     @property
     def is_running(self) -> bool:
@@ -408,10 +496,11 @@ class OptimizerService:
             return None
 
     async def tick(self) -> list[Proposal]:
-        """One control-loop tick. Returns the proposals emitted this tick.
+        """One control-loop tick. Returns the proposals that cleared the
+        consensus gate this tick (a Safety hard_stop drops the proposal).
 
         ADR-006 invariants (audited at every code change):
-          * ``compute_proposal`` is pure-Python; no LLM call here.
+          * ``compute_proposal`` is pure-Python; no LLM call there.
           * No ``/api/bms/write`` is invoked from this method or its callees.
         """
         point = await self._read_telemetry()
@@ -441,6 +530,43 @@ class OptimizerService:
             proposal = compute_proposal(surface, point, self._pue_target, self._cfg)
             if proposal is None:
                 continue
+
+            # 2.B: consult the multi-agent consensus chain BEFORE queueing.
+            # The Safety Officer's HARD_STOP veto is uncrossable (S-DET-02).
+            consensus = await self._consult_consensus(proposal)
+            if (consensus is not None
+                    and getattr(consensus, "consensus", None) == VERDICT_HARD_STOP):
+                self._audit.write(
+                    AUDIT_SAFETY_VETO,
+                    proposal_id=proposal.proposal_id,
+                    surface=surface,
+                    detail=getattr(consensus, "rationale", "") or "consensus hard_stop",
+                )
+                self._pacing.record(surface)   # still paces — don't re-flood vetoed surface
+                continue
+
+            # 2.B: synthesize the Optimizer's own advisory narrative
+            # (S-DET-03 — T3.3 narrative-helper pattern). Verdict and
+            # proposed value are already decided.
+            narrative = await self._synthesize_narrative(proposal, consensus)
+
+            queued = QueuedProposal(
+                proposal=proposal,
+                consensus_verdict=(
+                    getattr(consensus, "consensus", None) if consensus is not None
+                    else None
+                ),
+                consensus_rationale=(
+                    getattr(consensus, "rationale", "") if consensus is not None
+                    else ""
+                ),
+                safety_officer_veto=bool(
+                    getattr(consensus, "safety_officer_veto", False)
+                ) if consensus is not None else False,
+                optimizer_narrative=narrative,
+                queued_at=time.time(),
+            )
+            self._queue.enqueue(queued)
             self._audit.write(
                 AUDIT_PROPOSED,
                 proposal_id=proposal.proposal_id,
@@ -448,8 +574,143 @@ class OptimizerService:
                 detail=proposal.rationale,
             )
             self._pacing.record(surface)
+            await self._emit_event(
+                "optimizer-proposal",
+                {
+                    "proposal": proposal.to_dict(),
+                    "consensus_verdict": queued.consensus_verdict,
+                    "safety_officer_veto": queued.safety_officer_veto,
+                    "narrative_present": bool(narrative),
+                },
+            )
             emitted.append(proposal)
         return emitted
+
+    # ── 2.B: multi-agent consensus integration (S-DET-02) ────────────
+    async def _consult_consensus(self, proposal: Proposal) -> Any:
+        """Route a proposal through the multi-agent consensus chain.
+
+        Returns the ConsensusResult (duck-typed) on success, ``None`` if
+        no consult_fn is wired or if the consult raised. A ``None``
+        return is treated as "no consensus" downstream — the proposal
+        still proceeds; the operator approval step (2.C) becomes the
+        only gate. Per S-DET-02 a real ``hard_stop`` IS terminal.
+        """
+        if self._consult_fn is None:
+            return None
+        ctx = ConsultContext(
+            query=(
+                f"Optimizer proposes {proposal.surface}: "
+                f"{proposal.current_value:.2f} -> {proposal.proposed_value:.2f} "
+                f"(delta {proposal.delta:+.2f}). {proposal.rationale}"
+            ),
+            asset_id=proposal.surface,
+            cet_id="optimizer",
+        )
+        try:
+            return await self._consult_fn(ctx)
+        except Exception as e:
+            log.debug("[optimizer] consult_fn failed: %s", e)
+            return None
+
+    # ── 2.B: advisory Gemma narrative (S-DET-01 / S-DET-03) ──────────
+    async def _collect_top_kalman_lines(self, top_n: int = 4) -> list[str]:
+        """Render top-N anomalous Kalman channels as Z-score lines.
+
+        Best-effort: provider failure / empty payload yields ``[]``.
+        Differs from multi_agent._collect_kalman_lines in that the
+        Optimizer's framing is site-wide (no asset scope) — it's
+        proposing a setpoint class, not asset-specific work.
+        """
+        if self._kalman_provider is None:
+            return []
+        try:
+            payload = self._kalman_provider()
+            if asyncio.iscoroutine(payload):
+                payload = await payload
+        except Exception as e:
+            log.debug("[optimizer] kalman read failed: %s", e)
+            return []
+        if not isinstance(payload, dict) or not payload:
+            return []
+
+        def _maxz(ch: str) -> float:
+            try:
+                return float(payload.get(ch, {}).get("max_z", 0.0) or 0.0)
+            except (TypeError, ValueError, AttributeError):
+                return 0.0
+
+        lines: list[str] = []
+        for ch in sorted(payload, key=_maxz, reverse=True)[:top_n]:
+            f = payload[ch]
+            flag = " ANOMALOUS" if f.get("is_anomalous") else ""
+            mean_z = 0.0
+            with contextlib.suppress(TypeError, ValueError):
+                mean_z = float(f.get("mean_z", 0.0) or 0.0)
+            lines.append(f"  {ch}: max_z={_maxz(ch):.2f} mean_z={mean_z:.2f}{flag}")
+        return lines
+
+    async def _synthesize_narrative(
+        self,
+        proposal: Proposal,
+        consensus: Any,
+    ) -> str:
+        """Build the Optimizer's Gemma prompt and call the model.
+
+        ADR-006: advisory ONLY. ``proposal.proposed_value`` is already
+        fixed by ``compute_proposal``; the prompt forbids the model
+        from overriding it or inventing values.
+        """
+        if self._llm_client is None or not hasattr(self._llm_client, "complete_gemma"):
+            return ""
+        kalman_lines = await self._collect_top_kalman_lines()
+        kalman_block = (
+            "\n".join(kalman_lines) if kalman_lines
+            else "  (live Kalman tap unavailable this tick)"
+        )
+        cons_line = (
+            "(consult not wired)" if consensus is None
+            else f"{getattr(consensus, 'consensus', 'unknown')} - "
+                 f"{getattr(consensus, 'rationale', '')}"
+        )
+        prompt = (
+            "You are the Optimizer agent of a Tier IV AI-factory operations "
+            "platform, responsible for proactive PUE/WUE setpoint proposals. "
+            "In 2-3 sentences give an advisory narrative for the proposal "
+            "below: justify the value choice and the expected delta. Ground "
+            "every claim strictly in the data provided; do not invent "
+            "values. Be concise and factual.\n\n"
+            f"SURFACE: {proposal.surface}\n"
+            f"DETERMINISTIC PROPOSAL (already decided, do not override): "
+            f"{proposal.current_value:.2f} -> {proposal.proposed_value:.2f} "
+            f"(delta {proposal.delta:+.2f})\n"
+            f"RATIONALE: {proposal.rationale}\n"
+            f"PUE AT EMISSION: {proposal.pue_at_emission}\n"
+            f"MULTI-AGENT CONSENSUS: {cons_line}\n"
+            "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical anomaly):\n"
+            f"{kalman_block}\n"
+        )
+        try:
+            text = await self._llm_client.complete_gemma(prompt, max_tokens=240)
+        except Exception as e:
+            log.debug("[optimizer] Gemma synthesis failed: %s", e)
+            return ""
+        text = (text or "").strip()
+        if not text or text.startswith(("[Gemma error", "[Gemma stream error")):
+            return ""
+        return text
+
+    # ── 2.B: Hermes event emission ───────────────────────────────────
+    async def _emit_event(self, event: str, payload: dict[str, Any]) -> None:
+        """Best-effort event publication. Failures are logged + swallowed."""
+        if self._event_emitter is None:
+            return
+        try:
+            result = self._event_emitter(event, payload)
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception as e:
+            log.debug("[optimizer] event emit failed: %s", e)
 
     async def run_loop(self) -> None:
         """Long-running loop. Started by ``start()``; cancelled by ``stop()``.
@@ -508,23 +769,39 @@ def is_enabled() -> bool:
 def get_service(
     telemetry_provider: TelemetryProvider | None = None,
     pue_target: float = 1.30,
+    consult_fn: ConsultFn | None = None,
+    llm_client: Any | None = None,
+    kalman_provider: KalmanProvider | None = None,
+    event_emitter: EventEmitter | None = None,
 ) -> OptimizerService | None:
     """Return the singleton when the env flag is set; ``None`` otherwise.
 
     Per S-DET-01 / S-SEC-02: this function never touches the BMS write
-    path. The returned service emits proposals to its in-memory audit
-    log only. Multi-agent consensus + approve/reject endpoints arrive
-    in Batches 2.B / 2.C.
+    path. The returned service emits proposals to its in-memory queue
+    + audit log; the multi-agent consult and the optional Gemma
+    narrative + event emission are routed through the injected
+    callbacks. The approve/reject endpoints (issuing the actual BMS
+    write under SME_L6 RBAC) arrive in Batch 2.C — they are NOT
+    reachable from this module.
     """
     if not is_enabled():
         return None
     global _service
     if _service is None:
         _service = OptimizerService(
-            telemetry_provider=telemetry_provider, pue_target=pue_target,
+            telemetry_provider=telemetry_provider,
+            pue_target=pue_target,
+            consult_fn=consult_fn,
+            llm_client=llm_client,
+            kalman_provider=kalman_provider,
+            event_emitter=event_emitter,
         )
         log.info(
-            "[optimizer] service initialised (Batch 2.A — control law + audit only)",
+            "[optimizer] service initialised "
+            "(2.A control law + 2.B consensus/queue/narrative; "
+            "consult=%s, llm=%s, kalman=%s, emitter=%s)",
+            consult_fn is not None, llm_client is not None,
+            kalman_provider is not None, event_emitter is not None,
         )
     return _service
 
