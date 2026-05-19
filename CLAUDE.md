@@ -931,6 +931,33 @@ DEMO_SCRIPT v5, 3× OBS recording rehearsals.
 - ✅ HMI Mission Control + 2.5D isometric SLD — shipped (v0.10.x)
 - 🟡 Demo recording + DEMO_SCRIPT v5 — pending (V11 Tier 1)
 
+## 🧠 OPERATIONAL HARNESS (post-v0.12.0 — Engram + Skill Registry binding)
+
+This section binds the persistent operational artefacts created at Epic 1 closure
+(2026-05-19). Two strict constraints apply to **every** future session:
+
+- **OPERATIONAL RULE.** Apply the *"Skill Digestion Harness"* for all future
+  tasks. Before modifying any file, you MUST consult
+  `docs/skills/skill-registry.md`, extract the **3-4 relevant rules** for that
+  specific task (cited by skill ID, e.g. `S-DET-01`, `S-SEC-01`), and strictly
+  adhere to them. If a directive conflicts with a skill, surface the conflict
+  before executing — do not silently override. The architectural state snapshot
+  lives at `docs/engram/main-context.md`; read it whenever the working context
+  has drifted (new session, long compaction, ambiguous baseline).
+
+- **RUNTIME CONSTRAINT.** The Python backend does **not** hot-reload. After any
+  backend or agent-wiring change, the active process MUST be restarted and the
+  `[BOOT]` log signature in `logs/epms_pro.log` verified alongside
+  `/api/health` before conducting multi-agent smoke tests — to prevent
+  stale-code false positives (the post-Epic-1 smoke-test surfaced exactly this
+  failure mode: PID 46172 ran a pre-T3.3 module for 2+ days while unit tests +
+  the frontend smoke test all passed, silently returning empty narratives).
+  See `S-RUNTIME-01` for the verification protocol.
+
+**Companion files (binding):**
+- `docs/engram/main-context.md` — architectural state snapshot.
+- `docs/skills/skill-registry.md` — 16 explicit skills across 8 categories.
+
 ## 🚨 DO NOT TOUCH
 
 - `epms-db` Docker container (always running)
