@@ -19,14 +19,15 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-19)
 
 ```
-HEAD:  6a6c786 (+ this doc-sync)  branch master  —  pushed 2026-05-19.
+HEAD:  c19e853 (+ this doc-sync)  branch master  —  pushed 2026-05-19.
        Stable baseline = v0.12.0 "Monolith Eradicated" (cut 2026-05-19).
        Post-release: EPIC 1 COMPLETE (4-agent live-Gemma fleet — T3.3 /
-       T3.3b / T3.3c / T3.3d); **EPIC 2 OPEN, Batch 2.A delivered** —
-       the Optimizer deterministic control law + asyncio scaffold +
-       Proposer-Pattern invariant tests. Default OFF (env-gated). Tag
-       target = v0.13.0 "Proactive Edge" on Epic 2 close.
-       First task executed under the Skill Digestion Harness.
+       T3.3b / T3.3c / T3.3d); **EPIC 2 OPEN, Batches 2.A + 2.B
+       delivered** — the Optimizer deterministic control law (2.A) +
+       multi-agent consensus integration + proposal queue + Hermes
+       event emission + main.py lifespan hook (2.B). Default OFF
+       (env-gated). Tag target = v0.13.0 "Proactive Edge" on Epic 2
+       close. Harness applied per batch.
 Working tree: .claude/ untracked (intentional).
 
 Tags chronological (40 total):
@@ -62,11 +63,11 @@ Tags chronological (40 total):
    views/*.js + core/*.js engines, all routed by the declarative
    core/router.js. index.html loads a single ES-module entry point.
 
-Tests:   backend 759 passed, 5 deselected (slow/FAISS) — full pytest ~41s, 0 fail.
-         (+33 in tests/test_optimizer.py for Epic 2 Batch 2.A, incl. 4
-         Proposer-Pattern invariant tests that AST-scan backend/optimizer.py
-         for any forbidden HTTP / FastAPI / bms_connector / "/api/bms/write"
-         reference — the load-bearing S-SEC-02 guard.)
+Tests:   backend 774 passed, 5 deselected (slow/FAISS) — full pytest ~41s, 0 fail.
+         (48 in tests/test_optimizer.py: 2.A control law + 2.B consensus /
+         queue / narrative / Hermes-emit / ProposalQueue, plus the 4
+         Proposer-Pattern AST invariants — the load-bearing S-SEC-02 guard
+         that keeps backend/optimizer.py unable to reach /api/bms/write.)
          frontend 176 passed — Vitest (npm test, 18 files): mission_control +
          scenarios + incidents + mops + power + cooling + copilot + bms + loto +
          topology + overview + bootstrap + sanitize + hermes (slice / cutover /
@@ -123,6 +124,8 @@ docs/ROADMAP-V11.md (v11.7, 2026-05-19). NOTE: OBS demo-recording descoped.
 
 **Recent commits (latest at top)**:
 ```
+c19e853  feat(optimizer): Epic 2 Batch 2.B — multi-agent consensus + proposal queue + Hermes emission
+6366275  docs: sync compass — Epic 2 Batch 2.A delivered (Optimizer core)
 6a6c786  feat(optimizer): Epic 2 Batch 2.A — deterministic control law + asyncio scaffold
 f24ea94  docs: define Epic 2 — The Optimizer (proactive edge-agent design brief)
 502f51b  docs: initialize platform engram and skill registry harness (epic 1 closure)

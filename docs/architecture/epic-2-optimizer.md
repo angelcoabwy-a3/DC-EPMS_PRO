@@ -205,7 +205,7 @@ delivery; Epic 2 is the next major architectural sprint.
 | Batch | Scope | Status |
 |---|---|---|
 | **2.A** | `backend/optimizer.py` deterministic control law + drift/pacing guards + audit log + asyncio scaffold + 33 unit tests (incl. 4 Proposer-Pattern AST-invariant tests) | ✅ DELIVERED `6a6c786` |
-| **2.B** | Multi-agent consensus integration + proposal queue + Hermes event emission + main.py lifespan hook | pending |
+| **2.B** | Multi-agent consensus integration (Safety VETO uncrossable) + `ProposalQueue` + `QueuedProposal` + Optimizer Gemma narrative (T3.3 pattern) + Hermes event emission + `main.py` lifespan startup/teardown hook + 15 new tests across 4 classes | ✅ DELIVERED `c19e853` |
 | **2.C** | `POST /api/optimizer/approve` + `/reject` endpoints + RBAC gate + persistent audit chain | pending |
 | **2.D** | `views/optimizer.js` + Vitest + the proposal queue HMI | pending |
 | **2.E** | Live smoke test + `S-RUNTIME-01` boot signature verification + release tag `v0.13.0` *"Proactive Edge"* | pending |
@@ -215,6 +215,11 @@ surfaces. **2.A** delivered the deterministic core + the load-bearing
 Proposer-Pattern guard (4 AST-invariant tests that fail-loudly if anyone
 ever adds an HTTP client, a FastAPI router, a `bms_connector` import or
 a live `/api/bms/write` string reference to `backend/optimizer.py`).
+**2.B** wired multi-agent consensus (Safety VETO uncrossable, audit-
+logged + queue-blocked + emit-blocked on `hard_stop`), the Optimizer's
+own advisory Gemma narrative (T3.3 prompt shape), the proposal queue,
+and the `main.py` lifespan startup + teardown hook — all behind the
+env flag so v0.12.0 production behaviour is unchanged.
 
 ## 10. Open questions (explicitly deferred decisions)
 
