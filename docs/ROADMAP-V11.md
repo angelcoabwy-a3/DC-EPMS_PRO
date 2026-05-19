@@ -1,10 +1,19 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.8 (2026-05-19) — EPIC 1 COMPLETE · full 4-agent fleet LLM-augmented
+- **Status**: v11.9 (2026-05-19) — Epic 2 (The Optimizer) DESIGN DEFINED · post-CO+I demo
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.8)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.9)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.9 sync (2026-05-19)**: **Epic 2 — The Optimizer — DESIGN DEFINED.** Full
+  design brief at `docs/architecture/epic-2-optimizer.md`. The Optimizer is a
+  proactive edge-agent for PUE/WUE that **proposes** chiller-LWT and CT-fan
+  setpoint adjustments — never actuates. Anchored in ADR-006 (deterministic
+  control law + advisory Gemma narrative) and routed through the Epic 1
+  multi-agent consensus chain (Safety Officer VETO uncrossable). Operator
+  approval at SME_L6 is what issues `/api/bms/write`. V11 cut: chiller LWT +
+  CT fan VFD only; single-step proposals; ~9 days in 5 sub-batches. Tag
+  target: `v0.13.0` "Proactive Edge".
 - **v11.8 sync (2026-05-19)**: **Epic 1 COMPLETE.** T3.3c (Analyst, `d6208ae`)
   and T3.3d (Architect, `691fd11`) wired the last two agents to the live Gemma
   advisory layer. The full multi-agent fleet — Architect / Safety Officer /
@@ -403,6 +412,51 @@ Building D click could trigger a fly-through to Q2 2026 design view.
 Operations panels often need this for audit trails. Server-rendered
 HTML → headless Chrome via Playwright → PDF for any backlog snapshot,
 LOTO audit, or PUE report.
+
+---
+
+## Epic 2 — The Optimizer (proactive edge-agent for PUE / WUE)
+
+**Status:** DESIGN defined 2026-05-19. Implementation gated **post-CO+I demo**
+(August 2026). Full design brief: **`docs/architecture/epic-2-optimizer.md`**.
+
+Epic 1 delivered the *reactive* fleet — the four consultative agents that
+respond to operator queries with verdicts + live Gemma narratives. Epic 2
+delivers the *proactive* complement: a continuous edge-agent (the Optimizer)
+that watches Hermes telemetry and **proposes** chiller-LWT and cooling-tower-
+fan setpoint adjustments to drive PUE toward the architecture-aware target.
+
+The load-bearing architectural decision is the **Proposer Pattern**: the
+Optimizer is a proposer, NOT an actuator. ADR-006 invariants are preserved
+end-to-end:
+
+- The proposal value is computed by a deterministic control law — the LLM
+  only writes an advisory narrative (`S-DET-01`).
+- Every proposal routes through the existing `multi_agent.consult()` chain.
+  The Safety Officer's `HARD_STOP` veto is uncrossable (`S-DET-02`).
+- The Optimizer has no `actor_role`. It NEVER calls `/api/bms/write`. Only
+  the operator-approval endpoint (SME_L6 gate) issues the write
+  (`S-SEC-02`).
+- Each proposal carries a What-If sandbox outcome (projected delta-PUE,
+  ASHRAE distance, redundancy post-state) as a pre-flight validation gate.
+
+**Sub-batches** (~9 days total when ungated):
+
+- **2.A** — `backend/optimizer.py` deterministic control law + asyncio loop.
+- **2.B** — Multi-agent consensus integration + proposal queue.
+- **2.C** — `POST /api/optimizer/approve` + `/reject` endpoints (RBAC-gated).
+- **2.D** — `views/optimizer.js` HMI + Vitest.
+- **2.E** — Live smoke test (boot-signature verified per `S-RUNTIME-01`) +
+  release tag **`v0.13.0` "Proactive Edge"**.
+
+**V11 scope cut:** chiller LWT + CT fan VFD only; single-step proposals;
+reactive (PUE-drift) trigger; 15-minute pacing per surface. Deferred to
+Epic 2.1+: pump VFD, CDU temperature, free-cooling switching, predictive
+multi-step horizon, WUE optimisation, BESS dispatch.
+
+See `docs/architecture/epic-2-optimizer.md` for the full design (control
+law, multi-agent validation table, RBAC actuation path, HMI surface,
+testing strategy, ADR-006 acceptance checklist).
 
 ---
 
