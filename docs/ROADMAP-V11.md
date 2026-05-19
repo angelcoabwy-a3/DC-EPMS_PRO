@@ -1,10 +1,16 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.7 (2026-05-19) — EPIC T2.1 CLOSED · app.js IIFE monolith eradicated
+- **Status**: v11.8 (2026-05-19) — EPIC 1 COMPLETE · full 4-agent fleet LLM-augmented
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.7)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.8)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.8 sync (2026-05-19)**: **Epic 1 COMPLETE.** T3.3c (Analyst, `d6208ae`)
+  and T3.3d (Architect, `691fd11`) wired the last two agents to the live Gemma
+  advisory layer. The full multi-agent fleet — Architect / Safety Officer /
+  Diagnostician / Analyst — now carries an LLM narrative on top of an unchanged
+  deterministic verdict path. ADR-006 invariants preserved across all four
+  agents. Backend pytest: 726 passed (+8 T3.3c/d tests).
 - **v11.7 sync (2026-05-19)**: **Epic T2.1 CLOSED.** Vector 4 dismantled the
   last of the IIFE — `views/topology.js` (4a), `views/overview.js` (4b), and
   the residual router glue promoted to `core/bootstrap.js` (4c). `app.js` is
@@ -311,8 +317,27 @@ pattern extended to the **Safety Officer**. Two shared helpers
 Diagnostician was slimmed onto them. The Safety Officer's verdict —
 including its HARD_STOP **VETO**, which outranks every other agent —
 stays 100% deterministic; Gemma only writes the advisory narrative in a
-verdict-independent `_finalize()`. 4 LLM-mocked tests. Architect and
-Analyst remain fully deterministic with no LLM layer.
+verdict-independent `_finalize()`. 4 LLM-mocked tests.
+
+**T3.3c — ✅ DELIVERED 2026-05-19 (`d6208ae`)**: the **Analyst** wired to
+Gemma. Prompt frames the CapEx-vs-OpEx capital-planning narrative around
+the heuristic cost model (`OPEX REPAIR` / `CAPEX REPLACE` / prior repair
+count) and the live Kalman Z-scores. The 40 % breakeven verdict + the
+cost heuristics remain authoritative — the prompt explicitly forbids
+the model from overriding either. 4 LLM-mocked tests.
+
+**T3.3d — ✅ DELIVERED 2026-05-19 (`691fd11`)**: the **Architect** wired to
+Gemma. Prompt frames the topology narrative around the asset's
+redundancy pillar / path / criticality with a Tier IV / Uptime
+Institute concurrent-maintainability lens. The HARD_STOP / CAUTION
+thresholds and pillar rules remain deterministic. 4 LLM-mocked tests.
+
+**Epic 1 complete (2026-05-19).** The full 4-agent multi-agent fleet
+(Architect / Safety Officer / Diagnostician / Analyst) is now LLM-
+augmented. Backend pytest: 718 → 726 (+8 narrative tests across T3.3c
++ T3.3d). ADR-006 invariants preserved: every verdict and the
+Safety Officer veto chain stay 100 % deterministic; the LLM layer is
+strictly advisory across all four agents.
 
 ### T3.4 — Power flow live tied to current_a (~1 day)
 

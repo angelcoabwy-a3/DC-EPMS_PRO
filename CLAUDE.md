@@ -19,11 +19,12 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-19)
 
 ```
-HEAD:  v0.12.0 release commit  branch master  —  pushed 2026-05-19.
+HEAD:  691fd11 (+ this doc-sync)  branch master  —  pushed 2026-05-19.
        Stable baseline = v0.12.0 "Monolith Eradicated" (cut 2026-05-19).
-       EPIC T2.1 CLOSED — the app.js IIFE monolith (4003 LOC) is fully
-       dismantled into ES modules and DELETED; the HMI is fully modular.
-       Tag = v0.12.x patch / v0.13.0 next.
+       Post-release: EPIC 1 COMPLETE — the full 4-agent multi-agent
+       fleet (Architect / Safety Officer / Diagnostician / Analyst) now
+       carries the live-Gemma advisory narrative layer (T3.3 / T3.3b /
+       T3.3c / T3.3d). Tag = v0.12.x patch / v0.13.0 next.
 Working tree: .claude/ untracked (intentional).
 
 Tags chronological (40 total):
@@ -59,7 +60,7 @@ Tags chronological (40 total):
    views/*.js + core/*.js engines, all routed by the declarative
    core/router.js. index.html loads a single ES-module entry point.
 
-Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~47s, 0 fail.
+Tests:   backend 726 passed, 5 deselected (slow/FAISS) — full pytest ~48s, 0 fail.
          frontend 176 passed — Vitest (npm test, 18 files): mission_control +
          scenarios + incidents + mops + power + cooling + copilot + bms + loto +
          topology + overview + bootstrap + sanitize + hermes (slice / cutover /
@@ -116,7 +117,9 @@ docs/ROADMAP-V11.md (v11.7, 2026-05-19). NOTE: OBS demo-recording descoped.
 
 **Recent commits (latest at top)**:
 ```
-(v0.12.0 release commit)  chore(release): bump internal manifests and documentation to v0.12.0  [tag v0.12.0]
+691fd11  feat(ai): wire Architect agent to Gemma LLM for structural redundancy narratives
+d6208ae  feat(ai): wire Analyst agent to Gemma LLM for CapEx/OpEx financial narratives
+66115dd  chore(release): bump internal manifests and documentation to v0.12.0  [tag v0.12.0]
 7eca2c2  docs: sync compass — Epic T2.1 CLOSED (app.js monolith eradicated)
 5ae535d  refactor(ui): eradicate app.js monolith — Overview + bootstrap to ES modules, Epic T2.1 CLOSED (Vector 4b+4c)
 f0a9620  refactor(ui): extract HLD/LLD Topology view from monolith (Vector 4a)
@@ -124,11 +127,8 @@ f0a9620  refactor(ui): extract HLD/LLD Topology view from monolith (Vector 4a)
 3b98449  refactor(ui): adjudicate and eradicate legacy Site Topology (Vector 3)
 fc3ead6  refactor(ui): extract LOTO Auditor view from monolith (Vector 2)
 807185e  refactor(ui): extract BMS Connector view from monolith + preserve copilot deep-link (T2.1)
-7619c8d  docs: update ROADMAP-V11 T2.1 to reflect discovered hidden technical debt
 0fb7168  chore(release): bump internal manifests and documentation to v0.11.0  [tag v0.11.0]
 38605d3  refactor(ui): extract Copilot AI view from monolith — XSS-sanitized ES6 module (T2.1)
-bc060d9  feat(ui): interactive Power SLD breaker actuators wired to RBAC-secured BMS (L3 Phase 1)
-41d1206  feat(ui): reinvent iso + flat Power SLD rendering — orthogonal routing, label legibility
 ```
 
 ## 🛰 [HISTORICAL] Sprint 5 C0 Architecture (delivered — preserved as design record)
