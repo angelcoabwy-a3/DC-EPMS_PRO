@@ -746,17 +746,36 @@ DEFAULT_COSTS = {"opex_repair": 2500, "capex_replace": 25000}
 class AnalystAgent:
     """KPI + CapEx-vs-OpEx framing.
 
-    Verdict basis:
+    Verdict basis (deterministic):
       - CAUTION  if completed_count >= 3 (recommend replace consideration)
       - APPROVE  otherwise (repair is correct decision)
+
+    T3.3c -- when an ``llm_client`` (local Gemma) and a
+    ``telemetry_provider`` (live Hermes Kalman tap) are injected, the
+    agent additionally calls Gemma to synthesize an advisory CapEx-vs-
+    OpEx financial-impact narrative grounded in the heuristic cost model
+    + the asset's repair history. Per ADR-006 that narrative is advisory
+    ONLY: the deterministic ``verdict`` is computed before the LLM is
+    consulted and is never altered by it -- nor by any cost figure the
+    model might emit (the heuristics remain authoritative).
     """
 
     name = "Analyst"
     REPLACE_THRESHOLD_COUNT = 3   # 3+ completed WOs in lookback -> consider replace
 
-    def __init__(self, site_model: Any | None, cmms_repo: Any | None):
+    def __init__(
+        self,
+        site_model: Any | None,
+        cmms_repo: Any | None,
+        llm_client: Any | None = None,
+        telemetry_provider: Any | None = None,
+    ):
         self._site = site_model
         self._cmms_repo = cmms_repo
+        # T3.3c: optional live-Gemma narrative layer. Both default to None
+        # so every existing call site and unit test is unaffected.
+        self._llm_client = llm_client
+        self._telemetry_provider = telemetry_provider
 
     async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
         t0 = time.perf_counter()
@@ -794,6 +813,7 @@ class AnalystAgent:
 
         # Recurrence -> replace recommendation
         verdict = VERDICT_APPROVE
+        completed_count = 0
         if self._cmms_repo is not None:
             try:
                 history = await self._cmms_repo.list_work_orders_async(
@@ -802,6 +822,7 @@ class AnalystAgent:
                 evidence.append(f"cmms:WO_history:{ctx.asset_id}")
                 completed = [w for w in history
                              if getattr(w, "status", "") == "completed"]
+                completed_count = len(completed)
                 if len(completed) >= self.REPLACE_THRESHOLD_COUNT:
                     cumulative_opex = len(completed) * opex
                     breakeven_pct = (cumulative_opex / capex) * 100
@@ -825,6 +846,26 @@ class AnalystAgent:
             except Exception as e:
                 reasoning.append(f"History lookup failed: {e}")
 
+        # T3.3c: advisory Gemma narrative — CapEx-vs-OpEx financial
+        # framing. Runs AFTER the deterministic verdict; never alters it,
+        # nor the heuristic cost figures (ADR-006).
+        llm_narrative = ""
+        if self._llm_client is not None:
+            kalman_lines = await _collect_kalman_lines(
+                self._telemetry_provider, ctx.asset_id,
+            )
+            if kalman_lines:
+                evidence.append(
+                    f"hermes:kalman_z:{ctx.asset_id} ({len(kalman_lines)} ch)"
+                )
+            llm_narrative = await self._synthesize_narrative(
+                ctx, verdict, asset_type, opex, capex, completed_count,
+                kalman_lines,
+            )
+            if llm_narrative:
+                evidence.append("gemma:analyst_narrative")
+                reasoning.append(f"Gemma narrative: {llm_narrative}")
+
         summary = (
             f"OpEx ${opex:,} vs CapEx ${capex:,} — "
             + ("escalate to CapEx review" if verdict == VERDICT_CAUTION
@@ -834,7 +875,50 @@ class AnalystAgent:
             agent_name=self.name, verdict=verdict,
             summary=summary, reasoning=reasoning,
             evidence_refs=evidence, decision_time_ms=_ms_since(t0),
+            llm_narrative=llm_narrative,
         )
+
+    # ── T3.3c: advisory Gemma narrative (verdict-independent) ──────────
+    async def _synthesize_narrative(
+        self,
+        ctx: ConsultContext,
+        verdict: str,
+        asset_type: str,
+        opex: int,
+        capex: int,
+        completed_count: int,
+        kalman_lines: list[str],
+    ) -> str:
+        """Build the Analyst's Gemma prompt and call the model.
+
+        ADR-006: advisory ONLY. ``verdict`` is already decided and the
+        OpEx/CapEx heuristics are authoritative — the prompt forbids the
+        model from overriding the verdict or inventing cost figures.
+        """
+        kalman_block = (
+            "\n".join(f"  {ln}" for ln in kalman_lines)
+            if kalman_lines
+            else "  (live Kalman tap unavailable this tick)"
+        )
+        prompt = (
+            "You are the Analyst agent of a Tier IV AI-factory operations "
+            "platform, responsible for CapEx-vs-OpEx capital-planning "
+            "framing. In 2-3 sentences give an advisory financial-impact "
+            "narrative for the asset below: weigh the OpEx repair cost "
+            "against the CapEx replacement cost and the prior-repair "
+            "history. Ground every figure strictly in the data provided; "
+            "do not invent costs. Be concise and factual.\n\n"
+            f"ASSET: {ctx.asset_id or 'n/a'}  (type: {asset_type})\n"
+            f"DETERMINISTIC VERDICT (already decided, do not override): "
+            f"{verdict}\n"
+            f"OPEX REPAIR (heuristic): USD {opex:,}\n"
+            f"CAPEX REPLACE (heuristic): USD {capex:,}\n"
+            f"PRIOR COMPLETED REPAIRS: {completed_count}\n"
+            "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
+            "anomaly):\n"
+            f"{kalman_block}\n"
+        )
+        return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
 
 # ─── Orchestrator ──────────────────────────────────────────────────────
@@ -859,7 +943,10 @@ class MultiAgentOrchestrator:
             cmms_repo, rag_service,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
         )
-        self._analyst      = AnalystAgent(site_model, cmms_repo)
+        self._analyst      = AnalystAgent(
+            site_model, cmms_repo,
+            llm_client=llm_client, telemetry_provider=telemetry_provider,
+        )
 
     @property
     def agents(self) -> list[Any]:

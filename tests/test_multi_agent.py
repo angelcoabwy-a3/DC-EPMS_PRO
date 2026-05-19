@@ -408,6 +408,92 @@ async def test_analyst_caution_at_breakeven():
     assert "CapEx" in v.summary or "capital" in " ".join(v.reasoning).lower()
 
 
+# ─── Analyst — T3.3c live-Gemma advisory narrative ────────────────────
+async def _repo_with_chiller_repairs(
+    asset_id: str = "chiller_1", n: int = 17,
+) -> MockCMMSRepository:
+    """A chiller with enough completed repairs to cross the 40% CapEx
+    breakeven — the Analyst returns CAUTION."""
+    repo = MockCMMSRepository()
+    for i in range(n):
+        await repo.save_work_order_async(WorkOrder(
+            work_order_id=f"WO-AN-{i}", timestamp=datetime.now(UTC),
+            asset_id=asset_id, asset_type_at_creation="chiller",
+            work_class="CM", lor=8, trigger_source="manual",
+            issue_summary=f"#{i}", status="completed", draft_json={},
+        ))
+    return repo
+
+
+@pytest.mark.asyncio
+async def test_analyst_llm_narrative_with_kalman():
+    """With a live LLM client + Kalman tap, the Analyst attaches a Gemma
+    CapEx/OpEx narrative grounded in the cost heuristics + Z-scores."""
+    sm = FakeSiteModel({"chiller_1": FakeComponentInfo("chiller_1", "chiller")})
+    repo = await _repo_with_chiller_repairs()
+    gemma = FakeGemma(reply="Cumulative OpEx approaches the CapEx breakeven; escalate.")
+    a = AnalystAgent(
+        site_model=sm, cmms_repo=repo,
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="x", asset_id="chiller_1"))
+
+    assert v.llm_narrative == gemma.reply
+    assert "gemma:analyst_narrative" in v.evidence_refs
+    assert any(e.startswith("hermes:kalman_z:chiller_1") for e in v.evidence_refs)
+    assert len(gemma.prompts) == 1
+    prompt = gemma.prompts[0]
+    assert "LIVE KALMAN TELEMETRY" in prompt
+    assert "DETERMINISTIC VERDICT" in prompt
+    assert "CAPEX REPLACE" in prompt
+    assert "OPEX REPAIR" in prompt
+
+
+@pytest.mark.asyncio
+async def test_analyst_verdict_unchanged_by_llm():
+    """ADR-006: the LLM is advisory. A contradicting narrative does not
+    move the deterministic CapEx-breakeven verdict."""
+    sm = FakeSiteModel({"chiller_1": FakeComponentInfo("chiller_1", "chiller")})
+    repo = await _repo_with_chiller_repairs()
+    gemma = FakeGemma(reply="Costs are negligible — keep repairing forever, approve.")
+    a = AnalystAgent(
+        site_model=sm, cmms_repo=repo,
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="x", asset_id="chiller_1"))
+    assert v.verdict == VERDICT_CAUTION          # breakeven still wins
+    assert v.llm_narrative.startswith("Costs are negligible")
+
+
+@pytest.mark.asyncio
+async def test_analyst_graceful_when_llm_raises():
+    """A crashing LLM client degrades to an empty narrative — the verdict
+    and the cost framing are unaffected."""
+    sm = FakeSiteModel({"chiller_1": FakeComponentInfo("chiller_1", "chiller")})
+    repo = await _repo_with_chiller_repairs()
+    a = AnalystAgent(
+        site_model=sm, cmms_repo=repo,
+        llm_client=RaisingGemma(), telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="x", asset_id="chiller_1"))
+    assert v.verdict == VERDICT_CAUTION
+    assert v.llm_narrative == ""
+    assert "gemma:analyst_narrative" not in v.evidence_refs
+
+
+@pytest.mark.asyncio
+async def test_analyst_no_llm_client_no_narrative():
+    """Without an llm_client the Analyst is byte-for-byte its pre-T3.3c
+    deterministic self: empty narrative, no Gemma evidence."""
+    sm = FakeSiteModel({"ups_a": FakeComponentInfo("ups_a", "ups")})
+    repo = MockCMMSRepository()
+    a = AnalystAgent(site_model=sm, cmms_repo=repo)
+    v = await a.evaluate(ConsultContext(query="x", asset_id="ups_a"))
+    assert v.verdict == VERDICT_APPROVE
+    assert v.llm_narrative == ""
+    assert not any("gemma" in e for e in v.evidence_refs)
+
+
 # ─── Orchestrator + consensus ─────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_consensus_safety_veto_outranks_all():
