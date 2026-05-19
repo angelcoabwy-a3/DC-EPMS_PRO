@@ -15,11 +15,17 @@ Agents
                       reads: site_model, graphrag (loto_with_knowledge)
                       verdict basis: would the action drop redundancy
                       below 2N or N+1? Path-aware (Path A vs Path B).
+                      T3.3d: also synthesizes an advisory structural
+                      narrative (Tier IV / Uptime Institute concurrent-
+                      maintainability framing) via the local Gemma
+                      model, grounded in live Hermes Kalman Z-scores.
 
   Safety Officer      LOTO/PPE compliance + audit-trail integrity
                       reads: site_model component metadata, work_orders
                       veto power: HARD_STOP outranks all other agents
                       (CSA Z462 / NFPA 70E §130 / NEC 460.6).
+                      T3.3b: also synthesizes an advisory safety
+                      narrative via the local Gemma model.
 
   Diagnostician       Recurrence + corpus-grounded historical context
                       reads: cmms_repository (WO history) + rag_service
@@ -32,6 +38,10 @@ Agents
   Analyst             LOR-weighted KPIs + CapEx-vs-OpEx framing
                       reads: cmms_repository (asset + open WOs)
                       heuristic cost model per asset_type.
+                      T3.3c: also synthesizes an advisory CapEx-vs-OpEx
+                      financial-impact narrative via the local Gemma
+                      model, grounded in the cost heuristics + the
+                      asset's repair history + live Kalman Z-scores.
 
 Consensus rule (deterministic)
 ------------------------------
@@ -42,10 +52,11 @@ Consensus rule (deterministic)
 
 Per ADR-006 Deterministic Sandbox: every agent VERDICT is computed by
 pure-Python deterministic logic -- no LLM in the critical decision path.
-The Diagnostician (T3.3) may attach a Gemma-generated narrative, but
-that text is advisory only and never alters the verdict or the
-consensus rule. The output is advisory; the operator remains the
-approver. The orchestrator never mutates state.
+Each of the four agents (T3.3 Diagnostician, T3.3b Safety Officer,
+T3.3c Analyst, T3.3d Architect — the full Epic 1 fleet) may attach a
+Gemma-generated narrative, but that text is advisory only and never
+alters the verdict or the consensus rule. The output is advisory; the
+operator remains the approver. The orchestrator never mutates state.
 """
 
 from __future__ import annotations
@@ -214,7 +225,7 @@ async def _gemma_complete(
 class ArchitectAgent:
     """Topology + redundancy impact perspective.
 
-    Verdict basis:
+    Verdict basis (deterministic):
       - HARD_STOP  if action would leave site with NO redundant path on any
                    critical chain (would drop 2N to 1N AND the 1N is degraded)
       - CAUTION    if action would drop 2N to 1N temporarily on a critical
@@ -225,15 +236,35 @@ class ArchitectAgent:
     Pulls redundancy_pillar / criticality_class / path from the CMMS
     asset row (authoritative for those fields) and falls back to
     site_model.metadata for testing scenarios where CMMS is mocked.
+
+    T3.3d -- when an ``llm_client`` (local Gemma) and a
+    ``telemetry_provider`` (live Hermes Kalman tap) are injected, the
+    agent additionally calls Gemma on the main-path return to synthesize
+    an advisory structural narrative — Tier IV / Uptime Institute
+    compliance framing of the 2N / N+1 / N transition implied by the
+    action. Per ADR-006 that narrative is advisory ONLY: the
+    deterministic ``verdict`` is computed before the LLM is consulted
+    and is never altered by it. Early returns (DEGRADED with no data,
+    APPROVE with no asset) skip the LLM entirely.
     """
 
     name = "Architect"
 
-    def __init__(self, site_model: Any | None, graphrag: Any | None,
-                 cmms_repo: Any | None = None):
+    def __init__(
+        self,
+        site_model: Any | None,
+        graphrag: Any | None,
+        cmms_repo: Any | None = None,
+        llm_client: Any | None = None,
+        telemetry_provider: Any | None = None,
+    ):
         self._site = site_model
         self._graphrag = graphrag
         self._cmms_repo = cmms_repo
+        # T3.3d: optional live-Gemma narrative layer. Both default to None
+        # so every existing call site and unit test is unaffected.
+        self._llm_client = llm_client
+        self._telemetry_provider = telemetry_provider
 
     async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
         t0 = time.perf_counter()
@@ -345,6 +376,26 @@ class ArchitectAgent:
             except Exception as e:
                 reasoning.append(f"GraphRAG topology lookup failed: {e}")
 
+        # T3.3d: advisory Gemma narrative — topology / redundancy framing
+        # with a Tier IV / Uptime Institute compliance lens. Runs AFTER
+        # the deterministic verdict; never alters it (ADR-006).
+        llm_narrative = ""
+        if self._llm_client is not None:
+            kalman_lines = await _collect_kalman_lines(
+                self._telemetry_provider, ctx.asset_id,
+            )
+            if kalman_lines:
+                evidence.append(
+                    f"hermes:kalman_z:{ctx.asset_id} ({len(kalman_lines)} ch)"
+                )
+            llm_narrative = await self._synthesize_narrative(
+                ctx, verdict, comp_type, path, pillar, criticality,
+                kalman_lines,
+            )
+            if llm_narrative:
+                evidence.append("gemma:architect_narrative")
+                reasoning.append(f"Gemma narrative: {llm_narrative}")
+
         summary = (
             f"Path {path} {pillar} ({criticality}) — "
             f"{verdict.replace('_', ' ')}"
@@ -353,7 +404,52 @@ class ArchitectAgent:
             agent_name=self.name, verdict=verdict,
             summary=summary, reasoning=reasoning,
             evidence_refs=evidence, decision_time_ms=_ms_since(t0),
+            llm_narrative=llm_narrative,
         )
+
+    # ── T3.3d: advisory Gemma narrative (verdict-independent) ──────────
+    async def _synthesize_narrative(
+        self,
+        ctx: ConsultContext,
+        verdict: str,
+        comp_type: str,
+        path: str,
+        pillar: str,
+        criticality: str,
+        kalman_lines: list[str],
+    ) -> str:
+        """Build the Architect's Gemma prompt and call the model.
+
+        ADR-006: advisory ONLY. ``verdict`` is already decided; the prompt
+        explicitly forbids the model from overriding it. The narrative
+        frames the 2N / N+1 / N transition under Tier IV / Uptime
+        Institute concurrent-maintainability semantics.
+        """
+        kalman_block = (
+            "\n".join(f"  {ln}" for ln in kalman_lines)
+            if kalman_lines
+            else "  (live Kalman tap unavailable this tick)"
+        )
+        prompt = (
+            "You are the Architect agent of a Tier IV AI-factory "
+            "operations platform, responsible for topology and "
+            "redundancy. In 2-3 sentences give an advisory structural "
+            "narrative for the asset below: assess the redundancy "
+            "impact (2N / N+1 / N transition implied by the action) and "
+            "any Tier IV / Uptime Institute concurrent-maintainability "
+            "consideration of taking it offline. Ground every claim "
+            "strictly in the data provided; do not invent values. Be "
+            "concise and factual.\n\n"
+            f"ASSET: {ctx.asset_id or 'n/a'}  (type: {comp_type})\n"
+            f"DETERMINISTIC VERDICT (already decided, do not override): "
+            f"{verdict}\n"
+            f"REDUNDANCY PILLAR: {pillar}   PATH: {path}   "
+            f"CRITICALITY: {criticality}\n"
+            "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
+            "anomaly):\n"
+            f"{kalman_block}\n"
+        )
+        return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
 
 # ─── Agent: Safety Officer ─────────────────────────────────────────────
@@ -934,7 +1030,10 @@ class MultiAgentOrchestrator:
         llm_client: Any | None = None,
         telemetry_provider: Any | None = None,
     ):
-        self._architect    = ArchitectAgent(site_model, graphrag, cmms_repo=cmms_repo)
+        self._architect    = ArchitectAgent(
+            site_model, graphrag, cmms_repo=cmms_repo,
+            llm_client=llm_client, telemetry_provider=telemetry_provider,
+        )
         self._safety       = SafetyOfficerAgent(
             site_model, cmms_repo,
             llm_client=llm_client, telemetry_provider=telemetry_provider,

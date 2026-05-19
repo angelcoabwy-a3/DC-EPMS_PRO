@@ -102,6 +102,76 @@ async def test_architect_hard_stop_critical_single_pillar():
     assert v.verdict == VERDICT_HARD_STOP
 
 
+# ─── Architect — T3.3d live-Gemma advisory narrative ──────────────────
+def _sm_ups_2n_critical() -> FakeSiteModel:
+    return FakeSiteModel({"ups_a": FakeComponentInfo("ups_a", "ups", {
+        "redundancy_pillar": "2N", "criticality_class": "critical",
+        "path": "A",
+    })})
+
+
+@pytest.mark.asyncio
+async def test_architect_llm_narrative_with_kalman():
+    """With a live LLM client + Kalman tap, the Architect attaches a Gemma
+    structural narrative grounded in the redundancy pillar + Z-scores."""
+    gemma = FakeGemma(reply="2N -> 1N for the LOTO window; verify path B is healthy first.")
+    a = ArchitectAgent(
+        site_model=_sm_ups_2n_critical(), graphrag=None,
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="LOTO ups_a", asset_id="ups_a"))
+
+    assert v.verdict == VERDICT_CAUTION
+    assert v.llm_narrative == gemma.reply
+    assert "gemma:architect_narrative" in v.evidence_refs
+    assert any(e.startswith("hermes:kalman_z:ups_a") for e in v.evidence_refs)
+    assert len(gemma.prompts) == 1
+    prompt = gemma.prompts[0]
+    assert "LIVE KALMAN TELEMETRY" in prompt
+    assert "DETERMINISTIC VERDICT" in prompt
+    assert "REDUNDANCY PILLAR" in prompt
+    assert "2N" in prompt
+
+
+@pytest.mark.asyncio
+async def test_architect_verdict_unchanged_by_llm():
+    """ADR-006: even an LLM narrative urging full approval cannot soften
+    the deterministic critical-2N CAUTION verdict."""
+    gemma = FakeGemma(reply="Redundancy is fine, approve immediately, no concern.")
+    a = ArchitectAgent(
+        site_model=_sm_ups_2n_critical(), graphrag=None,
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="LOTO ups_a", asset_id="ups_a"))
+    assert v.verdict == VERDICT_CAUTION          # 2N + critical still wins
+    assert v.llm_narrative.startswith("Redundancy is fine")
+
+
+@pytest.mark.asyncio
+async def test_architect_graceful_when_llm_raises():
+    """A crashing LLM client degrades to an empty narrative — the verdict
+    and the structural framing are unaffected."""
+    a = ArchitectAgent(
+        site_model=_sm_ups_2n_critical(), graphrag=None,
+        llm_client=RaisingGemma(), telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="LOTO ups_a", asset_id="ups_a"))
+    assert v.verdict == VERDICT_CAUTION
+    assert v.llm_narrative == ""
+    assert "gemma:architect_narrative" not in v.evidence_refs
+
+
+@pytest.mark.asyncio
+async def test_architect_no_llm_client_no_narrative():
+    """Without an llm_client the Architect is byte-for-byte its pre-T3.3d
+    deterministic self: empty narrative, no Gemma evidence."""
+    a = ArchitectAgent(site_model=_sm_ups_2n_critical(), graphrag=None)
+    v = await a.evaluate(ConsultContext(query="LOTO ups_a", asset_id="ups_a"))
+    assert v.verdict == VERDICT_CAUTION
+    assert v.llm_narrative == ""
+    assert not any("gemma" in e for e in v.evidence_refs)
+
+
 # ─── Safety Officer (VETO) ────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_safety_veto_when_loto_required_no_mop():
