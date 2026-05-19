@@ -16,17 +16,17 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 
 **Vocabulary discipline (CRITICAL)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is unipolar (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in panel review.
 
-## 📊 CURRENT STATE (synced 2026-05-18)
+## 📊 CURRENT STATE (synced 2026-05-19)
 
 ```
-HEAD:  5ae535d (+ this doc-sync)  branch master  —  pushed 2026-05-19.
-       Stable baseline = v0.11.0 (cut 2026-05-18). Post-release: T2.1
-       Vectors 1-4 — EPIC T2.1 CLOSED. The app.js IIFE monolith
-       (4003 LOC) is fully dismantled into ES modules and DELETED.
-       Tag = v0.12.0 next ("Monolith Eradicated").
+HEAD:  v0.12.0 release commit  branch master  —  pushed 2026-05-19.
+       Stable baseline = v0.12.0 "Monolith Eradicated" (cut 2026-05-19).
+       EPIC T2.1 CLOSED — the app.js IIFE monolith (4003 LOC) is fully
+       dismantled into ES modules and DELETED; the HMI is fully modular.
+       Tag = v0.12.x patch / v0.13.0 next.
 Working tree: .claude/ untracked (intentional).
 
-Tags chronological (39 total):
+Tags chronological (40 total):
   v0.5.0 .. v0.8.5-cmms-core-v1               foundation → Sprint 6 CMMS Core
   v0.9.0-cmms-predictive                      Sprint 9.1 predictive WO trigger (Kalman→auto-WO)
   v0.9.5..v0.9.9-tech-assist*                 Sprint 7.1a-d Tech Assist (QA, PDF ingest, voice, OCR) + view
@@ -51,6 +51,13 @@ Tags chronological (39 total):
    live-Gemma Diagnostician + Safety Officer, Tier IV Power SLD upgrade
    (5-layer + paralleling bus + SCADA restyle + Hermes binding) + L3 control
    plane, Cooling orthogonal SCADA SLD + L3 control plane.
+  v0.12.0  (2026-05-19)                       RELEASE "Monolith Eradicated" —
+   EPIC T2.1 CLOSED: the app.js IIFE monolith (4003 LOC) fully dismantled
+   into ES modules and DELETED. T2.1 Vectors 1-4 — BMS / LOTO / Topology /
+   Overview views extracted, legacy Site Topology eradicated, the router
+   residual promoted to core/bootstrap.js. The HMI is fully modular: 12
+   views/*.js + core/*.js engines, all routed by the declarative
+   core/router.js. index.html loads a single ES-module entry point.
 
 Tests:   backend 718 passed, 5 deselected (slow/FAISS) — full pytest ~47s, 0 fail.
          frontend 176 passed — Vitest (npm test, 18 files): mission_control +
@@ -109,6 +116,8 @@ docs/ROADMAP-V11.md (v11.7, 2026-05-19). NOTE: OBS demo-recording descoped.
 
 **Recent commits (latest at top)**:
 ```
+(v0.12.0 release commit)  chore(release): bump internal manifests and documentation to v0.12.0  [tag v0.12.0]
+7eca2c2  docs: sync compass — Epic T2.1 CLOSED (app.js monolith eradicated)
 5ae535d  refactor(ui): eradicate app.js monolith — Overview + bootstrap to ES modules, Epic T2.1 CLOSED (Vector 4b+4c)
 f0a9620  refactor(ui): extract HLD/LLD Topology view from monolith (Vector 4a)
 1ab76ec  docs: sync compass to T2.1 Vectors 2 + 3 completion
@@ -117,9 +126,7 @@ fc3ead6  refactor(ui): extract LOTO Auditor view from monolith (Vector 2)
 807185e  refactor(ui): extract BMS Connector view from monolith + preserve copilot deep-link (T2.1)
 7619c8d  docs: update ROADMAP-V11 T2.1 to reflect discovered hidden technical debt
 0fb7168  chore(release): bump internal manifests and documentation to v0.11.0  [tag v0.11.0]
-35a22a9  docs: synchronize compass post-multi-epic extraction sprint
 38605d3  refactor(ui): extract Copilot AI view from monolith — XSS-sanitized ES6 module (T2.1)
-2cd3b96  feat(ui): isolated What-If predictive simulation sandbox — local DAG engine (L3 Phase 2)
 bc060d9  feat(ui): interactive Power SLD breaker actuators wired to RBAC-secured BMS (L3 Phase 1)
 41d1206  feat(ui): reinvent iso + flat Power SLD rendering — orthogonal routing, label legibility
 ```
