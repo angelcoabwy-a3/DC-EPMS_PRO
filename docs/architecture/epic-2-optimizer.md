@@ -1,6 +1,6 @@
 # Epic 2 — The Optimizer (proactive edge-agent for PUE / WUE)
 
-> **Status:** IN PROGRESS — design defined 2026-05-19; Batch 2.A delivered 2026-05-19 (`6a6c786`); 2.B–2.E pending. Full delivery still gated post-CO+I demo.
+> **Status:** IN PROGRESS — design defined 2026-05-19; Batches 2.A + 2.B + 2.C delivered 2026-05-19 (`6a6c786`, `c19e853`, `18b66b1`); 2.D + 2.E pending. Full delivery still gated post-CO+I demo.
 > **Anchor:** ADR-006 Deterministic Sandbox + the Epic 1 multi-agent consensus chain.
 > **Companion:** `docs/engram/main-context.md` §13 (Epic 2 line); `docs/skills/skill-registry.md` (`S-DET-01`, `S-DET-02`, `S-SEC-02`).
 >
@@ -206,7 +206,7 @@ delivery; Epic 2 is the next major architectural sprint.
 |---|---|---|
 | **2.A** | `backend/optimizer.py` deterministic control law + drift/pacing guards + audit log + asyncio scaffold + 33 unit tests (incl. 4 Proposer-Pattern AST-invariant tests) | ✅ DELIVERED `6a6c786` |
 | **2.B** | Multi-agent consensus integration (Safety VETO uncrossable) + `ProposalQueue` + `QueuedProposal` + Optimizer Gemma narrative (T3.3 pattern) + Hermes event emission + `main.py` lifespan startup/teardown hook + 15 new tests across 4 classes | ✅ DELIVERED `c19e853` |
-| **2.C** | `POST /api/optimizer/approve` + `/reject` endpoints + RBAC gate + persistent audit chain | pending |
+| **2.C** | `backend/optimizer_routes.py` with 4 endpoints (`GET /proposals`, `GET /approvals[/{id}]`, `POST /approve/{id}`, `POST /reject/{id}`); SME_L6 RBAC gate (stricter than `enforce-when-present` — `actor_role` required); confirm_ashrae=true demand on approve; defence-in-depth Safety-veto refusal (409); `OptimizerApproval` + `ApprovalLog`; `SURFACE_TO_BMS_TAG` mapping; `bms_write_fn` DI seam wired in `main.py`; +22 tests + 1 new directional AST invariant | ✅ DELIVERED `18b66b1` |
 | **2.D** | `views/optimizer.js` + Vitest + the proposal queue HMI | pending |
 | **2.E** | Live smoke test + `S-RUNTIME-01` boot signature verification + release tag `v0.13.0` *"Proactive Edge"* | pending |
 
@@ -220,6 +220,14 @@ logged + queue-blocked + emit-blocked on `hard_stop`), the Optimizer's
 own advisory Gemma narrative (T3.3 prompt shape), the proposal queue,
 and the `main.py` lifespan startup + teardown hook — all behind the
 env flag so v0.12.0 production behaviour is unchanged.
+**2.C** wired the operator approval surface: 4 endpoints under
+`/api/optimizer/*`, an SME_L6 RBAC gate, confirm-ASHRAE demand, the
+defence-in-depth Safety-veto refusal, a `SURFACE_TO_BMS_TAG` mapping,
+the `bms_write_fn` injection seam, and the in-memory `ApprovalLog`
+that closes the audit chain (proposal → consensus → operator decision
+→ BMS write log) by `proposal_id`. The deterministic core stayed
+write-path-free — a new directional AST invariant enforces it
+(`backend/optimizer.py` may never import `optimizer_routes`).
 
 ## 10. Open questions (explicitly deferred decisions)
 

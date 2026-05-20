@@ -1,10 +1,22 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.11 (2026-05-19) — Epic 2 IN PROGRESS · Batches 2.A + 2.B delivered
+- **Status**: v11.12 (2026-05-19) — Epic 2 IN PROGRESS · Batches 2.A + 2.B + 2.C delivered
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.11)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.12)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.12 sync (2026-05-19)**: **Epic 2 Batch 2.C DELIVERED** (`18b66b1`). The
+  operator-approval surface is live: 4 endpoints under `/api/optimizer/*`
+  (`GET /proposals`, `GET /approvals[/{id}]`, `POST /approve/{id}`,
+  `POST /reject/{id}`). The approve handler enforces a **strict** SME_L6 gate
+  (`actor_role` required AND rank ≥ 6 — stricter than the platform's default
+  enforce-when-present), demands `confirm_ashrae=true`, defence-in-depth-
+  refuses any proposal carrying an active Safety Officer veto (HTTP 409), and
+  is the ONLY Epic 2 code that may invoke the BMS write seam — the operator's
+  claim is what authorises the actuation, never the Optimizer's. A new
+  directional AST invariant (`test_no_optimizer_routes_import`) keeps
+  `backend/optimizer.py` write-path-free: 5 Proposer-Pattern guards now hold
+  the line. Backend pytest: 774 → 797 (+23). 2.D + 2.E pending.
 - **v11.11 sync (2026-05-19)**: **Epic 2 Batch 2.B DELIVERED** (`c19e853`). The
   Optimizer now routes every proposal through the Epic 1 multi-agent consensus
   chain (Safety Officer VETO uncrossable — audit-logged + queue-blocked +
@@ -438,9 +450,9 @@ LOTO audit, or PUE report.
 ## Epic 2 — The Optimizer (proactive edge-agent for PUE / WUE)
 
 **Status:** IN PROGRESS — design defined 2026-05-19; **Batches 2.A + 2.B
-delivered 2026-05-19** (`6a6c786`, `c19e853`); 2.C–2.E pending, full
-delivery gated **post-CO+I demo** (August 2026). Full design brief:
-**`docs/architecture/epic-2-optimizer.md`**.
++ 2.C delivered 2026-05-19** (`6a6c786`, `c19e853`, `18b66b1`); 2.D + 2.E
+pending, full delivery gated **post-CO+I demo** (August 2026). Full
+design brief: **`docs/architecture/epic-2-optimizer.md`**.
 
 **Sub-batch progress:**
 
@@ -451,12 +463,21 @@ delivery gated **post-CO+I demo** (August 2026). Full design brief:
   + `ProposalQueue` + Optimizer Gemma narrative (T3.3 shape) + Hermes
   `optimizer-proposal` event emission + `main.py` lifespan startup +
   teardown hook (opt-in, default OFF). 15 new tests. (`c19e853`)
-- ⏳ **2.C** — `POST /api/optimizer/approve` + `/reject` + SME_L6 RBAC
-  gate + persistent audit chain (PG-backed `optimizer_proposals` table).
+- ✅ **2.C** — `backend/optimizer_routes.py` with 4 endpoints (`GET
+  /proposals`, `GET /approvals[/{id}]`, `POST /approve/{id}`,
+  `POST /reject/{id}`); strict SME_L6 RBAC gate (`actor_role` required
+  AND rank ≥ 6); `confirm_ashrae=true` demand on approve; HTTP 409
+  defence-in-depth Safety-veto refusal; `bms_write_fn` injection seam
+  is the ONLY Epic 2 path to the BMS write — wired in `main.py` over
+  `BMS_AVAILABLE` + `get_bms().write`. In-memory `ApprovalLog`
+  (PG-backed table is the 2.C+ follow-up). +22 tests + 1 new
+  directional AST invariant. (`18b66b1`)
 - ⏳ **2.D** — `views/optimizer.js` HMI + Vitest + the real Hermes WS
   publisher (swaps the 2.B `log.info` event-emitter stub).
-- ⏳ **2.E** — live smoke test (boot-signature verified per
-  `S-RUNTIME-01`) + Toronto-baseline calibration runs + `v0.13.0`
+- ⏳ **2.E** — extend `config/bms_tags.yml` with the two writable AO
+  tags (`HVAC.CHILLER_1.LWT_SETPOINT`, `HVAC.CT_FAN_1.VFD_SETPOINT`)
+  + Toronto-baseline calibration of the control-law thresholds + live
+  smoke test (boot-signature verified per `S-RUNTIME-01`) + `v0.13.0`
   *"Proactive Edge"* release tag.
 
 Epic 1 delivered the *reactive* fleet — the four consultative agents that
