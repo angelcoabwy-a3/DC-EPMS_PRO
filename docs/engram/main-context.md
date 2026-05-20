@@ -31,9 +31,10 @@ A 67 MW Tier IV AI factory simulated against real specs. Two phases:
 
 ## 3. Stable baseline
 
-- **Tag:** **`v0.12.0` "Monolith Eradicated"** (cut 2026-05-19).
-- **HEAD at snapshot:** `aa86f8f` — post-release Epic 1 doc-sync.
+- **Tag:** **`v0.13.0` "Proactive Edge"** (cut 2026-05-19) — Epic 2 closure.
+- **HEAD at snapshot:** `8ce48fb` — the v0.13.0 release commit.
 - **Branch:** `master`, pushed to `https://github.com/angelcoabwy-a3/DC-EPMS_PRO`.
+- **Prior releases:** `v0.12.0` "Monolith Eradicated" (Epic T2.1 closure, 2026-05-19); `v0.11.0` "Monolith Deconstruction" (2026-05-18).
 
 ## 4. Frontend architecture — post-Epic-T2.1 (fully modular)
 
@@ -161,8 +162,8 @@ Both the Power & UPS SLD and the DLC P&ID carry an interactive L3 control layer:
 
 | Gate | Floor | Detail |
 |---|---|---|
-| `pytest -m "not slow"` | **726** passed | ~48 s; 5 deselected (FAISS / slow). `tests/` carries 30+ files. |
-| `npm test` (Vitest, happy-dom) | **176** passed, 18 files | mission_control + scenarios + incidents + mops + power + cooling + copilot + bms + loto + topology + overview + bootstrap + sanitize + hermes (slice / cutover / EDA) + maintenance + rack_heatmap + site_topology |
+| `pytest -m "not slow"` | **797** passed | ~42 s; 5 deselected (FAISS / slow). `tests/` carries 30+ files. Floor jumped 726 → 797 with the Epic 2 Optimizer suites (`test_optimizer.py` + `test_optimizer_routes.py`, 71 new tests inc. 5 AST Proposer-Pattern invariants). |
+| `npm test` (Vitest, happy-dom) | **193** passed, 19 files | mission_control + scenarios + incidents + mops + power + cooling + copilot + bms + loto + topology + overview + bootstrap + **optimizer (new in 2.D)** + sanitize + hermes (slice / cutover / EDA / events) + maintenance + rack_heatmap + site_topology |
 | `ruff check backend/` | **0** violations | enforced since DC-EPMS-021 (`136c7ef`) |
 | `node --check` on modified `.js` | clean | use `node --input-type=module --check < file.js` for ES modules |
 
@@ -197,7 +198,7 @@ Both the Power & UPS SLD and the DLC P&ID carry an interactive L3 control layer:
 - **OBS demo-recording** — descoped (Wilmer, 2026-05-17).
 - **CO+I demo readiness** — feature-complete; remaining work is delivery (DEMO_SCRIPT v5, 3× OBS rehearsals).
 
-**Epic 2 (PENDING) — proactive edge-agents.** Epic 1 closed the *reactive* fleet (the four consultative agents that respond to operator queries). Epic 2 targets *proactive* edge-agents that act on the platform without an operator prompt — notably **The Optimizer**, a continuous-loop agent for dynamic PUE / WUE adjustment (chiller setpoints, pump speeds, cooling-tower fan modulation) bounded by ADR-006: the Optimizer authors **proposed** setpoint changes, but every actuation still routes through the RBAC-gated `/api/bms/write` path with a CET sign-off. The deterministic What-If sandbox (`core/power_grid.js`) is the validation gate for any Optimizer proposal before it leaves advisory mode. Triggered by Hermes telemetry; no autonomous BMS writes. Sequencing target: post-CO+I demo.
+**Epic 2 (COMPLETE — `v0.13.0` "Proactive Edge", 2026-05-19) — The Optimizer.** Epic 1 closed the *reactive* fleet; Epic 2 closed the *proactive* complement. **The Optimizer** is a continuous-loop edge-agent that watches Hermes telemetry and PROPOSES chiller-LWT + cooling-tower-fan-VFD adjustments — never actuates. The load-bearing decision is the **Proposer Pattern** (ADR-006 anchored), enforced by 5 AST-invariant tests on `backend/optimizer.py`: no HTTP client, no FastAPI router, no `bms_connector`, no live `/api/bms/write` string, no `optimizer_routes` import. The ONLY path from a proposal to a BMS write is `POST /api/optimizer/approve/{id}` with the **operator's** SME_L6 claim — the Optimizer service has no actor_role and cannot reach the write path. Default OFF via `DC_EPMS_OPTIMIZER_ENABLED`. Full design + delivery in `docs/architecture/epic-2-optimizer.md`. Smoke-test verified live (default-OFF: HTTP 503 expected; ENABLED: HTTP 403 on `actor_role=TECH_L4` with the literal F3-4 RBAC message).
 
 ## 14. Companion documents
 

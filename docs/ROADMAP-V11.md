@@ -1,10 +1,21 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.13 (2026-05-19) — Epic 2 IN PROGRESS · Batches 2.A–2.D delivered, only 2.E remains
+- **Status**: v11.14 (2026-05-19) — **EPIC 2 CLOSED** · `v0.13.0` "Proactive Edge" cut
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.13)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.14)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.14 sync (2026-05-19)**: **EPIC 2 CLOSED.** Batch 2.E (`79e8ddd` +
+  `8ce48fb`) wired `SURFACE_TO_BMS_TAG` to the real existing
+  `HVAC.CHILLER1.CW_SETPOINT` (Honest-scope reality-check: 2.C had used a
+  placeholder that didn't exist in the catalogue) + added the missing
+  `HVAC.CTOWER1.FAN_VFD` writable AO; OptimizerConfig gained Toronto-baseline
+  (ASHRAE Zone 6A) calibration rationale per threshold; live smoke verified
+  BOTH default-OFF (HTTP 503 expected, confirmed) AND ENABLED (HTTP 200 +
+  HTTP 403 on `actor_role=TECH_L4` with literal F3-4 RBAC message — proves
+  `S-SEC-02` enforcement at runtime). Manifests bumped 0.12.0 → 0.13.0;
+  annotated tag `v0.13.0` "Proactive Edge" cut at `8ce48fb` and pushed.
+  Tags chronological: 41 total.
 - **v11.13 sync (2026-05-19)**: **Epic 2 Batch 2.D DELIVERED** (`4d1a611`). The
   Optimizer now has an operator HMI: `views/optimizer.js` lists the queued
   proposals with the two LLM-authored narratives routed through F3-5
@@ -460,10 +471,11 @@ LOTO audit, or PUE report.
 
 ## Epic 2 — The Optimizer (proactive edge-agent for PUE / WUE)
 
-**Status:** IN PROGRESS — design defined 2026-05-19; **Batches 2.A–2.D
-delivered 2026-05-19** (`6a6c786`, `c19e853`, `18b66b1`, `4d1a611`);
-only 2.E remains, gated **post-CO+I demo** (August 2026). Full design
-brief: **`docs/architecture/epic-2-optimizer.md`**.
+**Status:** ✅ **COMPLETE** — all five batches (2.A–2.E) delivered
+2026-05-19 (`6a6c786`, `c19e853`, `18b66b1`, `4d1a611`, `79e8ddd`,
+`8ce48fb`); released as **`v0.13.0` "Proactive Edge"**. Smoke-test
+verified live against the running backend. Full design brief:
+**`docs/architecture/epic-2-optimizer.md`**.
 
 **Sub-batch progress:**
 
@@ -491,11 +503,18 @@ brief: **`docs/architecture/epic-2-optimizer.md`**.
   `hermes.emit_event` (the real WS producer); `core/hermes_events.js`
   re-emits `hermes:optimizer-proposal`. 16 Vitest tests (+1 in
   hermes_events.test.js). (`4d1a611`)
-- ⏳ **2.E** — extend `config/bms_tags.yml` with the two writable AO
-  tags (`HVAC.CHILLER_1.LWT_SETPOINT`, `HVAC.CT_FAN_1.VFD_SETPOINT`)
-  + Toronto-baseline calibration of the control-law thresholds + live
-  smoke test (boot-signature verified per `S-RUNTIME-01`) + `v0.13.0`
-  *"Proactive Edge"* release tag.
+- ✅ **2.E** — `config/bms_tags.yml` extended (`HVAC.CTOWER1.FAN_VFD`
+  writable AO) + `SURFACE_TO_BMS_TAG` rewired to the existing
+  `HVAC.CHILLER1.CW_SETPOINT` (a 2.C placeholder was discovered + fixed
+  during 2.E recon — the original `HVAC.CHILLER_1.LWT_SETPOINT` name
+  didn't exist in the catalogue);
+  `OptimizerConfig` gained Toronto-baseline calibration rationale
+  (ASHRAE Climate Zone 6A) per threshold; live smoke verified both
+  default-OFF and ENABLED postures end-to-end against the running stack
+  — `actor_role=TECH_L4` returned HTTP 403 with the literal F3-4 RBAC
+  message, proving S-SEC-02 at runtime; manifests bumped 0.12.0 →
+  0.13.0; **annotated tag `v0.13.0` "Proactive Edge" cut** at
+  `8ce48fb` and pushed. (`79e8ddd` + `8ce48fb`)
 
 Epic 1 delivered the *reactive* fleet — the four consultative agents that
 respond to operator queries with verdicts + live Gemma narratives. Epic 2
