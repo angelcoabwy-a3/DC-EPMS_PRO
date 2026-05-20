@@ -19,21 +19,20 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-19)
 
 ```
-HEAD:  v0.13.0 release commit  branch master  —  pushed 2026-05-19.
+HEAD:  c132eff (+ this doc-sync)  branch master  —  pushed 2026-05-19.
        Stable baseline = **v0.13.0 "Proactive Edge"** (cut 2026-05-19).
-       **EPIC 2 COMPLETE.** Full proactive edge-agent shipped across
-       Batches 2.A-2.E: deterministic control law + consensus /
-       queue / narrative / Hermes / lifespan + SME_L6 approve/reject
-       endpoints + XSS-sanitized HMI + Hermes WS producer + real BMS
-       catalogue wiring (HVAC.CHILLER1.CW_SETPOINT + new
-       HVAC.CTOWER1.FAN_VFD) + Toronto-baseline calibration notes +
-       live smoke (default-OFF AND ENABLED postures both verified,
-       HTTP 403 RBAC gate proven against the running stack). 5 AST
-       invariants enforce ADR-006 Proposer Pattern on
-       backend/optimizer.py. Default OFF (env-gated) — production
-       deployments byte-identical to v0.12.0 at runtime when
-       DC_EPMS_OPTIMIZER_ENABLED is unset. Tag = v0.13.x patch /
-       v0.14.0 next.
+       Post-release: **EPIC 3 OPEN, Batch 3.A delivered** — the
+       Capacity Planner is now the **5th agent** in the deterministic
+       consensus chain (Architect / Safety Officer / Diagnostician /
+       Analyst / **Capacity Planner**). Forward-looking IT-load
+       utilisation perspective: HARD_STOP ≥95 %, CAUTION ≥85 %.
+       Follows the T3.3 narrative-helper pattern; reuses
+       _collect_kalman_lines + _gemma_complete. No change to the
+       consensus rule — Safety Officer VETO still inquebrantable.
+       3.B (OT Security via Morpheus) + 3.C (Carbon/Grid) **deferred**
+       pending explicit go — both have real dep-prep work (Morpheus
+       stub / IESO API mock) before the agent class itself. Tag =
+       v0.13.x patch / v0.14.0 next.
 Working tree: .claude/ untracked (intentional).
 
 Tags chronological (41 total):
@@ -85,7 +84,10 @@ Tags chronological (41 total):
    test_optimizer.py + test_optimizer_routes.py); frontend Vitest
    176 → 193 (+17 across optimizer.test.js + hermes_events.test.js).
 
-Tests:   backend 797 passed, 5 deselected (slow/FAISS) — full pytest ~42s, 0 fail.
+Tests:   backend 805 passed, 5 deselected (slow/FAISS) — full pytest ~44s, 0 fail.
+         (+8 in tests/test_multi_agent.py for Epic 3 Batch 3.A —
+         Capacity Planner: 4 verdict-class tests across the warn/crit
+         bands + the 4-test T3.3 narrative pattern.)
          frontend 193 passed (19 Vitest files) — 16 new in
          tests/frontend/optimizer.test.js cover 2.D render + S-SEC-01
          XSS (img/script/proposal_id) + fetchQueue + S-SEC-02 approve
@@ -148,6 +150,10 @@ docs/ROADMAP-V11.md (v11.7, 2026-05-19). NOTE: OBS demo-recording descoped.
 
 **Recent commits (latest at top)**:
 ```
+c132eff  feat(ai): Epic 3 Batch 3.A — Capacity Planner agent (5th member of the multi-agent fleet)
+e829cab  docs: sync compass — EPIC 2 CLOSED, v0.13.0 cut
+8ce48fb  chore(release): bump internal manifests and documentation to v0.13.0  [tag v0.13.0]
+79e8ddd  chore(optimizer): wire to real BMS catalog + Toronto-baseline calibration notes (2.E prep)
 4d1a611  feat(optimizer): Epic 2 Batch 2.D — HMI proposal queue view + Hermes WS producer
 a567060  docs: sync compass — Epic 2 Batch 2.C delivered (approve/reject endpoints)
 18b66b1  feat(optimizer): Epic 2 Batch 2.C — operator approve/reject endpoints with SME_L6 RBAC

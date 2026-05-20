@@ -1,10 +1,25 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.14 (2026-05-19) — **EPIC 2 CLOSED** · `v0.13.0` "Proactive Edge" cut
+- **Status**: v11.15 (2026-05-19) — Epic 3 OPEN · Batch 3.A delivered (Capacity Planner — 5th agent)
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.14)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.15)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.15 sync (2026-05-19)**: **Epic 3 Batch 3.A DELIVERED** (`c132eff`). The
+  multi-agent fleet grew from 4 to 5 with the addition of the **Capacity
+  Planner** — a forward-looking IT-load utilisation perspective complementing
+  the Analyst's retrospective cost framing. Verdict basis: HARD_STOP ≥ 95 % of
+  Path C2 Phase 1 design capacity (16 756 kW), CAUTION ≥ 85 %, APPROVE
+  otherwise. Asset-specific impact modelled when the consult is about adding
+  a rack-class asset. Follows the T3.3 narrative-helper pattern verbatim
+  (reuses `_collect_kalman_lines` + `_gemma_complete`); no change to the
+  consensus rule — Safety Officer VETO still inquebrantable. Backend pytest:
+  797 → 805 (+8: 4 verdict-class + 4 narrative T3.3-pattern tests). Honest
+  scope: prior recommendation was 1 agent (Capacity Planner) post-demo. User
+  authorised all three (Capacity / OT Security / Carbon-Grid); 3.A shipped
+  this commit, 3.B + 3.C **deferred** pending explicit go — both need
+  substantial dep-prep (Morpheus stub for OT, IESO mock for Grid) BEFORE the
+  agent class.
 - **v11.14 sync (2026-05-19)**: **EPIC 2 CLOSED.** Batch 2.E (`79e8ddd` +
   `8ce48fb`) wired `SURFACE_TO_BMS_TAG` to the real existing
   `HVAC.CHILLER1.CW_SETPOINT` (Honest-scope reality-check: 2.C had used a
@@ -553,6 +568,46 @@ multi-step horizon, WUE optimisation, BESS dispatch.
 See `docs/architecture/epic-2-optimizer.md` for the full design (control
 law, multi-agent validation table, RBAC actuation path, HMI surface,
 testing strategy, ADR-006 acceptance checklist).
+
+---
+
+## Epic 3 — Reactive Fleet Expansion (5 → 7 agents, post-CO+I demo)
+
+**Status:** IN PROGRESS — Batch 3.A delivered 2026-05-19 (`c132eff`); 3.B
++ 3.C deferred pending explicit go-ahead (both need dep-prep BEFORE the
+agent class itself).
+
+The multi-agent fleet now has 5 specialised perspectives. Epic 3 plans
+the expansion to 7 to close the remaining hyperscale gaps the existing
+agents don't cover. Each new agent must satisfy the 4 entry criteria
+(orthogonal perspective, deterministic verdict, clear veto behaviour,
+T3.3 4-test pattern viable).
+
+**Sub-batch progress:**
+
+- ✅ **3.A — Capacity Planner** (`c132eff`). Forward-looking IT-load
+  utilisation perspective (HARD_STOP ≥ 95 %, CAUTION ≥ 85 %).
+  Complements the Analyst's retrospective cost framing. Uses existing
+  data sources (`site_model`, `cmms_repo`); follows the T3.3 narrative
+  pattern verbatim. +8 tests; +0 dep-prep needed.
+- ⏳ **3.B — OT Security / Threat agent** (Morpheus-style). Cyber-
+  physical anomaly detection on BACnet/Modbus traffic + IEC 62443 zone
+  violations. **Dep-prep required FIRST:** NVIDIA Morpheus is currently
+  `MODULES.morpheus` *placeholder* — needs either a Morpheus stub
+  (~5 days simulating SR 5.2 anomaly detection without the real
+  framework) OR the full Morpheus integration. Then the agent itself
+  (~5 days). Authorisation deferred.
+- ⏳ **3.C — Carbon / Grid agent**. Grid carbon intensity by hour +
+  time-of-use pricing + BESS dispatch suggestions for peak-shaving.
+  **Dep-prep required FIRST:** no grid-intensity seam in the codebase —
+  needs either an IESO Ontario mock (~3 days) OR a real provider
+  integration. Then the agent itself (~5 days). High value for
+  Microsoft CO+I (carbon-negative 2030 commitment) but requires
+  the integration scope decision.
+
+**Target fleet ceiling: 7 agents.** Beyond 7, the operator cognitive
+load on a consult chip-grid degrades faster than the marginal value of
+another perspective. Stop at 7.
 
 ---
 
