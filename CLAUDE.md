@@ -16,23 +16,37 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 
 **Vocabulary discipline (CRITICAL)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is unipolar (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in panel review.
 
-## 📊 CURRENT STATE (synced 2026-05-19)
+## 📊 CURRENT STATE (synced 2026-05-20)
 
 ```
-HEAD:  c132eff (+ this doc-sync)  branch master  —  pushed 2026-05-19.
+HEAD:  79ed614 (+ this doc-sync)  branch master  —  ahead of origin.
        Stable baseline = **v0.13.0 "Proactive Edge"** (cut 2026-05-19).
-       Post-release: **EPIC 3 OPEN, Batch 3.A delivered** — the
-       Capacity Planner is now the **5th agent** in the deterministic
-       consensus chain (Architect / Safety Officer / Diagnostician /
-       Analyst / **Capacity Planner**). Forward-looking IT-load
-       utilisation perspective: HARD_STOP ≥95 %, CAUTION ≥85 %.
-       Follows the T3.3 narrative-helper pattern; reuses
-       _collect_kalman_lines + _gemma_complete. No change to the
-       consensus rule — Safety Officer VETO still inquebrantable.
-       3.B (OT Security via Morpheus) + 3.C (Carbon/Grid) **deferred**
-       pending explicit go — both have real dep-prep work (Morpheus
-       stub / IESO API mock) before the agent class itself. Tag =
-       v0.13.x patch / v0.14.0 next.
+       Post-release: **EPIC 3 OPEN, Batches 3.A + 3.C delivered** — the
+       Capacity Planner (3.A) + Carbon/Grid (3.C) join the consensus
+       chain. Fleet is now **6 agents** (Architect / Safety Officer /
+       Diagnostician / Analyst / **Capacity Planner** / **Carbon/Grid**).
+
+       3.C — Carbon/Grid: Ontario IESO carbon-intensity + Time-of-Use
+       perspective for the CO+I 2030 carbon-negative commitment.
+       Verdict bands: HARD_STOP at carbon ≥ 200 g/kWh AND on-peak TOU;
+       CAUTION when either trips alone; APPROVE on clean low-carbon
+       off-peak. Reuses _collect_kalman_lines + _gemma_complete
+       verbatim (T3.3 pattern). **No VETO authority** — Safety Officer
+       remains the sole vetoer (S-DET-02); a Carbon/Grid HARD_STOP
+       propagates via the standard "any agent hard_stop" rank-2 rule,
+       NEVER the rank-1 VETO branch (binding test:
+       test_carbon_grid_has_no_veto_authority).
+
+       Dep-prep delivered (commit 9267667): backend/grid_provider.py —
+       a deterministic Ontario IESO mock keyed to time-of-day +
+       weekend status, with self-contained UTC-4 fallback so it works
+       on Windows without IANA tzdata. Real-IESO API integration is a
+       drop-in replacement (function-as-DI-seam pattern).
+
+       3.B (OT Security via Morpheus) still **deferred** pending
+       explicit GO — real dep-prep work (Morpheus stub / live engine)
+       before the agent class itself. Tag = v0.13.x patch / v0.14.0
+       next.
 Working tree: .claude/ untracked (intentional).
 
 Tags chronological (41 total):
@@ -84,7 +98,7 @@ Tags chronological (41 total):
    test_optimizer.py + test_optimizer_routes.py); frontend Vitest
    176 → 193 (+17 across optimizer.test.js + hermes_events.test.js).
 
-Tests:   backend 805 passed, 5 deselected (slow/FAISS) — full pytest ~44s, 0 fail.
+Tests:   backend 830 passed, 5 deselected (slow/FAISS) — full pytest ~43s, 0 fail.
          (+8 in tests/test_multi_agent.py for Epic 3 Batch 3.A —
          Capacity Planner: 4 verdict-class tests across the warn/crit
          bands + the 4-test T3.3 narrative pattern.)
@@ -150,6 +164,9 @@ docs/ROADMAP-V11.md (v11.7, 2026-05-19). NOTE: OBS demo-recording descoped.
 
 **Recent commits (latest at top)**:
 ```
+79ed614  feat(ai): Epic 3 Batch 3.C — Carbon/Grid agent (6th member of the multi-agent fleet)
+9267667  feat(grid): IESO Ontario grid-intensity mock provider (Epic 3 Batch 3.C prep)
+911068b  docs: sync compass — Epic 3 OPEN, Batch 3.A delivered (Capacity Planner)
 c132eff  feat(ai): Epic 3 Batch 3.A — Capacity Planner agent (5th member of the multi-agent fleet)
 e829cab  docs: sync compass — EPIC 2 CLOSED, v0.13.0 cut
 8ce48fb  chore(release): bump internal manifests and documentation to v0.13.0  [tag v0.13.0]

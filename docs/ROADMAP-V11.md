@@ -1,10 +1,31 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.15 (2026-05-19) — Epic 3 OPEN · Batch 3.A delivered (Capacity Planner — 5th agent)
+- **Status**: v11.16 (2026-05-20) — Epic 3 OPEN · Batches 3.A + 3.C delivered (6-agent fleet)
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.15)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-20 (v11.16)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.16 sync (2026-05-20)**: **Epic 3 Batch 3.C DELIVERED** (`9267667` mock
+  + `79ed614` agent). The multi-agent fleet now has **6 specialised
+  perspectives** — Carbon/Grid joins as the new sixth member. Owns the
+  carbon-aware question none of the previous five could answer: "is this a
+  good moment, on the local Ontario grid, to run this action?" Verdict bands
+  (deterministic, ADR-006): HARD_STOP when carbon ≥ 200 gCO2/kWh AND on-peak
+  TOU; CAUTION when either trips alone; APPROVE on clean off-peak +
+  low-carbon. **No VETO authority** (S-DET-02) — Safety Officer remains the
+  sole vetoer; the Carbon/Grid HARD_STOP propagates via the rank-2 "any
+  agent hard_stop" rule (binding test:
+  `test_carbon_grid_has_no_veto_authority`). Reuses
+  `_collect_kalman_lines` + `_gemma_complete` verbatim (T3.3 pattern).
+  Dep-prep: `backend/grid_provider.py` (320 LOC + 14 tests) — deterministic
+  Ontario IESO mock keyed to time-of-day + weekend status, modelling the
+  Ontario nuclear+hydro baseload swing to natural-gas peaker dispatch
+  (~30-40 g/kWh overnight → ~215 g/kWh weekday afternoon). TOU tiers per
+  OEB summer RPP. Self-contained UTC-4 fallback for Windows without IANA
+  tzdata. Real-IESO API integration is a function-as-DI-seam swap. Backend
+  pytest: 805 → 830 (+14 grid mock + +8 Carbon/Grid agent + +3 orchestrator
+  behaviour). **3.B (OT Security / Morpheus) still deferred** pending
+  explicit GO — needs Morpheus stub or live engine before the agent class.
 - **v11.15 sync (2026-05-19)**: **Epic 3 Batch 3.A DELIVERED** (`c132eff`). The
   multi-agent fleet grew from 4 to 5 with the addition of the **Capacity
   Planner** — a forward-looking IT-load utilisation perspective complementing
@@ -573,15 +594,15 @@ testing strategy, ADR-006 acceptance checklist).
 
 ## Epic 3 — Reactive Fleet Expansion (5 → 7 agents, post-CO+I demo)
 
-**Status:** IN PROGRESS — Batch 3.A delivered 2026-05-19 (`c132eff`); 3.B
-+ 3.C deferred pending explicit go-ahead (both need dep-prep BEFORE the
-agent class itself).
+**Status:** IN PROGRESS — Batches 3.A + 3.C delivered (6-agent fleet
+live); only 3.B (OT Security / Morpheus) deferred pending explicit
+go-ahead.
 
-The multi-agent fleet now has 5 specialised perspectives. Epic 3 plans
-the expansion to 7 to close the remaining hyperscale gaps the existing
-agents don't cover. Each new agent must satisfy the 4 entry criteria
-(orthogonal perspective, deterministic verdict, clear veto behaviour,
-T3.3 4-test pattern viable).
+The multi-agent fleet now has **6 specialised perspectives** (after 3.C).
+Epic 3 plans the expansion to 7 to close the remaining hyperscale gap
+the existing agents don't cover. Each new agent must satisfy the 4
+entry criteria (orthogonal perspective, deterministic verdict, clear
+veto behaviour, T3.3 4-test pattern viable).
 
 **Sub-batch progress:**
 
@@ -597,17 +618,23 @@ T3.3 4-test pattern viable).
   (~5 days simulating SR 5.2 anomaly detection without the real
   framework) OR the full Morpheus integration. Then the agent itself
   (~5 days). Authorisation deferred.
-- ⏳ **3.C — Carbon / Grid agent**. Grid carbon intensity by hour +
-  time-of-use pricing + BESS dispatch suggestions for peak-shaving.
-  **Dep-prep required FIRST:** no grid-intensity seam in the codebase —
-  needs either an IESO Ontario mock (~3 days) OR a real provider
-  integration. Then the agent itself (~5 days). High value for
-  Microsoft CO+I (carbon-negative 2030 commitment) but requires
-  the integration scope decision.
+- ✅ **3.C — Carbon / Grid agent** (`9267667` mock + `79ed614` agent).
+  Ontario IESO carbon-intensity + Time-of-Use perspective for the CO+I
+  2030 carbon-negative commitment. Verdict bands: HARD_STOP when
+  carbon ≥ 200 g/kWh AND on-peak TOU; CAUTION when either trips alone;
+  APPROVE on clean off-peak + low-carbon. **No VETO authority**
+  (S-DET-02 binding) — Safety Officer remains the sole vetoer; the
+  Carbon/Grid HARD_STOP propagates via the rank-2 "any agent
+  hard_stop" rule. T3.3 narrative-helper pattern reused verbatim.
+  Dep-prep delivered as `backend/grid_provider.py` — deterministic
+  Ontario IESO mock (nuclear+hydro baseload + gas-peaker afternoon
+  swing) keyed to time-of-day + weekend; real-IESO API integration is
+  a function-as-DI-seam swap. +22 tests (14 mock + 8 agent) +3 modified
+  orchestrator tests. Backend pytest: 805 → 830.
 
 **Target fleet ceiling: 7 agents.** Beyond 7, the operator cognitive
 load on a consult chip-grid degrades faster than the marginal value of
-another perspective. Stop at 7.
+another perspective. Stop at 7 — after 3.B lands the fleet is full.
 
 ---
 

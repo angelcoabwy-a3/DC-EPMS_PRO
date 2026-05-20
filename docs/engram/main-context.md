@@ -7,7 +7,7 @@
 > entire codebase. It is intentionally redundant with `CLAUDE.md`; the
 > engram is the *state snapshot*, `CLAUDE.md` is the *living guidance file*.
 >
-> **Last snapshot:** 2026-05-19, HEAD `aa86f8f` (post-v0.12.0, Epic 1 complete).
+> **Last snapshot:** 2026-05-20, HEAD `79ed614` (Epic 3 Batch 3.C delivered — Carbon/Grid agent, 6-agent fleet).
 > **Companion:** `docs/skills/skill-registry.md` (the explicit rule harness).
 
 ---
@@ -109,9 +109,9 @@ FastAPI + asyncpg on `:8080`, native python (NOT docker — `python backend\main
 
 A multiplexed **WebSocket** at `/api/hermes` carrying three streams: `telemetry`, `cmms_alerts`, `agent_consensus`. SSE → WS telemetry cutover complete. **All client-side HTTP polling is eliminated.** `core/hermes_events.js` re-emits each server frame as a decoupled DOM `CustomEvent` (`hermes:cmms-alert`, `hermes:agent-consensus`, `hermes:edge-healing`). CET-gated closed-loop edge-healing is live (per `ADR-006`).
 
-## 7. Multi-Agent Façade — Epic 1 COMPLETE + Epic 3 Batch 3.A (5-agent fleet)
+## 7. Multi-Agent Façade — Epic 1 COMPLETE + Epic 3 Batches 3.A + 3.C (6-agent fleet)
 
-`backend/multi_agent.py` runs **five** specialised agents in parallel via `asyncio.gather` for any operator consult against an asset / procedure / work order. The orchestrator is exposed at `POST /api/multi-agent/consult`.
+`backend/multi_agent.py` runs **six** specialised agents in parallel via `asyncio.gather` for any operator consult against an asset / procedure / work order. The orchestrator is exposed at `POST /api/multi-agent/consult`.
 
 | Agent | Verdict basis (deterministic) | LLM narrative tag |
 |---|---|---|
@@ -120,6 +120,7 @@ A multiplexed **WebSocket** at `/api/hermes` carrying three streams: `telemetry`
 | **Diagnostician** | Recurrence — CAUTION if ≥3 completed WOs in trailing 18 months OR ≥2 open WOs. | **T3.3** — Kalman-grounded diagnostic narrative |
 | **Analyst** | CapEx / OpEx breakeven — CAUTION when cumulative OpEx ≥ 40 % of CapEx. | **T3.3c** — financial-impact narrative |
 | **Capacity Planner** (Epic 3 Batch 3.A) | Forward-looking IT-load utilisation — HARD_STOP at ≥ 95 % of design, CAUTION at ≥ 85 %, APPROVE otherwise. Asset-specific impact when the consult is about adding a rack-class asset. | **3.A** — capacity-headroom narrative (T3.3-pattern, shared helpers) |
+| **Carbon/Grid** (Epic 3 Batch 3.C) | Ontario IESO grid-carbon + Time-of-Use. HARD_STOP when carbon ≥ 200 g/kWh **AND** on-peak; CAUTION when either trips alone; APPROVE on clean low-carbon + off-peak. **No VETO authority** — propagates via the standard "any agent hard_stop" rule (S-DET-02). | **3.C** — CO+I 2030 carbon-negative framing (T3.3-pattern, shared helpers) |
 
 **Consensus rule (deterministic):**
 
@@ -163,7 +164,7 @@ Both the Power & UPS SLD and the DLC P&ID carry an interactive L3 control layer:
 
 | Gate | Floor | Detail |
 |---|---|---|
-| `pytest -m "not slow"` | **805** passed | ~44 s; 5 deselected (FAISS / slow). `tests/` carries 30+ files. Floor jumped 726 → 797 with the Epic 2 Optimizer suites; +8 in Epic 3 Batch 3.A for the Capacity Planner (4 verdict-class tests + the 4-test T3.3 narrative pattern). |
+| `pytest -m "not slow"` | **830** passed | ~43 s; 5 deselected (FAISS / slow). `tests/` carries 30+ files. Floor jumped 726 → 797 with the Epic 2 Optimizer suites; +8 in Epic 3 Batch 3.A for the Capacity Planner; +25 in Epic 3 Batch 3.C (+14 grid_provider IESO mock + +8 Carbon/Grid agent + +3 modified-orchestrator behaviour tests). |
 | `npm test` (Vitest, happy-dom) | **193** passed, 19 files | mission_control + scenarios + incidents + mops + power + cooling + copilot + bms + loto + topology + overview + bootstrap + **optimizer (new in 2.D)** + sanitize + hermes (slice / cutover / EDA / events) + maintenance + rack_heatmap + site_topology |
 | `ruff check backend/` | **0** violations | enforced since DC-EPMS-021 (`136c7ef`) |
 | `node --check` on modified `.js` | clean | use `node --input-type=module --check < file.js` for ES modules |
