@@ -358,6 +358,35 @@ async def lifespan(app: FastAPI):
                     )
             except Exception as e:
                 log.error("[BOOT] Optimizer init failed: %s", e, exc_info=True)
+
+            # ─── Epic 2 Batch 2.C: Optimizer approve/reject routes ────
+            # Routes are registered unconditionally so the OpenAPI
+            # surface stays consistent; they HTTP 503 at call time when
+            # DC_EPMS_OPTIMIZER_ENABLED=false. Per S-SEC-02 / brief §6
+            # the OPERATOR's actor_role (SME_L6) authorises the BMS
+            # write — the Optimizer service has no actor_role.
+            try:
+                from backend.optimizer_routes import register_optimizer_routes
+
+                def _optimizer_bms_write(tag_id, value, user):
+                    if not BMS_AVAILABLE:
+                        return False, "BMS connector unavailable"
+                    return get_bms(PROJECT_ROOT).write(
+                        tag_id, value, user=user,
+                    )
+
+                register_optimizer_routes(
+                    app, bms_write_fn=_optimizer_bms_write,
+                )
+                log.info(
+                    "[BOOT] Optimizer routes registered "
+                    "(Batch 2.C — approve/reject SME_L6-gated)",
+                )
+            except Exception as e:
+                log.error(
+                    "[BOOT] Optimizer routes init failed: %s",
+                    e, exc_info=True,
+                )
         else:
             log.warning("[BOOT] CMMS skipped: db_manager pool unavailable")
     except Exception as e:

@@ -695,6 +695,30 @@ class TestProposerPatternInvariant:
             "(Batch 2.C) is what issues the write."
         )
 
+    def test_no_optimizer_routes_import(self):
+        """Directional invariant (S-SEC-02, Batch 2.C):
+        ``backend/optimizer.py`` must NOT import ``optimizer_routes``.
+        The routes module is the only place in Epic 2 that touches the
+        BMS write path; the deterministic core must remain a one-way
+        reader (routes import optimizer; optimizer does not import
+        routes). This guards against a future refactor that would
+        re-introduce a write-path side-effect into the core."""
+        src = Path(opt.__file__).read_text(encoding="utf-8")
+        # Substring check across the whole file (imports OR any other
+        # reference). The opposite direction — routes importing
+        # optimizer — is intended and unconstrained.
+        leaks = [ln for ln in src.splitlines()
+                 if "optimizer_routes" in ln
+                 and not ln.lstrip().startswith("#")
+                 and '"""' not in ln and "'''" not in ln]
+        assert leaks == [], (
+            f"backend/optimizer.py references 'optimizer_routes' outside "
+            f"a comment: {leaks!r}. The directional invariant (Batch 2.C) "
+            "forbids the deterministic core from depending on the routes "
+            "module — which is the only Epic 2 code allowed to call BMS "
+            "write."
+        )
+
     def test_no_bms_write_substring_anywhere_in_module(self):
         """Defence-in-depth — a live (non-docstring) reference to the BMS
         write path in this module would be a leak. Docstrings that
