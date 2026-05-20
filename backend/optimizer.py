@@ -83,7 +83,77 @@ VALID_SURFACES: frozenset[str] = frozenset({SURFACE_CHILLER_LWT, SURFACE_CT_FAN_
 
 # ─── Tunable thresholds (rule-based, ADR-006 transparency) ────────────
 class OptimizerConfig:
-    """Control-law thresholds. Re-calibrate against Toronto baseline runs."""
+    """Control-law thresholds for the proactive PUE/WUE Optimizer.
+
+    Toronto-baseline calibration assumptions (per engram §11)
+    ---------------------------------------------------------
+    The A3-Alpha Toronto Area facility is sited in **North York, Toronto
+    (Ontario)**. The thresholds below are calibrated to Toronto's
+    ASHRAE climate file (CSA/ASHRAE Climate Zone 6A — humid continental,
+    cold winters / mild humid summers):
+
+      * Summer design wet-bulb peak ≈ 22-23 °C (1 % cooling).
+      * Summer design dry-bulb peak ≈ 30-32 °C.
+      * Annualised wet-bulb mean ≈ 8-10 °C.
+
+    These drive the cooling-tower approach + chiller LWT band choices.
+    A facility in a hotter climate (e.g., Phoenix) would need looser
+    LWT bounds + a tighter CT approach headroom — the constants here
+    are defaults, not invariants.
+
+    Per-threshold rationale
+    -----------------------
+      PUE_DRIFT_THRESHOLD = 0.02
+          0.02 above target (`config/pue_targets.yml` Phase 1 = 1.30)
+          fires the sustain detector. Tighter (0.01) is noisy in
+          Toronto's variable summer humidity; looser (0.05) lets the
+          PUE drift well into the warn band before acting.
+
+      PUE_SUSTAIN_TICKS = 10
+          ~5 min at the 30 s tick. Prevents firing on a single high-
+          PUE sample (e.g., a brief chiller staging transient) while
+          still responding within an operator-comfortable window.
+
+      LWT_FLOOR_C = 6.0
+          Chiller minimum LWT — below this the chiller flags out per
+          mfr (Schneider Galaxy VX + York YZ rated for 6 °C floor).
+          Toronto's design wet-bulb does not call for sub-6 °C LWT.
+
+      LWT_STEP_C = 0.5
+          Conservative 0.5 K steps; matches typical operator-issued
+          chiller LWT trim sizes. Larger steps risk hunting.
+
+      LWT_HALL_INLET_GUARD_C = 20.0
+          ASHRAE A2 lower comfort band is 18 °C. If the hall is
+          already < 20 °C, lowering LWT wastes compressor work.
+
+      CT_APPROACH_FLOOR_K = 2.0
+          Below 2 K approach the tower is saturated and additional
+          fan VFD does nothing for ECWT.
+
+      CT_APPROACH_HEADROOM_K = 5.0
+          For Toronto's mild summer wet-bulb (rarely > 23 °C), a
+          5 K headroom means the tower is genuinely underutilised
+          and pushing the fan VFD up will move ECWT downward.
+
+      CT_VFD_STEP_PCT = 5.0
+          Conservative 5 % VFD trims; ramps the fan up gradually so
+          mechanical wear + bearing temperature do not spike.
+
+      PACING_SECONDS = 15 * 60
+          Oscillation guard — at most one proposal per surface per
+          15 minutes. Surfaces a proposal at most every 15 min even
+          if drift sustains across multiple windows.
+
+      LOOP_TICK_SECONDS = 30.0
+          30 s tick aligns with the Hermes telemetry stream cadence
+          (the 60 s mean-z window emits an actionable Z-score about
+          every other tick).
+
+    These are *defaults*, not invariants. Empirical recalibration
+    against live telemetry happens in V11+ as Optimizer runtime data
+    accumulates.
+    """
 
     # Drift detection
     PUE_DRIFT_THRESHOLD = 0.02       # PUE points above target before firing

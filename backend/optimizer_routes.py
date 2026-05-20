@@ -60,14 +60,18 @@ log = logging.getLogger(__name__)
 
 # ─── Surface → BMS tag mapping ─────────────────────────────────────────
 # Maps the Optimizer's logical control surfaces onto the ISA-95 BMS tag
-# registry (``config/bms_tags.yml``). The tag ids below are the V11
-# placeholders; the catalogue must be extended to declare them
-# ``writable`` before the 2.E live smoke test. When the catalogue is
-# missing a tag, the BMS write returns success=False with a clear
-# message — the approval row is still recorded with the failure.
+# registry (``config/bms_tags.yml``). Batch 2.E wired these to the live
+# catalogue: ``chiller_lwt`` reuses the existing
+# ``HVAC.CHILLER1.CW_SETPOINT`` (writable AO, "Chilled water leaving
+# setpoint", 4-9 °C alarm band), and ``ct_fan_vfd`` was added to the
+# catalogue in 2.E as ``HVAC.CTOWER1.FAN_VFD``. Adding a new surface
+# here also requires extending the catalogue with a ``writable: true``
+# entry — when a tag is missing or read-only, the BMS write returns
+# success=False with a clear message; the approval row is still
+# recorded with that failure (operator intent is auditable).
 SURFACE_TO_BMS_TAG: dict[str, str] = {
-    SURFACE_CHILLER_LWT: "HVAC.CHILLER_1.LWT_SETPOINT",
-    SURFACE_CT_FAN_VFD: "HVAC.CT_FAN_1.VFD_SETPOINT",
+    SURFACE_CHILLER_LWT: "HVAC.CHILLER1.CW_SETPOINT",
+    SURFACE_CT_FAN_VFD: "HVAC.CTOWER1.FAN_VFD",
 }
 
 

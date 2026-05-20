@@ -156,6 +156,23 @@ tags:
     alarm_band: [4.0, 9.0]
     description: "Chilled water leaving setpoint (Chiller 2)"
 
+  # ─── Cooling-tower fan VFD — added v0.13.0 / Epic 2 Batch 2.E ───
+  # Writable AO surface for the Optimizer's `ct_fan_vfd` proposal
+  # path (backend/optimizer_routes.py SURFACE_TO_BMS_TAG). The
+  # Optimizer proposes a percent setpoint when the tower approach
+  # has clear headroom; the operator-approval handler issues the
+  # write under SME_L6 RBAC. Static value is the V11 placeholder;
+  # the live BMS adapter overwrites on first physics tick.
+  - id: HVAC.CTOWER1.FAN_VFD
+    protocol: BACnet
+    object_type: AO       # Analog Output
+    units: percent
+    source: { type: static, value: 60.0 }
+    writable: true
+    alarm_band: [30.0, 100.0]
+    description: "Cooling tower 1 fan VFD setpoint (percent)"
+    location: "Mech Plant North"
+
   - id: HVAC.CT.WET_BULB
     protocol: BACnet
     object_type: AI
