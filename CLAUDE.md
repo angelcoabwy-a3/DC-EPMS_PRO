@@ -19,18 +19,18 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-19)
 
 ```
-HEAD:  18b66b1 (+ this doc-sync)  branch master  —  pushed 2026-05-19.
+HEAD:  4d1a611 (+ this doc-sync)  branch master  —  pushed 2026-05-19.
        Stable baseline = v0.12.0 "Monolith Eradicated" (cut 2026-05-19).
        Post-release: EPIC 1 COMPLETE (4-agent live-Gemma fleet — T3.3 /
-       T3.3b / T3.3c / T3.3d); **EPIC 2 OPEN, Batches 2.A + 2.B + 2.C
-       delivered** — Optimizer deterministic control law (2.A) +
-       consensus / queue / narrative / Hermes / lifespan (2.B) +
-       operator approve/reject endpoints with SME_L6 RBAC + BMS-write
-       seam + audit chain (2.C). 5 AST invariants enforce ADR-006
-       (no LLM in core, no HTTP in core, no FastAPI in core, no
-       bms_connector in core, no optimizer_routes in core). Default
-       OFF (env-gated). Tag target = v0.13.0 "Proactive Edge". 2.D
-       (HMI) + 2.E (live smoke + tag) pending.
+       T3.3b / T3.3c / T3.3d); **EPIC 2 OPEN, Batches 2.A-2.D
+       delivered** — Optimizer deterministic core (2.A) + consensus /
+       queue / narrative / Hermes / lifespan (2.B) + operator endpoints
+       with SME_L6 RBAC (2.C) + HMI proposal-queue view with XSS-
+       sanitized narratives + Hermes WS producer (2.D). 5 AST
+       invariants enforce ADR-006 on backend/optimizer.py; the HMI
+       routes LLM narratives through F3-5 sanitizeHTML. Default OFF
+       (env-gated). Tag target = v0.13.0 "Proactive Edge". 2.E (live
+       smoke + tag) is the only remaining batch.
 Working tree: .claude/ untracked (intentional).
 
 Tags chronological (40 total):
@@ -67,12 +67,12 @@ Tags chronological (40 total):
    core/router.js. index.html loads a single ES-module entry point.
 
 Tests:   backend 797 passed, 5 deselected (slow/FAISS) — full pytest ~42s, 0 fail.
-         (49 in tests/test_optimizer.py: 2.A core + 2.B consensus/queue/
-         narrative/Hermes + 5 Proposer-Pattern AST invariants;
-         22 in tests/test_optimizer_routes.py: 2.C approve/reject/list/
-         fetch + RBAC 403/400/409 + BMS-failure + ApprovalLog. The 5th
-         AST guard is the directional invariant — backend/optimizer.py
-         must never import backend.optimizer_routes.)
+         frontend 193 passed (19 Vitest files) — 16 new in
+         tests/frontend/optimizer.test.js cover 2.D render + S-SEC-01
+         XSS (img/script/proposal_id) + fetchQueue + S-SEC-02 approve
+         POST + reject POST + route registration + Hermes refresh; +1
+         test in hermes_events.test.js for the optimizer_proposal
+         stream subscription. ruff: 0 violations in backend/.
          frontend 176 passed — Vitest (npm test, 18 files): mission_control +
          scenarios + incidents + mops + power + cooling + copilot + bms + loto +
          topology + overview + bootstrap + sanitize + hermes (slice / cutover /
@@ -129,6 +129,8 @@ docs/ROADMAP-V11.md (v11.7, 2026-05-19). NOTE: OBS demo-recording descoped.
 
 **Recent commits (latest at top)**:
 ```
+4d1a611  feat(optimizer): Epic 2 Batch 2.D — HMI proposal queue view + Hermes WS producer
+a567060  docs: sync compass — Epic 2 Batch 2.C delivered (approve/reject endpoints)
 18b66b1  feat(optimizer): Epic 2 Batch 2.C — operator approve/reject endpoints with SME_L6 RBAC
 7f06871  docs: sync compass — Epic 2 Batch 2.B delivered (consensus + queue + Hermes)
 c19e853  feat(optimizer): Epic 2 Batch 2.B — multi-agent consensus + proposal queue + Hermes emission

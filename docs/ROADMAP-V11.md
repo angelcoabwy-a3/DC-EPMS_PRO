@@ -1,10 +1,21 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.12 (2026-05-19) — Epic 2 IN PROGRESS · Batches 2.A + 2.B + 2.C delivered
+- **Status**: v11.13 (2026-05-19) — Epic 2 IN PROGRESS · Batches 2.A–2.D delivered, only 2.E remains
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.12)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-19 (v11.13)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.13 sync (2026-05-19)**: **Epic 2 Batch 2.D DELIVERED** (`4d1a611`). The
+  Optimizer now has an operator HMI: `views/optimizer.js` lists the queued
+  proposals with the two LLM-authored narratives routed through F3-5
+  `sanitizeHTML` per `S-SEC-01`; the Approve form posts the operator's
+  `actor_role` (default `SME_L6`) + an explicit ASHRAE confirmation per
+  `S-SEC-02`; backend `event_emitter` swapped from `log.info` stub to
+  `hermes.emit_event("optimizer_proposal", …)`; `core/hermes_events.js`
+  subscribes to the new stream and re-emits `hermes:optimizer-proposal` for
+  the view to consume. Vitest: 176 → 193 (+17 across optimizer + hermes_events
+  files); pytest: 797 (unchanged — 2.D added no backend tests). 2.E is the
+  only remaining batch.
 - **v11.12 sync (2026-05-19)**: **Epic 2 Batch 2.C DELIVERED** (`18b66b1`). The
   operator-approval surface is live: 4 endpoints under `/api/optimizer/*`
   (`GET /proposals`, `GET /approvals[/{id}]`, `POST /approve/{id}`,
@@ -449,10 +460,10 @@ LOTO audit, or PUE report.
 
 ## Epic 2 — The Optimizer (proactive edge-agent for PUE / WUE)
 
-**Status:** IN PROGRESS — design defined 2026-05-19; **Batches 2.A + 2.B
-+ 2.C delivered 2026-05-19** (`6a6c786`, `c19e853`, `18b66b1`); 2.D + 2.E
-pending, full delivery gated **post-CO+I demo** (August 2026). Full
-design brief: **`docs/architecture/epic-2-optimizer.md`**.
+**Status:** IN PROGRESS — design defined 2026-05-19; **Batches 2.A–2.D
+delivered 2026-05-19** (`6a6c786`, `c19e853`, `18b66b1`, `4d1a611`);
+only 2.E remains, gated **post-CO+I demo** (August 2026). Full design
+brief: **`docs/architecture/epic-2-optimizer.md`**.
 
 **Sub-batch progress:**
 
@@ -472,8 +483,14 @@ design brief: **`docs/architecture/epic-2-optimizer.md`**.
   `BMS_AVAILABLE` + `get_bms().write`. In-memory `ApprovalLog`
   (PG-backed table is the 2.C+ follow-up). +22 tests + 1 new
   directional AST invariant. (`18b66b1`)
-- ⏳ **2.D** — `views/optimizer.js` HMI + Vitest + the real Hermes WS
-  publisher (swaps the 2.B `log.info` event-emitter stub).
+- ✅ **2.D** — `views/optimizer.js` (~370 LOC) lists the proposal queue
+  with the two LLM-authored narratives (Optimizer's own + consensus
+  rationale) routed through F3-5 `sanitizeHTML`; Approve form carries
+  the operator's `actor_role` + ASHRAE confirmation (S-SEC-02);
+  backend `event_emitter` swapped from `log.info` stub to
+  `hermes.emit_event` (the real WS producer); `core/hermes_events.js`
+  re-emits `hermes:optimizer-proposal`. 16 Vitest tests (+1 in
+  hermes_events.test.js). (`4d1a611`)
 - ⏳ **2.E** — extend `config/bms_tags.yml` with the two writable AO
   tags (`HVAC.CHILLER_1.LWT_SETPOINT`, `HVAC.CT_FAN_1.VFD_SETPOINT`)
   + Toronto-baseline calibration of the control-law thresholds + live
