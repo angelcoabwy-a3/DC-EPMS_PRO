@@ -105,4 +105,25 @@ describe('T3.1 — Hermes EDA frontend routing (core/hermes_events.js)', () => {
         expect(alerts).toHaveLength(50);
         expect(alerts[0].work_order_id).toBe('WO-59');
     });
+
+    // ── Epic 2 Batch 2.D — optimizer_proposal stream ────────────────
+    it('an optimizer_proposal payload lands in state + fires a DOM event', () => {
+        const seen = [];
+        const handler = (e) => seen.push(e.detail);
+        document.addEventListener('hermes:optimizer-proposal', handler);
+        try {
+            __hermes_events_test__.onOptimizerProposal({
+                event: 'optimizer-proposal',
+                proposal: { proposal_id: 'qp-abc', surface: 'chiller_lwt' },
+                consensus_verdict: 'approve',
+                safety_officer_veto: false,
+                narrative_present: true,
+            });
+        } finally {
+            document.removeEventListener('hermes:optimizer-proposal', handler);
+        }
+        expect(getState('optimizerProposals')[0].proposal.proposal_id).toBe('qp-abc');
+        expect(seen).toHaveLength(1);
+        expect(seen[0].consensus_verdict).toBe('approve');
+    });
 });

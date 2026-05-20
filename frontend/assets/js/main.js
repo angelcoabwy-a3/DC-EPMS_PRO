@@ -51,6 +51,7 @@ import { initBmsView } from './views/bms.js';
 import { initLotoView } from './views/loto.js';
 import { initTopologyView } from './views/topology.js';
 import { initOverviewView } from './views/overview.js';
+import { initOptimizerView } from './views/optimizer.js';
 import { initBootstrap } from './core/bootstrap.js';
 
 // Telemetry engine flag. core/telemetry_engine.js owns the SSE; this
@@ -112,6 +113,10 @@ initTopologyView();
 // Overview / landing dashboard — T2.1 Vector 4b: the final view out
 // of the IIFE monolith (health, KPIs, PUE chart, agent chat, SHI)
 initOverviewView();
+// Epic 2 Batch 2.D — Optimizer HMI: lists the proactive-edge-agent
+// proposal queue + approve/reject under SME_L6 RBAC. Routes through
+// sanitizeHTML for the LLM-authored narratives (S-SEC-01).
+initOptimizerView();
 // Router glue — T2.1 Vector 4c: the app.js IIFE residual, promoted to
 // core/bootstrap.js. app.js is now DELETED — Epic T2.1 closed.
 initBootstrap();

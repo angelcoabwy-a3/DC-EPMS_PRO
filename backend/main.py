@@ -334,15 +334,28 @@ async def lifespan(app: FastAPI):
                 )
                 if _optimizer_enabled():
                     orch = getattr(app.state, "multi_agent_orchestrator", None)
+
+                    # Batch 2.D: real Hermes WS publisher — replaces the
+                    # 2.B log.info stub. The HMI subscribes to the
+                    # `optimizer_proposal` stream via core/hermes_events.js
+                    # and re-emits a `hermes:optimizer-proposal` DOM event.
+                    def _optimizer_event_emitter(event: str, payload: dict) -> None:
+                        # The Optimizer emits one event per queued proposal;
+                        # the stream name is the Hermes-side channel id, the
+                        # DOM event name (`hermes:optimizer-proposal`) is the
+                        # frontend re-emission. Keep them paired.
+                        _hermes.emit_event("optimizer_proposal", {
+                            "event": event,
+                            **payload,
+                        })
+
                     _optimizer_svc = _get_optimizer(
                         telemetry_provider=None,  # composed in 2.E smoke test
                         pue_target=1.30,
                         consult_fn=(orch.consult if orch is not None else None),
                         llm_client=agent,
                         kalman_provider=_hermes.latest_kalman_channels,
-                        event_emitter=lambda evt, payload: log.info(
-                            "[optimizer] %s: %s", evt, payload,
-                        ),
+                        event_emitter=_optimizer_event_emitter,
                     )
                     if _optimizer_svc is not None:
                         app.state.optimizer_service = _optimizer_svc
