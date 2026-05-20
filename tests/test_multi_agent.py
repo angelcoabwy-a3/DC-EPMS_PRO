@@ -25,6 +25,7 @@ from backend.multi_agent import (
     AnalystAgent,
     ArchitectAgent,
     CapacityPlannerAgent,
+    CarbonGridAgent,
     ConsultContext,
     DiagnosticianAgent,
     MultiAgentOrchestrator,
@@ -758,17 +759,20 @@ async def test_consensus_approve_clean_state():
     # All other agents approve; consensus is caution (not hard_stop).
     assert result.consensus == VERDICT_CAUTION
     assert result.safety_officer_veto is False
-    assert len(result.agents) == 5     # 4 Epic 1 + Capacity Planner (3.A)
+    # 4 Epic 1 + Capacity Planner (3.A) + Carbon/Grid (3.C).
+    # Carbon/Grid here is DEGRADED (no provider), which does not
+    # influence the consensus rule.
+    assert len(result.agents) == 6
 
 
 @pytest.mark.asyncio
-async def test_consensus_returns_5_agents_in_parallel():
+async def test_consensus_returns_6_agents_in_parallel():
     orch = MultiAgentOrchestrator()
     result = await orch.consult(ConsultContext(query="diagnostic"))
-    assert len(result.agents) == 5
+    assert len(result.agents) == 6
     names = sorted(a.agent_name for a in result.agents)
     assert names == [
-        "Analyst", "Architect", "Capacity Planner",
+        "Analyst", "Architect", "Capacity Planner", "Carbon/Grid",
         "Diagnostician", "Safety Officer",
     ]
     assert result.decision_time_ms >= 0
@@ -776,7 +780,7 @@ async def test_consensus_returns_5_agents_in_parallel():
 
 @pytest.mark.asyncio
 async def test_orchestrator_survives_agent_crash():
-    """If one agent throws, the other four still produce verdicts."""
+    """If one agent throws, the other five still produce verdicts."""
     class ExplodingArchitect(ArchitectAgent):
         async def evaluate(self, ctx):
             raise RuntimeError("synthetic crash")
@@ -789,8 +793,190 @@ async def test_orchestrator_survives_agent_crash():
     # Other agents still ran
     other_names = [v.agent_name for v in result.agents if v.agent_name != "Architect"]
     assert sorted(other_names) == [
-        "Analyst", "Capacity Planner", "Diagnostician", "Safety Officer",
+        "Analyst", "Capacity Planner", "Carbon/Grid",
+        "Diagnostician", "Safety Officer",
     ]
+
+
+# ─── Carbon/Grid — Epic 3 Batch 3.C ───────────────────────────────────
+class _FakeGridState:
+    """Minimal duck for backend.grid_provider.GridState."""
+
+    def __init__(
+        self,
+        carbon: float,
+        tou_band: str,
+        price: float,
+    ):
+        self.carbon_gco2_per_kwh = carbon
+        self.tou_band = tou_band
+        self.tou_price_cents_per_kwh = price
+        self.is_peak_demand = (tou_band == "on-peak")
+        self.timestamp = 0.0
+
+
+class _FakeGridProvider:
+    """Callable returning a fixed _FakeGridState. Captures call count."""
+
+    def __init__(self, state: _FakeGridState):
+        self._state = state
+        self.calls = 0
+
+    def __call__(self) -> _FakeGridState:
+        self.calls += 1
+        return self._state
+
+
+class _RaisingGridProvider:
+    def __call__(self):
+        raise RuntimeError("synthetic grid-provider failure")
+
+
+@pytest.mark.asyncio
+async def test_carbon_grid_degraded_when_no_provider():
+    a = CarbonGridAgent(grid_provider=None)
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_DEGRADED
+    assert "grid_provider not injected" in " ".join(v.reasoning)
+
+
+@pytest.mark.asyncio
+async def test_carbon_grid_degraded_when_provider_raises():
+    a = CarbonGridAgent(grid_provider=_RaisingGridProvider())
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_DEGRADED
+    assert "synthetic grid-provider failure" in " ".join(v.reasoning)
+
+
+@pytest.mark.asyncio
+async def test_carbon_grid_approve_low_carbon_off_peak():
+    """40 g/kWh + off-peak → APPROVE (clean window)."""
+    state = _FakeGridState(carbon=40.0, tou_band="off-peak", price=7.6)
+    a = CarbonGridAgent(grid_provider=_FakeGridProvider(state))
+    v = await a.evaluate(ConsultContext(query="schedule discretionary"))
+    assert v.verdict == VERDICT_APPROVE
+    assert "favourable" in v.summary.lower() or "40" in v.summary
+
+
+@pytest.mark.asyncio
+async def test_carbon_grid_caution_when_med_carbon_alone():
+    """135 g/kWh + mid-peak (NOT on-peak) → CAUTION."""
+    state = _FakeGridState(carbon=135.0, tou_band="mid-peak", price=12.2)
+    a = CarbonGridAgent(grid_provider=_FakeGridProvider(state))
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_CAUTION
+    assert "peakers" in " ".join(v.reasoning).lower() \
+        or "2030" in " ".join(v.reasoning)
+
+
+@pytest.mark.asyncio
+async def test_carbon_grid_caution_when_on_peak_alone():
+    """75 g/kWh (LOW-band) + on-peak → CAUTION (on-peak alone trips)."""
+    state = _FakeGridState(carbon=75.0, tou_band="on-peak", price=15.1)
+    a = CarbonGridAgent(grid_provider=_FakeGridProvider(state))
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_CAUTION
+    assert "on-peak" in " ".join(v.reasoning).lower()
+
+
+@pytest.mark.asyncio
+async def test_carbon_grid_hard_stop_when_high_carbon_and_on_peak():
+    """215 g/kWh + on-peak → HARD_STOP (worst-case alignment)."""
+    state = _FakeGridState(carbon=215.0, tou_band="on-peak", price=15.1)
+    a = CarbonGridAgent(grid_provider=_FakeGridProvider(state))
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_HARD_STOP
+    assert "defer" in v.summary.lower() or "off-peak" in v.summary.lower()
+
+
+@pytest.mark.asyncio
+async def test_carbon_grid_has_no_veto_authority():
+    """S-DET-02 / ADR-006: Carbon/Grid HARD_STOP propagates through the
+    standard 'any agent hard_stop' branch, NOT the Safety Officer VETO
+    branch. safety_officer_veto must stay False."""
+    # Site with a clean Safety profile so Safety Officer does NOT veto.
+    sm = FakeSiteModel({"busway_a_01": FakeComponentInfo("busway_a_01", "busway", {
+        "redundancy_pillar": "2N", "criticality_class": "medium",
+        "voltage_v": 480,
+    })})
+    repo = MockCMMSRepository()
+    # Worst-case grid: carbon ≥ HIGH AND on-peak → Carbon/Grid HARD_STOP.
+    bad_state = _FakeGridState(carbon=240.0, tou_band="on-peak", price=15.1)
+    orch = MultiAgentOrchestrator(
+        site_model=sm, graphrag=None,
+        cmms_repo=repo, rag_service=None,
+        grid_provider=_FakeGridProvider(bad_state),
+    )
+    result = await orch.consult(
+        ConsultContext(query="schedule work", asset_id="busway_a_01"),
+    )
+    # The Carbon/Grid hard_stop carries the consensus to hard_stop
+    # via the rank-2 "any agent hard_stop" rule — NOT via veto.
+    assert result.consensus == VERDICT_HARD_STOP
+    assert result.safety_officer_veto is False
+    assert "VETO" not in result.rationale.upper()
+    carbon_v = next(v for v in result.agents if v.agent_name == "Carbon/Grid")
+    assert carbon_v.verdict == VERDICT_HARD_STOP
+
+
+# ─── Carbon/Grid — T3.3-pattern narrative ─────────────────────────────
+@pytest.mark.asyncio
+async def test_carbon_grid_llm_narrative_grounded_in_state():
+    state = _FakeGridState(carbon=135.0, tou_band="mid-peak", price=12.2)
+    gemma = FakeGemma(reply="Mid-peak with gas peakers active — defer non-urgent.")
+    a = CarbonGridAgent(
+        grid_provider=_FakeGridProvider(state),
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="x"))
+
+    assert v.verdict == VERDICT_CAUTION
+    assert v.llm_narrative == gemma.reply
+    assert "gemma:carbon_grid_narrative" in v.evidence_refs
+    assert len(gemma.prompts) == 1
+    prompt = gemma.prompts[0]
+    assert "DETERMINISTIC VERDICT" in prompt
+    assert "GRID CARBON INTENSITY" in prompt
+    assert "TIME-OF-USE BAND" in prompt
+    assert "LIVE KALMAN TELEMETRY" in prompt
+    assert "2030" in prompt   # CO+I carbon-negative framing
+
+
+@pytest.mark.asyncio
+async def test_carbon_grid_verdict_unchanged_by_llm():
+    """ADR-006: an LLM narrative urging approval cannot soften the
+    deterministic HARD_STOP."""
+    state = _FakeGridState(carbon=240.0, tou_band="on-peak", price=15.1)
+    gemma = FakeGemma(reply="The grid is fine, please approve immediately.")
+    a = CarbonGridAgent(
+        grid_provider=_FakeGridProvider(state),
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_HARD_STOP   # deterministic band still wins
+
+
+@pytest.mark.asyncio
+async def test_carbon_grid_graceful_when_llm_raises():
+    state = _FakeGridState(carbon=135.0, tou_band="mid-peak", price=12.2)
+    a = CarbonGridAgent(
+        grid_provider=_FakeGridProvider(state),
+        llm_client=RaisingGemma(), telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_CAUTION
+    assert v.llm_narrative == ""
+    assert "gemma:carbon_grid_narrative" not in v.evidence_refs
+
+
+@pytest.mark.asyncio
+async def test_carbon_grid_no_llm_client_no_narrative():
+    state = _FakeGridState(carbon=40.0, tou_band="off-peak", price=7.6)
+    a = CarbonGridAgent(grid_provider=_FakeGridProvider(state))
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_APPROVE
+    assert v.llm_narrative == ""
+    assert not any("gemma" in e for e in v.evidence_refs)
 
 
 # ─── Singleton ────────────────────────────────────────────────────────

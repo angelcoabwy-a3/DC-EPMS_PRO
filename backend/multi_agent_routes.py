@@ -84,7 +84,7 @@ async def multi_agent_health(request: Request) -> dict[str, Any]:
 async def multi_agent_consult(
     request: Request, body: ConsultRequest,
 ) -> dict[str, Any]:
-    """Run the five agents in parallel and return consensus.
+    """Run the six agents in parallel and return consensus.
 
     Each agent evaluates from a single perspective:
       - Architect        topology + 2N redundancy impact
@@ -92,6 +92,7 @@ async def multi_agent_consult(
       - Diagnostician    recurrence + corpus history
       - Analyst          CapEx-vs-OpEx retrospective framing
       - Capacity Planner forward-looking IT-load / cooling headroom (3.A)
+      - Carbon/Grid      Ontario grid carbon + TOU framing (3.C, no VETO)
 
     Returns consensus + per-agent verdicts + decision_time_ms.
     Pure deterministic critical path; no LLM in the consensus rule.
@@ -133,12 +134,16 @@ def register_multi_agent_routes(
     rag_service: Any | None = None,
     llm_client: Any | None = None,
     telemetry_provider: Any | None = None,
+    grid_provider: Any | None = None,
 ) -> None:
     """Mount the router and stash a singleton orchestrator on app.state.
 
     T3.3: ``llm_client`` (local Gemma) and ``telemetry_provider`` (live
-    Hermes Kalman tap) are forwarded to the Diagnostician for its advisory
-    narrative. Both optional -- absent them the agents stay deterministic.
+    Hermes Kalman tap) are forwarded to the Diagnostician + the rest of
+    the T3.3-family for advisory narratives. ``grid_provider`` (Epic 3
+    Batch 3.C) feeds the Carbon/Grid agent's deterministic verdict.
+    All three optional -- absent them the agents stay deterministic
+    and the Carbon/Grid agent simply returns DEGRADED.
     """
     orchestrator = get_orchestrator(
         site_model=site_model,
@@ -147,6 +152,7 @@ def register_multi_agent_routes(
         rag_service=rag_service,
         llm_client=llm_client,
         telemetry_provider=telemetry_provider,
+        grid_provider=grid_provider,
     )
     app.state.multi_agent_orchestrator = orchestrator
     if not getattr(app.state, "_multi_agent_router_registered", False):

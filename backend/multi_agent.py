@@ -3,11 +3,12 @@ backend/multi_agent.py
 ======================
 Sprint 10.1 — Multi-Agent façade with Safety Officer veto.
 
-FIVE specialised agents collaborate on operator queries about a target
+SIX specialised agents collaborate on operator queries about a target
 asset / procedure / work order (Epic 3 Batch 3.A added the Capacity
-Planner to the original four). Each agent evaluates from a single
-perspective and produces a verdict + evidence trail. The orchestrator
-runs them in parallel via ``asyncio.gather`` and computes consensus.
+Planner; Batch 3.C added the Carbon/Grid agent). Each agent evaluates
+from a single perspective and produces a verdict + evidence trail. The
+orchestrator runs them in parallel via ``asyncio.gather`` and computes
+consensus.
 
 Agents
 ------
@@ -56,6 +57,22 @@ Agents
                       capacity narrative via the same T3.3-pattern
                       Gemma helpers.
 
+  Carbon/Grid         Ontario grid-carbon + Time-of-Use perspective.
+                      reads: grid_provider (Ontario IESO mock; real-
+                      API integration deferred).
+                      Verdict basis (deterministic): HARD_STOP when
+                      both carbon ≥ HIGH (200 g/kWh) AND on-peak TOU
+                      (worst-case dispatch + price); CAUTION when
+                      either signal trips alone; APPROVE on a clean
+                      low-carbon + off-peak window. Particularly
+                      relevant for scheduling discretionary work and
+                      framing BESS dispatch decisions.
+                      Epic 3 Batch 3.C: synthesizes the advisory
+                      carbon-aware narrative via the same T3.3-pattern
+                      Gemma helpers. Does NOT have VETO authority —
+                      Safety Officer remains the sole vetoer
+                      (S-DET-02 / ADR-006).
+
 Consensus rule (deterministic)
 ------------------------------
   1. If Safety Officer == 'hard_stop'  -> consensus = 'hard_stop' (VETO).
@@ -65,12 +82,13 @@ Consensus rule (deterministic)
 
 Per ADR-006 Deterministic Sandbox: every agent VERDICT is computed by
 pure-Python deterministic logic -- no LLM in the critical decision path.
-Each of the five agents (T3.3 Diagnostician, T3.3b Safety Officer,
+Each of the six agents (T3.3 Diagnostician, T3.3b Safety Officer,
 T3.3c Analyst, T3.3d Architect — the Epic 1 reactive fleet — plus
-Epic 3 Batch 3.A Capacity Planner) may attach a Gemma-generated
-narrative, but that text is advisory only and never alters the verdict
-or the consensus rule. The output is advisory; the operator remains
-the approver. The orchestrator never mutates state.
+Epic 3 Batch 3.A Capacity Planner and Batch 3.C Carbon/Grid) may
+attach a Gemma-generated narrative, but that text is advisory only
+and never alters the verdict or the consensus rule. The output is
+advisory; the operator remains the approver. The orchestrator never
+mutates state.
 """
 
 from __future__ import annotations
@@ -124,7 +142,7 @@ class AgentVerdict:
 
 @dataclass
 class ConsensusResult:
-    """Aggregate verdict over the five agents."""
+    """Aggregate verdict over the six agents."""
     consensus: str
     safety_officer_veto: bool
     agents: list[AgentVerdict] = field(default_factory=list)
@@ -1256,9 +1274,210 @@ class CapacityPlannerAgent:
         return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
 
+# ─── Agent: Carbon/Grid ────────────────────────────────────────────────
+class CarbonGridAgent:
+    """Ontario grid-carbon + Time-of-Use perspective.
+
+    Microsoft CO+I committed to carbon-negative operations by 2030
+    (Smith 2020). For an AI-factory operator dashboard, that commitment
+    cashes out as a per-decision question the existing five agents
+    were never built to answer: "is this a good moment, on the local
+    grid, to run / approve / defer this action?". The Carbon/Grid
+    agent owns that question.
+
+    Verdict basis (deterministic, ADR-006):
+      - HARD_STOP  if grid carbon ≥ HIGH_CARBON_THRESHOLD (200 g/kWh)
+                   AND TOU band == on-peak. Worst-case dispatch + price
+                   simultaneously — defer discretionary work.
+      - CAUTION    if either signal trips alone (carbon ≥ MED, OR
+                   on-peak band).
+      - APPROVE    on a clean off-peak + low-carbon window.
+      - DEGRADED   if no grid_provider is injected, or the provider
+                   raises.
+
+    The agent does NOT have VETO authority — S-DET-02 / ADR-006 keep
+    the Safety Officer as the sole vetoer. A CarbonGrid HARD_STOP
+    propagates through the standard "any agent hard_stop -> hard_stop"
+    branch (rank 2 in _compute_consensus), NOT the VETO branch.
+
+    T3.3-pattern narrative: when ``llm_client`` + ``telemetry_provider``
+    are injected, attaches a Gemma narrative grounded in the
+    deterministic GridState figures + live Hermes Kalman Z-scores. Per
+    ADR-006 the narrative is advisory ONLY — the verdict is fixed
+    before the LLM is consulted.
+
+    Inputs:
+      - grid_provider : callable returning a backend.grid_provider
+                        ``GridState`` (real signature decoupled via
+                        duck-typing on ``.carbon_gco2_per_kwh /
+                        .tou_band / .is_peak_demand /
+                        .tou_price_cents_per_kwh``).
+    """
+
+    name = "Carbon/Grid"
+
+    # Mirrored from backend.grid_provider so the verdict bands live
+    # with the agent that consumes them. Kept in lockstep there.
+    LOW_CARBON_THRESHOLD = 50.0
+    MED_CARBON_THRESHOLD = 100.0
+    HIGH_CARBON_THRESHOLD = 200.0
+
+    def __init__(
+        self,
+        grid_provider: Any | None = None,
+        llm_client: Any | None = None,
+        telemetry_provider: Any | None = None,
+    ):
+        self._grid_provider = grid_provider
+        # T3.3-family advisory narrative layer. Both default None so
+        # every existing call site / test is unaffected.
+        self._llm_client = llm_client
+        self._telemetry_provider = telemetry_provider
+
+    async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
+        t0 = time.perf_counter()
+        evidence: list[str] = []
+        reasoning: list[str] = []
+
+        if self._grid_provider is None:
+            return AgentVerdict(
+                agent_name=self.name, verdict=VERDICT_DEGRADED,
+                summary="grid intensity unavailable — no provider",
+                reasoning=["grid_provider not injected; Carbon/Grid "
+                           "agent cannot reason about carbon dispatch."],
+                evidence_refs=[],
+                decision_time_ms=_ms_since(t0),
+            )
+
+        try:
+            state = self._grid_provider()
+        except Exception as e:
+            return AgentVerdict(
+                agent_name=self.name, verdict=VERDICT_DEGRADED,
+                summary=f"grid provider failed: {type(e).__name__}",
+                reasoning=[f"grid_provider raised: {type(e).__name__}: {e}"],
+                evidence_refs=[],
+                decision_time_ms=_ms_since(t0),
+            )
+
+        carbon = float(getattr(state, "carbon_gco2_per_kwh", 0.0) or 0.0)
+        tou = str(getattr(state, "tou_band", "unknown") or "unknown")
+        on_peak = bool(getattr(state, "is_peak_demand", False))
+        price = float(getattr(state, "tou_price_cents_per_kwh", 0.0) or 0.0)
+        evidence.append(
+            f"grid:ieso:carbon={carbon:.0f}g/kWh:tou={tou}"
+        )
+        reasoning.append(
+            f"Ontario grid: {carbon:.0f} gCO2/kWh, {tou} TOU at "
+            f"{price:.1f} ¢/kWh."
+        )
+
+        verdict = VERDICT_APPROVE
+        if carbon >= self.HIGH_CARBON_THRESHOLD and on_peak:
+            verdict = VERDICT_HARD_STOP
+            reasoning.append(
+                f"Carbon at {carbon:.0f} g/kWh AND on-peak TOU — worst-"
+                f"case alignment for discretionary work. Defer to "
+                f"off-peak (post 7 pm / weekend) if action is not "
+                f"safety-critical."
+            )
+        elif carbon >= self.MED_CARBON_THRESHOLD or on_peak:
+            verdict = VERDICT_CAUTION
+            if carbon >= self.MED_CARBON_THRESHOLD:
+                reasoning.append(
+                    f"Carbon at {carbon:.0f} g/kWh — natural-gas "
+                    f"peakers active. Discretionary work better "
+                    f"deferred for CO+I 2030 carbon-negative alignment."
+                )
+            if on_peak:
+                reasoning.append(
+                    f"On-peak TOU band at {price:.1f} ¢/kWh — capex "
+                    f"review favoured at off-peak window; BESS "
+                    f"discharge opportunity if available."
+                )
+        else:
+            reasoning.append(
+                f"Low carbon ({carbon:.0f} g/kWh, nuclear+hydro "
+                f"dominant) and off-peak TOU — favourable window."
+            )
+
+        # T3.3-family advisory Gemma narrative. Runs AFTER the
+        # deterministic verdict; never alters it (ADR-006).
+        llm_narrative = ""
+        if self._llm_client is not None and verdict != VERDICT_DEGRADED:
+            kalman_lines = await _collect_kalman_lines(
+                self._telemetry_provider, ctx.asset_id,
+            )
+            if kalman_lines:
+                evidence.append(f"hermes:kalman_z ({len(kalman_lines)} ch)")
+            llm_narrative = await self._synthesize_narrative(
+                ctx, verdict, carbon, tou, price, kalman_lines,
+            )
+            if llm_narrative:
+                evidence.append("gemma:carbon_grid_narrative")
+                reasoning.append(f"Gemma narrative: {llm_narrative}")
+
+        if verdict == VERDICT_HARD_STOP:
+            tail = "defer to off-peak"
+        elif verdict == VERDICT_CAUTION:
+            tail = "scheduling review"
+        else:
+            tail = "favourable window"
+        summary = (
+            f"Grid {carbon:.0f} gCO2/kWh, {tou} — {tail}"
+        )
+        return AgentVerdict(
+            agent_name=self.name, verdict=verdict,
+            summary=summary, reasoning=reasoning,
+            evidence_refs=evidence, decision_time_ms=_ms_since(t0),
+            llm_narrative=llm_narrative,
+        )
+
+    # ── T3.3-family: advisory Gemma narrative ─────────────────────────
+    async def _synthesize_narrative(
+        self,
+        ctx: ConsultContext,
+        verdict: str,
+        carbon: float,
+        tou: str,
+        price: float,
+        kalman_lines: list[str],
+    ) -> str:
+        """Build the Carbon/Grid Gemma prompt and call the model.
+
+        ADR-006: advisory ONLY. ``verdict`` + grid figures are fixed
+        before the LLM is invoked; the prompt forbids overrides.
+        """
+        kalman_block = (
+            "\n".join(f"  {ln}" for ln in kalman_lines)
+            if kalman_lines
+            else "  (live Kalman tap unavailable this tick)"
+        )
+        prompt = (
+            "You are the Carbon/Grid agent of a Tier IV AI-factory "
+            "operations platform. You reason about Ontario IESO grid-"
+            "carbon intensity (gCO2/kWh) + Time-of-Use pricing. In "
+            "2-3 sentences give an advisory carbon-aware narrative for "
+            "the assessment below. Ground every figure strictly in the "
+            "data provided; do not invent values. Microsoft CO+I has "
+            "committed to carbon-negative operations by 2030 — frame "
+            "the recommendation in that context. Be concise and "
+            "factual.\n\n"
+            f"ASSET: {ctx.asset_id or 'site-wide'}\n"
+            f"DETERMINISTIC VERDICT (already decided, do not override): "
+            f"{verdict}\n"
+            f"GRID CARBON INTENSITY: {carbon:.0f} gCO2/kWh\n"
+            f"TIME-OF-USE BAND: {tou} ({price:.1f} ¢/kWh)\n"
+            "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
+            "anomaly):\n"
+            f"{kalman_block}\n"
+        )
+        return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
+
+
 # ─── Orchestrator ──────────────────────────────────────────────────────
 class MultiAgentOrchestrator:
-    """Runs the FIVE agents in parallel and computes consensus."""
+    """Runs the SIX agents in parallel and computes consensus."""
 
     def __init__(
         self,
@@ -1268,6 +1487,7 @@ class MultiAgentOrchestrator:
         rag_service: Any | None = None,
         llm_client: Any | None = None,
         telemetry_provider: Any | None = None,
+        grid_provider: Any | None = None,
     ):
         self._architect    = ArchitectAgent(
             site_model, graphrag, cmms_repo=cmms_repo,
@@ -1292,11 +1512,18 @@ class MultiAgentOrchestrator:
             site_model, cmms_repo,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
         )
+        # Epic 3 Batch 3.C — Carbon/Grid: Ontario IESO carbon-intensity
+        # + Time-of-Use perspective. Has NO veto authority (Safety
+        # Officer remains the sole vetoer per S-DET-02 / ADR-006).
+        self._carbon       = CarbonGridAgent(
+            grid_provider=grid_provider,
+            llm_client=llm_client, telemetry_provider=telemetry_provider,
+        )
 
     @property
     def agents(self) -> list[Any]:
         return [self._architect, self._safety, self._diagnostician,
-                self._analyst, self._capacity]
+                self._analyst, self._capacity, self._carbon]
 
     async def consult(self, ctx: ConsultContext) -> ConsensusResult:
         """Run all agents in parallel and aggregate."""
@@ -1375,6 +1602,7 @@ def get_orchestrator(
     rag_service: Any | None = None,
     llm_client: Any | None = None,
     telemetry_provider: Any | None = None,
+    grid_provider: Any | None = None,
 ) -> MultiAgentOrchestrator:
     global _orchestrator
     if _orchestrator is None:
@@ -1382,12 +1610,14 @@ def get_orchestrator(
             site_model=site_model, graphrag=graphrag,
             cmms_repo=cmms_repo, rag_service=rag_service,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
+            grid_provider=grid_provider,
         )
         log.info(
             "[multi_agent] orchestrator initialized "
-            "(site=%s, graphrag=%s, cmms=%s, rag=%s)",
+            "(site=%s, graphrag=%s, cmms=%s, rag=%s, grid=%s)",
             site_model is not None, graphrag is not None,
             cmms_repo is not None, rag_service is not None,
+            grid_provider is not None,
         )
     return _orchestrator
 

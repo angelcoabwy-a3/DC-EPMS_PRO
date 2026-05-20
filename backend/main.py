@@ -296,14 +296,16 @@ async def lifespan(app: FastAPI):
                 log.error("[BOOT] Tech Assist init failed: %s", e, exc_info=True)
 
             # ─── Sprint 10.1: Multi-Agent façade init ─────────────────
-            # 5 deterministic agents (Architect, Safety Officer,
+            # 6 deterministic agents (Architect, Safety Officer,
             # Diagnostician, Analyst — Epic 1 — plus the Capacity Planner
-            # added in Epic 3 Batch 3.A) with Safety Officer veto. Pure
-            # Python critical path per ADR-006. The site_model + graphrag
-            # references are bound later in lifespan; we resolve them
-            # lazily from globals() at registration time.
+            # added in Epic 3 Batch 3.A and the Carbon/Grid agent added
+            # in Batch 3.C) with Safety Officer veto. Pure Python critical
+            # path per ADR-006. The site_model + graphrag references are
+            # bound later in lifespan; we resolve them lazily from
+            # globals() at registration time.
             try:
                 from backend import hermes as _hermes
+                from backend.grid_provider import get_grid_state as _grid_state
                 from backend.multi_agent_routes import register_multi_agent_routes
                 register_multi_agent_routes(
                     app,
@@ -314,10 +316,13 @@ async def lifespan(app: FastAPI):
                     # T3.3: live Gemma + Kalman tap for the Diagnostician.
                     llm_client=agent,
                     telemetry_provider=_hermes.latest_kalman_channels,
+                    # Batch 3.C: Ontario IESO mock grid-state provider
+                    # for the Carbon/Grid agent.
+                    grid_provider=_grid_state,
                 )
-                log.info("[BOOT] Multi-Agent façade active (4 agents, "
+                log.info("[BOOT] Multi-Agent façade active (6 agents, "
                          "Safety Officer veto, deterministic consensus; "
-                         "Diagnostician live-Gemma narrative %s)",
+                         "T3.3-family live-Gemma narrative %s)",
                          "ON" if agent is not None else "OFF")
             except Exception as e:
                 log.error("[BOOT] Multi-Agent init failed: %s", e, exc_info=True)
