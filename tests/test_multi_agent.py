@@ -24,6 +24,7 @@ from backend.multi_agent import (
     VERDICT_HARD_STOP,
     AnalystAgent,
     ArchitectAgent,
+    CapacityPlannerAgent,
     ConsultContext,
     DiagnosticianAgent,
     MultiAgentOrchestrator,
@@ -564,6 +565,135 @@ async def test_analyst_no_llm_client_no_narrative():
     assert not any("gemma" in e for e in v.evidence_refs)
 
 
+# ─── Capacity Planner — Epic 3 Batch 3.A (deterministic) ──────────────
+# The Capacity Planner reads the rack count via cmms_repo.
+# list_assets_async; the MockCMMSRepository does NOT define that
+# method, so the planner falls back to installed_kw=0 / util=0 %.
+# For verdict tests at the warn/crit thresholds we inject a small fake
+# repo that returns N synthetic rack assets at 142 kW each.
+class _FakeRackAsset:
+    def __init__(self, asset_id: str, rated_kw: float = 142.0,
+                 asset_type: str = "it_rack"):
+        self.asset_id = asset_id
+        self.asset_type = asset_type
+        self.rated_kw = rated_kw
+
+
+class _FakeRackRepo:
+    """Minimal CMMS repo stub for the Capacity Planner: only implements
+    list_assets_async(), enough to drive the deterministic utilisation
+    calculation."""
+
+    def __init__(self, n_racks: int, rated_kw: float = 142.0):
+        self._assets = [
+            _FakeRackAsset(f"rack-{i:03d}", rated_kw) for i in range(n_racks)
+        ]
+
+    async def list_assets_async(self):
+        return self._assets
+
+
+@pytest.mark.asyncio
+async def test_capacity_planner_degraded_when_no_data():
+    a = CapacityPlannerAgent(site_model=None, cmms_repo=None)
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_DEGRADED
+    assert "Capacity Planner" in " ".join(v.reasoning) \
+        or "capacity" in v.summary.lower()
+
+
+@pytest.mark.asyncio
+async def test_capacity_planner_approve_when_well_below_warn():
+    # 50 racks at 142 kW = 7100 kW vs 16 756 kW design = ~42 % util.
+    repo = _FakeRackRepo(n_racks=50)
+    a = CapacityPlannerAgent(site_model=None, cmms_repo=repo)
+    v = await a.evaluate(ConsultContext(query="diagnostic"))
+    assert v.verdict == VERDICT_APPROVE
+    assert "42" in v.summary or "headroom" in v.summary.lower()
+
+
+@pytest.mark.asyncio
+async def test_capacity_planner_caution_at_warn_band():
+    # 102 racks at 142 kW = 14 484 kW vs 16 756 kW design = 86.4 %
+    # → above WARN (85 %), below CRIT (95 %).
+    repo = _FakeRackRepo(n_racks=102)
+    a = CapacityPlannerAgent(site_model=None, cmms_repo=repo)
+    v = await a.evaluate(ConsultContext(query="diagnostic"))
+    assert v.verdict == VERDICT_CAUTION
+    assert "planning" in " ".join(v.reasoning).lower() \
+        or "Phase 2" in " ".join(v.reasoning)
+
+
+@pytest.mark.asyncio
+async def test_capacity_planner_hard_stop_at_crit_band():
+    # 113 racks at 142 kW = 16 046 kW vs 16 756 kW design = 95.8 %
+    # → above CRIT (95 %).
+    repo = _FakeRackRepo(n_racks=113)
+    a = CapacityPlannerAgent(site_model=None, cmms_repo=repo)
+    v = await a.evaluate(ConsultContext(query="diagnostic"))
+    assert v.verdict == VERDICT_HARD_STOP
+    assert "CRITICAL" in " ".join(v.reasoning) \
+        or "Phase 2 expansion" in v.summary
+
+
+# ─── Capacity Planner — Epic 3 Batch 3.A (Gemma narrative) ────────────
+@pytest.mark.asyncio
+async def test_capacity_planner_llm_narrative_grounded_in_utilisation():
+    repo = _FakeRackRepo(n_racks=102)   # CAUTION verdict
+    gemma = FakeGemma(reply="Site at 86% — schedule Phase 2 capacity review.")
+    a = CapacityPlannerAgent(
+        site_model=None, cmms_repo=repo,
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="x"))
+
+    assert v.verdict == VERDICT_CAUTION
+    assert v.llm_narrative == gemma.reply
+    assert "gemma:capacity_planner_narrative" in v.evidence_refs
+    assert len(gemma.prompts) == 1
+    prompt = gemma.prompts[0]
+    assert "DETERMINISTIC VERDICT" in prompt
+    assert "SITE IT LOAD UTILISATION" in prompt
+    assert "LIVE KALMAN TELEMETRY" in prompt
+
+
+@pytest.mark.asyncio
+async def test_capacity_planner_verdict_unchanged_by_llm():
+    """ADR-006: even an LLM narrative urging approval cannot soften the
+    deterministic CRIT-band HARD_STOP."""
+    repo = _FakeRackRepo(n_racks=113)   # HARD_STOP verdict
+    gemma = FakeGemma(reply="Plenty of room, approve more racks immediately.")
+    a = CapacityPlannerAgent(
+        site_model=None, cmms_repo=repo,
+        llm_client=gemma, telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_HARD_STOP   # CRIT band still wins
+
+
+@pytest.mark.asyncio
+async def test_capacity_planner_graceful_when_llm_raises():
+    repo = _FakeRackRepo(n_racks=102)
+    a = CapacityPlannerAgent(
+        site_model=None, cmms_repo=repo,
+        llm_client=RaisingGemma(), telemetry_provider=_fake_kalman_payload,
+    )
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_CAUTION
+    assert v.llm_narrative == ""
+    assert "gemma:capacity_planner_narrative" not in v.evidence_refs
+
+
+@pytest.mark.asyncio
+async def test_capacity_planner_no_llm_client_no_narrative():
+    repo = _FakeRackRepo(n_racks=50)
+    a = CapacityPlannerAgent(site_model=None, cmms_repo=repo)
+    v = await a.evaluate(ConsultContext(query="x"))
+    assert v.verdict == VERDICT_APPROVE
+    assert v.llm_narrative == ""
+    assert not any("gemma" in e for e in v.evidence_refs)
+
+
 # ─── Orchestrator + consensus ─────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_consensus_safety_veto_outranks_all():
@@ -628,22 +758,25 @@ async def test_consensus_approve_clean_state():
     # All other agents approve; consensus is caution (not hard_stop).
     assert result.consensus == VERDICT_CAUTION
     assert result.safety_officer_veto is False
-    assert len(result.agents) == 4
+    assert len(result.agents) == 5     # 4 Epic 1 + Capacity Planner (3.A)
 
 
 @pytest.mark.asyncio
-async def test_consensus_returns_4_agents_in_parallel():
+async def test_consensus_returns_5_agents_in_parallel():
     orch = MultiAgentOrchestrator()
     result = await orch.consult(ConsultContext(query="diagnostic"))
-    assert len(result.agents) == 4
+    assert len(result.agents) == 5
     names = sorted(a.agent_name for a in result.agents)
-    assert names == ["Analyst", "Architect", "Diagnostician", "Safety Officer"]
+    assert names == [
+        "Analyst", "Architect", "Capacity Planner",
+        "Diagnostician", "Safety Officer",
+    ]
     assert result.decision_time_ms >= 0
 
 
 @pytest.mark.asyncio
 async def test_orchestrator_survives_agent_crash():
-    """If one agent throws, others still produce verdicts."""
+    """If one agent throws, the other four still produce verdicts."""
     class ExplodingArchitect(ArchitectAgent):
         async def evaluate(self, ctx):
             raise RuntimeError("synthetic crash")
@@ -655,7 +788,9 @@ async def test_orchestrator_survives_agent_crash():
     assert "synthetic crash" in " ".join(arch.reasoning)
     # Other agents still ran
     other_names = [v.agent_name for v in result.agents if v.agent_name != "Architect"]
-    assert sorted(other_names) == ["Analyst", "Diagnostician", "Safety Officer"]
+    assert sorted(other_names) == [
+        "Analyst", "Capacity Planner", "Diagnostician", "Safety Officer",
+    ]
 
 
 # ─── Singleton ────────────────────────────────────────────────────────

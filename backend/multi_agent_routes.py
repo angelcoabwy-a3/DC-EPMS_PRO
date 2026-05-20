@@ -84,13 +84,14 @@ async def multi_agent_health(request: Request) -> dict[str, Any]:
 async def multi_agent_consult(
     request: Request, body: ConsultRequest,
 ) -> dict[str, Any]:
-    """Run the four agents in parallel and return consensus.
+    """Run the five agents in parallel and return consensus.
 
     Each agent evaluates from a single perspective:
-      - Architect      topology + 2N redundancy impact
-      - Safety Officer LOTO/PPE compliance (VETO power)
-      - Diagnostician  recurrence + corpus history
-      - Analyst        CapEx-vs-OpEx framing
+      - Architect        topology + 2N redundancy impact
+      - Safety Officer   LOTO/PPE compliance (VETO power)
+      - Diagnostician    recurrence + corpus history
+      - Analyst          CapEx-vs-OpEx retrospective framing
+      - Capacity Planner forward-looking IT-load / cooling headroom (3.A)
 
     Returns consensus + per-agent verdicts + decision_time_ms.
     Pure deterministic critical path; no LLM in the consensus rule.

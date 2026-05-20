@@ -3,8 +3,9 @@ backend/multi_agent.py
 ======================
 Sprint 10.1 — Multi-Agent façade with Safety Officer veto.
 
-Four specialized agents collaborate on operator queries about a target
-asset / procedure / work order. Each agent evaluates from a single
+FIVE specialised agents collaborate on operator queries about a target
+asset / procedure / work order (Epic 3 Batch 3.A added the Capacity
+Planner to the original four). Each agent evaluates from a single
 perspective and produces a verdict + evidence trail. The orchestrator
 runs them in parallel via ``asyncio.gather`` and computes consensus.
 
@@ -43,6 +44,18 @@ Agents
                       model, grounded in the cost heuristics + the
                       asset's repair history + live Kalman Z-scores.
 
+  Capacity Planner    Forward-looking IT-load + cooling-headroom
+                      reads: site_model (rated_kw), cmms_repository
+                      (installed rack count + cumulative kW).
+                      Verdict basis: HARD_STOP at ≥95 % design IT
+                      utilisation, CAUTION at ≥85 %, APPROVE otherwise.
+                      Asset-specific: models post-action utilisation
+                      when the consult is about adding/replacing a
+                      rack-class asset.
+                      Epic 3 Batch 3.A: synthesizes the advisory
+                      capacity narrative via the same T3.3-pattern
+                      Gemma helpers.
+
 Consensus rule (deterministic)
 ------------------------------
   1. If Safety Officer == 'hard_stop'  -> consensus = 'hard_stop' (VETO).
@@ -52,11 +65,12 @@ Consensus rule (deterministic)
 
 Per ADR-006 Deterministic Sandbox: every agent VERDICT is computed by
 pure-Python deterministic logic -- no LLM in the critical decision path.
-Each of the four agents (T3.3 Diagnostician, T3.3b Safety Officer,
-T3.3c Analyst, T3.3d Architect — the full Epic 1 fleet) may attach a
-Gemma-generated narrative, but that text is advisory only and never
-alters the verdict or the consensus rule. The output is advisory; the
-operator remains the approver. The orchestrator never mutates state.
+Each of the five agents (T3.3 Diagnostician, T3.3b Safety Officer,
+T3.3c Analyst, T3.3d Architect — the Epic 1 reactive fleet — plus
+Epic 3 Batch 3.A Capacity Planner) may attach a Gemma-generated
+narrative, but that text is advisory only and never alters the verdict
+or the consensus rule. The output is advisory; the operator remains
+the approver. The orchestrator never mutates state.
 """
 
 from __future__ import annotations
@@ -110,7 +124,7 @@ class AgentVerdict:
 
 @dataclass
 class ConsensusResult:
-    """Aggregate verdict over the four agents."""
+    """Aggregate verdict over the five agents."""
     consensus: str
     safety_officer_veto: bool
     agents: list[AgentVerdict] = field(default_factory=list)
@@ -1017,9 +1031,234 @@ class AnalystAgent:
         return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
 
+# ─── Agent: Capacity Planner ───────────────────────────────────────────
+class CapacityPlannerAgent:
+    """Forward-looking IT-load + cooling-headroom + UPS-runtime perspective.
+
+    Complements the Analyst (retrospective cost framing) with the
+    *prospective* question: do we have headroom to add this asset / take
+    on this work? Hyperscale operators (CO+I, Equinix, Vertiv) treat
+    capacity planning as a first-class concern — the existing 4 reactive
+    agents covered topology + safety + recurrence + cost, but not
+    forward-looking utilisation.
+
+    Verdict basis (deterministic):
+      - HARD_STOP  if site is at or above CAPACITY_CRIT_PCT (≥ 95 %)
+                   design IT load, OR if the action under review would
+                   push utilisation past CAPACITY_CRIT_PCT.
+      - CAUTION    if site is at or above CAPACITY_WARN_PCT (≥ 85 %)
+                   design IT load, OR if the action would push past
+                   the warn threshold.
+      - APPROVE    otherwise (with headroom surfaced).
+      - DEGRADED   if neither site_model nor cmms_repo is available.
+
+    Inputs:
+      - site_model — for asset metadata (rated_kw) on the asset under
+        review.
+      - cmms_repo  — for the live installed-rack count (rated kW sum).
+      - PHASE1_DESIGN_KW — known Path C2 capacity (118 racks x 142 kW
+        = 16 756 kW). Hard-coded constant per the engram §2 fence;
+        future revision could read from site_model.metadata.
+
+    T3.3-pattern narrative: when llm_client + telemetry_provider are
+    injected, attaches a Gemma narrative grounded in the deterministic
+    utilisation figure + live Kalman Z-scores. Per ADR-006 the
+    narrative is advisory ONLY — verdict and capacity figures are
+    fixed before the LLM is consulted.
+    """
+
+    name = "Capacity Planner"
+
+    CAPACITY_WARN_PCT = 85.0     # entering planning-review band
+    CAPACITY_CRIT_PCT = 95.0     # cannot safely add load
+
+    # Path C2 Phase 1 deployed capacity (Buildings A/B).
+    # 118 NVIDIA GB200 NVL72 racks at 142 kW each = 16 756 kW.
+    # NOTE: Phase 2 (Building D, Q2 2026) adds 250 GB300 NVL144 racks
+    # at 200 kW each = 50 000 kW (800 VDC unipolar TN-S downstream —
+    # NOT trifásico per S-VOCAB-01). This constant tracks ONLY Phase 1
+    # deployed capacity; Phase 2 wiring belongs in a later revision.
+    PHASE1_DESIGN_KW = 118 * 142   # 16 756 kW
+
+    def __init__(
+        self,
+        site_model: Any | None,
+        cmms_repo: Any | None,
+        llm_client: Any | None = None,
+        telemetry_provider: Any | None = None,
+    ):
+        self._site = site_model
+        self._cmms_repo = cmms_repo
+        # T3.3-family: optional live-Gemma narrative layer. Both default
+        # None so every existing call site + test is unaffected.
+        self._llm_client = llm_client
+        self._telemetry_provider = telemetry_provider
+
+    async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
+        t0 = time.perf_counter()
+        evidence: list[str] = []
+        reasoning: list[str] = []
+
+        if self._site is None and self._cmms_repo is None:
+            return AgentVerdict(
+                agent_name=self.name, verdict=VERDICT_DEGRADED,
+                summary="capacity data unavailable — no site_model or CMMS",
+                reasoning=["neither site_model nor cmms_repo injected; "
+                           "Capacity Planner cannot reason about headroom."],
+                evidence_refs=[],
+                decision_time_ms=_ms_since(t0),
+            )
+
+        # Read installed rack count + cumulative rated kW from CMMS.
+        installed_racks = 0
+        installed_kw = 0.0
+        if (self._cmms_repo is not None
+                and hasattr(self._cmms_repo, "list_assets_async")):
+            try:
+                assets = await self._cmms_repo.list_assets_async()
+                rack_assets = [
+                    a for a in assets
+                    if getattr(a, "asset_type", "") in ("it_rack", "rack")
+                ]
+                installed_racks = len(rack_assets)
+                installed_kw = sum(
+                    float(getattr(a, "rated_kw", 142.0) or 142.0)
+                    for a in rack_assets
+                )
+                evidence.append(f"cmms:assets:rack ({installed_racks})")
+            except Exception as e:
+                reasoning.append(f"CMMS asset count failed: {e}")
+
+        design_kw = float(self.PHASE1_DESIGN_KW)
+        util_pct = (installed_kw / design_kw * 100.0) if design_kw > 0 else 0.0
+        reasoning.append(
+            f"Site IT load utilisation: {installed_racks} racks at "
+            f"{installed_kw:.0f} kW vs {design_kw:.0f} kW design "
+            f"= {util_pct:.1f}% (warn {self.CAPACITY_WARN_PCT}%, "
+            f"crit {self.CAPACITY_CRIT_PCT}%)."
+        )
+
+        verdict = VERDICT_APPROVE
+        if util_pct >= self.CAPACITY_CRIT_PCT:
+            verdict = VERDICT_HARD_STOP
+            reasoning.append(
+                f"Site at {util_pct:.1f}% design IT load. CRITICAL — "
+                f"adding load without Phase 2 expansion will erode "
+                f"Tier IV redundancy."
+            )
+        elif util_pct >= self.CAPACITY_WARN_PCT:
+            verdict = VERDICT_CAUTION
+            reasoning.append(
+                f"Site at {util_pct:.1f}% — entering capacity-planning "
+                f"band. Recommend reviewing Phase 2 (Building D, Q2 2026) "
+                f"timeline."
+            )
+
+        # Asset-specific impact: if the action is about adding/replacing
+        # a rack-class asset, model the post-action utilisation too.
+        if ctx.asset_id and self._site is not None:
+            try:
+                comp = self._site.get_component(ctx.asset_id)
+                comp_type = getattr(comp, "type", "unknown")
+                meta = getattr(comp, "metadata", {}) or {}
+                rated_kw = meta.get("rated_kw") or meta.get("kw")
+                if rated_kw and comp_type in ("it_rack", "rack"):
+                    proposed_util = (
+                        (installed_kw + float(rated_kw)) / design_kw * 100.0
+                    )
+                    reasoning.append(
+                        f"Adding {ctx.asset_id} ({rated_kw} kW) would move "
+                        f"site to {proposed_util:.1f}% utilisation."
+                    )
+                    if (proposed_util >= self.CAPACITY_CRIT_PCT
+                            and verdict != VERDICT_HARD_STOP):
+                        verdict = VERDICT_HARD_STOP
+                        reasoning.append(
+                            "This addition crosses the critical threshold."
+                        )
+                    elif (proposed_util >= self.CAPACITY_WARN_PCT
+                          and verdict == VERDICT_APPROVE):
+                        verdict = VERDICT_CAUTION
+                evidence.append(f"site_model:{ctx.asset_id}")
+            except Exception as e:
+                reasoning.append(f"site_model lookup failed: {e}")
+
+        # T3.3-family: advisory Gemma narrative grounded in live Kalman
+        # Z-scores. Runs AFTER the deterministic verdict; never alters
+        # it (ADR-006).
+        llm_narrative = ""
+        if self._llm_client is not None and verdict != VERDICT_DEGRADED:
+            kalman_lines = await _collect_kalman_lines(
+                self._telemetry_provider, ctx.asset_id,
+            )
+            if kalman_lines:
+                evidence.append(f"hermes:kalman_z ({len(kalman_lines)} ch)")
+            llm_narrative = await self._synthesize_narrative(
+                ctx, verdict, util_pct, installed_racks, design_kw,
+                kalman_lines,
+            )
+            if llm_narrative:
+                evidence.append("gemma:capacity_planner_narrative")
+                reasoning.append(f"Gemma narrative: {llm_narrative}")
+
+        if verdict == VERDICT_HARD_STOP:
+            tail = "Phase 2 expansion required"
+        elif verdict == VERDICT_CAUTION:
+            tail = "capacity-planning review"
+        else:
+            tail = "headroom available"
+        summary = f"Site IT load {util_pct:.0f}% — {tail}"
+        return AgentVerdict(
+            agent_name=self.name, verdict=verdict,
+            summary=summary, reasoning=reasoning,
+            evidence_refs=evidence, decision_time_ms=_ms_since(t0),
+            llm_narrative=llm_narrative,
+        )
+
+    # ── T3.3-family: advisory Gemma narrative ─────────────────────────
+    async def _synthesize_narrative(
+        self,
+        ctx: ConsultContext,
+        verdict: str,
+        util_pct: float,
+        installed_racks: int,
+        design_kw: float,
+        kalman_lines: list[str],
+    ) -> str:
+        """Build the Capacity Planner's Gemma prompt and call the model.
+
+        ADR-006: advisory ONLY. ``verdict`` and the capacity figures are
+        already deterministic; the prompt forbids the model from
+        overriding the verdict or inventing capacity numbers.
+        """
+        kalman_block = (
+            "\n".join(f"  {ln}" for ln in kalman_lines)
+            if kalman_lines
+            else "  (live Kalman tap unavailable this tick)"
+        )
+        prompt = (
+            "You are the Capacity Planner agent of a Tier IV AI-factory "
+            "operations platform, responsible for forward-looking IT-load "
+            "+ cooling + UPS capacity planning. In 2-3 sentences give an "
+            "advisory capacity narrative for the assessment below. Ground "
+            "every figure strictly in the data provided; do not invent "
+            "values. Be concise and factual.\n\n"
+            f"ASSET: {ctx.asset_id or 'site-wide'}\n"
+            f"DETERMINISTIC VERDICT (already decided, do not override): "
+            f"{verdict}\n"
+            f"SITE IT LOAD UTILISATION: {util_pct:.1f}%\n"
+            f"INSTALLED RACK COUNT: {installed_racks}\n"
+            f"DESIGN IT CAPACITY: {design_kw:.0f} kW (Path C2 Phase 1)\n"
+            "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
+            "anomaly):\n"
+            f"{kalman_block}\n"
+        )
+        return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
+
+
 # ─── Orchestrator ──────────────────────────────────────────────────────
 class MultiAgentOrchestrator:
-    """Runs the four agents in parallel and computes consensus."""
+    """Runs the FIVE agents in parallel and computes consensus."""
 
     def __init__(
         self,
@@ -1046,10 +1285,18 @@ class MultiAgentOrchestrator:
             site_model, cmms_repo,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
         )
+        # Epic 3 Batch 3.A — Capacity Planner: forward-looking IT-load
+        # + cooling-headroom perspective (complements Analyst's
+        # retrospective cost framing).
+        self._capacity     = CapacityPlannerAgent(
+            site_model, cmms_repo,
+            llm_client=llm_client, telemetry_provider=telemetry_provider,
+        )
 
     @property
     def agents(self) -> list[Any]:
-        return [self._architect, self._safety, self._diagnostician, self._analyst]
+        return [self._architect, self._safety, self._diagnostician,
+                self._analyst, self._capacity]
 
     async def consult(self, ctx: ConsultContext) -> ConsensusResult:
         """Run all agents in parallel and aggregate."""

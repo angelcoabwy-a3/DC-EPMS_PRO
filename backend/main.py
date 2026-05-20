@@ -296,8 +296,9 @@ async def lifespan(app: FastAPI):
                 log.error("[BOOT] Tech Assist init failed: %s", e, exc_info=True)
 
             # ─── Sprint 10.1: Multi-Agent façade init ─────────────────
-            # 4 deterministic agents (Architect, Safety Officer,
-            # Diagnostician, Analyst) with Safety Officer veto. Pure
+            # 5 deterministic agents (Architect, Safety Officer,
+            # Diagnostician, Analyst — Epic 1 — plus the Capacity Planner
+            # added in Epic 3 Batch 3.A) with Safety Officer veto. Pure
             # Python critical path per ADR-006. The site_model + graphrag
             # references are bound later in lifespan; we resolve them
             # lazily from globals() at registration time.
