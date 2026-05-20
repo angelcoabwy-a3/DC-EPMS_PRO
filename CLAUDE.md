@@ -19,21 +19,24 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 ## 📊 CURRENT STATE (synced 2026-05-19)
 
 ```
-HEAD:  4d1a611 (+ this doc-sync)  branch master  —  pushed 2026-05-19.
-       Stable baseline = v0.12.0 "Monolith Eradicated" (cut 2026-05-19).
-       Post-release: EPIC 1 COMPLETE (4-agent live-Gemma fleet — T3.3 /
-       T3.3b / T3.3c / T3.3d); **EPIC 2 OPEN, Batches 2.A-2.D
-       delivered** — Optimizer deterministic core (2.A) + consensus /
-       queue / narrative / Hermes / lifespan (2.B) + operator endpoints
-       with SME_L6 RBAC (2.C) + HMI proposal-queue view with XSS-
-       sanitized narratives + Hermes WS producer (2.D). 5 AST
-       invariants enforce ADR-006 on backend/optimizer.py; the HMI
-       routes LLM narratives through F3-5 sanitizeHTML. Default OFF
-       (env-gated). Tag target = v0.13.0 "Proactive Edge". 2.E (live
-       smoke + tag) is the only remaining batch.
+HEAD:  v0.13.0 release commit  branch master  —  pushed 2026-05-19.
+       Stable baseline = **v0.13.0 "Proactive Edge"** (cut 2026-05-19).
+       **EPIC 2 COMPLETE.** Full proactive edge-agent shipped across
+       Batches 2.A-2.E: deterministic control law + consensus /
+       queue / narrative / Hermes / lifespan + SME_L6 approve/reject
+       endpoints + XSS-sanitized HMI + Hermes WS producer + real BMS
+       catalogue wiring (HVAC.CHILLER1.CW_SETPOINT + new
+       HVAC.CTOWER1.FAN_VFD) + Toronto-baseline calibration notes +
+       live smoke (default-OFF AND ENABLED postures both verified,
+       HTTP 403 RBAC gate proven against the running stack). 5 AST
+       invariants enforce ADR-006 Proposer Pattern on
+       backend/optimizer.py. Default OFF (env-gated) — production
+       deployments byte-identical to v0.12.0 at runtime when
+       DC_EPMS_OPTIMIZER_ENABLED is unset. Tag = v0.13.x patch /
+       v0.14.0 next.
 Working tree: .claude/ untracked (intentional).
 
-Tags chronological (40 total):
+Tags chronological (41 total):
   v0.5.0 .. v0.8.5-cmms-core-v1               foundation → Sprint 6 CMMS Core
   v0.9.0-cmms-predictive                      Sprint 9.1 predictive WO trigger (Kalman→auto-WO)
   v0.9.5..v0.9.9-tech-assist*                 Sprint 7.1a-d Tech Assist (QA, PDF ingest, voice, OCR) + view
@@ -65,6 +68,22 @@ Tags chronological (40 total):
    residual promoted to core/bootstrap.js. The HMI is fully modular: 12
    views/*.js + core/*.js engines, all routed by the declarative
    core/router.js. index.html loads a single ES-module entry point.
+  v0.13.0  (2026-05-19)                       RELEASE "Proactive Edge" —
+   EPIC 2 CLOSED. Full proactive PUE/WUE edge-agent ("The Optimizer")
+   shipped across Batches 2.A-2.E: deterministic control law + drift /
+   pacing guards (2.A), multi-agent consensus integration with Safety
+   VETO uncrossable + proposal queue + Optimizer Gemma narrative +
+   Hermes WS producer (2.B), POST /api/optimizer/approve|reject with
+   strict SME_L6 RBAC + audit chain (2.C), HMI proposal-queue view
+   with F3-5 sanitizeHTML on LLM narratives + Hermes consumer (2.D),
+   BMS catalogue wired to live tags (HVAC.CHILLER1.CW_SETPOINT +
+   new HVAC.CTOWER1.FAN_VFD) + Toronto-baseline calibration notes +
+   live smoke verified (default-OFF + ENABLED postures, HTTP 403 RBAC
+   gate proven against running stack) (2.E). 5 AST Proposer-Pattern
+   invariants enforce ADR-006 on backend/optimizer.py at commit time.
+   Default OFF (env-gated). Backend pytest 726 → 797 (+71 across
+   test_optimizer.py + test_optimizer_routes.py); frontend Vitest
+   176 → 193 (+17 across optimizer.test.js + hermes_events.test.js).
 
 Tests:   backend 797 passed, 5 deselected (slow/FAISS) — full pytest ~42s, 0 fail.
          frontend 193 passed (19 Vitest files) — 16 new in
