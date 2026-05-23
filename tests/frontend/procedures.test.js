@@ -932,3 +932,180 @@ describe('Sprint 3 Phase 3 — telemetry pre-pull', () => {
         void allMock; void genCall;
     });
 });
+
+
+// ════════════════════════════════════════════════════════════════════
+// Sprint 3 follow-up — awaiting-second-signature badge in the HMI
+// ════════════════════════════════════════════════════════════════════
+describe('Sprint 3 follow-up — Maker-Checker badge in HMI', () => {
+    function _approvedMop(id) {
+        return {
+            draft: {
+                draft_id: id, doc_type: 'MOP', asset_id: 'ups_b',
+                content: 'PPE per CSA Z462. LOTO on bus. Back-out plan ok.',
+                llm_present: true,
+            },
+            safety_audit: { verdict: 'approve', findings: [] },
+        };
+    }
+
+    async function _setupApprovedMop(pid) {
+        _mountView();
+        vi.stubGlobal('fetch', _fakeFetchOK(_approvedMop(pid)));
+        document.querySelector('[data-proc-context]').value =
+            'A valid context for the MOP sign test.';
+        await submitGenerate();
+        vi.unstubAllGlobals();
+    }
+
+    it('HTTP 202 awaiting renders the badge + maker + sha + checker hint', async () => {
+        await _setupApprovedMop('qd-await-1');
+        // Server returns 202 on first MOP sign. Vitest doesn't read
+        // ok from status code 202 automatically — supply ok=true
+        // explicitly because the .ok check passes in fetch standard
+        // for any 2xx.
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true, status: 202,
+            json: async () => ({
+                signed: false,
+                draft_id: 'qd-await-1',
+                status: 'awaiting_second_signature',
+                first_signer: 'maker.alice',
+                first_signer_role: 'SME_L6',
+                content_sha256: 'deadbeef'.repeat(8),
+                doc_type: 'MOP',
+                witness_required: true,
+                message: 'Maker-Checker gate: a MOP cannot ship on a single signature.',
+            }),
+        })));
+        await submitSign('qd-await-1');
+        const slot = document.querySelector(
+            '.proc-sign-result[data-draft-id="qd-await-1"]',
+        );
+        // The badge is unmistakable.
+        const badge = slot.querySelector('.proc-sign-awaiting-badge');
+        expect(badge).not.toBeNull();
+        expect(badge.textContent).toContain('AWAITING SECOND SIGNATURE');
+        // Maker identity + role surfaced.
+        expect(slot.textContent).toContain('maker.alice');
+        expect(slot.textContent).toContain('SME_L6');
+        // Truncated content sha shown so the next operator can verify.
+        expect(slot.textContent).toContain('deadbeefdeadbeef…');
+        // Checker hint mentions the operator-id-change path.
+        expect(slot.textContent.toLowerCase()).toContain('different');
+        expect(slot.textContent.toLowerCase()).toContain('operator id');
+        // No "Signed to ledger" line on the awaiting path.
+        expect(slot.querySelector('.proc-sign-ok')).toBeNull();
+    });
+
+    it('second sign returns 200 sealed with both signers rendered', async () => {
+        await _setupApprovedMop('qd-await-2');
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                signed: true,
+                draft_id: 'qd-await-2',
+                entry_id: 'a1b2c3d4e5f6abcd1111222233334444',
+                sequence_no: 42,
+                content_sha256: 'cafebabe'.repeat(8),
+                safety_audit_verdict: 'approve',
+                witness_required: true,
+                first_signer: 'maker.alice',
+                second_signer: 'checker.bob',
+            }),
+        })));
+        await submitSign('qd-await-2');
+        const slot = document.querySelector(
+            '.proc-sign-result[data-draft-id="qd-await-2"]',
+        );
+        // Standard success line.
+        expect(slot.querySelector('.proc-sign-ok')).not.toBeNull();
+        expect(slot.textContent).toContain('seq #42');
+        // Witness line names both operators.
+        const witness = slot.querySelector('.proc-sign-witness-line');
+        expect(witness).not.toBeNull();
+        expect(witness.textContent).toContain('Maker:');
+        expect(witness.textContent).toContain('maker.alice');
+        expect(witness.textContent).toContain('Checker:');
+        expect(witness.textContent).toContain('checker.bob');
+    });
+
+    it('XSS — hostile first_signer in the 202 payload is escaped', async () => {
+        await _setupApprovedMop('qd-await-xss');
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true, status: 202,
+            json: async () => ({
+                signed: false,
+                status: 'awaiting_second_signature',
+                first_signer: '<img src=x onerror=window.__pwn_await=1>',
+                first_signer_role: '<script>window.__pwn_role=1</script>',
+                content_sha256: 'aaaa'.repeat(16),
+                witness_required: true,
+            }),
+        })));
+        await submitSign('qd-await-xss');
+        const slot = document.querySelector(
+            '.proc-sign-result[data-draft-id="qd-await-xss"]',
+        );
+        expect(slot.querySelector('img')).toBeNull();
+        expect(slot.querySelector('script')).toBeNull();
+        expect(window.__pwn_await).toBeUndefined();
+        expect(window.__pwn_role).toBeUndefined();
+    });
+
+    it('operator_id from the form input flows into the POST body', async () => {
+        await _setupApprovedMop('qd-opid');
+        // Mount adds the operator_id input via _mountView using
+        // renderAssetSelect markup — but _mountView is the test
+        // stub and doesn't include the input. Inject it now so the
+        // production read path can find it.
+        const root = document.getElementById('view-procedures-architect');
+        const inp = document.createElement('input');
+        inp.setAttribute('data-proc-operator-id', '');
+        inp.value = '  checker.carol  ';
+        root.appendChild(inp);
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                signed: true, draft_id: 'qd-opid',
+                entry_id: 'e' * 16, sequence_no: 99,
+                content_sha256: 'd' * 64,
+                safety_audit_verdict: 'approve',
+                witness_required: false,
+            }),
+        }));
+        vi.stubGlobal('fetch', spy);
+        await submitSign('qd-opid');
+        const call = spy.mock.calls.find(
+            (c) => c[0] === '/api/procedures/architect/sign',
+        );
+        expect(call).toBeDefined();
+        const body = JSON.parse(call[1].body);
+        // Input value trimmed + propagated.
+        expect(body.operator_id).toBe('checker.carol');
+    });
+
+    it('operator_id falls back to default when the input is absent', async () => {
+        // Existing tests (Sprint 1 / Sprint 2) don't mount the input —
+        // the back-compat default ensures they still POST a valid
+        // operator_id without test changes.
+        await _setupApprovedMop('qd-default-op');
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                signed: true, draft_id: 'qd-default-op',
+                entry_id: 'x' * 16, sequence_no: 1,
+                content_sha256: 'y' * 64,
+                safety_audit_verdict: 'approve',
+                witness_required: false,
+            }),
+        }));
+        vi.stubGlobal('fetch', spy);
+        await submitSign('qd-default-op');
+        const call = spy.mock.calls.find(
+            (c) => c[0] === '/api/procedures/architect/sign',
+        );
+        const body = JSON.parse(call[1].body);
+        expect(body.operator_id).toBe('wilmer.angel');
+    });
+});

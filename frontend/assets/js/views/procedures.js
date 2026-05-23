@@ -667,6 +667,11 @@ async function _submitSign(draftId) {
     slot.innerHTML = sanitizeHTML(
         '<div class="proc-empty">Signing…</div>',
     );
+    // Read the operator_id from the input the form exposes. Default
+    // to 'wilmer.angel' when the input is missing (test paths that
+    // mount a partial skeleton) so existing behaviour is back-compat.
+    const opInput = root.querySelector('[data-proc-operator-id]');
+    const operatorId = (opInput?.value || 'wilmer.angel').trim() || 'wilmer.angel';
     try {
         const resp = await fetch('/api/procedures/architect/sign', {
             method: 'POST',
@@ -676,7 +681,7 @@ async function _submitSign(draftId) {
                 doc_type: draft.doc_type,
                 content: draft.content,
                 asset_id: draft.asset_id || null,
-                operator_id: 'wilmer.angel',
+                operator_id: operatorId,
                 actor_role: 'SME_L6',
             }),
         });
@@ -688,16 +693,55 @@ async function _submitSign(draftId) {
             );
             return;
         }
+        // Epic 6 Sprint 3 Phase 4 wire-level: the MOP Maker-Checker
+        // backend returns HTTP 202 + ``status: awaiting_second_signature``
+        // on the first MOP sign. Render an unmistakable badge + the
+        // maker's name + the content sha so the next operator (the
+        // checker) has the proof-of-context they need to corroborate.
+        if (data.status === 'awaiting_second_signature') {
+            const maker = escapeHTML(String(data.first_signer || 'unknown'));
+            const makerRole = escapeHTML(
+                String(data.first_signer_role || 'operator'),
+            );
+            const sha = escapeHTML(
+                String(data.content_sha256 || '').slice(0, 16),
+            );
+            slot.innerHTML = sanitizeHTML(
+                '<div class="proc-sign-awaiting">'
+                + '<span class="proc-sign-awaiting-badge">'
+                + 'AWAITING SECOND SIGNATURE</span>'
+                + ` Maker: <code>${maker}</code>`
+                + ` (${makerRole}) ·`
+                + ` sha256 <code>${sha}…</code>`
+                + '<div class="proc-sign-awaiting-hint">'
+                + 'Tier IV Maker-Checker (CSA Z462-24 + Uptime '
+                + 'Institute): a MOP requires two distinct operators. '
+                + 'Change the <strong>Operator id</strong> above to a '
+                + 'different name and click <strong>Sign</strong> again '
+                + 'to seal the ledger entry. The same operator cannot '
+                + 'witness their own draft.'
+                + '</div>'
+                + '</div>',
+            );
+            return;
+        }
         const entry = escapeHTML(String(data.entry_id || '').slice(0, 16));
         const seq = escapeHTML(String(data.sequence_no || '?'));
         const sha = escapeHTML(String(data.content_sha256 || '').slice(0, 16));
+        // Sealed-by-witness path carries both signers in the response.
+        const witnessLine = (data.witness_required && data.first_signer)
+            ? `<div class="proc-sign-witness-line">Maker: `
+                + `<code>${escapeHTML(String(data.first_signer))}</code> · `
+                + `Checker: <code>${escapeHTML(String(data.second_signer || operatorId))}</code></div>`
+            : '';
         slot.innerHTML = sanitizeHTML(
             `<div class="proc-sign-ok">
                 Signed to ledger ·
                 entry <code>${entry}</code> ·
                 seq #${seq} ·
                 sha256 <code>${sha}…</code>
-            </div>`,
+            </div>`
+            + witnessLine,
         );
     } catch (e) {
         slot.innerHTML = sanitizeHTML(
@@ -770,6 +814,13 @@ function _wireProceduresView() {
                 <div data-proc-ctx-chips class="proc-chips-row"></div>
                 <textarea data-proc-context class="proc-textarea" rows="4"
                           placeholder="Describe the maintenance / operation / incident the document must cover. Example: Replace UPS-B battery cabinet on Phase 1 main bus during scheduled window."></textarea>
+            </label>
+            <label>
+                Operator id (used at sign time — change to a DIFFERENT
+                name for MOP Maker-Checker witness):
+                <input type="text" data-proc-operator-id class="proc-input"
+                       value="wilmer.angel"
+                       placeholder="signing operator id">
             </label>
             <button data-action="generate" class="proc-btn proc-btn-generate">
                 Generate
