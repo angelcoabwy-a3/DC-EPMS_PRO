@@ -292,3 +292,100 @@ async def test_payload_can_include_nested_dict_and_list():
     }
     await ledger.append(actor="op", action="A", payload=payload)
     assert await ledger.verify_chain() is None
+
+
+# ════════════════════════════════════════════════════════════════════
+# Epic 5.D — fetch_by_proposal_id (JSONB query, in-memory mirror)
+# ════════════════════════════════════════════════════════════════════
+@pytest.mark.asyncio
+async def test_fetch_by_proposal_id_returns_empty_when_no_match():
+    ledger = _new_ledger()
+    await ledger.append(actor="op", action="A", payload={"x": 1})
+    assert await ledger.fetch_by_proposal_id("no-such-id") == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_by_proposal_id_returns_requested_plus_linked_result():
+    """The forensic-trail contract: REQUESTED row carries the stamped
+    proposal_id; RESULT row links via ref_entry_id."""
+    ledger = _new_ledger()
+    # Unrelated entries — must NOT appear in the trail.
+    await ledger.append(actor="op", action="OTHER", payload={"proposal_id": "other"})
+
+    requested = await ledger.append(
+        actor="optimizer", action=ACTION_BMS_WRITE_REQUESTED,
+        payload={
+            "tag_id": "HVAC.CHILLER1.CW_SETPOINT",
+            "requested_value": 7.0,
+            "proposal_id": "qp-trace",
+            "source": "optimizer_approval",
+        },
+    )
+    result = await ledger.append(
+        actor="optimizer", action=ACTION_BMS_WRITE_RESULT,
+        payload={
+            "ref_entry_id": requested.entry_id,
+            "success": True,
+            "message": "wrote 7.0 to HVAC.CHILLER1.CW_SETPOINT",
+        },
+    )
+
+    trail = await ledger.fetch_by_proposal_id("qp-trace")
+    assert [e.entry_id for e in trail] == [requested.entry_id, result.entry_id]
+    # Order is chronological (REQUESTED before RESULT by sequence_no).
+    assert trail[0].sequence_no < trail[1].sequence_no
+
+
+@pytest.mark.asyncio
+async def test_fetch_by_proposal_id_chains_multiple_results_per_request():
+    """If a RESULT row is retried for the same REQUESTED, both surface."""
+    ledger = _new_ledger()
+    req = await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_REQUESTED,
+        payload={"proposal_id": "qp-multi"},
+    )
+    r1 = await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_RESULT,
+        payload={"ref_entry_id": req.entry_id, "success": False, "message": "x"},
+    )
+    r2 = await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_RESULT,
+        payload={"ref_entry_id": req.entry_id, "success": True, "message": "y"},
+    )
+    trail = await ledger.fetch_by_proposal_id("qp-multi")
+    assert [e.entry_id for e in trail] == [req.entry_id, r1.entry_id, r2.entry_id]
+
+
+@pytest.mark.asyncio
+async def test_fetch_by_proposal_id_ignores_unrelated_proposals():
+    ledger = _new_ledger()
+    a = await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_REQUESTED,
+        payload={"proposal_id": "qp-A", "tag_id": "X"},
+    )
+    await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_RESULT,
+        payload={"ref_entry_id": a.entry_id, "success": True, "message": "x"},
+    )
+    b = await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_REQUESTED,
+        payload={"proposal_id": "qp-B", "tag_id": "Y"},
+    )
+    await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_RESULT,
+        payload={"ref_entry_id": b.entry_id, "success": True, "message": "y"},
+    )
+
+    a_trail = await ledger.fetch_by_proposal_id("qp-A")
+    b_trail = await ledger.fetch_by_proposal_id("qp-B")
+    assert {e.entry_id for e in a_trail} & {e.entry_id for e in b_trail} == set()
+
+
+@pytest.mark.asyncio
+async def test_fetch_by_proposal_id_with_empty_string_returns_empty():
+    ledger = _new_ledger()
+    await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_REQUESTED,
+        payload={"proposal_id": "qp-X"},
+    )
+    assert await ledger.fetch_by_proposal_id("") == []

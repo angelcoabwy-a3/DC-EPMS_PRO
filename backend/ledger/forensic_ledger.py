@@ -162,6 +162,10 @@ class Persistence(Protocol):
 
     async def fetch_by_sequence(self, sequence_no: int) -> LedgerEntry | None: ...
 
+    async def fetch_by_proposal_id(
+        self, proposal_id: str,
+    ) -> list[LedgerEntry]: ...
+
     async def count(self) -> int: ...
 
 
@@ -204,6 +208,28 @@ class InMemoryPersistence:
                 if e.sequence_no == sequence_no:
                     return e
         return None
+
+    async def fetch_by_proposal_id(
+        self, proposal_id: str,
+    ) -> list[LedgerEntry]:
+        """E5.D — forensic-trail query. Returns every entry that links
+        to ``proposal_id`` in chronological order:
+
+          * ``BMS_WRITE_REQUESTED`` rows whose ``payload.proposal_id``
+            matches (the proposer-pattern stamp from
+            ``set_proposal_context``).
+          * ``BMS_WRITE_RESULT`` rows whose ``payload.ref_entry_id``
+            references one of those REQUESTED rows (joins the request
+            to its outcome).
+          * Any other entry kind (BMS_REVERT, KEY_ROTATION) whose
+            payload directly carries the same ``proposal_id`` —
+            forward-compatible with later actions.
+
+        Returns an empty list when no entries match.
+        """
+        with self._lock:
+            entries = list(self._entries)
+        return _filter_proposal_chain(entries, proposal_id)
 
     async def count(self) -> int:
         with self._lock:
@@ -308,10 +334,75 @@ class PostgresPersistence:
             )
             return _row_to_entry(row) if row else None
 
+    async def fetch_by_proposal_id(
+        self, proposal_id: str,
+    ) -> list[LedgerEntry]:
+        """E5.D — forensic-trail query against the JSONB ``payload``
+        column. Pulls the REQUESTED rows whose stamped ``proposal_id``
+        matches, plus the RESULT rows that ``ref_entry_id``-link them,
+        plus any other rows that directly carry the proposal_id (forward
+        compatibility for revert / rotation events). Ordered by
+        ``sequence_no`` (chronological)."""
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT entry_id, sequence_no, ts, actor, action,
+                       payload, prev_hash, entry_hmac, key_version
+                FROM ledger_entries
+                WHERE payload->>'proposal_id' = $1
+                   OR payload->>'ref_entry_id' IN (
+                        SELECT entry_id
+                          FROM ledger_entries
+                         WHERE payload->>'proposal_id' = $1
+                   )
+                ORDER BY sequence_no ASC
+                """,
+                proposal_id,
+            )
+            return [_row_to_entry(r) for r in rows]
+
     async def count(self) -> int:
         async with self._pool.acquire() as conn:
             n = await conn.fetchval("SELECT COUNT(*) FROM ledger_entries")
             return int(n or 0)
+
+
+def _filter_proposal_chain(
+    entries: list[LedgerEntry], proposal_id: str,
+) -> list[LedgerEntry]:
+    """In-memory equivalent of the Postgres JSONB query in
+    :meth:`PostgresPersistence.fetch_by_proposal_id`.
+
+    Returns the subset of ``entries`` that either:
+      * carry ``proposal_id`` directly in their payload, or
+      * reference (via ``ref_entry_id``) any entry from the first group.
+
+    Preserves the chronological order of ``entries``.
+    """
+    if not proposal_id:
+        return []
+    primary_ids: set[str] = set()
+    primary: list[LedgerEntry] = []
+    for e in entries:
+        if not isinstance(e.payload, dict):
+            continue
+        if e.payload.get("proposal_id") == proposal_id:
+            primary_ids.add(e.entry_id)
+            primary.append(e)
+    if not primary_ids:
+        return []
+    secondary: list[LedgerEntry] = []
+    for e in entries:
+        if e in primary:
+            continue
+        if not isinstance(e.payload, dict):
+            continue
+        if e.payload.get("ref_entry_id") in primary_ids:
+            secondary.append(e)
+    # Re-sort by sequence_no for a single chronological stream.
+    out = primary + secondary
+    out.sort(key=lambda x: x.sequence_no)
+    return out
 
 
 def _json_default(o: Any) -> Any:
@@ -487,6 +578,13 @@ class ForensicLedger:
 
     async def fetch_all(self) -> list[LedgerEntry]:
         return await self._persistence.fetch_all()
+
+    async def fetch_by_proposal_id(
+        self, proposal_id: str,
+    ) -> list[LedgerEntry]:
+        """E5.D — forensic-trail query. See
+        :meth:`Persistence.fetch_by_proposal_id`."""
+        return await self._persistence.fetch_by_proposal_id(proposal_id)
 
     async def count(self) -> int:
         return await self._persistence.count()

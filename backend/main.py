@@ -2496,15 +2496,37 @@ async def list_ledger_entries(
     request: Request,
     limit: int = 50,
     action: str | None = None,
+    proposal_id: str | None = None,
 ):
     """List recent forensic-ledger entries (ADR-011).
 
-    ``action`` optional filter (e.g. ``BMS_WRITE_REQUESTED``,
-    ``BMS_WRITE_RESULT``, ``BMS_REVERT``, ``KEY_ROTATION``).
+    Filters (combinable):
+
+      * ``action`` — restrict to one action kind
+        (``BMS_WRITE_REQUESTED``, ``BMS_WRITE_RESULT``, ``BMS_REVERT``,
+        ``KEY_ROTATION``).
+      * ``proposal_id`` — Epic 5.D forensic-trail query. Returns the
+        full chain for one Optimizer proposal: the REQUESTED row whose
+        payload stamped this id (S-PROPOSER-01), the matching RESULT
+        row(s) that ``ref_entry_id``-link back, and any other entries
+        that directly carry the same proposal_id. JSONB-indexed on the
+        Postgres backend; ``limit`` is ignored when this filter is
+        supplied (a chain rarely exceeds a handful of entries).
     """
     ledger = getattr(request.app.state, "forensic_ledger", None)
     if ledger is None:
         raise HTTPException(503, "ForensicLedger not initialised")
+    if proposal_id:
+        entries = await ledger.fetch_by_proposal_id(proposal_id)
+        if action:
+            entries = [e for e in entries if e.action == action]
+        return {
+            "entries": [e.to_dict() for e in entries],
+            "total": await ledger.count(),
+            "key_version": ledger.current_key_version,
+            "proposal_id": proposal_id,
+            "matched": len(entries),
+        }
     entries = await ledger.fetch_all()
     if action:
         entries = [e for e in entries if e.action == action]

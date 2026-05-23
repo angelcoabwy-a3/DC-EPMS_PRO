@@ -23,7 +23,7 @@
  *     A 10 s polling fallback runs alongside; both self-cancel when
  *     the view is hidden.
  *
- * Epic 5 Sprint 1 (this commit):
+ * Epic 5 Sprint 1:
  *   - E5.A heartbeat strip — top-of-view band that shows the loop's
  *     last tick wall-clock + most recent outcomes (sustained / drift /
  *     proposals / paced / vetoed). Refreshed by GET /api/optimizer/health
@@ -32,9 +32,18 @@
  *     a compact 6-row table with the per-agent verdicts. The Safety
  *     Officer's HARD_STOP gets an unmistakable badge (S-DET-02).
  *
- * Out of E5 scope (deferred): a What-If sandbox preview, persistent
- * approval history in the sidebar (the 2.C GET /approvals endpoint is
- * exposed but not yet surfaced here).
+ * Epic 5 Sprint 2 (this commit):
+ *   - E5.B approval history sidebar — collapsible <aside> consuming
+ *     GET /api/optimizer/approvals, refreshed on activate + after every
+ *     successful approve / reject submit.
+ *   - E5.D per-card forensic trail link — "View forensic trail" button
+ *     that opens an inline panel listing the 2 ledger entries
+ *     (REQUESTED + RESULT) with their HMAC + sequence_no, via
+ *     GET /api/ledger/entries?proposal_id=<uuid>.
+ *   - E5.E What-If sandbox preview — "Preview impact" button that hits
+ *     POST /api/optimizer/preview/{id} and renders the deterministic
+ *     PUE / WUE / ASHRAE-distance projection with a green/amber/red
+ *     verdict. ZERO LLM calls on this path (S-DET-01).
  *
  * Test surface: __optimizer_view_test__ exposes the pure render
  * helpers + the action submit functions.
@@ -268,11 +277,17 @@ function _renderProposalCard(qp) {
             </div>
         </div>
         <div class="opt-card-actions">
+            <button class="opt-btn opt-btn-preview" data-action="preview"
+                    data-proposal-id="${idEsc}">Preview impact</button>
+            <button class="opt-btn opt-btn-trail" data-action="trail"
+                    data-proposal-id="${idEsc}">View forensic trail</button>
             <button class="opt-btn opt-btn-approve" data-action="approve"
                     data-proposal-id="${idEsc}">Approve &amp; Actuate</button>
             <button class="opt-btn opt-btn-reject" data-action="reject"
                     data-proposal-id="${idEsc}">Reject</button>
         </div>
+        <div class="opt-preview" data-proposal-id="${idEsc}" hidden></div>
+        <div class="opt-trail" data-proposal-id="${idEsc}" hidden></div>
         <div class="opt-form opt-form-approve" data-proposal-id="${idEsc}" hidden>
             <label>Operator ID:
                 <input type="text" class="opt-operator-input" value="wilmer.angel">
@@ -383,6 +398,9 @@ async function _submitApprove(proposalId) {
             : `BMS write failed: ${data.bms_write_message || 'unknown'}`;
         _renderResult(proposalId, data.bms_write_success === true,
             `${verdict.toUpperCase()} — ${bms}`);
+        // E5.B — refresh the history sidebar so the operator sees the
+        // decision they just made land in the audit list.
+        _fetchHistory();
         // NOTE: deliberately NOT auto-refreshing the queue here. A
         // re-render would wipe the inline result the operator just
         // saw. The 10 s poll OR a backend hermes:optimizer-proposal
@@ -419,7 +437,9 @@ async function _submitReject(proposalId) {
             return;
         }
         _renderResult(proposalId, true, `REJECTED — ${data.reason || ''}`);
-        // No auto-refresh; same rationale as _submitApprove.
+        // E5.B — refresh the history sidebar (same as in _submitApprove).
+        _fetchHistory();
+        // No queue auto-refresh; same rationale as _submitApprove.
     } catch (e) {
         _renderResult(proposalId, false, `Network error: ${e.message}`);
     }
@@ -444,6 +464,12 @@ function _onClick(ev) {
             break;
         case 'submit-reject':
             _submitReject(pid);
+            break;
+        case 'preview':         // E5.E
+            _fetchPreview(pid);
+            break;
+        case 'trail':           // E5.D
+            _fetchForensicTrail(pid);
             break;
     }
 }
@@ -481,12 +507,282 @@ function _onHermesTick(ev) {
     return _fetchHealth();
 }
 
+// ─── E5.B — Approval history sidebar ─────────────────────────────────
+function _formatHistoryTime(unix) {
+    if (!unix || typeof unix !== 'number') return '—';
+    try {
+        return new Date(unix * 1000).toLocaleString();
+    } catch (_) {
+        return '—';
+    }
+}
+
+function _renderHistory(approvals) {
+    const slot = document.querySelector('[data-opt-history-body]');
+    if (!slot) return;
+    if (!Array.isArray(approvals) || approvals.length === 0) {
+        slot.innerHTML = sanitizeHTML(
+            '<div class="opt-hist-empty">No recent decisions yet.</div>',
+        );
+        return;
+    }
+    // Newest first — server returns chronological (oldest first), so reverse.
+    const rows = [...approvals].reverse().map((a) => {
+        const decision = String(a.decision || 'unknown').toLowerCase();
+        const cls = decision === 'approved'
+            ? 'opt-hist-approved'
+            : (decision === 'rejected' ? 'opt-hist-rejected' : 'opt-hist-other');
+        const op = String(a.operator_id || '—');
+        const role = String(a.actor_role || '—');
+        const ts = _formatHistoryTime(Number(a.decision_at));
+        const pidShort = String(a.proposal_id || '').slice(0, 8);
+        const reason = String(a.reason || '');
+        const tag = String(a.bms_tag_id || '');
+        const writeOk = a.bms_write_success;
+        let writeBadge = '';
+        if (writeOk === true) {
+            writeBadge = '<span class="opt-hist-write opt-hist-write-ok">BMS OK</span>';
+        } else if (writeOk === false) {
+            writeBadge = '<span class="opt-hist-write opt-hist-write-fail">BMS FAIL</span>';
+        }
+        return `<li class="opt-hist-row ${escapeHTML(cls)}">
+            <div class="opt-hist-line1">
+                <span class="opt-hist-decision">${escapeHTML(decision.toUpperCase())}</span>
+                <span class="opt-hist-pid">${escapeHTML(pidShort)}</span>
+                ${writeBadge}
+            </div>
+            <div class="opt-hist-line2">
+                <span class="opt-hist-op">${escapeHTML(op)}</span>
+                <span class="opt-hist-role">(${escapeHTML(role)})</span>
+                <span class="opt-hist-ts">${escapeHTML(ts)}</span>
+            </div>
+            ${tag ? `<div class="opt-hist-tag">tag: ${escapeHTML(tag)}</div>` : ''}
+            ${reason ? `<div class="opt-hist-reason">${escapeHTML(reason)}</div>` : ''}
+        </li>`;
+    }).join('');
+    slot.innerHTML = sanitizeHTML(`<ul class="opt-hist-list">${rows}</ul>`);
+}
+
+async function _fetchHistory() {
+    const slot = document.querySelector('[data-opt-history-body]');
+    if (!slot) return;
+    try {
+        const resp = await fetch('/api/optimizer/approvals');
+        if (resp.status === 503) {
+            slot.innerHTML = sanitizeHTML(
+                '<div class="opt-hist-empty">Optimizer not running.</div>',
+            );
+            return;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        _renderHistory(data.approvals || []);
+        const counter = document.querySelector('[data-opt-history-counter]');
+        if (counter) counter.textContent = String(Number(data.total) || 0);
+    } catch (e) {
+        slot.innerHTML = sanitizeHTML(
+            `<div class="opt-hist-empty opt-hist-error">history error: `
+            + `${escapeHTML(e.message)}</div>`,
+        );
+    }
+}
+
+function _toggleHistorySidebar() {
+    const aside = document.querySelector('[data-opt-history]');
+    if (!aside) return;
+    const isOpen = aside.dataset.open === '1';
+    aside.dataset.open = isOpen ? '0' : '1';
+    aside.hidden = isOpen;
+}
+
+
+// ─── E5.D — Per-card forensic trail link ─────────────────────────────
+function _renderForensicTrail(proposalId, payload) {
+    const root = $('view-optimizer');
+    if (!root) return;
+    const slot = root.querySelector(
+        `.opt-trail[data-proposal-id="${CSS.escape(proposalId)}"]`,
+    );
+    if (!slot) return;
+    if (!payload || !Array.isArray(payload.entries) || payload.entries.length === 0) {
+        slot.innerHTML = sanitizeHTML(
+            '<div class="opt-trail-empty">No ledger entries linked '
+            + 'to this proposal_id yet. The REQUESTED + RESULT rows are '
+            + 'written when the operator clicks Approve and the BMS write '
+            + 'seam fires.</div>',
+        );
+        return;
+    }
+    const rows = payload.entries.map((e) => {
+        const seq = String(e.sequence_no ?? '?');
+        const action = String(e.action || '?');
+        const ts = String(e.ts || '');
+        const actor = String(e.actor || '—');
+        const idShort = String(e.entry_id || '').slice(0, 12);
+        const hmacShort = String(e.entry_hmac || '').slice(0, 16);
+        const keyVer = String(e.key_version ?? '?');
+        // Payload is rendered as escaped JSON — operators must see the
+        // exact bytes, but no markup is permitted.
+        const payloadJson = (() => {
+            try { return JSON.stringify(e.payload || {}, null, 2); }
+            catch (_) { return '(unserialisable)'; }
+        })();
+        return `<li class="opt-trail-entry">
+            <div class="opt-trail-hdr">
+                <span class="opt-trail-seq">#${escapeHTML(seq)}</span>
+                <span class="opt-trail-action">${escapeHTML(action)}</span>
+                <span class="opt-trail-actor">${escapeHTML(actor)}</span>
+                <span class="opt-trail-ts">${escapeHTML(ts)}</span>
+            </div>
+            <div class="opt-trail-meta">
+                entry_id <code>${escapeHTML(idShort)}</code> ·
+                hmac <code>${escapeHTML(hmacShort)}</code> ·
+                key_v${escapeHTML(keyVer)}
+            </div>
+            <pre class="opt-trail-payload">${escapeHTML(payloadJson)}</pre>
+        </li>`;
+    }).join('');
+    const matched = Number(payload.matched ?? payload.entries.length);
+    const total = Number(payload.total ?? 0);
+    const word = matched === 1 ? 'entry' : 'entries';
+    const headerLine = `Forensic trail: ${matched} ${word} linked `
+        + `(chain total ${total})`;
+    slot.innerHTML = sanitizeHTML(
+        `<div class="opt-trail-hdr-line">${escapeHTML(headerLine)}</div>`
+        + `<ul class="opt-trail-list">${rows}</ul>`,
+    );
+}
+
+async function _fetchForensicTrail(proposalId) {
+    const root = $('view-optimizer');
+    if (!root) return;
+    const slot = root.querySelector(
+        `.opt-trail[data-proposal-id="${CSS.escape(proposalId)}"]`,
+    );
+    if (!slot) return;
+    slot.hidden = false;
+    slot.innerHTML = sanitizeHTML('<div class="opt-trail-empty">Loading…</div>');
+    try {
+        const url = `/api/ledger/entries?proposal_id=${encodeURIComponent(proposalId)}`;
+        const resp = await fetch(url);
+        if (resp.status === 503) {
+            slot.innerHTML = sanitizeHTML(
+                '<div class="opt-trail-empty opt-trail-error">'
+                + 'Forensic ledger not running on this deployment.</div>',
+            );
+            return;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        _renderForensicTrail(proposalId, data);
+    } catch (e) {
+        slot.innerHTML = sanitizeHTML(
+            `<div class="opt-trail-empty opt-trail-error">`
+            + `Failed to fetch forensic trail: ${escapeHTML(e.message)}</div>`,
+        );
+    }
+}
+
+
+// ─── E5.E — What-If sandbox preview ──────────────────────────────────
+function _renderPreview(proposalId, projection) {
+    const root = $('view-optimizer');
+    if (!root) return;
+    const slot = root.querySelector(
+        `.opt-preview[data-proposal-id="${CSS.escape(proposalId)}"]`,
+    );
+    if (!slot) return;
+    if (!projection || typeof projection !== 'object') {
+        slot.innerHTML = sanitizeHTML(
+            '<div class="opt-preview-empty">No projection returned.</div>',
+        );
+        return;
+    }
+    const verdict = String(projection.verdict || 'amber').toLowerCase();
+    const verdictCls = `opt-preview-${verdict}`;
+    const fmt = (v, digits) => (typeof v === 'number' ? v.toFixed(digits) : '—');
+    const findings = Array.isArray(projection.findings) ? projection.findings : [];
+    const findingsHtml = findings.length
+        ? `<ul class="opt-preview-findings">${
+            findings.map((f) => `<li>${escapeHTML(String(f))}</li>`).join('')
+          }</ul>`
+        : '';
+    slot.hidden = false;
+    slot.innerHTML = sanitizeHTML(`
+        <div class="opt-preview-card ${escapeHTML(verdictCls)}">
+            <div class="opt-preview-verdict">
+                Preview verdict: <strong>${escapeHTML(verdict.toUpperCase())}</strong>
+            </div>
+            <div class="opt-preview-row">
+                <span>Projected PUE:</span>
+                <span>${escapeHTML(fmt(projection.projected_pue, 3))}
+                    (Δ ${escapeHTML(fmt(projection.projected_pue_delta, 3))})</span>
+            </div>
+            <div class="opt-preview-row">
+                <span>Projected WUE Δ:</span>
+                <span>${escapeHTML(fmt(projection.projected_wue_delta, 3))} L/kWh</span>
+            </div>
+            <div class="opt-preview-row">
+                <span>Projected hall inlet:</span>
+                <span>${escapeHTML(fmt(projection.projected_inlet_c, 2))} °C
+                    (Δ ${escapeHTML(fmt(projection.projected_inlet_delta_c, 2))} K)</span>
+            </div>
+            <div class="opt-preview-row">
+                <span>ASHRAE A2 distance:</span>
+                <span>${escapeHTML(fmt(projection.ashrae_distance_c, 2))} K</span>
+            </div>
+            <div class="opt-preview-note">
+                Deterministic projection — no LLM (S-DET-01).
+            </div>
+            ${findingsHtml}
+        </div>
+    `);
+}
+
+async function _fetchPreview(proposalId) {
+    const root = $('view-optimizer');
+    if (!root) return;
+    const slot = root.querySelector(
+        `.opt-preview[data-proposal-id="${CSS.escape(proposalId)}"]`,
+    );
+    if (!slot) return;
+    slot.hidden = false;
+    slot.innerHTML = sanitizeHTML('<div class="opt-preview-empty">Simulating…</div>');
+    try {
+        const url = `/api/optimizer/preview/${encodeURIComponent(proposalId)}`;
+        const resp = await fetch(url, { method: 'POST' });
+        if (resp.status === 404) {
+            slot.innerHTML = sanitizeHTML(
+                '<div class="opt-preview-empty opt-preview-error">'
+                + 'Proposal no longer queued (already decided or expired).</div>',
+            );
+            return;
+        }
+        if (resp.status === 503) {
+            slot.innerHTML = sanitizeHTML(
+                '<div class="opt-preview-empty opt-preview-error">'
+                + 'Optimizer service not running.</div>',
+            );
+            return;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        _renderPreview(proposalId, data);
+    } catch (e) {
+        slot.innerHTML = sanitizeHTML(
+            `<div class="opt-preview-empty opt-preview-error">`
+            + `Preview failed: ${escapeHTML(e.message)}</div>`,
+        );
+    }
+}
+
+
 function _wireOptimizerView() {
     if (_viewWired) return;
     const root = $('view-optimizer');
     if (!root) return;
     // Build the static skeleton once. Subsequent renders just refill
-    // [data-opt-list] and [data-opt-heartbeat].
+    // [data-opt-list], [data-opt-heartbeat], [data-opt-history-body].
     root.innerHTML = `
         <div class="opt-hdr">
             <h2>Optimizer · Proactive PUE/WUE Setpoint Proposals</h2>
@@ -500,8 +796,17 @@ function _wireOptimizerView() {
         <div class="opt-bar">
             <button data-opt-refresh class="opt-btn opt-btn-refresh">Refresh</button>
             <span data-opt-counter class="opt-counter">Queue: —</span>
+            <button data-opt-history-toggle class="opt-btn opt-btn-history">
+                History (<span data-opt-history-counter>0</span>)
+            </button>
         </div>
-        <div data-opt-list class="opt-list"></div>
+        <div class="opt-main">
+            <div data-opt-list class="opt-list"></div>
+            <aside data-opt-history class="opt-history" data-open="0" hidden>
+                <div class="opt-history-hdr">Approval history</div>
+                <div data-opt-history-body class="opt-history-body"></div>
+            </aside>
+        </div>
     `;
     root.addEventListener('click', _onClick);
     const refreshBtn = root.querySelector('[data-opt-refresh]');
@@ -510,6 +815,15 @@ function _wireOptimizerView() {
         refreshBtn.addEventListener('click', () => {
             _fetchQueue();
             _fetchHealth();
+            _fetchHistory();
+        });
+    }
+    const historyBtn = root.querySelector('[data-opt-history-toggle]');
+    if (historyBtn && !historyBtn._bound) {
+        historyBtn._bound = true;
+        historyBtn.addEventListener('click', () => {
+            _toggleHistorySidebar();
+            _fetchHistory();
         });
     }
     document.addEventListener('hermes:optimizer-proposal', _onHermesProposal);
@@ -519,7 +833,7 @@ function _wireOptimizerView() {
 
 async function _activate() {
     _wireOptimizerView();
-    await Promise.all([_fetchQueue(), _fetchHealth()]);
+    await Promise.all([_fetchQueue(), _fetchHealth(), _fetchHistory()]);
     if (!_refreshInterval) {
         _refreshInterval = setInterval(() => {
             // Self-cancel when the view is off-screen.
@@ -527,6 +841,7 @@ async function _activate() {
             if (v && !v.hasAttribute('hidden')) {
                 _fetchQueue();
                 _fetchHealth();
+                _fetchHistory();
             } else {
                 clearInterval(_refreshInterval);
                 _refreshInterval = null;
@@ -556,10 +871,17 @@ export const __optimizer_view_test__ = {
     renderProposalCard: _renderProposalCard,
     renderHeartbeat: _renderHeartbeat,
     renderAgentVotesTable: _renderAgentVotesTable,
+    renderHistory: _renderHistory,
+    renderForensicTrail: _renderForensicTrail,
+    renderPreview: _renderPreview,
     submitApprove: _submitApprove,
     submitReject: _submitReject,
     fetchQueue: _fetchQueue,
     fetchHealth: _fetchHealth,
+    fetchHistory: _fetchHistory,
+    fetchForensicTrail: _fetchForensicTrail,
+    fetchPreview: _fetchPreview,
+    toggleHistorySidebar: _toggleHistorySidebar,
     onClick: _onClick,
     onHermesProposal: _onHermesProposal,
     onHermesTick: _onHermesTick,

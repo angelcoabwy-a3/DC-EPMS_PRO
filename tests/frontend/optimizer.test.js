@@ -17,7 +17,11 @@ import { isRegistered } from '/assets/js/core/router.js';
 const {
     renderQueue, renderProposalCard,
     renderHeartbeat, renderAgentVotesTable,
+    renderHistory, renderForensicTrail, renderPreview,
     submitApprove, submitReject, fetchQueue, fetchHealth,
+    fetchHistory, fetchForensicTrail, fetchPreview,
+    toggleHistorySidebar,
+    onClick,
     onHermesProposal, onHermesTick,
     initOptimizerView, reset,
 } = __optimizer_view_test__;
@@ -586,5 +590,365 @@ describe('Epic 5.C — renderProposalCard embeds agent votes', () => {
         expect(table.querySelectorAll('tr.opt-vote-row').length).toBe(2);
         // Safety row carries the unmistakable veto badge.
         expect(table.querySelector('.opt-vote-badge-veto')).not.toBeNull();
+    });
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// Epic 5 Sprint 2 — auditability + sandbox preview
+// ════════════════════════════════════════════════════════════════════
+
+function _mountFullView() {
+    document.body.innerHTML = `
+        <div id="view-optimizer">
+            <button data-opt-refresh></button>
+            <span data-opt-counter></span>
+            <button data-opt-history-toggle></button>
+            <span data-opt-history-counter>0</span>
+            <div data-opt-heartbeat></div>
+            <div data-opt-list></div>
+            <aside data-opt-history hidden data-open="0">
+                <div data-opt-history-body></div>
+            </aside>
+        </div>`;
+}
+
+// ── E5.B — Approval history sidebar ─────────────────────────────────
+describe('Epic 5.B — renderHistory + fetchHistory', () => {
+    it('renders the empty-state message when no approvals', () => {
+        _mountFullView();
+        renderHistory([]);
+        expect(document.querySelector('[data-opt-history-body]').textContent)
+            .toContain('No recent decisions');
+    });
+
+    it('renders one li.opt-hist-row per approval, newest first', () => {
+        _mountFullView();
+        renderHistory([
+            {
+                proposal_id: 'qp-1', decision: 'approved',
+                operator_id: 'op1', actor_role: 'SME_L6',
+                decision_at: 1700000000,
+                bms_tag_id: 'HVAC.CHILLER1.CW_SETPOINT',
+                bms_write_success: true,
+            },
+            {
+                proposal_id: 'qp-2', decision: 'rejected',
+                operator_id: 'op2', actor_role: 'MANAGER_L7',
+                decision_at: 1700000060,
+                reason: 'Hall already cool',
+            },
+        ]);
+        const rows = document.querySelectorAll('li.opt-hist-row');
+        expect(rows).toHaveLength(2);
+        // Newest first (decision_at=1700000060 -> qp-2)
+        expect(rows[0].textContent).toContain('REJECTED');
+        expect(rows[0].textContent).toContain('Hall already cool');
+        // First row carries the rejected class
+        expect(rows[0].classList.contains('opt-hist-rejected')).toBe(true);
+        // The approved row shows a BMS OK badge
+        expect(rows[1].querySelector('.opt-hist-write-ok')).not.toBeNull();
+    });
+
+    it('XSS — hostile operator_id + reason are escaped', () => {
+        _mountFullView();
+        renderHistory([{
+            proposal_id: 'qp-xss', decision: 'approved',
+            operator_id: '<img src=x onerror=window.__h1=1>',
+            actor_role: 'SME_L6',
+            decision_at: 1700000000,
+            reason: '<script>window.__h2=1</script>',
+        }]);
+        const body = document.querySelector('[data-opt-history-body]');
+        expect(body.querySelector('img')).toBeNull();
+        expect(body.querySelector('script')).toBeNull();
+        expect(window.__h1).toBeUndefined();
+        expect(window.__h2).toBeUndefined();
+    });
+
+    it('fetchHistory GETs /api/optimizer/approvals and renders', async () => {
+        _mountFullView();
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                approvals: [{
+                    proposal_id: 'qp-A', decision: 'approved',
+                    operator_id: 'op', actor_role: 'SME_L6',
+                    decision_at: 1700000000,
+                }],
+                total: 1,
+            }),
+        }));
+        vi.stubGlobal('fetch', spy);
+        await fetchHistory();
+        expect(spy).toHaveBeenCalledWith('/api/optimizer/approvals');
+        expect(document.querySelectorAll('li.opt-hist-row')).toHaveLength(1);
+        expect(document.querySelector('[data-opt-history-counter]').textContent).toBe('1');
+    });
+
+    it('toggleHistorySidebar flips the aside [hidden] + dataset.open', () => {
+        _mountFullView();
+        const aside = document.querySelector('[data-opt-history]');
+        expect(aside.hidden).toBe(true);
+        toggleHistorySidebar();
+        expect(aside.hidden).toBe(false);
+        expect(aside.dataset.open).toBe('1');
+        toggleHistorySidebar();
+        expect(aside.hidden).toBe(true);
+    });
+});
+
+
+// ── E5.D — Per-card forensic trail ──────────────────────────────────
+describe('Epic 5.D — renderForensicTrail + fetchForensicTrail', () => {
+    function _mountWithTrailSlot(pid = 'qp-trail') {
+        _mountView();
+        renderQueue([{ ..._qp({ proposal_id: pid }) }], 1);
+        // Card was rendered with a hidden .opt-trail slot per proposal.
+        const slot = document.querySelector(
+            `.opt-trail[data-proposal-id="${pid}"]`,
+        );
+        slot.hidden = false;
+        return slot;
+    }
+
+    it('renders the empty-state when no ledger entries match', () => {
+        _mountWithTrailSlot('qp-empty');
+        renderForensicTrail('qp-empty', { entries: [] });
+        const slot = document.querySelector('.opt-trail[data-proposal-id="qp-empty"]');
+        expect(slot.textContent).toContain('No ledger entries linked');
+    });
+
+    it('renders REQUESTED + RESULT entries with sequence + hmac chips', () => {
+        _mountWithTrailSlot('qp-trail');
+        renderForensicTrail('qp-trail', {
+            entries: [
+                {
+                    entry_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+                    sequence_no: 12, action: 'BMS_WRITE_REQUESTED',
+                    actor: 'optimizer', ts: '2026-05-23T18:00:00Z',
+                    entry_hmac: '0123456789abcdef0123456789abcdef',
+                    key_version: 1,
+                    payload: { tag_id: 'HVAC.X', proposal_id: 'qp-trail' },
+                },
+                {
+                    entry_id: 'ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee',
+                    sequence_no: 13, action: 'BMS_WRITE_RESULT',
+                    actor: 'optimizer', ts: '2026-05-23T18:00:01Z',
+                    entry_hmac: 'fedcba9876543210fedcba9876543210',
+                    key_version: 1,
+                    payload: {
+                        ref_entry_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+                        success: true, message: 'ok',
+                    },
+                },
+            ],
+            matched: 2,
+            total: 200,
+        });
+        const slot = document.querySelector('.opt-trail[data-proposal-id="qp-trail"]');
+        const entries = slot.querySelectorAll('li.opt-trail-entry');
+        expect(entries).toHaveLength(2);
+        expect(entries[0].textContent).toContain('#12');
+        expect(entries[0].textContent).toContain('BMS_WRITE_REQUESTED');
+        expect(entries[1].textContent).toContain('BMS_WRITE_RESULT');
+        // The header line says how many entries are linked + chain total.
+        expect(slot.textContent).toContain('2 entries linked');
+        expect(slot.textContent).toContain('200');
+    });
+
+    it('XSS — hostile payload is rendered as escaped JSON, not parsed', () => {
+        _mountWithTrailSlot('qp-xss-trail');
+        renderForensicTrail('qp-xss-trail', {
+            entries: [{
+                entry_id: 'x', sequence_no: 1, action: 'X',
+                actor: '<script>window.__t1=1</script>',
+                ts: 't', entry_hmac: 'h', key_version: 0,
+                payload: { evil: '<img src=x onerror=window.__t2=1>' },
+            }],
+            matched: 1, total: 1,
+        });
+        const slot = document.querySelector('.opt-trail[data-proposal-id="qp-xss-trail"]');
+        expect(slot.querySelector('script')).toBeNull();
+        expect(slot.querySelector('img')).toBeNull();
+        expect(window.__t1).toBeUndefined();
+        expect(window.__t2).toBeUndefined();
+    });
+
+    it('fetchForensicTrail GETs the proposal-scoped endpoint', async () => {
+        _mountWithTrailSlot('qp-fetch');
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                entries: [], matched: 0, total: 0,
+            }),
+        }));
+        vi.stubGlobal('fetch', spy);
+        await fetchForensicTrail('qp-fetch');
+        expect(spy).toHaveBeenCalledWith(
+            '/api/ledger/entries?proposal_id=qp-fetch',
+        );
+    });
+});
+
+
+// ── E5.E — Preview impact ───────────────────────────────────────────
+describe('Epic 5.E — renderPreview + fetchPreview', () => {
+    function _mountWithPreviewSlot(pid = 'qp-preview') {
+        _mountView();
+        renderQueue([{ ..._qp({ proposal_id: pid }) }], 1);
+        const slot = document.querySelector(
+            `.opt-preview[data-proposal-id="${pid}"]`,
+        );
+        slot.hidden = false;
+        return slot;
+    }
+
+    it('renders a GREEN projection card with PUE / WUE / inlet rows', () => {
+        _mountWithPreviewSlot('qp-green');
+        renderPreview('qp-green', {
+            proposal_id: 'qp-green', surface: 'chiller_lwt',
+            current_value: 7.5, proposed_value: 7.0, delta: -0.5,
+            projected_pue: 1.307, projected_pue_delta: -0.003,
+            projected_wue_delta: 0.0,
+            projected_inlet_c: 21.8, projected_inlet_delta_c: -0.2,
+            ashrae_distance_c: 13.2,
+            verdict: 'green',
+            findings: ['projected PUE 1.307 <= target+0.02'],
+        });
+        const slot = document.querySelector('.opt-preview[data-proposal-id="qp-green"]');
+        expect(slot.querySelector('.opt-preview-green')).not.toBeNull();
+        expect(slot.textContent).toContain('GREEN');
+        expect(slot.textContent).toContain('1.307');
+        expect(slot.textContent).toContain('-0.003');
+        expect(slot.textContent).toContain('13.20');
+        // The deterministic-sandbox note is rendered (S-DET-01 evidence).
+        expect(slot.textContent).toContain('S-DET-01');
+    });
+
+    it('renders a RED projection with findings', () => {
+        _mountWithPreviewSlot('qp-red');
+        renderPreview('qp-red', {
+            proposal_id: 'qp-red', surface: 'chiller_lwt',
+            current_value: 7.0, proposed_value: 9.0, delta: 2.0,
+            projected_pue: 1.32, projected_pue_delta: 0.012,
+            projected_wue_delta: 0.0,
+            projected_inlet_c: 35.3, projected_inlet_delta_c: 0.8,
+            ashrae_distance_c: -0.3,
+            verdict: 'red',
+            findings: [
+                'projected hall inlet 35.30 C >= A2 breach 35.0 C',
+            ],
+        });
+        const slot = document.querySelector('.opt-preview[data-proposal-id="qp-red"]');
+        expect(slot.querySelector('.opt-preview-red')).not.toBeNull();
+        expect(slot.textContent).toContain('RED');
+        expect(slot.querySelectorAll('ul.opt-preview-findings li').length).toBe(1);
+    });
+
+    it('fetchPreview POSTs to /api/optimizer/preview/{id}', async () => {
+        _mountWithPreviewSlot('qp-post');
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                proposal_id: 'qp-post', surface: 'chiller_lwt',
+                current_value: 7.5, proposed_value: 7.0, delta: -0.5,
+                projected_pue: 1.31, projected_pue_delta: -0.003,
+                projected_wue_delta: 0, projected_inlet_c: 21.8,
+                projected_inlet_delta_c: -0.2, ashrae_distance_c: 13.2,
+                verdict: 'green', findings: [],
+            }),
+        }));
+        vi.stubGlobal('fetch', spy);
+        await fetchPreview('qp-post');
+        const [url, opts] = spy.mock.calls[0];
+        expect(url).toBe('/api/optimizer/preview/qp-post');
+        expect(opts.method).toBe('POST');
+        const slot = document.querySelector('.opt-preview[data-proposal-id="qp-post"]');
+        expect(slot.textContent).toContain('GREEN');
+    });
+
+    it('shows a 404 message when the proposal is no longer queued', async () => {
+        _mountWithPreviewSlot('qp-gone');
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: false, status: 404, json: async () => ({ detail: 'gone' }),
+        })));
+        await fetchPreview('qp-gone');
+        const slot = document.querySelector('.opt-preview[data-proposal-id="qp-gone"]');
+        expect(slot.textContent.toLowerCase()).toContain('no longer queued');
+    });
+
+    it('XSS — hostile findings strings are escaped', () => {
+        _mountWithPreviewSlot('qp-xss-prev');
+        renderPreview('qp-xss-prev', {
+            proposal_id: 'qp-xss-prev', surface: 'chiller_lwt',
+            current_value: 7, proposed_value: 7, delta: 0,
+            projected_pue: 1.3, projected_pue_delta: 0,
+            projected_wue_delta: 0, projected_inlet_c: 22,
+            projected_inlet_delta_c: 0, ashrae_distance_c: 13,
+            verdict: 'green',
+            findings: ['<img src=x onerror=window.__p1=1>'],
+        });
+        const slot = document.querySelector('.opt-preview[data-proposal-id="qp-xss-prev"]');
+        expect(slot.querySelector('img')).toBeNull();
+        expect(window.__p1).toBeUndefined();
+    });
+});
+
+
+// ── Card actions wire-up ────────────────────────────────────────────
+//
+// The production view wires `_onClick` once via root.addEventListener
+// inside _wireOptimizerView(). Calling that here would couple us to
+// the full activate path. Instead we test the dispatch contract: when
+// onClick sees a [data-action] element with the right action + pid,
+// it triggers the matching fetch path. Equivalent coverage, less
+// fixture coupling.
+function _fakeClickEvent(targetEl) {
+    return { target: targetEl };
+}
+
+describe('Epic 5.B/D/E — card actions trigger the right handlers', () => {
+    it('"Preview impact" action dispatches the preview POST', async () => {
+        _mountView();
+        renderQueue([_qp({ proposal_id: 'qp-clk' })], 1);
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                proposal_id: 'qp-clk', surface: 'chiller_lwt',
+                current_value: 7.5, proposed_value: 7.0, delta: -0.5,
+                projected_pue: 1.31, projected_pue_delta: -0.003,
+                projected_wue_delta: 0, projected_inlet_c: 22,
+                projected_inlet_delta_c: 0, ashrae_distance_c: 13,
+                verdict: 'green', findings: [],
+            }),
+        }));
+        vi.stubGlobal('fetch', spy);
+        const btn = document.querySelector(
+            '.opt-btn-preview[data-proposal-id="qp-clk"]',
+        );
+        expect(btn).not.toBeNull();
+        onClick(_fakeClickEvent(btn));
+        await Promise.resolve(); await Promise.resolve();
+        const urls = spy.mock.calls.map((c) => c[0]);
+        expect(urls.some((u) => u.startsWith('/api/optimizer/preview/'))).toBe(true);
+    });
+
+    it('"View forensic trail" action dispatches the ledger GET', async () => {
+        _mountView();
+        renderQueue([_qp({ proposal_id: 'qp-trail-click' })], 1);
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({ entries: [], matched: 0, total: 0 }),
+        }));
+        vi.stubGlobal('fetch', spy);
+        const btn = document.querySelector(
+            '.opt-btn-trail[data-proposal-id="qp-trail-click"]',
+        );
+        expect(btn).not.toBeNull();
+        onClick(_fakeClickEvent(btn));
+        await Promise.resolve(); await Promise.resolve();
+        const urls = spy.mock.calls.map((c) => c[0]);
+        expect(urls.some((u) => u.startsWith('/api/ledger/entries?proposal_id='))).toBe(true);
     });
 });
