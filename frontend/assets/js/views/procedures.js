@@ -118,22 +118,45 @@ const CONTEXT_TEMPLATES = {
                 + 'communicated to the incoming CET.' },
     ],
     MOP: [
+        // Back-out language is math-grounded (industry-notes follow-up):
+        // every chip pins the back-out window to a physical bound
+        // operators can actually compute (battery runtime, ASHRAE A2
+        // envelope, sync-check expiry, vendor rollback availability).
         { label: 'Battery cabinet replace',
           text: 'Replace battery cabinet on {asset} during the '
                 + 'scheduled maintenance window. Coordinate LOTO + PPE '
-                + 'category 2 per CSA Z462-24. Vendor escort required.' },
+                + 'category 2 per CSA Z462-24. Vendor escort required. '
+                + 'Back-out plan: revert before battery autonomy at the '
+                + 'current load reaches the low-voltage cutoff — read '
+                + '`battery_runtime_min` from the BMS before isolation '
+                + 'and use that as the hard deadline.' },
         { label: 'Load transfer',
           text: 'Planned load transfer maneuver on {asset}. Coordinate '
                 + 'with the redundant path; verify the alternate is '
-                + 'healthy before isolation. LOTO + PPE per CSA Z462-24.' },
+                + 'healthy before isolation. LOTO + PPE per CSA Z462-24. '
+                + 'Back-out plan: if the alternate degrades during the '
+                + 'transfer, revert before the sync-check window '
+                + 'expires; the back-out budget is bounded by the '
+                + 'redundant UPS runtime under projected post-transfer '
+                + 'load.' },
         { label: 'Filter / fluid service',
           text: 'Scheduled filter and fluid service on {asset}. Isolate '
                 + 'the unit per the LOTO protocol; wear the PPE the '
-                + 'CSA Z462-24 risk table requires for the energy class.' },
+                + 'CSA Z462-24 risk table requires for the energy class. '
+                + 'Back-out plan: if the redundant cooling chain '
+                + 'destabilises (ECWT rise, secondary loop pressure '
+                + 'drop, hall inlet trending up), restore the isolated '
+                + 'unit before the thermal envelope breaches ASHRAE A2 '
+                + '(35 °C inlet cap).' },
         { label: 'Firmware upgrade',
           text: 'Firmware upgrade on {asset}. Stage the binary, '
                 + 'arrange the vendor service window, define the LOTO '
-                + 'scope and PPE per CSA Z462-24 for any physical access.' },
+                + 'scope and PPE per CSA Z462-24 for any physical '
+                + 'access. Back-out plan: keep the prior firmware '
+                + 'binary staged + a vendor on-call session active; '
+                + 'the back-out budget is bounded by the operator '
+                + "confidence interval on the vendor's documented "
+                + 'rollback procedure.' },
     ],
     EOP: [
         { label: 'Loss of redundancy',

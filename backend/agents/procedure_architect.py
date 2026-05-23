@@ -178,7 +178,16 @@ AUDIT_VERDICT_HARD_STOP = "hard_stop"
 @dataclass(frozen=True)
 class ProcedureDraft:
     """One Procedure Architect output. Frozen so consumers can pass it
-    through the audit + sign pipeline without defensive copying."""
+    through the audit + sign pipeline without defensive copying.
+
+    ``metadata`` (Epic 6 industry-notes follow-up) carries live
+    operating data the operator pulled in at request time — typically
+    ``{pue, load_kw, criticality, ...}`` — surfaced into the hermetic
+    prompt so the LLM author grounds the document in current state
+    rather than an averaged baseline. Empty dict when absent; the
+    field is part of the persisted draft so ledger entries can later
+    audit which telemetry snapshot informed the document.
+    """
 
     draft_id: str
     doc_type: str
@@ -187,9 +196,32 @@ class ProcedureDraft:
     asset_id: str | None
     generated_at: float
     llm_present: bool          # True iff a real LLM client was wired
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _format_metadata_block(metadata: dict[str, Any] | None) -> str:
+    """Render the metadata dict as a labelled block for the hermetic
+    prompt. Returns an empty string when no metadata is supplied so
+    the prompt stays clean for callers that don't enrich.
+
+    Values are stringified defensively — operator-supplied metadata
+    can be anything (numbers, nested dicts, lists). The function
+    deliberately does NOT pretty-print nested structures because the
+    LLM gets confused by indented JSON inside a markdown prompt;
+    instead, nested values flatten to a compact str(value) on a
+    single line per key.
+    """
+    if not metadata or not isinstance(metadata, dict):
+        return ""
+    lines = ["LIVE OPERATING METADATA (supplied by the operator at request time):"]
+    for k in sorted(metadata.keys()):
+        v = metadata[k]
+        # One line per key; nested structures flattened to str().
+        lines.append(f"  {k}: {v}")
+    return "\n".join(lines)
 
 
 @dataclass(frozen=True)
@@ -302,10 +334,21 @@ class ProcedureArchitectAgent:
         doc_type: str,
         context: str,
         asset_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> ProcedureDraft:
         """Build a hermetic prompt + dispatch to the LLM (or return a
         deterministic skeleton). Always succeeds — an LLM failure
-        falls back to the skeleton rather than raising."""
+        falls back to the skeleton rather than raising.
+
+        ``metadata`` is optional. When supplied (typically by the
+        HMI from a /api/telemetry snapshot) it is rendered as a
+        LIVE OPERATING METADATA block inside the hermetic prompt so
+        the LLM author has current PUE / load / criticality numbers
+        instead of guessing from a static baseline. The dict is also
+        persisted on the returned :class:`ProcedureDraft` so the
+        ledger entry that signs the draft can audit which telemetry
+        snapshot informed the document.
+        """
         require_artifact("doc_type", doc_type)
         require_artifact("context", context)
         if doc_type not in VALID_DOC_TYPES:
@@ -313,6 +356,11 @@ class ProcedureArchitectAgent:
                 f"doc_type must be one of {sorted(VALID_DOC_TYPES)}, "
                 f"got {doc_type!r}"
             )
+        if metadata is not None and not isinstance(metadata, dict):
+            raise ArtifactDependencyError(
+                f"metadata must be dict or None, got {type(metadata).__name__}"
+            )
+        normalised_metadata = dict(metadata) if metadata else {}
 
         draft_id = str(uuid.uuid4())
         if self._llm_client is None or not hasattr(self._llm_client, "complete_gemma"):
@@ -324,8 +372,10 @@ class ProcedureArchitectAgent:
                 asset_id=asset_id,
                 generated_at=time.time(),
                 llm_present=False,
+                metadata=normalised_metadata,
             )
 
+        metadata_block = _format_metadata_block(normalised_metadata)
         body = (
             f"{self.SYSTEM_PROMPT}\n"
             f"---\n"
@@ -333,7 +383,8 @@ class ProcedureArchitectAgent:
             f"DOCUMENT TYPE: {doc_type}\n"
             f"CONTEXT: {context}\n"
             f"ASSET ID (when known): {asset_id or 'n/a'}\n"
-            f"\n"
+            + (f"\n{metadata_block}\n" if metadata_block else "")
+            + f"\n"
             f"Generate the {doc_type} document strictly using the "
             f"[TEMPLATE: {doc_type}] structure above. Omit the other "
             f"templates. Output markdown. Begin now."
@@ -367,6 +418,7 @@ class ProcedureArchitectAgent:
             asset_id=asset_id,
             generated_at=time.time(),
             llm_present=True,
+            metadata=normalised_metadata,
         )
 
 

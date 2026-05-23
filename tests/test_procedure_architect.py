@@ -467,3 +467,156 @@ def test_architect_sign_503_when_ledger_unwired():
         },
     )
     assert r.status_code == 503
+
+
+# ════════════════════════════════════════════════════════════════════
+# Industry-notes follow-up — metadata enrichment
+# ════════════════════════════════════════════════════════════════════
+class TestGenerateMetadataEnrichment:
+    @pytest.mark.asyncio
+    async def test_no_metadata_keeps_skeleton_path_clean(self):
+        """Back-compat: omitting metadata changes nothing for the
+        deterministic-skeleton fallback. The 28 existing tests pinned
+        the no-metadata path; this re-asserts it."""
+        agent = ProcedureArchitectAgent()
+        draft = await agent.generate(
+            doc_type="SOP", context="Daily round of UPS room.",
+        )
+        assert draft.metadata == {}
+        # Skeleton content is unchanged (no metadata block leaks in).
+        assert "LIVE OPERATING METADATA" not in draft.content
+
+    @pytest.mark.asyncio
+    async def test_metadata_persists_on_returned_draft(self):
+        agent = ProcedureArchitectAgent()
+        meta = {"pue": 1.32, "load_kw": 14200, "criticality": "high"}
+        draft = await agent.generate(
+            doc_type="SOP", context="Daily round of UPS room.",
+            metadata=meta,
+        )
+        # The returned draft carries the snapshot — round-trip-safe
+        # for the ledger entry that later audits which telemetry the
+        # document was grounded in.
+        assert draft.metadata == meta
+
+    @pytest.mark.asyncio
+    async def test_metadata_flows_into_hermetic_prompt(self):
+        gemma = _FakeGemma(reply="## test draft body")
+        agent = ProcedureArchitectAgent(llm_client=gemma)
+        meta = {
+            "pue": 1.32,
+            "load_kw": 14200,
+            "criticality": "high",
+            "battery_runtime_min": 7.2,
+        }
+        await agent.generate(
+            doc_type="MOP",
+            context="Replace UPS-B battery cabinet on Phase 1 bus.",
+            metadata=meta,
+        )
+        assert len(gemma.prompts) == 1
+        p = gemma.prompts[0]
+        # The labelled block is present.
+        assert "LIVE OPERATING METADATA" in p
+        # Every key surfaces; values stringify on a single line.
+        for k, v in meta.items():
+            assert f"{k}: {v}" in p
+
+    @pytest.mark.asyncio
+    async def test_metadata_block_keys_are_sorted_for_determinism(self):
+        """The prompt body must be deterministic given the same input
+        — Python dict iteration order is insertion-order but operators
+        may pass keys in any order. Sorting pins the prompt bytes
+        across runs (helps cache + reproducible LLM costs)."""
+        gemma = _FakeGemma(reply="x")
+        agent = ProcedureArchitectAgent(llm_client=gemma)
+        await agent.generate(
+            doc_type="SOP", context="round of ups_a",
+            metadata={"zeta": 1, "alpha": 2, "mu": 3},
+        )
+        p = gemma.prompts[0]
+        # Alpha comes before mu comes before zeta.
+        a_idx = p.index("alpha: 2")
+        m_idx = p.index("mu: 3")
+        z_idx = p.index("zeta: 1")
+        assert a_idx < m_idx < z_idx
+
+    @pytest.mark.asyncio
+    async def test_metadata_rejects_non_dict(self):
+        agent = ProcedureArchitectAgent()
+        with pytest.raises(ArtifactDependencyError, match="metadata"):
+            await agent.generate(
+                doc_type="SOP", context="x" * 50,
+                metadata="not a dict",  # type: ignore[arg-type]
+            )
+
+    def test_route_accepts_metadata_field(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from backend.procedure_routes import router as procedure_router
+
+        app = FastAPI()
+        app.include_router(procedure_router)
+        client = TestClient(app)
+        r = client.post(
+            "/api/procedures/architect/generate",
+            json={
+                "doc_type": "SOP",
+                "context": "Daily round with current pue snapshot.",
+                "asset_id": "ups_a",
+                "metadata": {"pue": 1.32, "load_kw": 14200},
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        # Metadata round-trips into the draft for the ledger audit.
+        assert body["draft"]["metadata"] == {"pue": 1.32, "load_kw": 14200}
+
+
+# ════════════════════════════════════════════════════════════════════
+# S-DET-01 binding — audit_procedure_safety is LLM-free
+# ════════════════════════════════════════════════════════════════════
+def test_audit_procedure_safety_imports_no_llm_modules():
+    """Scoped AST gate (industry-notes follow-up). The audit function
+    is the deterministic verdict gate every Architect draft crosses —
+    a future PR that pulls LLM grading into the audit erodes the
+    ADR-006 deterministic-sandbox guarantee. This test fails LOUDLY
+    in that case.
+
+    Note: the test is scoped to the audit FUNCTION body, NOT the
+    whole module. The module DOES legitimately call the LLM via
+    ``ProcedureArchitectAgent.generate()`` — that's the authoring
+    path. Only the verdict path must stay LLM-free. Same enforcement
+    pattern as ``test_simulate_setpoint_impact_imports_no_llm_module``
+    in tests/test_optimizer.py."""
+    import re
+    from pathlib import Path
+
+    from backend.agents import procedure_architect as mod
+    src = Path(mod.__file__).read_text(encoding="utf-8")
+    # Carve out the audit function's body — from "def
+    # audit_procedure_safety" to the next top-level def or EOF.
+    pat = re.compile(
+        r"def audit_procedure_safety\b.*?(?=\n(?:def |class )|\Z)",
+        re.S,
+    )
+    m = pat.search(src)
+    assert m is not None, "audit_procedure_safety() not found"
+    body = m.group(0)
+    for needle in (
+        "complete_gemma",
+        "_llm_client",
+        "self._llm_client",
+        "openai",
+        "anthropic",
+        "client.chat",
+        "await llm",
+    ):
+        assert needle not in body, (
+            f"audit_procedure_safety() must be LLM-free (S-DET-01 / "
+            f"ADR-006 deterministic sandbox); found {needle!r} in its "
+            "body. The audit verdict is the gate every Architect draft "
+            "crosses before reaching the operator — an LLM-graded "
+            "verdict would erode the deterministic guarantee."
+        )

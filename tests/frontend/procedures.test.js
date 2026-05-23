@@ -583,6 +583,20 @@ describe('Procedure Architect — CONTEXT_TEMPLATES shape', () => {
             expect(/CSA\s*Z462/i.test(t) || /NFPA\s*70E/i.test(t)).toBe(true);
         }
     });
+
+    it('every MOP template names a back-out plan bounded by a physical limit', () => {
+        // Industry-notes follow-up: each MOP starter must pin the
+        // back-out window to a computable physical bound (battery
+        // runtime, ASHRAE A2 envelope, sync-check expiry, vendor
+        // rollback support). A back-out plan without a clock is just
+        // a wish — operators need a deadline they can derive from
+        // BMS readouts. Regression test prevents a future PR that
+        // strips the back-out language while editing the chip text.
+        for (const tpl of CONTEXT_TEMPLATES.MOP) {
+            const t = tpl.text;
+            expect(/back[-\s]?out/i.test(t)).toBe(true);
+        }
+    });
 });
 
 describe('Procedure Architect — renderContextChips filters by doc_type', () => {

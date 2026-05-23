@@ -168,6 +168,18 @@ class ArchitectGenerateRequest(BaseModel):
         max_length=128,
         description="Optional canonical asset id this procedure targets.",
     )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Optional LIVE OPERATING METADATA the operator pulled in "
+            "from /api/telemetry — typically {pue, load_kw, criticality, "
+            "battery_runtime_min, ...}. The Architect surfaces it as a "
+            "labelled block in the hermetic prompt so the LLM grounds "
+            "the document in current state rather than a static baseline. "
+            "Persisted on the returned draft so the ledger entry can "
+            "audit which snapshot informed the document."
+        ),
+    )
 
 
 class ArchitectSignRequest(BaseModel):
@@ -226,6 +238,7 @@ async def architect_generate(
         doc_type=req.doc_type,
         context=req.context,
         asset_id=req.asset_id,
+        metadata=req.metadata,
     )
     audit = audit_procedure_safety(draft)
     log.info(
