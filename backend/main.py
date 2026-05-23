@@ -3004,8 +3004,131 @@ except Exception as e:
     log.error("CMMS router import failed: %s", e, exc_info=True)
 
 
+# ==============================================================
+#  Subprocess hygiene (Epic 6 Sprint 3 — Phase 1)
+# ==============================================================
+# Background: Windows venvs launch the real Python via a small shim
+# (``.venv/Scripts/python.exe``). Sending Stop-Process to the shim
+# orphans the child — the worker keeps holding the :8080 socket and
+# whatever multiprocessing workers it spawned (ML model loaders, torch
+# data workers, FAISS index threads). Result: ":8080 still LISTENING by
+# zombie PID" after every restart, requiring manual cleanup. Three
+# restart cycles in the past two sessions hit this.
+#
+# What this fixes here, in process:
+#  * On normal Python exit (sys.exit / uvicorn graceful shutdown):
+#    multiprocessing.active_children() are terminated + joined.
+#  * On SIGTERM / SIGINT (operator Ctrl+C, ``Stop-Process`` on the
+#    real Python PID): same cleanup, then re-raise so the framework
+#    can finish its own shutdown.
+#
+# What it does NOT fix (out of scope / requires win32 API):
+#  * Stop-Process -Force on the venv shim. The OS skips Python's
+#    handlers entirely; the child gets no signal. The fix for that
+#    is a Windows Job Object (pywin32, not stdlib) — separate sprint.
+#
+# Test surface: ``_active_children_terminator`` is exposed for the
+# unit test, with the production active_children() lookup injectable
+# so the test doesn't need to spawn real subprocesses.
+import atexit  # noqa: E402  (kept beside its sole consumer)
+import signal  # noqa: E402
+
+
+def _active_children_terminator(
+    *,
+    active_children_fn=None,
+    terminate_timeout_s: float = 2.0,
+) -> list[int]:
+    """Terminate every multiprocessing child of this process.
+
+    Returns the list of PIDs that were terminated (for the boot-log
+    line + the unit test). Best-effort: per-child exceptions are
+    swallowed so a stuck worker doesn't block the others.
+    """
+    import multiprocessing
+    if active_children_fn is None:
+        active_children_fn = multiprocessing.active_children
+    pids: list[int] = []
+    for child in list(active_children_fn() or []):
+        try:
+            pid = getattr(child, "pid", None)
+            child.terminate()
+            child.join(timeout=terminate_timeout_s)
+            # If still alive after terminate+join, escalate to kill.
+            if hasattr(child, "is_alive") and child.is_alive():
+                if hasattr(child, "kill"):
+                    child.kill()
+                child.join(timeout=terminate_timeout_s)
+            if pid is not None:
+                pids.append(int(pid))
+        except Exception as e:
+            log.debug("[subprocess-cleanup] child terminate failed: %s", e)
+    return pids
+
+
+def _cleanup_subtree(reason: str = "atexit") -> None:
+    """Module-level shutdown hook. Logs the killed PIDs so the
+    operator's restart smoke test can see the cleanup happened."""
+    killed = _active_children_terminator()
+    if killed:
+        log.info(
+            "[SHUTDOWN] subprocess cleanup (%s) — terminated %d child(ren): %s",
+            reason, len(killed), killed,
+        )
+    else:
+        log.info("[SHUTDOWN] subprocess cleanup (%s) — no children to clean", reason)
+
+
+# Register the atexit hook at import time so it fires for ANY exit
+# path (sys.exit, uncaught exception, uvicorn graceful shutdown).
+atexit.register(_cleanup_subtree, reason="atexit")
+
+
+def _install_signal_handlers() -> list[str]:
+    """Install SIGTERM/SIGINT handlers that cleanup-then-default.
+    Called from the ``__main__`` block — NOT at import time, so the
+    test suite (which imports main as a module) doesn't clobber
+    pytest's own signal handling.
+
+    Returns the list of signal names actually installed (some are
+    not available on Windows; the rest land silently)."""
+    installed: list[str] = []
+    targets = [
+        ("SIGINT", getattr(signal, "SIGINT", None)),
+        ("SIGTERM", getattr(signal, "SIGTERM", None)),
+        ("SIGBREAK", getattr(signal, "SIGBREAK", None)),  # Windows only
+    ]
+    for name, sig in targets:
+        if sig is None:
+            continue
+
+        def _handler(signum, _frame, _name=name):
+            log.info(
+                "[SHUTDOWN] %s received — initiating clean shutdown",
+                _name,
+            )
+            _cleanup_subtree(reason=f"signal:{_name}")
+            # Re-raise default behaviour so uvicorn's own handler runs.
+            signal.signal(signum, signal.SIG_DFL)
+            try:
+                os.kill(os.getpid(), signum)
+            except (ProcessLookupError, OSError):
+                sys.exit(0)
+
+        try:
+            signal.signal(sig, _handler)
+            installed.append(name)
+        except (ValueError, OSError) as e:
+            # Some signals not installable in this thread on this OS.
+            log.debug("[SHUTDOWN] cannot install %s handler: %s", name, e)
+    return installed
+
+
 if __name__ == "__main__":
     import uvicorn
+
+    handlers = _install_signal_handlers()
+    log.info("[BUILD] signal cleanup handlers installed: %s", handlers)
 
     port = int(os.environ.get("EPMS_PORT", "8080"))
     host = os.environ.get("EPMS_HOST", "0.0.0.0")
