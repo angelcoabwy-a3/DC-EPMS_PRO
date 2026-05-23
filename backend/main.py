@@ -392,12 +392,25 @@ async def lifespan(app: FastAPI):
                     # 2.B log.info stub. The HMI subscribes to the
                     # `optimizer_proposal` stream via core/hermes_events.js
                     # and re-emits a `hermes:optimizer-proposal` DOM event.
+                    #
+                    # Epic 5.A: the Optimizer now also emits an
+                    # `optimizer-tick` event on every tick (loop heartbeat).
+                    # Route it to its own Hermes stream so the HMI strip
+                    # subscribes independently of the proposal stream
+                    # (a tick fires every 30 s; a proposal fires far less
+                    # often). Stream-name mapping is explicit so a new
+                    # event type silently routing to the wrong stream is
+                    # surfaced via the "unknown" channel fallback.
+                    _OPTIMIZER_EVENT_TO_STREAM = {
+                        "optimizer-proposal": "optimizer_proposal",
+                        "optimizer-tick": "optimizer_tick",
+                    }
+
                     def _optimizer_event_emitter(event: str, payload: dict) -> None:
-                        # The Optimizer emits one event per queued proposal;
-                        # the stream name is the Hermes-side channel id, the
-                        # DOM event name (`hermes:optimizer-proposal`) is the
-                        # frontend re-emission. Keep them paired.
-                        _hermes.emit_event("optimizer_proposal", {
+                        stream = _OPTIMIZER_EVENT_TO_STREAM.get(
+                            event, "optimizer_proposal",
+                        )
+                        _hermes.emit_event(stream, {
                             "event": event,
                             **payload,
                         })

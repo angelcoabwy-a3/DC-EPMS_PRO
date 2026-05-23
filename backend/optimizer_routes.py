@@ -265,6 +265,23 @@ async def list_proposals(request: Request, limit: int = 50) -> dict[str, Any]:
     }
 
 
+@router.get("/health")
+async def optimizer_health(request: Request) -> dict[str, Any]:
+    """Epic 5.A — operator-facing health snapshot of the Optimizer loop.
+
+    Returns the structured state the HMI heartbeat strip needs to
+    prove the deterministic loop is alive: the last-tick wall-clock,
+    the running flag, the most recent outcomes (sustained, drift,
+    proposals emitted / paced / vetoed), queue size, and the tail of
+    the audit log.
+
+    HTTP 503 when the Optimizer service is not running (the env flag
+    ``DC_EPMS_OPTIMIZER_ENABLED`` is OFF or boot failed).
+    """
+    svc = _get_optimizer_service(request)
+    return svc.health()
+
+
 @router.get("/approvals/{proposal_id}")
 async def get_approval(proposal_id: str, request: Request) -> dict[str, Any]:
     """Fetch the operator decision row for a given proposal UUID."""

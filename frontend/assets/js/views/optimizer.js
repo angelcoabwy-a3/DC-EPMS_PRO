@@ -23,11 +23,18 @@
  *     A 10 s polling fallback runs alongside; both self-cancel when
  *     the view is hidden.
  *
- * Out of 2.D scope (deferred): per-agent narrative breakdown (would
- * need QueuedProposal to carry the 4 agent rationales individually),
- * a What-If sandbox preview, persistent approval history in the
- * sidebar (the 2.C GET /approvals endpoint is exposed but not yet
- * surfaced here).
+ * Epic 5 Sprint 1 (this commit):
+ *   - E5.A heartbeat strip — top-of-view band that shows the loop's
+ *     last tick wall-clock + most recent outcomes (sustained / drift /
+ *     proposals / paced / vetoed). Refreshed by GET /api/optimizer/health
+ *     on activate + on every `hermes:optimizer-tick` DOM event.
+ *   - E5.C per-agent voting breakdown — each proposal card now renders
+ *     a compact 6-row table with the per-agent verdicts. The Safety
+ *     Officer's HARD_STOP gets an unmistakable badge (S-DET-02).
+ *
+ * Out of E5 scope (deferred): a What-If sandbox preview, persistent
+ * approval history in the sidebar (the 2.C GET /approvals endpoint is
+ * exposed but not yet surfaced here).
  *
  * Test surface: __optimizer_view_test__ exposes the pure render
  * helpers + the action submit functions.
@@ -44,6 +51,90 @@ let _refreshInterval = null;
 
 const ROLE_CHOICES = ['SME_L6', 'MANAGER_L7'];   // SME_L6 is the minimum
 const POLL_MS = 10000;
+
+// ─── E5.A — Heartbeat strip ──────────────────────────────────────────
+function _formatTickTime(tickUnix) {
+    if (!tickUnix || typeof tickUnix !== 'number') return '—';
+    try {
+        const ts = new Date(tickUnix * 1000);
+        // Local time, second-precision — operator wants "how stale is this?"
+        return ts.toLocaleTimeString();
+    } catch (_) {
+        return '—';
+    }
+}
+
+function _formatAgo(tickUnix) {
+    if (!tickUnix || typeof tickUnix !== 'number') return 'never';
+    const sec = Math.max(0, Math.floor(Date.now() / 1000 - tickUnix));
+    if (sec < 60) return `${sec}s ago`;
+    if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+    return `${Math.floor(sec / 3600)}h ago`;
+}
+
+function _renderHeartbeat(health) {
+    const strip = document.querySelector('[data-opt-heartbeat]');
+    if (!strip) return;
+    if (!health || typeof health !== 'object') {
+        strip.innerHTML = sanitizeHTML(
+            '<span class="opt-hb opt-hb-unknown">heartbeat: unknown</span>',
+        );
+        return;
+    }
+    const running = !!health.is_running;
+    const tickUnix = Number(health.last_tick_unix) || 0;
+    const tickCount = Number(health.tick_count) || 0;
+    const queueSize = Number(health.queue_size) || 0;
+    const outcomes = (health.last_tick_outcomes && typeof health.last_tick_outcomes === 'object')
+        ? health.last_tick_outcomes : {};
+    const sustained = !!outcomes.sustained;
+    const drift = (typeof outcomes.drift === 'number') ? outcomes.drift.toFixed(3) : '—';
+    const nProp = Number(outcomes.n_proposals) || 0;
+    const nPaced = Number(outcomes.n_paced_out) || 0;
+    const nVetoed = Number(outcomes.n_vetoed) || 0;
+
+    // Each rendered value goes through escapeHTML — defence in depth,
+    // numeric values are already coerced above so injection is not
+    // possible, but the discipline matches the rest of the view (S-SEC-01).
+    const stateCls = running ? 'opt-hb-running' : 'opt-hb-stopped';
+    const stateText = running ? 'RUNNING' : 'STOPPED';
+    const sustainedCls = sustained ? 'opt-hb-sustained' : 'opt-hb-quiet';
+    const sustainedText = sustained ? 'drift sustained' : 'no drift';
+    strip.innerHTML = sanitizeHTML(
+        `<span class="opt-hb ${stateCls}">${escapeHTML(stateText)}</span>`
+        + `<span class="opt-hb opt-hb-tick">tick #${escapeHTML(String(tickCount))} `
+        + `at ${escapeHTML(_formatTickTime(tickUnix))} `
+        + `(${escapeHTML(_formatAgo(tickUnix))})</span>`
+        + `<span class="opt-hb ${sustainedCls}">${escapeHTML(sustainedText)}</span>`
+        + `<span class="opt-hb opt-hb-drift">drift ${escapeHTML(drift)}</span>`
+        + `<span class="opt-hb opt-hb-proposed">proposed ${escapeHTML(String(nProp))}</span>`
+        + `<span class="opt-hb opt-hb-paced">paced ${escapeHTML(String(nPaced))}</span>`
+        + `<span class="opt-hb opt-hb-vetoed">vetoed ${escapeHTML(String(nVetoed))}</span>`
+        + `<span class="opt-hb opt-hb-qsize">queue ${escapeHTML(String(queueSize))}</span>`,
+    );
+}
+
+async function _fetchHealth() {
+    const strip = document.querySelector('[data-opt-heartbeat]');
+    if (!strip) return;
+    try {
+        const resp = await fetch('/api/optimizer/health');
+        if (resp.status === 503) {
+            strip.innerHTML = sanitizeHTML(
+                '<span class="opt-hb opt-hb-stopped">Optimizer service not running</span>',
+            );
+            return;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        _renderHeartbeat(data);
+    } catch (e) {
+        strip.innerHTML = sanitizeHTML(
+            `<span class="opt-hb opt-hb-error">heartbeat error: `
+            + `${escapeHTML(e.message)}</span>`,
+        );
+    }
+}
 
 // ─── Fetching ────────────────────────────────────────────────────────
 async function _fetchQueue() {
@@ -97,6 +188,41 @@ function _renderQueue(proposals, queueSize) {
     list.innerHTML = proposals.map(_renderProposalCard).join('');
 }
 
+function _renderAgentVotesTable(qp) {
+    // E5.C — per-agent voting breakdown. Empty array (consult not
+    // wired) renders a single placeholder row, never injects markup.
+    const votes = Array.isArray(qp.agent_verdicts) ? qp.agent_verdicts : [];
+    if (votes.length === 0) {
+        return '<div class="opt-votes opt-votes-empty">'
+            + '(no per-agent breakdown — consult not wired this tick)'
+            + '</div>';
+    }
+    const rows = votes.map((v) => {
+        const name = String(v.agent_name || '');
+        const verdictStr = String(v.verdict || '');
+        const summary = String(v.summary || '');
+        const verdictCls = `opt-vote-${verdictStr.replace(/[^a-z0-9_-]/gi, '-')}`;
+        // S-DET-02 — the Safety Officer's hard_stop is the unmistakable
+        // veto badge. Match name + verdict together to avoid false
+        // positives (a Safety Officer "approve" is NOT a veto).
+        const isVeto = name === 'Safety Officer' && verdictStr === 'hard_stop';
+        const badgeCls = isVeto
+            ? 'opt-vote-badge opt-vote-badge-veto'
+            : `opt-vote-badge ${verdictCls}`;
+        const vetoMark = isVeto ? ' SAFETY VETO' : '';
+        return '<tr class="opt-vote-row' + (isVeto ? ' opt-vote-row-veto' : '') + '">'
+            + `<td class="opt-vote-name">${escapeHTML(name)}</td>`
+            + `<td class="opt-vote-verdict">`
+            + `<span class="${escapeHTML(badgeCls)}">${escapeHTML(verdictStr || '—')}`
+            + `${escapeHTML(vetoMark)}</span></td>`
+            + `<td class="opt-vote-summary">${escapeHTML(summary)}</td>`
+            + '</tr>';
+    }).join('');
+    return '<table class="opt-votes">'
+        + '<thead><tr><th>Agent</th><th>Vote</th><th>Summary</th></tr></thead>'
+        + `<tbody>${rows}</tbody></table>`;
+}
+
 function _renderProposalCard(qp) {
     const p = qp.proposal || {};
     const verdict = (qp.consensus_verdict || 'no-consensus').toString();
@@ -108,6 +234,7 @@ function _renderProposalCard(qp) {
         qp.consensus_rationale || '(no consensus rationale)',
     );
     const veto = !!qp.safety_officer_veto;
+    const votesTable = _renderAgentVotesTable(qp);
     const roleOpts = ROLE_CHOICES.map(
         (r) => `<option value="${escapeHTML(r)}">${escapeHTML(r)}</option>`,
     ).join('');
@@ -132,6 +259,7 @@ function _renderProposalCard(qp) {
             <div class="opt-consensus ${escapeHTML(verdictClass)}">
                 Consensus: ${escapeHTML(verdict)}
             </div>
+            ${votesTable}
             <div class="opt-narrative opt-narrative-optimizer">
                 <strong>Optimizer:</strong> ${optNarrative}
             </div>
@@ -327,12 +455,38 @@ function _onHermesProposal() {
     return _fetchQueue();
 }
 
+function _onHermesTick(ev) {
+    // E5.A — Optimizer loop heartbeat. The payload from
+    // hermes_events.js carries the exact shape of the health snapshot
+    // (plus an `event` field). Re-render the strip directly from the
+    // event so the operator sees a fresh wall-clock within ~ms of the
+    // tick; an occasional miss is caught by the GET fallback below.
+    try {
+        const d = ev && ev.detail ? ev.detail : null;
+        if (d) {
+            _renderHeartbeat({
+                is_running: !!d.is_running,
+                pue_target: undefined,
+                last_tick_unix: Number(d.tick_unix) || 0,
+                tick_count: Number(d.tick_count) || 0,
+                last_tick_outcomes: d.outcomes || {},
+                queue_size: Number(d.queue_size) || 0,
+                audit_recent: [],
+            });
+            return;
+        }
+    } catch (_) { /* fall through to fetch */ }
+    // Defensive fallback — if the event shape changes upstream the
+    // strip still refreshes via the authoritative endpoint.
+    return _fetchHealth();
+}
+
 function _wireOptimizerView() {
     if (_viewWired) return;
     const root = $('view-optimizer');
     if (!root) return;
     // Build the static skeleton once. Subsequent renders just refill
-    // [data-opt-list].
+    // [data-opt-list] and [data-opt-heartbeat].
     root.innerHTML = `
         <div class="opt-hdr">
             <h2>Optimizer · Proactive PUE/WUE Setpoint Proposals</h2>
@@ -341,6 +495,8 @@ function _wireOptimizerView() {
                 ADR-006 Proposer Pattern · Epic 2.
             </div>
         </div>
+        <div data-opt-heartbeat class="opt-heartbeat"
+             aria-label="Optimizer loop heartbeat"></div>
         <div class="opt-bar">
             <button data-opt-refresh class="opt-btn opt-btn-refresh">Refresh</button>
             <span data-opt-counter class="opt-counter">Queue: —</span>
@@ -351,21 +507,26 @@ function _wireOptimizerView() {
     const refreshBtn = root.querySelector('[data-opt-refresh]');
     if (refreshBtn && !refreshBtn._bound) {
         refreshBtn._bound = true;
-        refreshBtn.addEventListener('click', () => _fetchQueue());
+        refreshBtn.addEventListener('click', () => {
+            _fetchQueue();
+            _fetchHealth();
+        });
     }
     document.addEventListener('hermes:optimizer-proposal', _onHermesProposal);
+    document.addEventListener('hermes:optimizer-tick', _onHermesTick);
     _viewWired = true;
 }
 
 async function _activate() {
     _wireOptimizerView();
-    await _fetchQueue();
+    await Promise.all([_fetchQueue(), _fetchHealth()]);
     if (!_refreshInterval) {
         _refreshInterval = setInterval(() => {
             // Self-cancel when the view is off-screen.
             const v = $('view-optimizer');
             if (v && !v.hasAttribute('hidden')) {
                 _fetchQueue();
+                _fetchHealth();
             } else {
                 clearInterval(_refreshInterval);
                 _refreshInterval = null;
@@ -393,11 +554,15 @@ export function initOptimizerView() {
 export const __optimizer_view_test__ = {
     renderQueue: _renderQueue,
     renderProposalCard: _renderProposalCard,
+    renderHeartbeat: _renderHeartbeat,
+    renderAgentVotesTable: _renderAgentVotesTable,
     submitApprove: _submitApprove,
     submitReject: _submitReject,
     fetchQueue: _fetchQueue,
+    fetchHealth: _fetchHealth,
     onClick: _onClick,
     onHermesProposal: _onHermesProposal,
+    onHermesTick: _onHermesTick,
     initOptimizerView,
     reset: () => {
         _routeRegistered = false;
@@ -407,5 +572,6 @@ export const __optimizer_view_test__ = {
             _refreshInterval = null;
         }
         document.removeEventListener('hermes:optimizer-proposal', _onHermesProposal);
+        document.removeEventListener('hermes:optimizer-tick', _onHermesTick);
     },
 };
