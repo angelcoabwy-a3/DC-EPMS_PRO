@@ -232,3 +232,102 @@ async def test_postgres_hmac_matches_inmemory_for_same_input(pg_pool):
     refetched = await pg_ledger.fetch_all()
     assert refetched[0].entry_hmac == pg_entry.entry_hmac
     await pg_ledger.verify_chain()
+
+
+# ─── DC-EPMS-MSD-006 — fetch_by_proposal_id JSONB cast regression ────
+async def test_fetch_by_proposal_id_returns_empty_for_unknown(pg_pool):
+    ledger = ForensicLedger(
+        PostgresPersistence(pg_pool),
+        key=secrets.token_bytes(32),
+        key_version=1,
+    )
+    # Pre-fix: this raised UndefinedFunctionError on any non-empty
+    # ledger because the IN subquery compared text vs uuid.
+    out = await ledger.fetch_by_proposal_id("no-such-id")
+    assert out == []
+
+
+async def test_fetch_by_proposal_id_returns_requested_plus_linked_result(pg_pool):
+    """The forensic-trail contract end-to-end over a real Postgres:
+    a REQUESTED row with stamped proposal_id + a RESULT row that
+    ref_entry_id-links it. Both must surface in chronological order.
+
+    This is the integration counterpart to the same-named in-memory
+    test in tests/test_forensic_ledger.py — the in-memory version
+    passed for weeks while the Postgres JSONB query was 500-ing
+    (DC-EPMS-MSD-006). The lesson is identical to MSD-005: a unit
+    test that only exercises InMemoryPersistence is not a gate on
+    the production code path."""
+    ledger = ForensicLedger(
+        PostgresPersistence(pg_pool),
+        key=secrets.token_bytes(32),
+        key_version=1,
+    )
+
+    # Unrelated entries — must not appear in the trail.
+    await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_REQUESTED,
+        payload={"proposal_id": "other-proposal", "tag_id": "X"},
+    )
+
+    requested = await ledger.append(
+        actor="optimizer", action=ACTION_BMS_WRITE_REQUESTED,
+        payload={
+            "tag_id": "HVAC.CHILLER1.CW_SETPOINT",
+            "requested_value": 7.0,
+            "proposal_id": "qp-pg-trace",
+            "source": "optimizer_approval",
+        },
+    )
+    result = await ledger.append(
+        actor="optimizer", action=ACTION_BMS_WRITE_RESULT,
+        payload={
+            "ref_entry_id": requested.entry_id,
+            "success": True,
+            "message": "wrote 7.0",
+        },
+    )
+
+    trail = await ledger.fetch_by_proposal_id("qp-pg-trace")
+    assert len(trail) == 2
+    # REQUESTED then RESULT (sequence_no ascending).
+    assert trail[0].entry_id == requested.entry_id
+    assert trail[1].entry_id == result.entry_id
+    assert trail[0].sequence_no < trail[1].sequence_no
+    # entry_id is str across the asyncpg boundary (MSD-005 contract).
+    assert all(isinstance(e.entry_id, str) for e in trail)
+
+
+async def test_fetch_by_proposal_id_does_not_leak_across_proposals(pg_pool):
+    """Two independent proposals each with their own REQUESTED+RESULT
+    chain — fetch_by_proposal_id MUST return only the one matched id,
+    never cross-talk. This guards against an overly-broad SQL clause
+    that would degrade audit precision."""
+    ledger = ForensicLedger(
+        PostgresPersistence(pg_pool),
+        key=secrets.token_bytes(32),
+        key_version=1,
+    )
+
+    a_req = await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_REQUESTED,
+        payload={"proposal_id": "qp-A", "tag_id": "TAG.A"},
+    )
+    await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_RESULT,
+        payload={"ref_entry_id": a_req.entry_id, "success": True, "message": "a"},
+    )
+    b_req = await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_REQUESTED,
+        payload={"proposal_id": "qp-B", "tag_id": "TAG.B"},
+    )
+    await ledger.append(
+        actor="op", action=ACTION_BMS_WRITE_RESULT,
+        payload={"ref_entry_id": b_req.entry_id, "success": True, "message": "b"},
+    )
+
+    a_trail = await ledger.fetch_by_proposal_id("qp-A")
+    b_trail = await ledger.fetch_by_proposal_id("qp-B")
+    assert len(a_trail) == 2
+    assert len(b_trail) == 2
+    assert {e.entry_id for e in a_trail} & {e.entry_id for e in b_trail} == set()

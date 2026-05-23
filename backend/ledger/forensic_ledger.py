@@ -342,7 +342,14 @@ class PostgresPersistence:
         matches, plus the RESULT rows that ``ref_entry_id``-link them,
         plus any other rows that directly carry the proposal_id (forward
         compatibility for revert / rotation events). Ordered by
-        ``sequence_no`` (chronological)."""
+        ``sequence_no`` (chronological).
+
+        DC-EPMS-MSD-006: ``payload->>'ref_entry_id'`` returns ``text``
+        (every ``jsonb->>`` operator does); the ``entry_id`` column is
+        ``uuid``. The subquery casts ``entry_id::text`` so both sides
+        of the ``IN`` are text — without the cast, Postgres raises
+        ``UndefinedFunctionError: operator does not exist: text = uuid``.
+        """
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
                 """
@@ -351,7 +358,7 @@ class PostgresPersistence:
                 FROM ledger_entries
                 WHERE payload->>'proposal_id' = $1
                    OR payload->>'ref_entry_id' IN (
-                        SELECT entry_id
+                        SELECT entry_id::text
                           FROM ledger_entries
                          WHERE payload->>'proposal_id' = $1
                    )
