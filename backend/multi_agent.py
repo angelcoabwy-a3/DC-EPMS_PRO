@@ -101,8 +101,15 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from backend.agent_harness import (
+    TASK_ARCHITECTURAL,
+    TASK_CAPACITY,
+    TASK_CARBON_GRID,
+    TASK_DIAGNOSIS,
+    TASK_FINANCIAL,
+    TASK_SAFETY,
     AgentStateStore,
     ArtifactDependencyError,
+    ModelRouter,
     hermetic_prompt,
     require_artifact,
     verify_consensus_contract,
@@ -259,6 +266,28 @@ async def _collect_kalman_lines(
     return lines
 
 
+def _route_narrative(
+    router: ModelRouter | None,
+    task_label: str,
+    evidence: list[str],
+) -> str:
+    """Harness #21 wiring: if a :class:`ModelRouter` is configured,
+    resolve the tier for ``task_label`` and stamp the decision into
+    ``evidence`` so the operator can audit cost / latency attribution.
+
+    Returns the resolved model id (or ``""`` when no router is wired).
+    Pure decision — the actual LLM call is still dispatched by
+    :func:`_gemma_complete` against whatever client the agent holds.
+    """
+    if router is None:
+        return ""
+    decision = router.resolve(task_label)
+    evidence.append(
+        f"router:{task_label}->{decision.tier} (model={decision.model_id})"
+    )
+    return decision.model_id
+
+
 async def _gemma_complete(
     llm_client: Any | None, prompt: str, max_tokens: int = 240,
 ) -> str:
@@ -308,6 +337,7 @@ class ArchitectAgent:
     """
 
     name = "Architect"
+    task_label = TASK_ARCHITECTURAL  # H21 routing key
 
     def __init__(
         self,
@@ -316,6 +346,7 @@ class ArchitectAgent:
         cmms_repo: Any | None = None,
         llm_client: Any | None = None,
         telemetry_provider: Any | None = None,
+        model_router: ModelRouter | None = None,
     ):
         self._site = site_model
         self._graphrag = graphrag
@@ -324,6 +355,9 @@ class ArchitectAgent:
         # so every existing call site and unit test is unaffected.
         self._llm_client = llm_client
         self._telemetry_provider = telemetry_provider
+        # H21 (Model Routing): optional. When wired, each narrative
+        # invocation stamps the routing decision into evidence_refs.
+        self._model_router = model_router
 
     async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
         t0 = time.perf_counter()
@@ -447,6 +481,7 @@ class ArchitectAgent:
                 evidence.append(
                     f"hermes:kalman_z:{ctx.asset_id} ({len(kalman_lines)} ch)"
                 )
+            _route_narrative(self._model_router, self.task_label, evidence)
             llm_narrative = await self._synthesize_narrative(
                 ctx, verdict, comp_type, path, pillar, criticality,
                 kalman_lines,
@@ -531,6 +566,7 @@ class SafetyOfficerAgent:
     """
 
     name = "Safety Officer"
+    task_label = TASK_SAFETY  # H21 routing key
 
     def __init__(
         self,
@@ -538,6 +574,7 @@ class SafetyOfficerAgent:
         cmms_repo: Any | None,
         llm_client: Any | None = None,
         telemetry_provider: Any | None = None,
+        model_router: ModelRouter | None = None,
     ):
         self._site = site_model
         self._cmms_repo = cmms_repo
@@ -546,6 +583,7 @@ class SafetyOfficerAgent:
         # call sites + unit tests unaffected.
         self._llm_client = llm_client
         self._telemetry_provider = telemetry_provider
+        self._model_router = model_router
 
     async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
         t0 = time.perf_counter()
@@ -646,6 +684,7 @@ class SafetyOfficerAgent:
             )
             if kalman_lines:
                 evidence = [*evidence, f"hermes:kalman_z ({len(kalman_lines)} ch)"]
+            _route_narrative(self._model_router, self.task_label, evidence)
             llm_narrative = await self._synthesize_narrative(
                 ctx, verdict, summary, kalman_lines,
             )
@@ -716,6 +755,7 @@ class DiagnosticianAgent:
     """
 
     name = "Diagnostician"
+    task_label = TASK_DIAGNOSIS  # H21 routing key
 
     RECURRENCE_THRESHOLD = 3   # WOs in trailing 18 months
     OPEN_BACKLOG_THRESHOLD = 2
@@ -727,6 +767,7 @@ class DiagnosticianAgent:
         rag_service: Any | None,
         llm_client: Any | None = None,
         telemetry_provider: Any | None = None,
+        model_router: ModelRouter | None = None,
     ):
         self._cmms_repo = cmms_repo
         self._rag = rag_service
@@ -734,6 +775,7 @@ class DiagnosticianAgent:
         # so every existing call site and unit test is unaffected.
         self._llm_client = llm_client
         self._telemetry_provider = telemetry_provider
+        self._model_router = model_router
 
     async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
         t0 = time.perf_counter()
@@ -826,6 +868,7 @@ class DiagnosticianAgent:
             history_line = (
                 f"{total_wo} total, {completed_wo} completed, {open_wo} open"
             )
+            _route_narrative(self._model_router, self.task_label, evidence)
             llm_narrative = await self._synthesize_narrative(
                 ctx, verdict, history_line, kalman_lines,
             )
@@ -925,6 +968,7 @@ class AnalystAgent:
     """
 
     name = "Analyst"
+    task_label = TASK_FINANCIAL  # H21 routing key
     REPLACE_THRESHOLD_COUNT = 3   # 3+ completed WOs in lookback -> consider replace
 
     def __init__(
@@ -933,6 +977,7 @@ class AnalystAgent:
         cmms_repo: Any | None,
         llm_client: Any | None = None,
         telemetry_provider: Any | None = None,
+        model_router: ModelRouter | None = None,
     ):
         self._site = site_model
         self._cmms_repo = cmms_repo
@@ -940,6 +985,7 @@ class AnalystAgent:
         # so every existing call site and unit test is unaffected.
         self._llm_client = llm_client
         self._telemetry_provider = telemetry_provider
+        self._model_router = model_router
 
     async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
         t0 = time.perf_counter()
@@ -1022,6 +1068,7 @@ class AnalystAgent:
                 evidence.append(
                     f"hermes:kalman_z:{ctx.asset_id} ({len(kalman_lines)} ch)"
                 )
+            _route_narrative(self._model_router, self.task_label, evidence)
             llm_narrative = await self._synthesize_narrative(
                 ctx, verdict, asset_type, opex, capex, completed_count,
                 kalman_lines,
@@ -1125,6 +1172,7 @@ class CapacityPlannerAgent:
     """
 
     name = "Capacity Planner"
+    task_label = TASK_CAPACITY  # H21 routing key
 
     CAPACITY_WARN_PCT = 85.0     # entering planning-review band
     CAPACITY_CRIT_PCT = 95.0     # cannot safely add load
@@ -1143,6 +1191,7 @@ class CapacityPlannerAgent:
         cmms_repo: Any | None,
         llm_client: Any | None = None,
         telemetry_provider: Any | None = None,
+        model_router: ModelRouter | None = None,
     ):
         self._site = site_model
         self._cmms_repo = cmms_repo
@@ -1150,6 +1199,7 @@ class CapacityPlannerAgent:
         # None so every existing call site + test is unaffected.
         self._llm_client = llm_client
         self._telemetry_provider = telemetry_provider
+        self._model_router = model_router
 
     async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
         t0 = time.perf_counter()
@@ -1250,6 +1300,7 @@ class CapacityPlannerAgent:
             )
             if kalman_lines:
                 evidence.append(f"hermes:kalman_z ({len(kalman_lines)} ch)")
+            _route_narrative(self._model_router, self.task_label, evidence)
             llm_narrative = await self._synthesize_narrative(
                 ctx, verdict, util_pct, installed_racks, design_kw,
                 kalman_lines,
@@ -1357,6 +1408,7 @@ class CarbonGridAgent:
     """
 
     name = "Carbon/Grid"
+    task_label = TASK_CARBON_GRID  # H21 routing key
 
     # Mirrored from backend.grid_provider so the verdict bands live
     # with the agent that consumes them. Kept in lockstep there.
@@ -1369,12 +1421,14 @@ class CarbonGridAgent:
         grid_provider: Any | None = None,
         llm_client: Any | None = None,
         telemetry_provider: Any | None = None,
+        model_router: ModelRouter | None = None,
     ):
         self._grid_provider = grid_provider
         # T3.3-family advisory narrative layer. Both default None so
         # every existing call site / test is unaffected.
         self._llm_client = llm_client
         self._telemetry_provider = telemetry_provider
+        self._model_router = model_router
 
     async def evaluate(self, ctx: ConsultContext) -> AgentVerdict:
         t0 = time.perf_counter()
@@ -1452,6 +1506,7 @@ class CarbonGridAgent:
             )
             if kalman_lines:
                 evidence.append(f"hermes:kalman_z ({len(kalman_lines)} ch)")
+            _route_narrative(self._model_router, self.task_label, evidence)
             llm_narrative = await self._synthesize_narrative(
                 ctx, verdict, carbon, tou, price, kalman_lines,
             )
@@ -1534,26 +1589,34 @@ class MultiAgentOrchestrator:
         telemetry_provider: Any | None = None,
         grid_provider: Any | None = None,
         state_store: AgentStateStore | None = None,
+        model_router: ModelRouter | None = None,
     ):
         # Harness #05 (Artifact Store): when injected, every consensus
         # the orchestrator returns is also written to this JSONL store
         # so decisions survive a process restart.
         self._state_store = state_store
+        # Harness #21 (Model Routing): each agent's narrative-synthesis
+        # path stamps the routing decision into evidence_refs.
+        self._model_router = model_router
         self._architect    = ArchitectAgent(
             site_model, graphrag, cmms_repo=cmms_repo,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
+            model_router=model_router,
         )
         self._safety       = SafetyOfficerAgent(
             site_model, cmms_repo,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
+            model_router=model_router,
         )
         self._diagnostician = DiagnosticianAgent(
             cmms_repo, rag_service,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
+            model_router=model_router,
         )
         self._analyst      = AnalystAgent(
             site_model, cmms_repo,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
+            model_router=model_router,
         )
         # Epic 3 Batch 3.A — Capacity Planner: forward-looking IT-load
         # + cooling-headroom perspective (complements Analyst's
@@ -1561,6 +1624,7 @@ class MultiAgentOrchestrator:
         self._capacity     = CapacityPlannerAgent(
             site_model, cmms_repo,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
+            model_router=model_router,
         )
         # Epic 3 Batch 3.C — Carbon/Grid: Ontario IESO carbon-intensity
         # + Time-of-Use perspective. Has NO veto authority (Safety
@@ -1568,6 +1632,7 @@ class MultiAgentOrchestrator:
         self._carbon       = CarbonGridAgent(
             grid_provider=grid_provider,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
+            model_router=model_router,
         )
 
     @property
@@ -1682,6 +1747,7 @@ def get_orchestrator(
     telemetry_provider: Any | None = None,
     grid_provider: Any | None = None,
     state_store: AgentStateStore | None = None,
+    model_router: ModelRouter | None = None,
 ) -> MultiAgentOrchestrator:
     global _orchestrator
     if _orchestrator is None:
@@ -1691,13 +1757,16 @@ def get_orchestrator(
             llm_client=llm_client, telemetry_provider=telemetry_provider,
             grid_provider=grid_provider,
             state_store=state_store,
+            model_router=model_router,
         )
         log.info(
             "[multi_agent] orchestrator initialized "
-            "(site=%s, graphrag=%s, cmms=%s, rag=%s, grid=%s, store=%s)",
+            "(site=%s, graphrag=%s, cmms=%s, rag=%s, grid=%s, store=%s, "
+            "router=%s)",
             site_model is not None, graphrag is not None,
             cmms_repo is not None, rag_service is not None,
             grid_provider is not None, state_store is not None,
+            model_router is not None,
         )
     return _orchestrator
 

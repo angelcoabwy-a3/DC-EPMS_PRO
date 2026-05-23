@@ -1,4 +1,4 @@
-"""Tests for backend.agent_harness (Gentle IA Harness Sprints 1 + 2).
+"""Tests for backend.agent_harness (Gentle IA Harness Sprints 1 + 2 + 3).
 
 Sprint 1:
   * Harness #17 (Sub-Agent Isolation) — hermetic_prompt + sanitize_history.
@@ -12,6 +12,12 @@ Sprint 2:
     MultiAgentOrchestrator.consult.
   * Harness #05 (Artifact Store) — AgentStateStore JSONL persistence +
     wiring into MultiAgentOrchestrator.consult.
+
+Sprint 3:
+  * Harness #18 (Review Warlock) + #19 (Delivery Strategy) + #20
+    (Chain Strategy) — assess_proposal_size + DraftStore size gate.
+  * Harness #21 (Model Routing) — ModelRouter resolve / override /
+    complexity-heuristic + orchestrator wiring into agent narratives.
 """
 
 from __future__ import annotations
@@ -603,3 +609,312 @@ async def test_orchestrator_persist_failure_does_not_break_consult(tmp_path: Pat
     # Should still return a result despite the persist exception.
     result = await orch.consult(ConsultContext(query="probe"))
     assert len(result.agents) == 6
+
+
+# ════════════════════════════════════════════════════════════════════
+# Sprint 3
+# ════════════════════════════════════════════════════════════════════
+
+
+# ─── Harness #18/19/20 — assess_proposal_size (primitive) ────────────
+from backend.agent_harness import (  # noqa: E402  (kept with Sprint 3 block for locality)
+    MODEL_TIER_FAST,
+    MODEL_TIER_HEAVY,
+    PROPOSAL_ACTION_ASK_ON_RISK,
+    PROPOSAL_ACTION_BLOCK,
+    PROPOSAL_ACTION_FRAGMENT,
+    PROPOSAL_ACTION_SHIP,
+    TASK_ARCHITECTURAL,
+    TASK_DIAGNOSIS,
+    TASK_JSON_FORMAT,
+    TASK_SAFETY,
+    ModelRouter,
+    ModelRoutingDecision,
+    ProposalSizeAssessment,
+    assess_proposal_size,
+)
+
+
+def test_assess_proposal_ship_path_for_small_proposal():
+    a = assess_proposal_size(text="short rationale", commands=[{"a": 1}])
+    assert a.action == PROPOSAL_ACTION_SHIP
+    assert a.risk_tier == "small"
+    assert a.findings == []
+    assert not a.is_blocking
+    assert not a.requires_human
+
+
+def test_assess_proposal_ask_on_risk_at_warn_thresholds():
+    text = "x\n" * 250  # well past warn (200), well under fragment (400)
+    a = assess_proposal_size(text=text)
+    assert a.action == PROPOSAL_ACTION_ASK_ON_RISK
+    assert a.risk_tier == "medium"
+    assert a.requires_human
+
+
+def test_assess_proposal_fragment_at_fragment_thresholds():
+    a = assess_proposal_size(lines=500)
+    assert a.action == PROPOSAL_ACTION_FRAGMENT
+    assert a.risk_tier == "large"
+    assert a.requires_human
+
+
+def test_assess_proposal_block_at_block_thresholds():
+    a = assess_proposal_size(lines=1500)
+    assert a.action == PROPOSAL_ACTION_BLOCK
+    assert a.risk_tier == "oversized"
+    assert a.is_blocking
+    assert a.findings  # non-empty justification
+
+
+def test_assess_proposal_command_count_drives_block():
+    # Tiny text, but 50 commands -> oversized
+    a = assess_proposal_size(text="ok", commands=[{}] * 50)
+    assert a.action == PROPOSAL_ACTION_BLOCK
+
+
+def test_assess_proposal_max_severity_wins():
+    # 250 lines (warn) + 13 commands (fragment) -> fragment, not ask_on_risk
+    a = assess_proposal_size(lines=250, commands=[{}] * 13)
+    assert a.action == PROPOSAL_ACTION_FRAGMENT
+
+
+def test_assess_proposal_rejects_both_text_and_lines():
+    with pytest.raises(ArtifactDependencyError, match="text OR lines"):
+        assess_proposal_size(text="x", lines=10)
+
+
+def test_assess_proposal_rejects_negative_lines():
+    with pytest.raises(ArtifactDependencyError, match=">= 0"):
+        assess_proposal_size(lines=-1)
+
+
+def test_assessment_is_frozen_dataclass():
+    from dataclasses import FrozenInstanceError
+
+    a = assess_proposal_size(lines=10)
+    with pytest.raises(FrozenInstanceError):
+        a.action = "anything"  # type: ignore[misc]
+    assert isinstance(a, ProposalSizeAssessment)
+
+
+def test_assess_proposal_custom_thresholds():
+    # Promote a 10-line proposal to "ask_on_risk" with a tighter warn
+    # threshold (5). Useful for site-tuning where shipping anything
+    # past 5 lines should already trigger a human glance.
+    a = assess_proposal_size(lines=10, line_warn=5, line_fragment=20, line_block=50)
+    assert a.action == PROPOSAL_ACTION_ASK_ON_RISK
+
+
+# ─── Harness #18/19/20 — DraftStore wiring ───────────────────────────
+def test_draft_store_create_blocks_oversized_proposal():
+    from backend.agent_copilot import _DraftStoreImpl
+
+    store = _DraftStoreImpl()
+    # 50 commands -> command_block threshold (40) -> ValueError
+    fat_commands = [
+        {"command_id": "set_setpoint", "payload": {"target_c": 6.5}}
+        for _ in range(50)
+    ]
+    with pytest.raises(ValueError, match="size gate"):
+        store.create(
+            kind="precool_plan",
+            commands=fat_commands,
+            rationale="tiny",
+        )
+    assert store.list_pending() == []
+
+
+def test_draft_store_create_annotates_medium_proposal():
+    from backend.agent_copilot import _DraftStoreImpl
+
+    store = _DraftStoreImpl()
+    # 6 commands -> command_warn threshold (5) -> ask_on_risk annotation
+    commands = [
+        {"command_id": "set_setpoint", "payload": {"target_c": 6.5}}
+        for _ in range(6)
+    ]
+    draft = store.create(
+        kind="precool_plan",
+        commands=commands,
+        rationale="short rationale",
+    )
+    assessment = draft.metadata.get("proposal_assessment")
+    assert assessment is not None
+    assert assessment["action"] == PROPOSAL_ACTION_ASK_ON_RISK
+    assert assessment["risk_tier"] == "medium"
+    assert assessment["command_count"] == 6
+
+
+def test_draft_store_create_no_annotation_when_small():
+    from backend.agent_copilot import _DraftStoreImpl
+
+    store = _DraftStoreImpl()
+    draft = store.create(
+        kind="precool_plan",
+        commands=[{"command_id": "set_setpoint", "payload": {}}],
+        rationale="short rationale",
+    )
+    # ship-tier proposals carry no annotation noise
+    assert "proposal_assessment" not in draft.metadata
+
+
+# ─── Harness #21 — ModelRouter ───────────────────────────────────────
+def test_model_router_default_routes_low_effort_to_fast():
+    r = ModelRouter("haiku-id", "opus-id")
+    d = r.resolve(TASK_JSON_FORMAT)
+    assert isinstance(d, ModelRoutingDecision)
+    assert d.tier == MODEL_TIER_FAST
+    assert d.model_id == "haiku-id"
+    assert "json_format" in d.reason
+
+
+def test_model_router_default_routes_safety_to_heavy():
+    r = ModelRouter("haiku-id", "opus-id")
+    assert r.resolve(TASK_SAFETY).tier == MODEL_TIER_HEAVY
+    assert r.resolve(TASK_ARCHITECTURAL).model_id == "opus-id"
+    assert r.resolve(TASK_DIAGNOSIS).tier == MODEL_TIER_HEAVY
+
+
+def test_model_router_unknown_label_falls_back_to_default_tier():
+    r = ModelRouter("haiku-id", "opus-id")
+    d = r.resolve("brand_new_task_label_2026")
+    assert d.tier == MODEL_TIER_HEAVY
+    assert "unknown task_label" in d.reason
+
+
+def test_model_router_unknown_label_with_fast_default():
+    r = ModelRouter("haiku-id", "opus-id", default_tier=MODEL_TIER_FAST)
+    d = r.resolve("brand_new_task_label_2026")
+    assert d.tier == MODEL_TIER_FAST
+
+
+def test_model_router_overrides_at_construction():
+    # Promote json_format to heavy via overrides
+    r = ModelRouter("haiku", "opus", overrides={TASK_JSON_FORMAT: MODEL_TIER_HEAVY})
+    assert r.resolve(TASK_JSON_FORMAT).tier == MODEL_TIER_HEAVY
+
+
+def test_model_router_force_at_runtime():
+    r = ModelRouter("haiku", "opus")
+    assert r.resolve(TASK_JSON_FORMAT).tier == MODEL_TIER_FAST
+    r.force(TASK_JSON_FORMAT, MODEL_TIER_HEAVY)
+    assert r.resolve(TASK_JSON_FORMAT).tier == MODEL_TIER_HEAVY
+
+
+def test_model_router_rejects_bad_tier():
+    r = ModelRouter("haiku", "opus")
+    with pytest.raises(ArtifactDependencyError, match="tier must be one of"):
+        r.force(TASK_JSON_FORMAT, "ultra_premium")
+
+
+def test_model_router_rejects_bad_default_tier_at_construction():
+    with pytest.raises(ArtifactDependencyError, match="default_tier"):
+        ModelRouter("haiku", "opus", default_tier="ultra_premium")
+
+
+def test_model_router_rejects_empty_model_id_at_construction():
+    with pytest.raises(ArtifactDependencyError):
+        ModelRouter("", "opus")
+    with pytest.raises(ArtifactDependencyError):
+        ModelRouter("haiku", "")
+
+
+def test_model_router_rejects_empty_task_label():
+    r = ModelRouter("haiku", "opus")
+    with pytest.raises(ArtifactDependencyError):
+        r.resolve("")
+    with pytest.raises(ArtifactDependencyError):
+        r.force("", MODEL_TIER_FAST)
+
+
+def test_model_router_complexity_short_no_safety_routes_fast():
+    r = ModelRouter("haiku", "opus")
+    d = r.resolve_by_complexity(prompt_text="format this short dict as json")
+    assert d.tier == MODEL_TIER_FAST
+    assert "fast tier" in d.reason
+
+
+def test_model_router_complexity_safety_term_routes_heavy():
+    r = ModelRouter("haiku", "opus")
+    d = r.resolve_by_complexity(prompt_text="generate the LOTO plan for ups_a")
+    assert d.tier == MODEL_TIER_HEAVY
+    assert "safety-term" in d.reason
+
+
+def test_model_router_complexity_large_prompt_routes_heavy():
+    r = ModelRouter("haiku", "opus")
+    big_text = "x " * 2000  # 4000 chars
+    d = r.resolve_by_complexity(prompt_text=big_text)
+    assert d.tier == MODEL_TIER_HEAVY
+    assert "threshold" in d.reason
+
+
+def test_model_router_complexity_caller_supplied_safety_flag():
+    r = ModelRouter("haiku", "opus")
+    d = r.resolve_by_complexity(prompt_chars=100, has_safety_terms=True)
+    assert d.tier == MODEL_TIER_HEAVY
+    assert "caller-supplied" in d.reason
+
+
+def test_model_router_decision_is_frozen():
+    from dataclasses import FrozenInstanceError
+
+    r = ModelRouter("haiku", "opus")
+    d = r.resolve(TASK_SAFETY)
+    with pytest.raises(FrozenInstanceError):
+        d.tier = MODEL_TIER_FAST  # type: ignore[misc]
+
+
+# ─── Harness #21 — orchestrator wiring ───────────────────────────────
+@pytest.mark.asyncio
+async def test_orchestrator_threads_router_to_agents():
+    router = ModelRouter("haiku-fake", "opus-fake")
+    orch = MultiAgentOrchestrator(model_router=router)
+    # Every agent should have received the router.
+    assert orch._architect._model_router is router
+    assert orch._safety._model_router is router
+    assert orch._diagnostician._model_router is router
+    assert orch._analyst._model_router is router
+    assert orch._capacity._model_router is router
+    assert orch._carbon._model_router is router
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_router_decision_recorded_in_evidence():
+    """When an agent runs a narrative pass with a router wired, the
+    routing decision is stamped into evidence_refs so an auditor can
+    see which model tier produced which narrative."""
+
+    class FakeLLM:
+        async def complete_gemma(self, _prompt, max_tokens=None):
+            return "advisory text"
+
+    from typing import ClassVar
+
+    class FakeAsset:
+        canonical_id = "ups_a"
+        type = "ups"
+        display = "ups_a"
+        metadata: ClassVar[dict] = {
+            "redundancy_pillar": "2N", "criticality_class": "critical",
+        }
+
+    class FakeSite:
+        def get_component(self, _cid):
+            return FakeAsset()
+
+    router = ModelRouter("haiku-fake", "opus-fake")
+    orch = MultiAgentOrchestrator(
+        site_model=FakeSite(),
+        llm_client=FakeLLM(),
+        model_router=router,
+    )
+    result = await orch.consult(ConsultContext(query="ups_a LOTO", asset_id="ups_a"))
+    # Find Architect's verdict
+    arch = next(v for v in result.agents if v.agent_name == "Architect")
+    # Router decision tagged into evidence_refs
+    router_marks = [e for e in arch.evidence_refs if e.startswith("router:")]
+    assert router_marks, f"no router: marker in {arch.evidence_refs}"
+    assert "architectural" in router_marks[0]
+    assert "opus-fake" in router_marks[0]
