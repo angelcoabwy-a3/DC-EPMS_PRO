@@ -120,7 +120,7 @@ Tags chronological (41 total):
    test_optimizer.py + test_optimizer_routes.py); frontend Vitest
    176 → 193 (+17 across optimizer.test.js + hermes_events.test.js).
 
-Tests:   backend 871 passed, 5 deselected (slow/FAISS) — full pytest ~42s, 0 fail.
+Tests:   backend 875 passed, 5 deselected (slow/FAISS) — full pytest ~44s, 0 fail.
          (+41 in Epic 4: 18 in test_forensic_ledger.py — HMAC chain,
          tamper detection, immutability, key rotation, ephemeral-key
          warning; 14 in test_bms_write_proposer_chain.py — wrapper
@@ -128,6 +128,9 @@ Tests:   backend 871 passed, 5 deselected (slow/FAISS) — full pytest ~42s, 0 f
          deadlock-refusal, endpoint RBAC + ApprovalLog cross-check;
          9 in test_rollback_harness.py — restore, double-revert,
          SME_L6 gate, 404/422 paths, marker payload linkage.)
+         (+4 in DC-EPMS-MSD-005 fix: test_forensic_ledger_postgres.py
+         — verify_chain through asyncpg, UUID->str boundary coercion,
+         DB-side trigger immutability, cross-backend HMAC parity.)
          (+8 in tests/test_multi_agent.py for Epic 3 Batch 3.A —
          Capacity Planner: 4 verdict-class tests across the warn/crit
          bands + the 4-test T3.3 narrative pattern.)
@@ -193,6 +196,12 @@ docs/ROADMAP-V11.md (v11.7, 2026-05-19). NOTE: OBS demo-recording descoped.
 
 **Recent commits (latest at top)**:
 ```
+491e9f6  fix(ledger): DC-EPMS-MSD-005 -- coerce UUID->str in PostgresPersistence row->entry
+de41703  docs: sync compass -- Epic 4 delivered (Forensic Ledger + Proposer chain)
+5b0cb68  feat(bms): Epic 4 -- close Proposer chain + Rollback Harness on /api/bms
+89b6930  feat(ledger): Epic 4 -- Forensic Ledger module + migration + 18 tests
+07cc39a  docs(adr): ADR-011 -- Forensic Ledger (HMAC-chained, append-only)
+ce4059c  docs: sync compass — Epic 3 Batch 3.C delivered (Carbon/Grid agent, 6-agent fleet)
 79ed614  feat(ai): Epic 3 Batch 3.C — Carbon/Grid agent (6th member of the multi-agent fleet)
 9267667  feat(grid): IESO Ontario grid-intensity mock provider (Epic 3 Batch 3.C prep)
 911068b  docs: sync compass — Epic 3 OPEN, Batch 3.A delivered (Capacity Planner)
@@ -585,6 +594,30 @@ C:\dev\DC-EPMS_PRO\
   `BMS_WRITE_REQUESTED` + `BMS_WRITE_RESULT` pair with
   `source="revert"`). Revert-of-revert is allowed; the chain captures
   the full causal graph. IEC 62443-3-3 SR 7.3 / SR 7.4 satisfied.
+
+- **DC-EPMS-MSD-005** (HIGH) -- RESOLVED 2026-05-23 (`491e9f6`).
+  `/api/ledger/verify` returned HTTP 500 against Postgres-backed
+  deployments. Root cause: asyncpg deserialises the `entry_id` UUID
+  column to `asyncpg.pgproto.pgproto.UUID` (native Python UUID-like
+  object, NOT `str`). `_compute_hmac()` calls `.encode("utf-8")` on
+  it -- which exists on `str` but raises `AttributeError` on the
+  asyncpg UUID type. Pre-fix, the WRITE path worked (entry_id is
+  freshly generated as `str`), but every `verify_chain()` call
+  against the Postgres backend exploded on the first entry it
+  touched. The 18 unit tests in `test_forensic_ledger.py` ONLY
+  exercise `InMemoryPersistence` (its own docstring admits the gap)
+  so the bug never surfaced in CI -- a **false-positive test gate**.
+  Discovered during the post-restart runtime smoke after applying
+  the W4 migration. Fix: one line in `_row_to_entry` coerces
+  `entry_id=str(row["entry_id"])` at the asyncpg boundary so the
+  `LedgerEntry.entry_id: str` dataclass contract holds uniformly
+  across persistence backends. No defence-in-depth in `_compute_hmac`
+  -- per CLAUDE.md "trust internal code; validate only at boundaries"
+  the seam is the right place. Added
+  `tests/test_forensic_ledger_postgres.py` (4 integration tests in a
+  per-PID isolated schema, `DROP SCHEMA CASCADE` teardown, skip if
+  asyncpg / epms-db unreachable) to close the false-positive gap.
+  Floor moves pytest 871 -> 875.
 
 ### Open / Deferred
 
