@@ -668,6 +668,154 @@ class TestAuditMOPEatonVendor:
         assert result.verdict == AUDIT_VERDICT_APPROVE
 
 
+# ─── Commit 5 — library pre-seed from docs/operaciones/mops/ ──────────
+class TestSeedArchitectLibraryFromCatalog:
+    """The _seed_architect_library_from_catalog helper parses every
+    MOP-*.md in docs/operaciones/mops/ and appends to the in-memory
+    Architect library with source='catalog'. Audit gate is applied to
+    every seed; failures are logged + skipped (defence in depth)."""
+
+    def test_seed_loads_3_canonical_mops_from_real_dir(self):
+        from backend.procedure_routes import (
+            _architect_library,
+            _reset_architect_library_for_test,
+            _seed_architect_library_from_catalog,
+        )
+        _reset_architect_library_for_test()
+        count = _seed_architect_library_from_catalog()
+        assert count == 3
+        # All 3 entries present + categorized + source-tagged.
+        cats = sorted(e["category"] for e in _architect_library)
+        assert cats == ["ats", "transformer", "ups"]
+        for e in _architect_library:
+            assert e["source"] == "catalog"
+            assert e["operator_id"] == "catalog"
+            assert e["actor_role"] == "system"
+            assert e["doc_type"] == "MOP"
+            assert e["audit_verdict"] == AUDIT_VERDICT_APPROVE
+            assert e["source_file"].startswith("MOP-")
+            assert e["source_file"].endswith(".md")
+            assert e["title"].startswith("MOP-")
+            assert len(e["content_sha256"]) == 64
+
+    def test_seed_skips_files_that_fail_audit(self, tmp_path):
+        from backend.procedure_routes import (
+            _architect_library,
+            _reset_architect_library_for_test,
+            _seed_architect_library_from_catalog,
+        )
+        # Write a synthetic catalog with one PASSING + one FAILING body.
+        (tmp_path / "MOP-100-good-stub.md").write_text(
+            "# Good seed\n## 1. Alcance: x\n"
+            "## 2. Riesgos: PPE Cat 2 per CSA Z462-24\n"
+            "## 3. Prerrequisitos: LOTO\n"
+            "## 4. Pasos: Vivo-Muerto-Vivo\n"
+            "## 5. Reversión: revert\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "MOP-101-bad-stub.md").write_text(
+            "# Bad seed -- missing everything\nGo do the thing.\n",
+            encoding="utf-8",
+        )
+        _reset_architect_library_for_test()
+        count = _seed_architect_library_from_catalog(tmp_path)
+        # Only the good body lands; the bad one is skipped (logged).
+        assert count == 1
+        assert len(_architect_library) == 1
+        assert _architect_library[0]["source_file"] == "MOP-100-good-stub.md"
+        assert _architect_library[0]["category"] == "good"
+
+    def test_seed_returns_zero_when_dir_missing(self, tmp_path):
+        from backend.procedure_routes import (
+            _reset_architect_library_for_test,
+            _seed_architect_library_from_catalog,
+        )
+        _reset_architect_library_for_test()
+        count = _seed_architect_library_from_catalog(tmp_path / "nope")
+        assert count == 0
+
+
+class TestArchitectLibraryFilter:
+    """GET /api/procedures/architect/library?source=... must filter the
+    list to either pre-seeded catalog entries or operator-signed drafts.
+    Default (no source) returns the merged view."""
+
+    def test_library_default_returns_all_entries(self, library_client):
+        from backend.procedure_routes import (
+            _seed_architect_library_from_catalog,
+        )
+        # Seed 3 catalog entries.
+        _seed_architect_library_from_catalog()
+        # Operator-sign one extra to the library.
+        r = library_client.post(
+            "/api/procedures/architect/save-to-library",
+            json={
+                "draft_id": "qd-extra",
+                "doc_type": "MOP",
+                "content": SAFE_MOP_CONTENT,
+                "asset_id": "ups_b",
+                "operator_id": "wilmer.angel",
+                "actor_role": "SME_L6",
+            },
+        )
+        assert r.status_code == 200
+        # Default (no source filter) -> 4 entries (3 catalog + 1 signed)
+        r2 = library_client.get("/api/procedures/architect/library")
+        body = r2.json()
+        assert body["total"] == 4
+        assert body["source_filter"] is None
+        assert len(body["items"]) == 4
+
+    def test_library_filter_source_catalog_returns_only_seeds(self, library_client):
+        from backend.procedure_routes import (
+            _seed_architect_library_from_catalog,
+        )
+        _seed_architect_library_from_catalog()
+        # Add a signed entry too.
+        library_client.post(
+            "/api/procedures/architect/save-to-library",
+            json={
+                "draft_id": "qd-signed-x",
+                "doc_type": "MOP",
+                "content": SAFE_MOP_CONTENT,
+                "asset_id": "ups_b",
+                "operator_id": "wilmer.angel",
+            },
+        )
+        r = library_client.get(
+            "/api/procedures/architect/library?source=catalog",
+        )
+        body = r.json()
+        assert body["total"] == 3
+        assert body["source_filter"] == "catalog"
+        for item in body["items"]:
+            assert item["source"] == "catalog"
+
+    def test_library_filter_source_signed_returns_only_signed(self, library_client):
+        from backend.procedure_routes import (
+            _seed_architect_library_from_catalog,
+        )
+        _seed_architect_library_from_catalog()
+        library_client.post(
+            "/api/procedures/architect/save-to-library",
+            json={
+                "draft_id": "qd-signed-y",
+                "doc_type": "MOP",
+                "content": SAFE_MOP_CONTENT,
+                "asset_id": "ups_b",
+                "operator_id": "wilmer.angel",
+            },
+        )
+        r = library_client.get(
+            "/api/procedures/architect/library?source=signed",
+        )
+        body = r.json()
+        assert body["total"] == 1
+        assert body["source_filter"] == "signed"
+        assert body["items"][0]["source"] == "signed"
+        assert body["items"][0]["draft_id"] == "qd-signed-y"
+
+
 class TestSeedMOPsPassNewAuditGate:
     """The 3 docs/operaciones/mops/MOP-*.md seed files must pass the
     full hardened audit gate -- they will be pre-seeded into the
@@ -1311,7 +1459,11 @@ class TestArchitectSaveToLibrary:
     def test_library_empty_returns_empty_items(self, library_client):
         r = library_client.get("/api/procedures/architect/library")
         assert r.status_code == 200
-        assert r.json() == {"items": [], "total": 0}
+        body = r.json()
+        # Commit 5 added source_filter to the response envelope.
+        assert body["items"] == []
+        assert body["total"] == 0
+        assert body["source_filter"] is None
 
 
 # ════════════════════════════════════════════════════════════════════

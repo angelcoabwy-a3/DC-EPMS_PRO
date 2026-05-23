@@ -272,6 +272,22 @@ async def lifespan(app: FastAPI):
         app.state.forensic_ledger = None
         app.state.forensic_ledger_loop = None
 
+    # Commit 5 -- pre-seed Architect library from docs/operaciones/mops/.
+    # Independent of the ledger; logs but never raises (best-effort).
+    try:
+        from backend.procedure_routes import (
+            _seed_architect_library_from_catalog,
+        )
+        seeded = _seed_architect_library_from_catalog()
+        log.info(
+            "[BOOT] Architect library pre-seeded with %d catalog MOP(s)",
+            seeded,
+        )
+    except Exception as e:
+        log.warning(
+            "[BOOT] Architect library pre-seed failed (continuing): %s", e,
+        )
+
     if RAGService:
         try:
             rag_service = RAGService(CHROMA_PATH)
