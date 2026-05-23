@@ -11,7 +11,7 @@ Sprint 1 (delivered):
   * ``require_artifact`` + ``ArtifactDependencyError`` — Harness #07
     (Artifact Dependency).
 
-Sprint 2 (this commit):
+Sprint 2 (delivered):
   * ``intercept_command`` + ``DestructiveCommandError`` +
     ``DESTRUCTIVE_PATTERNS`` — Harness #23 (Permission Security). Blocks
     a sub-agent from proposing a destructive command without an explicit
@@ -22,6 +22,18 @@ Sprint 2 (this commit):
   * ``AgentStateStore`` — Harness #05 (Artifact Store). JSONL-backed
     persistence for sub-agent decisions so they survive a process
     restart without re-running the consultation.
+
+Sprint 3 (this commit):
+  * ``assess_proposal_size`` + ``ProposalSizeAssessment`` — Harnesses
+    #18 (Review Warlock), #19 (Delivery Strategy), #20 (Chain Strategy).
+    4-tier verdict {ship, ask_on_risk, fragment, block} on a code-or-
+    command proposal's size + complexity, so an agent cannot ship a
+    single oversized change.
+  * ``ModelRouter`` + ``MODEL_TIER_FAST`` / ``MODEL_TIER_HEAVY`` + task-
+    label constants — Harness #21 (Model Routing). Pins low-effort
+    chores (JSON formatting, entity extraction, terse summaries) to a
+    fast/cheap model and reserves the heavy model for safety / LOTO /
+    architectural reasoning.
 
 All primitives are deliberately small and dependency-free (stdlib only)
 so they can be wired into every agent surface without dragging extra
@@ -36,6 +48,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -569,3 +582,370 @@ def _to_jsonable(obj: Any) -> Any:
         except Exception:
             pass
     return str(obj)
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Harness #18 / #19 / #20 — Review Warlock + Delivery + Chain Strategy
+# ───────────────────────────────────────────────────────────────────────
+# Default thresholds. A "proposal" is whatever an agent intends to ship
+# — a Draft's command list, an LLM-generated code patch, a MOP draft.
+# The gate is intentionally conservative: tune via the kwargs of
+# ``assess_proposal_size`` per-callsite rather than mutating these
+# module-level constants in production code.
+PROPOSAL_LINE_WARN = 200
+PROPOSAL_LINE_FRAGMENT = 400
+PROPOSAL_LINE_BLOCK = 1200
+PROPOSAL_COMMAND_WARN = 5
+PROPOSAL_COMMAND_FRAGMENT = 12
+PROPOSAL_COMMAND_BLOCK = 40
+
+PROPOSAL_ACTION_SHIP = "ship"
+PROPOSAL_ACTION_ASK_ON_RISK = "ask_on_risk"
+PROPOSAL_ACTION_FRAGMENT = "fragment"
+PROPOSAL_ACTION_BLOCK = "block"
+
+_PROPOSAL_ACTIONS = frozenset({
+    PROPOSAL_ACTION_SHIP,
+    PROPOSAL_ACTION_ASK_ON_RISK,
+    PROPOSAL_ACTION_FRAGMENT,
+    PROPOSAL_ACTION_BLOCK,
+})
+
+
+@dataclass(frozen=True)
+class ProposalSizeAssessment:
+    """Outcome of :func:`assess_proposal_size`. Read-only so consumers
+    can cache and forward the verdict without defensive copying."""
+    line_count: int
+    command_count: int
+    risk_tier: str
+    action: str
+    findings: list[str] = field(default_factory=list)
+
+    @property
+    def is_blocking(self) -> bool:
+        """True when ``action`` is ``block`` — the only verdict that
+        forbids forward progress without a fragmentation pass."""
+        return self.action == PROPOSAL_ACTION_BLOCK
+
+    @property
+    def requires_human(self) -> bool:
+        """True when the verdict needs human attention before shipping
+        (``ask_on_risk`` or ``fragment``)."""
+        return self.action in (
+            PROPOSAL_ACTION_ASK_ON_RISK, PROPOSAL_ACTION_FRAGMENT,
+        )
+
+
+def assess_proposal_size(
+    *,
+    text: str | None = None,
+    lines: int | None = None,
+    commands: list[Any] | None = None,
+    line_warn: int = PROPOSAL_LINE_WARN,
+    line_fragment: int = PROPOSAL_LINE_FRAGMENT,
+    line_block: int = PROPOSAL_LINE_BLOCK,
+    command_warn: int = PROPOSAL_COMMAND_WARN,
+    command_fragment: int = PROPOSAL_COMMAND_FRAGMENT,
+    command_block: int = PROPOSAL_COMMAND_BLOCK,
+) -> ProposalSizeAssessment:
+    """Score a proposal's size and emit a 4-tier verdict.
+
+    Harness #18 (Review Warlock) + #19 (Delivery Strategy) + #20 (Chain
+    Strategy):
+
+      * ``ship`` — small. Default green path.
+      * ``ask_on_risk`` — medium. Surface to operator before shipping
+        ("Ask on risk" pattern); the proposal is still well-formed.
+      * ``fragment`` — large. Caller MUST split into multiple smaller
+        proposals (stacked-PR / chain-strategy pattern).
+      * ``block`` — oversized. Refuse; no fragmentation hint can save
+        a proposal this large from a manual rewrite.
+
+    Pass exactly one of ``text`` / ``lines`` (the line metric). The
+    ``commands`` count is independent and contributes a parallel signal:
+    a 3-line proposal with 50 commands is still oversized.
+
+    The function is pure — no I/O — so it is safe to call inside any
+    agent surface, including hot LLM loops.
+    """
+    # Resolve line count
+    if text is not None and lines is not None:
+        raise ArtifactDependencyError(
+            "assess_proposal_size: pass text OR lines, not both"
+        )
+    if text is not None:
+        line_count = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+    elif lines is not None:
+        if lines < 0:
+            raise ArtifactDependencyError(
+                f"lines must be >= 0, got {lines}"
+            )
+        line_count = lines
+    else:
+        line_count = 0
+
+    command_count = len(commands) if commands else 0
+    findings: list[str] = []
+
+    # Per-signal severity (numeric so we can take the max)
+    def _line_severity(n: int) -> int:
+        if n >= line_block:
+            findings.append(
+                f"line_count={n} >= block threshold {line_block}"
+            )
+            return 3
+        if n >= line_fragment:
+            findings.append(
+                f"line_count={n} >= fragment threshold {line_fragment}"
+            )
+            return 2
+        if n >= line_warn:
+            findings.append(
+                f"line_count={n} >= warn threshold {line_warn}"
+            )
+            return 1
+        return 0
+
+    def _command_severity(n: int) -> int:
+        if n >= command_block:
+            findings.append(
+                f"command_count={n} >= block threshold {command_block}"
+            )
+            return 3
+        if n >= command_fragment:
+            findings.append(
+                f"command_count={n} >= fragment threshold {command_fragment}"
+            )
+            return 2
+        if n >= command_warn:
+            findings.append(
+                f"command_count={n} >= warn threshold {command_warn}"
+            )
+            return 1
+        return 0
+
+    severity = max(_line_severity(line_count), _command_severity(command_count))
+
+    if severity >= 3:
+        action = PROPOSAL_ACTION_BLOCK
+        tier = "oversized"
+    elif severity == 2:
+        action = PROPOSAL_ACTION_FRAGMENT
+        tier = "large"
+    elif severity == 1:
+        action = PROPOSAL_ACTION_ASK_ON_RISK
+        tier = "medium"
+    else:
+        action = PROPOSAL_ACTION_SHIP
+        tier = "small"
+
+    return ProposalSizeAssessment(
+        line_count=line_count,
+        command_count=command_count,
+        risk_tier=tier,
+        action=action,
+        findings=findings,
+    )
+
+
+# ───────────────────────────────────────────────────────────────────────
+# Harness #21 — Model Routing
+# ───────────────────────────────────────────────────────────────────────
+MODEL_TIER_FAST = "fast"
+MODEL_TIER_HEAVY = "heavy"
+_MODEL_TIERS = frozenset({MODEL_TIER_FAST, MODEL_TIER_HEAVY})
+
+# Canonical task labels. Callers should reference the constants so a
+# typo at the wire doesn't silently fall through to the heavy-default.
+TASK_JSON_FORMAT = "json_format"
+TASK_ENTITY_EXTRACTION = "entity_extraction"
+TASK_SUMMARY_SHORT = "summary_short"
+TASK_NARRATIVE = "narrative"
+TASK_DIAGNOSIS = "diagnosis"
+TASK_CAPACITY = "capacity"
+TASK_FINANCIAL = "financial"
+TASK_CARBON_GRID = "carbon_grid"
+TASK_ARCHITECTURAL = "architectural"
+TASK_SAFETY = "safety"
+TASK_LOTO = "loto"
+
+# Routing table. Edit by passing ``overrides`` to ``ModelRouter`` rather
+# than mutating this dict in production code — it is the documented
+# default for a fresh deployment.
+_DEFAULT_ROUTING: dict[str, str] = {
+    # Low-effort: fast tier
+    TASK_JSON_FORMAT: MODEL_TIER_FAST,
+    TASK_ENTITY_EXTRACTION: MODEL_TIER_FAST,
+    TASK_SUMMARY_SHORT: MODEL_TIER_FAST,
+    # Reasoning-bearing narratives stay on the heavy tier — Gentle IA
+    # H21 keeps the cheap model away from anything safety-adjacent.
+    TASK_NARRATIVE: MODEL_TIER_HEAVY,
+    TASK_DIAGNOSIS: MODEL_TIER_HEAVY,
+    TASK_CAPACITY: MODEL_TIER_HEAVY,
+    TASK_FINANCIAL: MODEL_TIER_HEAVY,
+    TASK_CARBON_GRID: MODEL_TIER_HEAVY,
+    TASK_ARCHITECTURAL: MODEL_TIER_HEAVY,
+    TASK_SAFETY: MODEL_TIER_HEAVY,
+    TASK_LOTO: MODEL_TIER_HEAVY,
+}
+
+# Heuristic safety-term sniff for ``ModelRouter.resolve_by_complexity``
+# — any of these substrings flips to the heavy tier regardless of
+# prompt length. Conservative-by-design: false positives go to the
+# safer (heavy) tier; false negatives would route safety prompts to
+# the cheap model and that is the unacceptable failure mode.
+_SAFETY_TERMS = (
+    "loto", "lockout", "tagout", "arc flash", "shock", "ppe",
+    "csa z462", "nfpa 70e", "nec 460", "emergency", "evacuat",
+    "veto", "hard_stop", "incident",
+)
+
+
+@dataclass(frozen=True)
+class ModelRoutingDecision:
+    """Outcome of :meth:`ModelRouter.resolve` / ``resolve_by_complexity``."""
+    task_label: str
+    tier: str
+    model_id: str
+    reason: str
+
+
+class ModelRouter:
+    """Pin LLM tasks to a model tier so low-effort work runs on the
+    fast/cheap model and safety-bearing work stays on the heavy model.
+
+    Harness #21 (Model Routing). The router is a pure decision surface
+    — it never dispatches an inference call itself. Callers ask
+    :meth:`resolve` for ``(tier, model_id)`` and feed the result to
+    whatever LLM client they use (Anthropic SDK, LM Studio, vLLM, …).
+
+    Args:
+      fast_model_id: Identifier of the fast/cheap model
+        (e.g. ``"claude-haiku-4-5-20251001"`` or a local Gemma id).
+      heavy_model_id: Identifier of the heavy / reasoning model
+        (e.g. ``"claude-opus-4-7"``).
+      overrides: Optional mapping that updates :data:`_DEFAULT_ROUTING`.
+        Useful for promoting a task to the heavy tier (or vice versa)
+        without subclassing.
+      default_tier: Fallback when an unknown ``task_label`` is
+        resolved. Defaults to the heavy tier — safer-by-design.
+    """
+
+    def __init__(
+        self,
+        fast_model_id: str,
+        heavy_model_id: str,
+        *,
+        overrides: dict[str, str] | None = None,
+        default_tier: str = MODEL_TIER_HEAVY,
+    ):
+        require_artifact("fast_model_id", fast_model_id)
+        require_artifact("heavy_model_id", heavy_model_id)
+        if default_tier not in _MODEL_TIERS:
+            raise ArtifactDependencyError(
+                f"default_tier must be one of {sorted(_MODEL_TIERS)}"
+            )
+        self._fast_model_id = fast_model_id
+        self._heavy_model_id = heavy_model_id
+        self._default_tier = default_tier
+        self._routing: dict[str, str] = dict(_DEFAULT_ROUTING)
+        if overrides:
+            for label, tier in overrides.items():
+                self.force(label, tier)
+
+    @property
+    def fast_model_id(self) -> str:
+        return self._fast_model_id
+
+    @property
+    def heavy_model_id(self) -> str:
+        return self._heavy_model_id
+
+    def force(self, task_label: str, tier: str) -> None:
+        """Operator override. Pin ``task_label`` to a specific tier."""
+        require_artifact("task_label", task_label)
+        if tier not in _MODEL_TIERS:
+            raise ArtifactDependencyError(
+                f"tier must be one of {sorted(_MODEL_TIERS)}, got {tier!r}"
+            )
+        self._routing[task_label] = tier
+
+    def _model_for(self, tier: str) -> str:
+        return self._heavy_model_id if tier == MODEL_TIER_HEAVY else self._fast_model_id
+
+    def resolve(self, task_label: str) -> ModelRoutingDecision:
+        """Return the routing decision for a known task label.
+
+        An unknown ``task_label`` falls through to ``default_tier`` —
+        which is the heavy tier by default. The decision is reported in
+        ``reason`` so callers can attach it to an audit trail.
+        """
+        require_artifact("task_label", task_label)
+        tier = self._routing.get(task_label)
+        if tier is None:
+            tier = self._default_tier
+            reason = (
+                f"unknown task_label={task_label!r}; "
+                f"falling back to default_tier={tier!r}"
+            )
+        else:
+            reason = f"routing-table hit for task_label={task_label!r} -> {tier!r}"
+        return ModelRoutingDecision(
+            task_label=task_label,
+            tier=tier,
+            model_id=self._model_for(tier),
+            reason=reason,
+        )
+
+    def resolve_by_complexity(
+        self,
+        *,
+        prompt_chars: int = 0,
+        has_safety_terms: bool = False,
+        prompt_text: str | None = None,
+        complexity_threshold_chars: int = 1500,
+    ) -> ModelRoutingDecision:
+        """Heuristic routing for ad-hoc prompts that don't carry a
+        canonical task label.
+
+        Any of the following flips to the heavy tier:
+          * ``has_safety_terms=True``
+          * ``prompt_text`` contains any of the well-known safety
+            terms in :data:`_SAFETY_TERMS` (case-insensitive)
+          * ``prompt_chars`` (or len(prompt_text)) exceeds
+            ``complexity_threshold_chars``
+
+        Otherwise routes to the fast tier.
+        """
+        text_chars = prompt_chars
+        terms_hit: list[str] = []
+        if prompt_text:
+            text_chars = max(text_chars, len(prompt_text))
+            haystack = prompt_text.lower()
+            terms_hit = [t for t in _SAFETY_TERMS if t in haystack]
+        if has_safety_terms or terms_hit:
+            tier = MODEL_TIER_HEAVY
+            reason = (
+                f"safety-term match: {terms_hit or 'caller-supplied'}; "
+                f"routed to heavy tier"
+            )
+        elif text_chars >= complexity_threshold_chars:
+            tier = MODEL_TIER_HEAVY
+            reason = (
+                f"prompt size {text_chars} chars >= threshold "
+                f"{complexity_threshold_chars}; routed to heavy tier"
+            )
+        else:
+            tier = MODEL_TIER_FAST
+            reason = (
+                f"prompt size {text_chars} chars, no safety terms; "
+                f"routed to fast tier"
+            )
+        return ModelRoutingDecision(
+            task_label="adhoc",
+            tier=tier,
+            model_id=self._model_for(tier),
+            reason=reason,
+        )
+

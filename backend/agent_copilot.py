@@ -66,6 +66,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.agent_harness import (
     ArtifactDependencyError,
+    assess_proposal_size,
     intercept_commands,
     require_artifact,
     sanitize_history,
@@ -602,22 +603,55 @@ class _DraftStoreImpl:
         human_approved: bool = False,
         approver: str | None = None,
     ) -> Draft:
-        """Persist a new draft after a Harness #23 permission-security
-        gate. A sub-agent proposing a destructive command (DROP TABLE,
-        shutdown, emergency_stop …) must pass ``human_approved=True``
-        + a named ``approver`` at create time — otherwise the create
-        call raises :class:`DestructiveCommandError` and no draft is
-        persisted.
+        """Persist a new draft after the harness gates.
+
+        Two gates run before any draft is accepted:
+
+          * Harness #23 (Permission Security): ``intercept_commands``
+            blocks destructive commands unless the caller supplied
+            ``human_approved=True`` + a named ``approver``.
+          * Harness #18/19/20 (Review Warlock + Delivery + Chain):
+            ``assess_proposal_size`` evaluates the draft's command count
+            + rationale line count. An ``oversized`` verdict raises
+            :class:`ValueError`; ``ask_on_risk`` and ``fragment`` are
+            annotated into ``metadata['proposal_assessment']`` so the
+            HMI can surface a "PR muy grande" warning + the
+            fragmentation recommendation without blocking ship.
 
         Draft *approval* (via :meth:`approve`) is a separate, downstream
-        gate: it is what executes the commands. H23 only governs whether
-        the destructive proposal is even allowed to enter the queue."""
+        gate: it is what executes the commands. The harness gates govern
+        whether the proposal is even allowed to enter the queue.
+        """
         intercept_commands(
             commands,
             human_approved=human_approved,
             approver=approver,
             context=f"DraftStore.create(kind={kind!r})",
         )
+
+        assessment = assess_proposal_size(
+            text=rationale,
+            commands=commands,
+        )
+        if assessment.is_blocking:
+            raise ValueError(
+                f"DraftStore.create(kind={kind!r}): proposal blocked by "
+                f"size gate — {assessment.findings}; rewrite into smaller "
+                f"proposals before re-submitting."
+            )
+
+        merged_metadata = dict(metadata or {})
+        if assessment.action != "ship":
+            # Annotate but don't block — operator gets to see the warning
+            # in the HMI alongside the rationale.
+            merged_metadata["proposal_assessment"] = {
+                "action": assessment.action,
+                "risk_tier": assessment.risk_tier,
+                "line_count": assessment.line_count,
+                "command_count": assessment.command_count,
+                "findings": list(assessment.findings),
+            }
+
         draft_id = uuid.uuid4().hex
         now = time.time()
         draft = Draft(
@@ -625,7 +659,7 @@ class _DraftStoreImpl:
             kind=kind,
             commands=commands,
             rationale=rationale,
-            metadata=metadata or {},
+            metadata=merged_metadata,
             created_at_unix=now,
             expires_at_unix=now + ttl_s,
         )
