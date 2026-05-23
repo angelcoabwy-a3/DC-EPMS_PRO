@@ -559,3 +559,78 @@ class TestQueuedProposalAgentVerdictsJSON:
         # Safety Officer row identifiable
         so = next(a for a in out["agent_verdicts"] if a["agent_name"] == "Safety Officer")
         assert so["verdict"] == "approve"
+
+
+# ════════════════════════════════════════════════════════════════════
+# Epic 5 Sprint 2 — E5.E POST /api/optimizer/preview/{id}
+# ════════════════════════════════════════════════════════════════════
+class TestOptimizerPreviewEndpoint:
+    def test_preview_returns_projection_for_queued_proposal(self, stack):
+        client, svc, _bms, _app = stack
+        qp = _make_queued("qp-preview", surface=SURFACE_CHILLER_LWT)
+        svc.queue.enqueue(qp)
+        r = client.post("/api/optimizer/preview/qp-preview")
+        assert r.status_code == 200
+        body = r.json()
+        # Schema check — every PreviewProjection field present.
+        for key in (
+            "proposal_id", "surface", "current_value", "proposed_value",
+            "delta", "projected_pue", "projected_pue_delta",
+            "projected_wue_delta", "projected_inlet_c",
+            "projected_inlet_delta_c", "ashrae_distance_c",
+            "verdict", "findings",
+        ):
+            assert key in body
+        assert body["proposal_id"] == "qp-preview"
+        # With no telemetry provider wired, projected_pue is None ->
+        # amber verdict per simulate_setpoint_impact's contract.
+        assert body["verdict"] == "amber"
+
+    def test_preview_returns_404_for_unknown_proposal(self, stack):
+        client, _svc, _bms, _app = stack
+        r = client.post("/api/optimizer/preview/no-such-id")
+        assert r.status_code == 404
+        assert "not in queue" in r.json()["detail"].lower()
+
+    def test_preview_does_not_dequeue_the_proposal(self, stack):
+        client, svc, _bms, _app = stack
+        qp = _make_queued("qp-keep", surface=SURFACE_CHILLER_LWT)
+        svc.queue.enqueue(qp)
+        client.post("/api/optimizer/preview/qp-keep")
+        # Still in the queue after preview — operator hasn't decided yet.
+        assert svc.queue.size() == 1
+
+    def test_preview_returns_503_when_service_not_running(self):
+        app = FastAPI()
+        register_optimizer_routes(app, bms_write_fn=lambda *a, **k: (True, "ok"))
+        client = TestClient(app)
+        r = client.post("/api/optimizer/preview/qp-x")
+        assert r.status_code == 503
+
+
+# ════════════════════════════════════════════════════════════════════
+# Epic 5 Sprint 2 — S-DET-01 binding on the preview route
+# ════════════════════════════════════════════════════════════════════
+def test_preview_route_does_not_import_llm_modules():
+    """The preview route handler must not import or reference any LLM
+    client — the projection is pure-Python per S-DET-01 / ADR-006.
+    A future refactor that pulls Gemma into the preview path fails
+    this test loudly (it lives alongside the older BMS-write invariant
+    in test_optimizer.py)."""
+    import re as _re
+    from pathlib import Path as _Path
+
+    from backend import optimizer_routes as _mod
+    src = _Path(_mod.__file__).read_text(encoding="utf-8")
+    pat = _re.compile(
+        r"async def preview_proposal_impact\b.*?\n(?=\n[A-Za-z@]|\Z)",
+        _re.S,
+    )
+    m = pat.search(src)
+    assert m is not None, "preview_proposal_impact() not found"
+    body = m.group(0)
+    for needle in ("complete_gemma", "llm_client", "_synthesize_narrative"):
+        assert needle not in body, (
+            f"preview_proposal_impact() must be LLM-free (S-DET-01); "
+            f"found {needle!r} in its body."
+        )

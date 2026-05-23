@@ -52,6 +52,7 @@ from backend.optimizer import (
     SURFACE_CT_FAN_VFD,
     OptimizerService,
     QueuedProposal,
+    simulate_setpoint_impact,
 )
 from backend.rbac import RANK_SME_L6, require_actor_role
 
@@ -280,6 +281,51 @@ async def optimizer_health(request: Request) -> dict[str, Any]:
     """
     svc = _get_optimizer_service(request)
     return svc.health()
+
+
+@router.post("/preview/{proposal_id}")
+async def preview_proposal_impact(
+    proposal_id: str, request: Request,
+) -> dict[str, Any]:
+    """Epic 5.E — What-If sandbox preview for a queued proposal.
+
+    Returns a deterministic PUE / WUE / ASHRAE-distance projection plus
+    a {green, amber, red} verdict so the operator can see the projected
+    impact BEFORE approving. The projection is computed by
+    :func:`backend.optimizer.simulate_setpoint_impact` — pure-Python,
+    rule-of-thumb coefficients, NO LLM on this path (S-DET-01 / ADR-006
+    Deterministic Sandbox).
+
+    HTTP 404 when the proposal is no longer in the queue (already
+    decided), 503 when the service is not running.
+    """
+    svc = _get_optimizer_service(request)
+    # Peek at the queued proposal without dequeuing — the operator
+    # is previewing, not deciding yet.
+    qp: QueuedProposal | None = None
+    for candidate in svc.queue.list(limit=10_000):
+        if candidate.proposal.proposal_id == proposal_id:
+            qp = candidate
+            break
+    if qp is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Proposal {proposal_id!r} not in queue "
+                "(already decided or expired)."
+            ),
+        )
+    # Read the latest telemetry point if a provider is wired (the
+    # service exposes it through the deterministic core); fall back to
+    # None when not available — the projection still returns a shape.
+    # Reach into the service's private telemetry reader + target —
+    # the preview endpoint is the second consumer (after .tick()) and
+    # the projection MUST run against the same point the tick saw.
+    point = await svc._read_telemetry()
+    projection = simulate_setpoint_impact(
+        qp.proposal, point, pue_target=svc._pue_target,
+    )
+    return projection.to_dict()
 
 
 @router.get("/approvals/{proposal_id}")

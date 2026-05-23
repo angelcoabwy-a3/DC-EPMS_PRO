@@ -236,6 +236,219 @@ AUDIT_APPROVED = "approved"                               # used from 2.C onward
 AUDIT_TICK = "tick"                                       # E5.A heartbeat marker
 
 
+# ─── E5.E — What-If sandbox projection (pure, S-DET-01) ───────────────
+PREVIEW_VERDICT_GREEN = "green"     # within tolerance, safe to approve
+PREVIEW_VERDICT_AMBER = "amber"     # marginal, operator should review
+PREVIEW_VERDICT_RED = "red"         # projected breach, do not approve
+
+# ASHRAE A2 inlet band for IT racks. The "warm" boundary (35 C) is the
+# spec ceiling; tolerance ramp begins at 27 C (TC9.9 recommended).
+ASHRAE_A2_INLET_WARN_C = 27.0
+ASHRAE_A2_INLET_BREACH_C = 35.0
+
+# Rule-of-thumb coefficients — first-principles enough for the operator
+# preview, NOT a learned model. The deterministic-sandbox doctrine
+# (ADR-006 / S-DET-01) forbids an LLM from refining these numbers.
+#
+# Sign convention: every coefficient is signed so the formula is
+# uniform across surfaces — ``dQuantity = proposal.delta * coeff``.
+# A signed delta times a signed coefficient yields the correctly-signed
+# projection.
+#
+#   chiller LWT: a 1 K drop in LWT (delta=-1) trims PUE by 0.006
+#                (dPUE=-0.006) at constant load (compressor head
+#                pressure), and pulls rack inlet down by ~0.4 K
+#                (dInlet=-0.4). Sign convention -> both coeffs are
+#                positive: dPUE = delta * (+0.006).
+#   CT fan VFD : a +1 % step (delta=+1) reduces ECWT, trimming
+#                compressor work for ~0.001 PUE drop per step
+#                (dPUE=-0.001). WUE rises ~0.005 L/kWh per step
+#                (more evaporative makeup). Sign convention -> PUE
+#                coeff negative, WUE coeff positive.
+_PREVIEW_COEFFS = {
+    SURFACE_CHILLER_LWT: {
+        "pue_per_k": 0.006,          # dPUE per K of LWT change (signed)
+        "wue_per_k": 0.000,          # LWT trim doesn't change makeup
+        "inlet_per_k": 0.4,          # dInlet per K of LWT change
+    },
+    SURFACE_CT_FAN_VFD: {
+        "pue_per_pct": -0.001,       # dPUE per 1% VFD change (signed)
+        "wue_per_pct": 0.005,        # dWUE per 1% VFD change (signed)
+        "inlet_per_pct": 0.0,        # second-order; ignored at this fidelity
+    },
+}
+
+
+@dataclass(frozen=True)
+class PreviewProjection:
+    """Outcome of :func:`simulate_setpoint_impact`. Pure data — no LLM
+    refinement, no telemetry-source attribution beyond what the caller
+    supplied via :class:`TelemetryPoint`."""
+
+    proposal_id: str
+    surface: str
+    current_value: float
+    proposed_value: float
+    delta: float
+    projected_pue: float | None
+    projected_pue_delta: float | None
+    projected_wue_delta: float | None
+    projected_inlet_c: float | None
+    projected_inlet_delta_c: float | None
+    ashrae_distance_c: float | None
+    verdict: str                    # green / amber / red
+    findings: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def simulate_setpoint_impact(
+    proposal: Proposal,
+    point: TelemetryPoint | None,
+    pue_target: float = 1.30,
+) -> PreviewProjection:
+    """Project the PUE / WUE / ASHRAE-distance impact of approving
+    ``proposal`` against the current telemetry ``point``. Pure-Python,
+    deterministic, side-effect free.
+
+    Harness #21 and S-DET-01 / ADR-006: NO LLM call lives on this path.
+    The operator preview is computed by the same rule-based coefficients
+    that justify the proposal in the first place — an LLM-refined
+    projection would erode the deterministic-sandbox guarantee.
+
+    The verdict bands:
+      * ``green`` — projected inlet stays below the ASHRAE A2 warn
+        threshold (27 C) AND projected PUE is at or below target.
+      * ``amber`` — projected inlet inside the warn band [27, 35) C
+        OR projected PUE still above target by less than 0.02.
+      * ``red``  — projected inlet >= 35 C (A2 breach) OR projected
+        PUE worse than current by any margin (the proposal is making
+        things worse — an arithmetic sign error somewhere upstream).
+
+    ``point`` may be ``None`` — in that case the projection returns the
+    proposal in shape, with ``verdict="amber"`` and a finding explaining
+    that the live telemetry is missing.
+    """
+    findings: list[str] = []
+    if point is None or point.pue is None:
+        findings.append(
+            "live telemetry unavailable; projection limited to proposal shape",
+        )
+        return PreviewProjection(
+            proposal_id=proposal.proposal_id,
+            surface=proposal.surface,
+            current_value=proposal.current_value,
+            proposed_value=proposal.proposed_value,
+            delta=proposal.delta,
+            projected_pue=None,
+            projected_pue_delta=None,
+            projected_wue_delta=None,
+            projected_inlet_c=None,
+            projected_inlet_delta_c=None,
+            ashrae_distance_c=None,
+            verdict=PREVIEW_VERDICT_AMBER,
+            findings=findings,
+        )
+
+    surface = proposal.surface
+    coeffs = _PREVIEW_COEFFS.get(surface)
+    if coeffs is None:
+        findings.append(f"no preview coefficients for surface={surface!r}")
+        return PreviewProjection(
+            proposal_id=proposal.proposal_id,
+            surface=surface,
+            current_value=proposal.current_value,
+            proposed_value=proposal.proposed_value,
+            delta=proposal.delta,
+            projected_pue=point.pue,
+            projected_pue_delta=0.0,
+            projected_wue_delta=0.0,
+            projected_inlet_c=point.hall_temp_c,
+            projected_inlet_delta_c=0.0,
+            ashrae_distance_c=(
+                ASHRAE_A2_INLET_BREACH_C - point.hall_temp_c
+                if point.hall_temp_c is not None else None
+            ),
+            verdict=PREVIEW_VERDICT_AMBER,
+            findings=findings,
+        )
+
+    # Uniform formula: dQuantity = signed delta * signed coeff.
+    # The coefficients differ per surface (per-K vs per-pct units).
+    if surface == SURFACE_CHILLER_LWT:
+        pue_delta = proposal.delta * coeffs["pue_per_k"]
+        wue_delta = proposal.delta * coeffs["wue_per_k"]
+        inlet_delta = proposal.delta * coeffs["inlet_per_k"]
+    elif surface == SURFACE_CT_FAN_VFD:
+        pue_delta = proposal.delta * coeffs["pue_per_pct"]
+        wue_delta = proposal.delta * coeffs["wue_per_pct"]
+        inlet_delta = proposal.delta * coeffs["inlet_per_pct"]
+    else:
+        pue_delta = 0.0
+        wue_delta = 0.0
+        inlet_delta = 0.0
+
+    projected_pue = point.pue + pue_delta
+    projected_inlet = (
+        point.hall_temp_c + inlet_delta if point.hall_temp_c is not None
+        else None
+    )
+    ashrae_distance = (
+        ASHRAE_A2_INLET_BREACH_C - projected_inlet
+        if projected_inlet is not None else None
+    )
+
+    # Verdict logic — three independent failure modes collapse into red.
+    verdict = PREVIEW_VERDICT_GREEN
+    if projected_inlet is not None and projected_inlet >= ASHRAE_A2_INLET_BREACH_C:
+        verdict = PREVIEW_VERDICT_RED
+        findings.append(
+            f"projected hall inlet {projected_inlet:.2f} C >= A2 breach "
+            f"{ASHRAE_A2_INLET_BREACH_C:.1f} C"
+        )
+    elif pue_delta > 0:
+        # Proposal makes PUE WORSE — coefficient sign disagrees with
+        # control law intent. Refuse rather than ship the wrong-way trim.
+        verdict = PREVIEW_VERDICT_RED
+        findings.append(
+            f"projected PUE delta {pue_delta:+.3f} (worsens vs current)"
+        )
+    elif projected_inlet is not None and projected_inlet >= ASHRAE_A2_INLET_WARN_C:
+        verdict = PREVIEW_VERDICT_AMBER
+        findings.append(
+            f"projected hall inlet {projected_inlet:.2f} C in A2 warn band "
+            f"[{ASHRAE_A2_INLET_WARN_C:.1f}, {ASHRAE_A2_INLET_BREACH_C:.1f}) C"
+        )
+    elif projected_pue > pue_target + 0.02:
+        verdict = PREVIEW_VERDICT_AMBER
+        findings.append(
+            f"projected PUE {projected_pue:.3f} still > target+0.02 "
+            f"({pue_target + 0.02:.3f})"
+        )
+    else:
+        findings.append(
+            f"projected PUE {projected_pue:.3f} <= target+0.02 and inlet within "
+            f"ASHRAE A2 recommended band"
+        )
+
+    return PreviewProjection(
+        proposal_id=proposal.proposal_id,
+        surface=surface,
+        current_value=proposal.current_value,
+        proposed_value=proposal.proposed_value,
+        delta=proposal.delta,
+        projected_pue=projected_pue,
+        projected_pue_delta=pue_delta,
+        projected_wue_delta=wue_delta,
+        projected_inlet_c=projected_inlet,
+        projected_inlet_delta_c=inlet_delta,
+        ashrae_distance_c=ashrae_distance,
+        verdict=verdict,
+        findings=findings,
+    )
+
+
 # ─── E5.C helper: per-agent breakdown extraction ──────────────────────
 def _extract_agent_verdicts(consensus: Any) -> list[dict[str, Any]]:
     """Extract the per-agent voting breakdown from a ConsensusResult.
