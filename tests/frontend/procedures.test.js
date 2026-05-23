@@ -45,6 +45,14 @@ const {
  *  + an empty chips slot ready for renderContextChips(). Keeps the
  *  Sprint-1 tests working against the new form shape. */
 function _mountView() {
+    // Commit 4: stub also exposes the MOP-category wrap + select so
+    // the new visibility / category-switching tests can exercise the
+    // production wiring without the full template.
+    const { MOP_CATEGORY_KEYS: KEYS, MOP_CATEGORY_LABELS: LBL,
+        MOP_CATEGORY_DEFAULT: DEF } = __procedures_view_test__;
+    const catOpts = KEYS.map((k) => (
+        `<option value="${k}"${k === DEF ? ' selected' : ''}>${LBL[k]}</option>`
+    )).join('');
     document.body.innerHTML = `
         <div id="view-procedures-architect">
             <select data-proc-doc-type>
@@ -56,6 +64,9 @@ function _mountView() {
             <select data-proc-asset-select>${renderAssetSelect()}</select>
             <label data-proc-asset-custom-wrap hidden>
                 <input type="text" data-proc-asset-custom>
+            </label>
+            <label data-proc-mop-category-wrap hidden>
+                <select data-proc-mop-category>${catOpts}</select>
             </label>
             <div data-proc-ctx-chips></div>
             <textarea data-proc-context></textarea>
@@ -629,6 +640,13 @@ describe('Procedure Architect — renderContextChips filters by doc_type', () =>
     });
 
     it('flips to MOP chips when the operator changes doc_type', () => {
+        // Commit 4: MOP chips are now filtered by category. The
+        // default category is `ups` (4 chips), not the flat union of
+        // every MOP category. Test asserts the default-category
+        // chips render, not the full union.
+        const {
+            MOP_CATEGORIES: M, MOP_CATEGORY_DEFAULT: DEFAULT_K,
+        } = __procedures_view_test__;
         _mountView();
         const root = document.getElementById('view-procedures-architect');
         root.querySelector('[data-proc-doc-type]').value = 'MOP';
@@ -636,9 +654,9 @@ describe('Procedure Architect — renderContextChips filters by doc_type', () =>
         const chips = root.querySelectorAll(
             '[data-proc-ctx-chips] button.proc-chip',
         );
-        expect(chips.length).toBe(CONTEXT_TEMPLATES.MOP.length);
+        expect(chips.length).toBe(M[DEFAULT_K].length);
         const labels = Array.from(chips).map((c) => c.textContent);
-        for (const tpl of CONTEXT_TEMPLATES.MOP) {
+        for (const tpl of M[DEFAULT_K]) {
             expect(labels).toContain(tpl.label);
         }
     });
@@ -699,6 +717,177 @@ describe('Procedure Architect — applyContextTemplate auto-fills the textarea',
         ta.value = 'old typed context';
         applyContextTemplate(root, 'Brand new template.');
         expect(ta.value).toBe('Brand new template.');
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════
+// Commit 4 -- MOP categorías
+// ════════════════════════════════════════════════════════════════════
+describe('Procedure Architect — MOP_CATEGORIES shape (Commit 4)', () => {
+    const { MOP_CATEGORIES, MOP_CATEGORY_KEYS, MOP_CATEGORY_LABELS,
+        MOP_CATEGORY_DEFAULT } = __procedures_view_test__;
+
+    it('exposes 6 categorías matching the operator catalog (2026-05-23)', () => {
+        expect(MOP_CATEGORY_KEYS).toEqual(
+            ['ups', 'transformer', 'utility', 'pdu_sts', 'rpp', 'busway'],
+        );
+        for (const k of MOP_CATEGORY_KEYS) {
+            expect(Array.isArray(MOP_CATEGORIES[k])).toBe(true);
+            expect(MOP_CATEGORIES[k].length).toBeGreaterThanOrEqual(3);
+            expect(typeof MOP_CATEGORY_LABELS[k]).toBe('string');
+            expect(MOP_CATEGORY_LABELS[k].length).toBeGreaterThan(0);
+        }
+    });
+
+    it('default category is ups (most common starter)', () => {
+        expect(MOP_CATEGORY_DEFAULT).toBe('ups');
+        expect(MOP_CATEGORIES[MOP_CATEGORY_DEFAULT]).toBeDefined();
+    });
+
+    it('21 total chips across the 6 categorías (4+4+4+3+3+3)', () => {
+        const total = MOP_CATEGORY_KEYS.reduce(
+            (sum, k) => sum + MOP_CATEGORIES[k].length, 0,
+        );
+        expect(total).toBe(21);
+    });
+
+    it('every chip in every category embeds the safety contract', () => {
+        // S-SAFETY-01: each chip text must contain LOTO/Lockout/Tagout
+        // (even live-work chips say "LOTO no aplica") + PPE + CSA Z462
+        // / NFPA 70E + Vivo-Muerto-Vivo OR limite de aproximacion +
+        // Back-out + {asset}.
+        for (const k of MOP_CATEGORY_KEYS) {
+            for (const chip of MOP_CATEGORIES[k]) {
+                const t = chip.text;
+                expect(typeof chip.label).toBe('string');
+                expect(chip.label.length).toBeGreaterThan(0);
+                expect(t.length).toBeGreaterThan(80);
+                expect(t).toContain('{asset}');
+                expect(/LOTO|Lockout|Tagout/i.test(t)).toBe(true);
+                expect(/PPE/i.test(t)).toBe(true);
+                expect(/CSA\s*Z462|NFPA\s*70E/i.test(t)).toBe(true);
+                expect(
+                    /Vivo[-\s]*Muerto[-\s]*Vivo|l[ií]mite de aproximaci[oó]n/i.test(t),
+                ).toBe(true);
+                expect(/back[-\s]?out/i.test(t)).toBe(true);
+            }
+        }
+    });
+
+    it('pdu_sts chips embed alarm-history + SCR pre-transfer hint (S-DISTRIBUTION-01)', () => {
+        // The PDU/STS chip authors a starter whose text steers the LLM
+        // toward including the alarm-history + SCR check the audit
+        // gate enforces. Either presence is acceptable per chip.
+        for (const chip of MOP_CATEGORIES.pdu_sts) {
+            const t = chip.text;
+            expect(/historial de alarmas|alarm history/i.test(t)).toBe(true);
+            expect(/SCR|caja SCR/i.test(t)).toBe(true);
+        }
+    });
+});
+
+describe('Procedure Architect — MOP category select + chip filtering (Commit 4)', () => {
+    const { MOP_CATEGORIES, MOP_CATEGORY_KEYS,
+        setCurrentMopCategory, syncMopCategoryVisibility,
+        getCurrentMopCategory, MOP_CATEGORY_DEFAULT } = __procedures_view_test__;
+
+    it('category wrap is HIDDEN by default (doc_type=SOP)', () => {
+        _mountView();
+        const root = document.getElementById('view-procedures-architect');
+        syncMopCategoryVisibility(root);
+        const wrap = root.querySelector('[data-proc-mop-category-wrap]');
+        expect(wrap.hidden).toBe(true);
+    });
+
+    it('category wrap becomes VISIBLE when doc_type flips to MOP', () => {
+        _mountView();
+        const root = document.getElementById('view-procedures-architect');
+        root.querySelector('[data-proc-doc-type]').value = 'MOP';
+        syncMopCategoryVisibility(root);
+        const wrap = root.querySelector('[data-proc-mop-category-wrap]');
+        expect(wrap.hidden).toBe(false);
+    });
+
+    it('category wrap returns to HIDDEN for EOP/EMP', () => {
+        _mountView();
+        const root = document.getElementById('view-procedures-architect');
+        for (const t of ['SOP', 'EOP', 'EMP']) {
+            root.querySelector('[data-proc-doc-type]').value = t;
+            syncMopCategoryVisibility(root);
+            const wrap = root.querySelector('[data-proc-mop-category-wrap]');
+            expect(wrap.hidden).toBe(true);
+        }
+    });
+
+    it('renderContextChips on MOP renders the DEFAULT category chips (ups)', () => {
+        _mountView();
+        const root = document.getElementById('view-procedures-architect');
+        root.querySelector('[data-proc-doc-type]').value = 'MOP';
+        renderContextChips(root);
+        const chips = root.querySelectorAll(
+            '[data-proc-ctx-chips] button.proc-chip',
+        );
+        expect(chips.length).toBe(MOP_CATEGORIES.ups.length);
+        const labels = Array.from(chips).map((c) => c.textContent);
+        for (const chip of MOP_CATEGORIES.ups) {
+            expect(labels).toContain(chip.label);
+        }
+    });
+
+    it('changing category re-renders the chip row with new bucket', () => {
+        _mountView();
+        const root = document.getElementById('view-procedures-architect');
+        root.querySelector('[data-proc-doc-type]').value = 'MOP';
+
+        // Switch to busway -> 3 chips, all from the busway bucket.
+        setCurrentMopCategory('busway');
+        renderContextChips(root);
+        let chips = root.querySelectorAll('[data-proc-ctx-chips] button.proc-chip');
+        expect(chips.length).toBe(MOP_CATEGORIES.busway.length);
+        let labels = Array.from(chips).map((c) => c.textContent);
+        for (const chip of MOP_CATEGORIES.busway) {
+            expect(labels).toContain(chip.label);
+        }
+
+        // Then transformer -> 4 chips.
+        setCurrentMopCategory('transformer');
+        renderContextChips(root);
+        chips = root.querySelectorAll('[data-proc-ctx-chips] button.proc-chip');
+        expect(chips.length).toBe(MOP_CATEGORIES.transformer.length);
+        labels = Array.from(chips).map((c) => c.textContent);
+        for (const chip of MOP_CATEGORIES.transformer) {
+            expect(labels).toContain(chip.label);
+        }
+    });
+
+    it('falls back to default category when _currentMopCategory is unknown', () => {
+        _mountView();
+        const root = document.getElementById('view-procedures-architect');
+        root.querySelector('[data-proc-doc-type]').value = 'MOP';
+        setCurrentMopCategory('garbage_key');
+        renderContextChips(root);
+        const chips = root.querySelectorAll(
+            '[data-proc-ctx-chips] button.proc-chip',
+        );
+        // Falls back to MOP_CATEGORY_DEFAULT (ups)
+        expect(chips.length).toBe(MOP_CATEGORIES[MOP_CATEGORY_DEFAULT].length);
+    });
+
+    it('hint surfaces the active category name (ux signal)', () => {
+        _mountView();
+        const root = document.getElementById('view-procedures-architect');
+        root.querySelector('[data-proc-doc-type]').value = 'MOP';
+        setCurrentMopCategory('rpp');
+        renderContextChips(root);
+        const slot = root.querySelector('[data-proc-ctx-chips]');
+        expect(slot.textContent).toContain('RPP');
+    });
+
+    it('getCurrentMopCategory returns the live module-state value', () => {
+        // Reset is called automatically in afterEach, so the default
+        // should be the module's MOP_CATEGORY_DEFAULT.
+        setCurrentMopCategory('utility');
+        expect(getCurrentMopCategory()).toBe('utility');
     });
 });
 

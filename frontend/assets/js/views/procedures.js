@@ -99,6 +99,258 @@ const ASSET_NONE_VALUE = '';
 // 3-5 templates per doc_type chosen to span the common operator
 // playbook for each category. Free-form context still works — the
 // chips are a UX accelerator, not a constraint.
+// MOP categorías (Commit 4 — operator catalog 2026-05-23).
+// 6 categorías × 3-4 chips = 21 chip starter templates aligned with the
+// electrical-infrastructure + white-space-distribution catalogs in
+// `config/knowledge/{electrical,distribution}-mop-catalog.md`.
+//
+// Each chip body MUST contain (audit-gate contract, S-SAFETY-01):
+//   - `{asset}` substitution token
+//   - LOTO (or 'LOTO no aplica' for live work) -- legacy regex requires
+//     'LOTO' / 'Lockout' / 'Tagout' substring presence
+//   - PPE category + CSA Z462-24 (or NFPA 70E)
+//   - EITHER 'Vivo-Muerto-Vivo' (de-energized) OR 'límite de
+//     aproximación restringida' (live)
+//   - 'Back-out' / 'Reversión' bounded by a physical metric
+// The 5 universal sections come from the system prompt template; the
+// chip text only needs to seed the LLM with the safety vocabulary.
+const MOP_CATEGORIES = {
+    ups: [
+        { label: 'Bypass de mantenimiento',
+          text: 'Transferir la carga de {asset} al bypass de '
+                + 'mantenimiento externo (make-before-break). LOTO + '
+                + 'PPE Cat 2 per CSA Z462-24. Tras la transferencia y '
+                + 'apertura del banco de baterías, aplicar la '
+                + 'verificación Vivo-Muerto-Vivo en los bornes internos '
+                + 'antes de cualquier manipulación física. Back-out: '
+                + 'si el HMI indica bypass NO sincronizado, abortar; '
+                + 'la ventana de reversión está acotada por '
+                + 'battery_runtime_min del BMS bajo la carga actual.' },
+        { label: 'Reemplazo de baterías',
+          text: 'Reemplazo de banco de baterías en {asset} (VRLA o '
+                + 'Litio) durante ventana de mantenimiento. LOTO en '
+                + 'interruptor de banco + PPE Cat 2 per CSA Z462-24 '
+                + '(EPP químico adicional para electrolito). '
+                + 'Vivo-Muerto-Vivo en bornes antes de extraer celdas. '
+                + 'Back-out: si las celdas nuevas no alcanzan voltaje '
+                + 'de flotación, restaurar el banco antiguo antes que '
+                + 'la autonomía de la cadena redundante caiga al 50%.' },
+        { label: 'Prueba sincronización con generador',
+          text: 'Prueba controlada de sincronización del UPS {asset} '
+                + 'con el generador. LOTO no aplica (prueba '
+                + 'operacional); respetar límite de aproximación '
+                + 'restringida + PPE Cat 4 per CSA Z462-24 durante la '
+                + 'conmutación. Verificar walk-in del rectificador '
+                + 'para limitar la corriente de recarga sin sobrecargar '
+                + 'el alternador. Back-out: si el rectificador no '
+                + 'limita walk-in, abortar antes de los 15 s de '
+                + 'asunción de carga.' },
+        { label: 'Activación EPO (restablecimiento)',
+          text: 'Protocolo de restablecimiento post-EPO en {asset} '
+                + '(tras un disparo controlado). LOTO en alimentación '
+                + 'principal + PPE Cat 4 per CSA Z462-24. Antes de '
+                + 're-energizar, Vivo-Muerto-Vivo en barras + '
+                + 'inspección de cableado por daño térmico. Back-out: '
+                + 'si hay signos de arc-flash interno o cableado '
+                + 'degradado, no re-energizar — escalar a Engineering '
+                + 'antes de cualquier carga.' },
+    ],
+    transformer: [
+        { label: 'Energización (gestión de inrush)',
+          text: 'Energización del transformador {asset} tras '
+                + 'mantenimiento. LOTO removido en interruptor aguas '
+                + 'arriba + PPE Cat 3 per CSA Z462-24. Verificar '
+                + 'ajustes de disparo aguas arriba para evitar que la '
+                + 'corriente de magnetización (inrush) dispare la '
+                + 'alimentación principal. Vivo-Muerto-Vivo previo a '
+                + 'remover LOTO. Back-out: si el breaker aguas arriba '
+                + 'dispara por inrush en el primer intento, re-aplicar '
+                + 'LOTO antes de revisar ajustes — no insistir con '
+                + 're-cierres consecutivos.' },
+        { label: 'Inspección termográfica + limpieza',
+          text: 'Mantenimiento preventivo anual de {asset} '
+                + '(transformador seco): inspección termográfica + '
+                + 'limpieza de devanados + reapriete de conexiones. '
+                + 'LOTO en breaker principal + PPE contra Arc Flash '
+                + 'per CSA Z462-24 categoría según etiqueta del '
+                + 'equipo. Vivo-Muerto-Vivo en primario y secundario '
+                + 'antes de retirar paneles. Back-out: si se detecta '
+                + 'agrietamiento o decoloración severa en bobinas, no '
+                + 're-energizar — mantener LOTO y escalar a '
+                + 'Engineering para evaluación de RUL.' },
+        { label: 'Ajuste de taps',
+          text: 'Cambio de taps mecánicos en {asset} para corregir '
+                + 'voltaje secundario. LOTO + PPE Cat 3 per CSA Z462-24. '
+                + 'Aplicar Vivo-Muerto-Vivo en bornes antes de '
+                + 'manipular las derivaciones físicas. Back-out: si el '
+                + 'tap nuevo no produce el voltaje esperado tras '
+                + 're-energizar, restaurar la posición original antes '
+                + 'de cargar la rama; documentar la discrepancia en '
+                + 'el WO.' },
+        { label: 'Líquidos dieléctricos (DGA)',
+          text: 'Toma de muestras + análisis DGA (gases disueltos) + '
+                + 'rigidez dieléctrica + filtrado del aceite en '
+                + '{asset}. LOTO completo + PPE Cat 4 per CSA Z462-24 '
+                + '(riesgo químico adicional). Vivo-Muerto-Vivo previo '
+                + 'a abrir cualquier válvula de muestreo. Back-out: '
+                + 'si el DGA reporta concentraciones de acetileno por '
+                + 'encima del umbral IEEE C57.104, no re-energizar — '
+                + 'mantener LOTO hasta dictamen del laboratorio.' },
+    ],
+    utility: [
+        { label: 'Prueba ATS conmutación',
+          text: 'Prueba de conmutación en vacío y con carga del ATS '
+                + 'asociado a {asset}. LOTO no aplica (prueba en vivo); '
+                + 'personal fuera del límite de aproximación '
+                + 'restringida durante conmutación mecánica + PPE Cat 4 '
+                + 'per CSA Z462-24. Combustible del generador ≥ 80%. '
+                + 'Back-out: si el generador no asume carga en ≤ 15 s, '
+                + 'forzar retorno mecánico/eléctrico a Utility para '
+                + 'restaurar flujo hacia los UPS antes que la '
+                + 'autonomía de baterías caiga al 50%.' },
+        { label: 'PM switchgear principal',
+          text: 'Mantenimiento integral de tablero principal (LV/MV '
+                + 'switchgear) que alimenta {asset}: racking-out de '
+                + 'interruptores + torqueo de barras + pruebas Megger. '
+                + 'LOTO + PPE Cat 4 contra Arc Flash per CSA Z462-24. '
+                + 'Vivo-Muerto-Vivo obligatorio antes de cualquier '
+                + 'manipulación. Back-out: si la resistencia de '
+                + 'aislamiento cae bajo umbral del fabricante, no '
+                + 're-energizar el feeder — escalar a Engineering '
+                + 'antes de restaurar carga.' },
+        { label: 'Restauración de servicio',
+          text: 'Transferencia de carga de vuelta a la red comercial '
+                + 'desde el generador en {asset}. LOTO no aplica '
+                + '(maniobra operacional); respetar límite de '
+                + 'aproximación restringida + PPE Cat 4 per CSA Z462-24. '
+                + 'Cronometrar la estabilidad de la red (V + Hz) '
+                + 'durante el período de espera previo a la '
+                + 'transferencia. Back-out: si la red exhibe '
+                + 'inestabilidad sostenida (sag > 5% o drift > 0.5 Hz), '
+                + 'mantener carga en generador hasta el próximo '
+                + 'período de prueba.' },
+        { label: 'Respuesta anomalías de red',
+          text: 'Protocolo de actuación frente a degradación '
+                + 'sostenida de utility (sags severos, armónicos, '
+                + 'frecuencia inestable) afectando {asset}. '
+                + 'Aislamiento preventivo de la instalación. LOTO no '
+                + 'aplica (maniobra operacional); respetar límite de '
+                + 'aproximación restringida + PPE Cat 4 per CSA Z462-24. '
+                + 'Back-out: una vez la red se estabilice por al '
+                + 'menos 30 min, iniciar restauración cumpliendo el '
+                + 'MOP de transferencia ordinaria.' },
+    ],
+    pdu_sts: [
+        { label: 'Transferencia STS / bypass',
+          text: 'Transferencia de carga del STS asociado a {asset} '
+                + 'desde fuente preferida a alterna (o bypass de '
+                + 'mantenimiento). PRE-TRANSFER OBLIGATORIO: revisar '
+                + 'historial de alarmas + verificar estado de la caja '
+                + 'SCR + sincronización de fuentes. LOTO no aplica '
+                + '(maniobra en vivo); respetar límite de aproximación '
+                + 'restringida + PPE Cat 3 per CSA Z462-24. Back-out: '
+                + 'si los SCR reportan alarma de temperatura durante '
+                + 'la conmutación, forzar retorno a la fuente '
+                + 'preferida antes de los 100 ms de transferencia.' },
+        { label: 'PM termografía y control',
+          text: 'Mantenimiento preventivo de PDU/STS {asset}: '
+                + 'termografía bajo Arc Flash, revisión de lógica de '
+                + 'control, calibración de displays, limpieza de '
+                + 'filtros. LOTO en alimentación primaria + PPE Cat 3 '
+                + 'per CSA Z462-24. Vivo-Muerto-Vivo en barras antes '
+                + 'de retirar paneles. Revisar historial de alarmas + '
+                + 'estado de la caja SCR previo al inicio. Back-out: '
+                + 'si la termografía revela hot-spots > 60 °C sobre '
+                + 'ambiente en conexiones, no re-energizar — '
+                + 'reapretar + medir post-reapriete antes del cierre.' },
+        { label: 'Reemplazo de breakers',
+          text: 'Reemplazo de interruptor principal o sub-alimentador '
+                + 'en PDU {asset}. LOTO obligatorio + PPE Cat 4 per '
+                + 'CSA Z462-24 + Vivo-Muerto-Vivo en bornes pre y post '
+                + 'cambio físico. Revisar historial de alarmas + '
+                + 'estado de la caja SCR del STS aguas arriba. '
+                + 'Back-out: si el breaker nuevo no opera dentro de '
+                + 'la curva de coordinación del fabricante en prueba '
+                + 'secundaria, no re-energizar la rama — escalar a '
+                + 'Engineering.' },
+    ],
+    rpp: [
+        { label: 'Balanceo de carga',
+          text: 'Re-balanceo de fases A/B/C en RPP {asset} al '
+                + 'instalar nuevos circuitos. LOTO en circuitos '
+                + 'afectados + PPE Cat 2 per CSA Z462-24 + '
+                + 'Vivo-Muerto-Vivo en breakers individuales. Ninguna '
+                + 'fase debe exceder el 80% de su capacidad nominal. '
+                + 'Revisar historial de alarmas del RPP previo. '
+                + 'Back-out: si tras el cambio el desbalance > 10% se '
+                + 'mantiene, restaurar el ruteo previo antes de '
+                + 'cargar IT en los nuevos circuitos.' },
+        { label: 'Instalación de látigos (whips)',
+          text: 'Despliegue de cables de potencia (whips) bajo piso '
+                + 'falso o bandejas aéreas alimentando {asset}. LOTO '
+                + 'en breaker aguas arriba + PPE Cat 2 per CSA Z462-24. '
+                + 'Vivo-Muerto-Vivo en conector previo al manguito. '
+                + 'Respetar radios de curvatura + etiquetado normativo '
+                + '(IEC 309 / NEMA). Back-out: si la prueba de '
+                + 'continuidad falla, dejar el whip aislado y '
+                + 'etiquetado; no energizar.' },
+        { label: 'EPO (restablecimiento post-evento)',
+          text: 'Protocolo post-EPO en RPP {asset} tras evento '
+                + 'humo/fuego. LOTO completo en alimentación + PPE '
+                + 'Cat 4 per CSA Z462-24. Inspección visual de daños '
+                + 'térmicos en contactores + Vivo-Muerto-Vivo previo a '
+                + 'reset. Revisar historial de alarmas para identificar '
+                + 'la causa raíz. Back-out: si hay evidencia de daño '
+                + 'estructural, no re-energizar — mantener LOTO hasta '
+                + 'inspección de bomberos o fabricante.' },
+    ],
+    busway: [
+        { label: 'Instalación / retiro de tap-off boxes',
+          text: 'Instalación o retiro de tap-off boxes en el busway '
+                + 'alimentando {asset}. OPERACIÓN EN VIVO de alto '
+                + 'riesgo: LOTO NO aplica (busway energizado); '
+                + 'respetar límite de aproximación restringida + PPE '
+                + 'Cat 4 per CSA Z462-24 + postura corporal lateral '
+                + 'al insertar. Back-out: si la caja no inserta '
+                + 'mecánicamente con presión normal, retirar '
+                + 'inmediatamente — no forzar — y etiquetar como '
+                + 'pending vendor inspection.' },
+        { label: 'Mantenimiento de juntas y tapas',
+          text: 'Mantenimiento de juntas mecánicas del busway que '
+                + 'alimenta {asset}: reapriete + medición de '
+                + 'resistencia de contacto + limpieza. LOTO en breaker '
+                + 'aguas arriba del sector + PPE Cat 3 per CSA Z462-24. '
+                + 'Vivo-Muerto-Vivo en las juntas antes de abrir tapas. '
+                + 'Back-out: si la resistencia de contacto '
+                + 'post-reapriete excede el umbral del fabricante, no '
+                + 're-energizar el sector — escalar a Engineering.' },
+        { label: 'Escaneo termográfico operativo',
+          text: 'Escaneo termográfico bajo carga del busway '
+                + 'alimentando {asset}: identificar gradientes '
+                + 'térmicos inusuales en puntos de contacto con '
+                + 'tap-off boxes. LOTO no aplica (inspección no '
+                + 'invasiva); respetar límite de aproximación '
+                + 'restringida + PPE Cat 3 per CSA Z462-24. Back-out: '
+                + 'si se detecta hot-spot > 30 °C sobre vecindario, '
+                + 'reducir carga sobre esa tap-off box + abrir WO de '
+                + 'inspección mecánica antes que el ΔT escale.' },
+    ],
+};
+
+const MOP_CATEGORY_KEYS = ['ups', 'transformer', 'utility', 'pdu_sts', 'rpp', 'busway'];
+const MOP_CATEGORY_LABELS = {
+    ups:         'UPS',
+    transformer: 'Transformer',
+    utility:     'Utility / Switchgear / ATS',
+    pdu_sts:     'PDU / STS',
+    rpp:         'RPP',
+    busway:      'Busway',
+};
+const MOP_CATEGORY_DEFAULT = 'ups';
+
+// CONTEXT_TEMPLATES retained for SOP / EOP / EMP. The MOP entry is a
+// FLATTENED union of every MOP_CATEGORIES bucket -- backward-compat
+// with callers/tests that iterate the full set.
 const CONTEXT_TEMPLATES = {
     SOP: [
         { label: 'Daily round',
@@ -117,47 +369,7 @@ const CONTEXT_TEMPLATES = {
                 + 'BMS values, open incidents, pending MOPs are '
                 + 'communicated to the incoming CET.' },
     ],
-    MOP: [
-        // Back-out language is math-grounded (industry-notes follow-up):
-        // every chip pins the back-out window to a physical bound
-        // operators can actually compute (battery runtime, ASHRAE A2
-        // envelope, sync-check expiry, vendor rollback availability).
-        { label: 'Battery cabinet replace',
-          text: 'Replace battery cabinet on {asset} during the '
-                + 'scheduled maintenance window. Coordinate LOTO + PPE '
-                + 'category 2 per CSA Z462-24. Vendor escort required. '
-                + 'Back-out plan: revert before battery autonomy at the '
-                + 'current load reaches the low-voltage cutoff — read '
-                + '`battery_runtime_min` from the BMS before isolation '
-                + 'and use that as the hard deadline.' },
-        { label: 'Load transfer',
-          text: 'Planned load transfer maneuver on {asset}. Coordinate '
-                + 'with the redundant path; verify the alternate is '
-                + 'healthy before isolation. LOTO + PPE per CSA Z462-24. '
-                + 'Back-out plan: if the alternate degrades during the '
-                + 'transfer, revert before the sync-check window '
-                + 'expires; the back-out budget is bounded by the '
-                + 'redundant UPS runtime under projected post-transfer '
-                + 'load.' },
-        { label: 'Filter / fluid service',
-          text: 'Scheduled filter and fluid service on {asset}. Isolate '
-                + 'the unit per the LOTO protocol; wear the PPE the '
-                + 'CSA Z462-24 risk table requires for the energy class. '
-                + 'Back-out plan: if the redundant cooling chain '
-                + 'destabilises (ECWT rise, secondary loop pressure '
-                + 'drop, hall inlet trending up), restore the isolated '
-                + 'unit before the thermal envelope breaches ASHRAE A2 '
-                + '(35 °C inlet cap).' },
-        { label: 'Firmware upgrade',
-          text: 'Firmware upgrade on {asset}. Stage the binary, '
-                + 'arrange the vendor service window, define the LOTO '
-                + 'scope and PPE per CSA Z462-24 for any physical '
-                + 'access. Back-out plan: keep the prior firmware '
-                + 'binary staged + a vendor on-call session active; '
-                + 'the back-out budget is bounded by the operator '
-                + "confidence interval on the vendor's documented "
-                + 'rollback procedure.' },
-    ],
+    MOP: MOP_CATEGORY_KEYS.flatMap((k) => MOP_CATEGORIES[k]),
     EOP: [
         { label: 'Loss of redundancy',
           text: 'Loss of redundancy event on {asset}. Confirm the '
@@ -197,6 +409,10 @@ const CONTEXT_TEMPLATES = {
 let _routeRegistered = false;
 let _viewWired = false;
 let _currentDraft = null;   // last {draft, safety_audit} response
+
+// Commit 4 -- which MOP category the chip row is showing right now.
+// Only relevant when doc_type=MOP; SOP/EOP/EMP ignore this.
+let _currentMopCategory = MOP_CATEGORY_DEFAULT;
 
 // Epic 6 Sprint 3 Phase 2 — stale-verdict invalidation.
 // Snapshot of the context the operator submitted to /generate. When
@@ -261,8 +477,17 @@ function _renderContextChips(root) {
     const slot = root.querySelector('[data-proc-ctx-chips]');
     if (!slot) return;
     const docType = root.querySelector('[data-proc-doc-type]')?.value || 'SOP';
-    const templates = CONTEXT_TEMPLATES[docType] || [];
-    if (templates.length === 0) {
+
+    // Commit 4 -- when authoring a MOP, the chip row is filtered by
+    // _currentMopCategory (UPS / Transformer / Utility / PDU-STS /
+    // RPP / Busway). SOP/EOP/EMP keep the legacy flat list.
+    let templates;
+    if (docType === 'MOP') {
+        templates = MOP_CATEGORIES[_currentMopCategory] || MOP_CATEGORIES[MOP_CATEGORY_DEFAULT];
+    } else {
+        templates = CONTEXT_TEMPLATES[docType] || [];
+    }
+    if (!templates || templates.length === 0) {
         slot.innerHTML = '';
         return;
     }
@@ -273,9 +498,19 @@ function _renderContextChips(root) {
         + escapeHTML(t.label)
         + '</button>'
     )).join('');
-    slot.innerHTML = '<span class="proc-chips-hint">'
-        + 'Quick context — click a template to pre-fill:'
-        + '</span> ' + chips;
+    const hint = docType === 'MOP'
+        ? `MOP starter (${escapeHTML(MOP_CATEGORY_LABELS[_currentMopCategory] || _currentMopCategory)}) — click to pre-fill:`
+        : 'Quick context — click a template to pre-fill:';
+    slot.innerHTML = `<span class="proc-chips-hint">${hint}</span> ${chips}`;
+}
+
+/** Show/hide the MOP-category select based on the current doc_type.
+ *  Only visible for MOP; hidden for SOP/EOP/EMP. */
+function _syncMopCategoryVisibility(root) {
+    const docType = root.querySelector('[data-proc-doc-type]')?.value || 'SOP';
+    const wrap = root.querySelector('[data-proc-mop-category-wrap]');
+    if (!wrap) return;
+    wrap.hidden = (docType !== 'MOP');
 }
 
 /** Apply a clicked chip's template to the textarea, substituting
@@ -894,6 +1129,16 @@ function _wireProceduresView() {
                 <input type="text" data-proc-asset-custom class="proc-input"
                        placeholder="any canonical_id (e.g. genset_a, bess_1)">
             </label>
+            <label data-proc-mop-category-wrap hidden>
+                MOP category:
+                <select data-proc-mop-category class="proc-select">
+                    ${MOP_CATEGORY_KEYS.map((k) => (
+                        `<option value="${escapeHTML(k)}"`
+                        + `${k === MOP_CATEGORY_DEFAULT ? ' selected' : ''}>`
+                        + `${escapeHTML(MOP_CATEGORY_LABELS[k])}</option>`
+                    )).join('')}
+                </select>
+            </label>
             <label>
                 Operator context:
                 <div data-proc-ctx-chips class="proc-chips-row"></div>
@@ -915,18 +1160,29 @@ function _wireProceduresView() {
     `;
     // Initial chip render for the default doc_type (SOP).
     _renderContextChips(root);
+    // Initial sync of the MOP-category wrap (hidden when doc_type !== MOP).
+    _syncMopCategoryVisibility(root);
     // Phase 2: textarea input listener — clears verdict + hides Sign
     // when the operator edits after a generate.
     _installStaleHandler(root);
     root.addEventListener('click', _onClick);
-    // Re-render chips when doc_type changes; sync custom-asset
-    // visibility when the asset picker changes. Both are 'change'
-    // events (not 'click') so they need dedicated listeners.
+    // Re-render chips when doc_type changes; sync custom-asset and
+    // mop-category visibility when applicable. All 'change' events
+    // (not 'click') so they need dedicated listeners.
     root.querySelector('[data-proc-doc-type]')?.addEventListener(
-        'change', () => _renderContextChips(root),
+        'change', () => {
+            _syncMopCategoryVisibility(root);
+            _renderContextChips(root);
+        },
     );
     root.querySelector('[data-proc-asset-select]')?.addEventListener(
         'change', () => _syncCustomAssetVisibility(root),
+    );
+    root.querySelector('[data-proc-mop-category]')?.addEventListener(
+        'change', (ev) => {
+            _currentMopCategory = ev.target.value || MOP_CATEGORY_DEFAULT;
+            _renderContextChips(root);
+        },
     );
     _viewWired = true;
 }
@@ -980,10 +1236,18 @@ export const __procedures_view_test__ = {
         _currentDraft = null;
         _lastGeneratedContext = null;
         _staleHandlerInstalled = false;
+        _currentMopCategory = MOP_CATEGORY_DEFAULT;
     },
     DOC_TYPES,
     ASSET_PRESETS,
     ASSET_CUSTOM_VALUE,
     ASSET_NONE_VALUE,
     CONTEXT_TEMPLATES,
+    MOP_CATEGORIES,
+    MOP_CATEGORY_KEYS,
+    MOP_CATEGORY_LABELS,
+    MOP_CATEGORY_DEFAULT,
+    syncMopCategoryVisibility: _syncMopCategoryVisibility,
+    getCurrentMopCategory: () => _currentMopCategory,
+    setCurrentMopCategory: (k) => { _currentMopCategory = k; },
 };
