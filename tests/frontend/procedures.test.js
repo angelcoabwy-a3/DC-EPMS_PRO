@@ -29,7 +29,7 @@ import { isRegistered } from '/assets/js/core/router.js';
 
 const {
     renderMarkdown, renderResult, verdictPill,
-    submitGenerate, submitSign, onClick,
+    submitGenerate, submitSign, submitSaveToLibrary, onClick,
     renderAssetSelect, resolveAssetId,
     syncCustomAssetVisibility, renderContextChips,
     applyContextTemplate,
@@ -1107,5 +1107,153 @@ describe('Sprint 3 follow-up — Maker-Checker badge in HMI', () => {
         );
         const body = JSON.parse(call[1].body);
         expect(body.operator_id).toBe('wilmer.angel');
+    });
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// Epic 6 Option A — Save-to-library from Architect post-sign
+// ════════════════════════════════════════════════════════════════════
+describe('Option A — Save-to-library button', () => {
+    async function _signAndGetSlot(pid) {
+        // Generate + sign-success cycle leaving the Save button in the DOM.
+        _mountView();
+        const approveBody = {
+            draft: {
+                draft_id: pid, doc_type: 'SOP',
+                content: '# SOP\nDaily round. Verify BMS setpoints.',
+                llm_present: false,
+            },
+            safety_audit: { verdict: 'approve', findings: [] },
+        };
+        vi.stubGlobal('fetch', _fakeFetchOK(approveBody));
+        document.querySelector('[data-proc-context]').value =
+            'A valid context for the save-to-library test.';
+        await submitGenerate();
+        // Sign-success returns 200 with witness_required=false (SOP path).
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                signed: true, draft_id: pid,
+                entry_id: 'lentry-' + pid,
+                sequence_no: 17,
+                content_sha256: 'sigsha256deadbeef'.repeat(4),
+                safety_audit_verdict: 'approve',
+                witness_required: false,
+            }),
+        })));
+        await submitSign(pid);
+        vi.unstubAllGlobals();
+        return document.querySelector(
+            `.proc-sign-result[data-draft-id="${pid}"]`,
+        );
+    }
+
+    it('renders the Save button after a successful sign', async () => {
+        const slot = await _signAndGetSlot('qd-save-1');
+        const btn = slot.querySelector('.proc-btn-save-library');
+        expect(btn).not.toBeNull();
+        expect(btn.textContent).toContain('Save to library');
+        expect(btn.dataset.draftId).toBe('qd-save-1');
+        expect(btn.dataset.ledgerEntryId).toBe('lentry-qd-save-1');
+    });
+
+    it('POSTs draft + ledger_entry_id + operator to /save-to-library', async () => {
+        await _signAndGetSlot('qd-save-post');
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                saved: true,
+                library_id: 'lib-1234-abcd-5678-ef00',
+                draft_id: 'qd-save-post',
+                title: 'SOP — site-wide (qd-save-)',
+                content_sha256: 'x' * 64,
+                audit_verdict: 'approve',
+                library_size: 1,
+            }),
+        }));
+        vi.stubGlobal('fetch', spy);
+        await submitSaveToLibrary('qd-save-post', 'lentry-qd-save-post');
+        const call = spy.mock.calls.find(
+            (c) => c[0] === '/api/procedures/architect/save-to-library',
+        );
+        expect(call).toBeDefined();
+        expect(call[1].method).toBe('POST');
+        const body = JSON.parse(call[1].body);
+        expect(body.draft_id).toBe('qd-save-post');
+        expect(body.ledger_entry_id).toBe('lentry-qd-save-post');
+        expect(body.doc_type).toBe('SOP');
+        expect(body.operator_id).toBe('wilmer.angel');
+    });
+
+    it('shows success line + removes Save button after a 200', async () => {
+        const slot = await _signAndGetSlot('qd-save-ok');
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                saved: true,
+                library_id: 'lib-ok-id-1234567890abcdef',
+                draft_id: 'qd-save-ok',
+                title: 't', content_sha256: 'x', audit_verdict: 'approve',
+                library_size: 5,
+            }),
+        })));
+        await submitSaveToLibrary('qd-save-ok', 'lentry-qd-save-ok');
+        // Sign block still there.
+        expect(slot.querySelector('.proc-sign-ok')).not.toBeNull();
+        // Save button removed; success line appended.
+        expect(slot.querySelector('.proc-btn-save-library')).toBeNull();
+        const okLine = slot.querySelector('.proc-library-ok');
+        expect(okLine).not.toBeNull();
+        expect(okLine.textContent).toContain('Saved to library');
+        expect(okLine.textContent).toContain('library now holds 5');
+    });
+
+    it('on 403 shows fail line without removing the Save button', async () => {
+        const slot = await _signAndGetSlot('qd-save-fail');
+        vi.stubGlobal('fetch', _fakeFetchFail(403, 'Cannot save hard_stop content'));
+        await submitSaveToLibrary('qd-save-fail', 'lentry-qd-save-fail');
+        // Fail line appears; sign block still present; button still there
+        // so operator can retry after the audit issue is fixed.
+        expect(slot.querySelector('.proc-sign-ok')).not.toBeNull();
+        expect(slot.querySelector('.proc-btn-save-library')).not.toBeNull();
+        const failLine = slot.querySelector('.proc-library-fail');
+        expect(failLine).not.toBeNull();
+        expect(failLine.textContent).toContain('403');
+        expect(failLine.textContent).toContain('hard_stop');
+    });
+
+    it('XSS — hostile detail string is escaped', async () => {
+        const slot = await _signAndGetSlot('qd-save-xss');
+        vi.stubGlobal('fetch', _fakeFetchFail(
+            500, '<img src=x onerror=window.__pwn_lib=1>',
+        ));
+        await submitSaveToLibrary('qd-save-xss', 'lentry-qd-save-xss');
+        expect(slot.querySelector('img')).toBeNull();
+        expect(window.__pwn_lib).toBeUndefined();
+    });
+
+    it('save action routes through onClick dispatcher', async () => {
+        await _signAndGetSlot('qd-save-click');
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                saved: true, library_id: 'l-c', draft_id: 'qd-save-click',
+                title: 't', content_sha256: 'x', audit_verdict: 'approve',
+                library_size: 1,
+            }),
+        }));
+        vi.stubGlobal('fetch', spy);
+        const btn = document.querySelector(
+            '.proc-btn-save-library[data-draft-id="qd-save-click"]',
+        );
+        expect(btn).not.toBeNull();
+        onClick({ target: btn });
+        // Two awaits to flush the fetch().then() chain.
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        const urls = spy.mock.calls.map((c) => c[0]);
+        expect(urls).toContain('/api/procedures/architect/save-to-library');
     });
 });

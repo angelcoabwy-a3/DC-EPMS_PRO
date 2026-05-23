@@ -734,6 +734,18 @@ async function _submitSign(draftId) {
                 + `<code>${escapeHTML(String(data.first_signer))}</code> · `
                 + `Checker: <code>${escapeHTML(String(data.second_signer || operatorId))}</code></div>`
             : '';
+        // Save-to-library button — Epic 6 Option A consolidation.
+        // Only renders for fully-sealed signs (signed: true). Click
+        // POSTs to /architect/save-to-library and reports the
+        // library_id back into the same result slot.
+        const idEsc = escapeHTML(draft.draft_id || '');
+        const ledgerEntryEsc = escapeHTML(String(data.entry_id || ''));
+        const saveBtn = `<button class="proc-btn proc-btn-save-library"
+                data-action="save-to-library"
+                data-draft-id="${idEsc}"
+                data-ledger-entry-id="${ledgerEntryEsc}">
+            📚 Save to library
+        </button>`;
         slot.innerHTML = sanitizeHTML(
             `<div class="proc-sign-ok">
                 Signed to ledger ·
@@ -742,11 +754,81 @@ async function _submitSign(draftId) {
                 sha256 <code>${sha}…</code>
             </div>`
             + witnessLine,
-        );
+        ) + saveBtn;
     } catch (e) {
         slot.innerHTML = sanitizeHTML(
             `<div class="proc-sign-fail">Network error: `
             + `${escapeHTML(e.message)}</div>`,
+        );
+    }
+}
+
+
+// ─── Save approved draft to the corpus library ──────────────────────
+async function _submitSaveToLibrary(draftId, ledgerEntryId) {
+    const root = $('view-procedures-architect');
+    if (!root || !_currentDraft) return;
+    const draft = _currentDraft.draft || {};
+    if (draft.draft_id !== draftId) return;
+    const slot = root.querySelector(
+        `.proc-sign-result[data-draft-id="${CSS.escape(draftId)}"]`,
+    );
+    if (!slot) return;
+    const opInput = root.querySelector('[data-proc-operator-id]');
+    const operatorId = (opInput?.value || 'wilmer.angel').trim() || 'wilmer.angel';
+    try {
+        const resp = await fetch(
+            '/api/procedures/architect/save-to-library', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    draft_id: draft.draft_id,
+                    doc_type: draft.doc_type,
+                    content: draft.content,
+                    asset_id: draft.asset_id || null,
+                    operator_id: operatorId,
+                    actor_role: 'SME_L6',
+                    ledger_entry_id: ledgerEntryId || null,
+                }),
+            },
+        );
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            // Append a failure line rather than overwriting the sign
+            // success — operator needs to see both the seal AND why
+            // the library save bounced.
+            slot.insertAdjacentHTML(
+                'beforeend',
+                sanitizeHTML(
+                    `<div class="proc-library-fail">Save to library `
+                    + `failed (HTTP ${resp.status}): `
+                    + `${escapeHTML(data.detail || resp.statusText)}</div>`,
+                ),
+            );
+            return;
+        }
+        // Replace the Save button with a success confirmation; the
+        // sign block above stays in place so the audit trail line
+        // is preserved.
+        const btn = slot.querySelector('.proc-btn-save-library');
+        if (btn) btn.remove();
+        const libId = escapeHTML(String(data.library_id || '').slice(0, 16));
+        const size = escapeHTML(String(data.library_size ?? '?'));
+        slot.insertAdjacentHTML(
+            'beforeend',
+            sanitizeHTML(
+                `<div class="proc-library-ok">Saved to library · `
+                + `id <code>${libId}…</code> · `
+                + `library now holds ${size} draft(s)</div>`,
+            ),
+        );
+    } catch (e) {
+        slot.insertAdjacentHTML(
+            'beforeend',
+            sanitizeHTML(
+                `<div class="proc-library-fail">Network error: `
+                + `${escapeHTML(e.message)}</div>`,
+            ),
         );
     }
 }
@@ -771,6 +853,9 @@ function _onClick(ev) {
             if (root) _applyContextTemplate(root, t.dataset.ctxText);
             break;
         }
+        case 'save-to-library':
+            _submitSaveToLibrary(t.dataset.draftId, t.dataset.ledgerEntryId);
+            break;
     }
 }
 
@@ -876,6 +961,7 @@ export const __procedures_view_test__ = {
     verdictPill: _verdictPill,
     submitGenerate: _submitGenerate,
     submitSign: _submitSign,
+    submitSaveToLibrary: _submitSaveToLibrary,
     onClick: _onClick,
     renderAssetSelect: _renderAssetSelect,
     resolveAssetId: _resolveAssetId,

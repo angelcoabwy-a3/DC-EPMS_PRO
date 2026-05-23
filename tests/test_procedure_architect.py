@@ -810,3 +810,144 @@ class TestMakerCheckerWitnessGate:
         assert r_b.status_code == 200
         assert r_b.json()["first_signer"] == "maker.carol"
         assert r_b.json()["second_signer"] == "checker.dave"
+
+
+# ════════════════════════════════════════════════════════════════════
+# Epic 6 Option A — save-to-library endpoint
+# ════════════════════════════════════════════════════════════════════
+@pytest.fixture
+def library_client(mop_app):
+    """Reuses mop_app fixture which already wires the ForensicLedger
+    + resets the pending MOP signature dict. Also resets the
+    Architect library so each test starts clean."""
+    from backend.procedure_routes import _reset_architect_library_for_test
+    _reset_architect_library_for_test()
+    return TestClient(mop_app)
+
+
+class TestArchitectSaveToLibrary:
+    def test_safe_mop_saves_returns_library_id_and_size(self, library_client):
+        r = library_client.post(
+            "/api/procedures/architect/save-to-library",
+            json={
+                "draft_id": "qd-lib-1",
+                "doc_type": "MOP",
+                "content": SAFE_MOP_CONTENT,
+                "asset_id": "ups_b",
+                "operator_id": "wilmer.angel",
+                "actor_role": "SME_L6",
+                "ledger_entry_id": "fake-entry-id-001",
+                "title": "Replace UPS-B battery cabinet",
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["saved"] is True
+        assert body["draft_id"] == "qd-lib-1"
+        assert body["title"] == "Replace UPS-B battery cabinet"
+        assert body["audit_verdict"] == AUDIT_VERDICT_APPROVE
+        assert body["library_size"] == 1
+        assert body["content_sha256"] == hashlib.sha256(
+            SAFE_MOP_CONTENT.encode("utf-8"),
+        ).hexdigest()
+
+    def test_default_title_when_none_supplied(self, library_client):
+        r = library_client.post(
+            "/api/procedures/architect/save-to-library",
+            json={
+                "draft_id": "qd-notitle-aaaaaaaa",
+                "doc_type": "SOP",
+                "content": "Daily round. Verify BMS setpoints.",
+                "asset_id": "chiller_1",
+                "operator_id": "op",
+            },
+        )
+        assert r.status_code == 200
+        # Default title format: "{doc_type} — {asset_id} ({draft_id_8})"
+        assert r.json()["title"] == "SOP — chiller_1 (qd-notit)"
+
+    def test_hard_stop_content_refused_with_403(self, library_client):
+        """A hostile HMI cannot stash an unsafe MOP in the library by
+        skipping the audit gate — server re-audits on save."""
+        r = library_client.post(
+            "/api/procedures/architect/save-to-library",
+            json={
+                "draft_id": "qd-unsafe",
+                "doc_type": "MOP",
+                "content": "# MOP\nGo do the thing.\n",
+                "operator_id": "wilmer.angel",
+            },
+        )
+        assert r.status_code == 403
+        assert "hard_stop" in r.json()["detail"].lower()
+
+    def test_library_list_returns_newest_first(self, library_client):
+        for i in range(3):
+            library_client.post(
+                "/api/procedures/architect/save-to-library",
+                json={
+                    "draft_id": f"qd-list-{i}",
+                    "doc_type": "SOP",
+                    "content": "Verify BMS setpoints (entry " + str(i) + ").",
+                    "operator_id": "op",
+                },
+            )
+        r = library_client.get("/api/procedures/architect/library")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total"] == 3
+        assert [it["draft_id"] for it in body["items"]] == [
+            "qd-list-2", "qd-list-1", "qd-list-0",
+        ]
+
+    def test_library_list_respects_limit(self, library_client):
+        for i in range(5):
+            library_client.post(
+                "/api/procedures/architect/save-to-library",
+                json={
+                    "draft_id": f"qd-lim-{i}", "doc_type": "SOP",
+                    "content": "Verify BMS.", "operator_id": "op",
+                },
+            )
+        r = library_client.get("/api/procedures/architect/library?limit=2")
+        body = r.json()
+        assert body["total"] == 5
+        assert len(body["items"]) == 2
+
+    def test_library_empty_returns_empty_items(self, library_client):
+        r = library_client.get("/api/procedures/architect/library")
+        assert r.status_code == 200
+        assert r.json() == {"items": [], "total": 0}
+
+
+# ════════════════════════════════════════════════════════════════════
+# Epic 6 Option A — /api/mops/generate is gone (HTTP 410)
+# ════════════════════════════════════════════════════════════════════
+def test_legacy_mops_generate_returns_410_gone():
+    """The deprecated endpoint MUST return 410 Gone with a migration
+    detail pointing at the Architect successor."""
+    # main is importable as a top-level module via the sys.path shim
+    # in tests/test_smoke.py — replay the same insertion here so this
+    # test doesn't depend on smoke being collected first.
+    import pathlib
+    import sys
+
+    project_root = pathlib.Path(__file__).resolve().parent.parent
+    backend_path = str(project_root / "backend")
+    if backend_path not in sys.path:
+        sys.path.insert(0, backend_path)
+    from main import app as main_app
+
+    test_client = TestClient(main_app)
+    try:
+        r = test_client.post(
+            "/api/mops/generate",
+            json={"topic": "any", "doc_type": "MOP"},
+        )
+        assert r.status_code == 410
+        body = r.json()["detail"]
+        assert body["error"] == "endpoint_removed"
+        assert body["successor"] == "POST /api/procedures/architect/generate"
+        assert "Safety Officer" in body["message"]
+    finally:
+        test_client.close()

@@ -43,6 +43,7 @@ import asyncio
 import hashlib
 import logging
 import time
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -345,6 +346,128 @@ async def architect_sign(
         "content_sha256": content_sha,
         "safety_audit_verdict": audit.verdict,
         "witness_required": False,
+    }
+
+
+# ─── Architect library store (in-memory) ─────────────────────────────
+# Append-only list of approved + signed Architect drafts that the
+# operator chose to save to the corpus library. Mirrors the pending
+# MOP signature store pattern: in-memory only for now (rebuilds
+# fresh on restart); a DB-backed library is queued. The library
+# endpoint is what closes the Epic 6 Option A consolidation loop --
+# the MOPs view (post-cleanup) renders BOTH the static corpus AND
+# the Architect-signed drafts via a future merge fetch.
+_architect_library: list[dict[str, Any]] = []
+
+
+def _reset_architect_library_for_test() -> None:
+    """Test helper -- isolates each test from prior library state."""
+    _architect_library.clear()
+
+
+class ArchitectSaveToLibraryRequest(BaseModel):
+    """Body for POST /api/procedures/architect/save-to-library.
+
+    Same shape as ArchitectSignRequest with the addition of the
+    ledger ``entry_id`` returned by /sign -- ties the library entry
+    to its sealed ledger record so the audit trail spans both
+    surfaces. The server re-audits content (defence in depth) and
+    refuses ``hard_stop`` material from landing in the library."""
+
+    draft_id: str = Field(..., min_length=1, max_length=128)
+    doc_type: str = Field(..., pattern="^(SOP|MOP|EOP|EMP)$")
+    content: str = Field(..., min_length=1, max_length=64_000)
+    asset_id: str | None = Field(default=None, max_length=128)
+    operator_id: str = Field(..., min_length=1, max_length=128)
+    actor_role: str | None = Field(default=None, max_length=64)
+    ledger_entry_id: str | None = Field(
+        default=None, max_length=128,
+        description="The /sign response's entry_id -- ties library "
+                    "row to ledger row.",
+    )
+    title: str | None = Field(
+        default=None, max_length=256,
+        description="Operator-supplied display title for the library "
+                    "card. Defaults to a doc_type + asset_id derived "
+                    "string when absent.",
+    )
+
+
+@router.post("/architect/save-to-library")
+async def architect_save_to_library(
+    req: ArchitectSaveToLibraryRequest,
+) -> dict[str, Any]:
+    """Epic 6 Option A consolidation -- pin an approved + signed
+    Architect draft into the corpus library so operators can recall
+    it the next time the same maneuver comes up.
+
+    Re-audits content before accepting (defence in depth -- a hostile
+    HMI cannot stash an unsafe MOP in the library by skipping the
+    audit gate). ``hard_stop`` content is refused with HTTP 403.
+    """
+    draft = ProcedureDraft(
+        draft_id=req.draft_id,
+        doc_type=req.doc_type,
+        context="(replayed from save-to-library request)",
+        content=req.content,
+        asset_id=req.asset_id,
+        generated_at=0.0,
+        llm_present=False,
+    )
+    audit = audit_procedure_safety(draft)
+    if audit.is_blocking:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Cannot save hard_stop content to the library: "
+                f"{'; '.join(audit.findings)}"
+            ),
+        )
+
+    content_sha = hashlib.sha256(req.content.encode("utf-8")).hexdigest()
+    title = req.title or f"{req.doc_type} — {req.asset_id or 'site-wide'} ({req.draft_id[:8]})"
+    entry = {
+        "library_id": str(uuid.uuid4()),
+        "draft_id": req.draft_id,
+        "doc_type": req.doc_type,
+        "asset_id": req.asset_id,
+        "title": title,
+        "content": req.content,
+        "content_sha256": content_sha,
+        "operator_id": req.operator_id,
+        "actor_role": req.actor_role or "operator",
+        "ledger_entry_id": req.ledger_entry_id,
+        "audit_verdict": audit.verdict,
+        "saved_at": time.time(),
+    }
+    _architect_library.append(entry)
+    log.info(
+        "[procedure_routes] architect draft %s saved to library by %s "
+        "(library_id=%s, ledger_entry=%s)",
+        req.draft_id, req.operator_id,
+        entry["library_id"], req.ledger_entry_id,
+    )
+    return {
+        "saved": True,
+        "library_id": entry["library_id"],
+        "draft_id": req.draft_id,
+        "title": title,
+        "content_sha256": content_sha,
+        "audit_verdict": audit.verdict,
+        "library_size": len(_architect_library),
+    }
+
+
+@router.get("/architect/library")
+async def architect_list_library(limit: int = 50) -> dict[str, Any]:
+    """List the most recent ``limit`` Architect-saved drafts (newest
+    first). The MOPs library view (post-Option-A cleanup) merges
+    these alongside the static corpus."""
+    limit = max(1, min(int(limit), 500))
+    items = list(reversed(_architect_library))[:limit]
+    return {
+        "items": items,
+        "total": len(_architect_library),
     }
 
 
