@@ -1,10 +1,32 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.16 (2026-05-20) — Epic 3 OPEN · Batches 3.A + 3.C delivered (6-agent fleet)
+- **Status**: v11.17 (2026-05-23) — Epic 4 DELIVERED out-of-roadmap · Epic 5 QUEUED (Optimizer HMI v2) · Epic 3.B still deferred
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-20 (v11.16)
+- **Locked**: 2026-05-10 · **Synced**: 2026-05-23 (v11.17)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.17 sync (2026-05-23)**: **Epic 5 QUEUED** (Optimizer HMI v2 -- 7 tasks,
+  ~35h, observability + multi-agent transparency + Epic 4 wire-up). Also
+  retroactively records two events delivered out-of-roadmap since v11.16:
+  (1) **Epic 4 -- Forensic Ledger** delivered 2026-05-23 in 4 atomic commits
+  (`07cc39a` ADR-011, `89b6930` ledger module + 18 unit tests,
+  `5b0cb68` BMS Proposer chain + Rollback Harness on `/api/bms`,
+  `de41703` doc-sync). HMAC-SHA256 chained append-only audit, TimescaleDB-
+  backed, IEC 62443-3-3 SR 6.1/6.2/7.3/7.4. Reactive to the 2026-05-22
+  MSD v2.0 forensic audit's 4 CRITICAL findings -- not queued in this
+  roadmap beforehand. (2) **DC-EPMS-MSD-005** (HIGH) discovered during the
+  post-Epic-4 runtime smoke and resolved same session (`491e9f6` fix +
+  `3db2bd1` doc-sync): asyncpg deserialises the UUID column as
+  `asyncpg.pgproto.pgproto.UUID`, breaking `_compute_hmac().encode()` on
+  every `verify_chain()` against Postgres. The 18 unit tests only
+  exercised `InMemoryPersistence` -- false-positive gate. Closed with a
+  1-line boundary coercion in `_row_to_entry` + 4 new integration tests
+  against real Postgres in a per-PID isolated schema. Backend pytest:
+  830 -> 871 (+41 Epic 4) -> 875 (+4 MSD-005); ruff 0 violations; HMAC
+  key now persisted in `config/.env` (`key_version=1`,
+  cross-restart-verifiable). Epic 5 backlog below codifies the next
+  Optimizer HMI improvements suggested by Epic 4 visibility into the
+  ledger.
 - **v11.16 sync (2026-05-20)**: **Epic 3 Batch 3.C DELIVERED** (`9267667` mock
   + `79ed614` agent). The multi-agent fleet now has **6 specialised
   perspectives** — Carbon/Grid joins as the new sixth member. Owns the
@@ -635,6 +657,271 @@ veto behaviour, T3.3 4-test pattern viable).
 **Target fleet ceiling: 7 agents.** Beyond 7, the operator cognitive
 load on a consult chip-grid degrades faster than the marginal value of
 another perspective. Stop at 7 — after 3.B lands the fleet is full.
+
+---
+
+## Epic 5 — Optimizer HMI v2 (operator observability + multi-agent transparency)
+
+**Status:** 🟦 **QUEUED** — 7 tasks, ~35 h total, 3 sprints of ~1-2 days each.
+No commits yet. Backlog landed in roadmap 2026-05-23 (v11.17 sync).
+
+**Motivation.** The Optimizer view shipped with Epic 2 Batch 2.D
+(`4d1a611`, `frontend/assets/js/views/optimizer.js`) is functional for
+its narrow 2.D scope -- list queued proposals, allow SME_L6 approve/
+reject -- but the view's own docstring (lines 26-30) enumerates three
+deferred surfaces: per-agent narrative breakdown, What-If sandbox,
+persistent approval history. Two new pressures have surfaced since 2.D:
+
+  1. **Multi-agent fleet grew 4 -> 6** (Capacity Planner 3.A,
+     Carbon/Grid 3.C). The HMI still shows only the rolled-up consensus
+     verdict + a single combined `consensus_rationale` -- the 6
+     individual perspectives are invisible. This erases the
+     differentiator the fleet was built for.
+  2. **Epic 4 Forensic Ledger** (2026-05-23, out-of-roadmap) now
+     guarantees that every approved proposal generates a `proposal_id`-
+     stamped chain of ledger entries (S-PROPOSER-01). The HMI has no
+     visualisation of that trail, so the audit feature is invisible to
+     the operator who triggered it.
+  3. **Default-OFF + silent ticks** of the Optimizer leave the HMI
+     ambiguous between "loop dead" and "loop alive + ADR-006 decided
+     no-action". The proactive agent reads as failed at a glance.
+
+Epic 5 is the HMI layer that closes those three gaps.
+
+**Out of scope:** mutating control-law thresholds at runtime (ADR-006
+says config is design-time, not operator-tunable), and any change to
+the Proposer Pattern itself (the AST guards in
+`tests/test_optimizer.py` still bind).
+
+### E5.A — Optimizer loop heartbeat strip (~5 h) · Sprint 1
+
+**Problem:** HMI no distingue "loop muerto" de "loop sano + ADR-006
+no-action". Queue vacío es ambiguo.
+
+- Backend: `GET /api/optimizer/health` returns `{last_tick_at,
+  ticks_total, recent_outcomes_60s: {no_drift, proposed, paced_out,
+  safety_veto}, live_pue, pue_target, drift, pacing_until_per_surface}`.
+  Data already in `_audit_log: list[AuditEntry]` + `TelemetryPoint`.
+  Hermes event `hermes:optimizer-tick` emitted from the orchestrator.
+- Frontend: horizontal strip in `views/optimizer.js` above the card
+  list. 5-min PUE sparkline (reuses `core/shi_sparkline.js` style).
+  Live update via Hermes WS event, no polling fallback needed.
+
+**Acceptance:** 200 enabled / 503 default-OFF; strip refreshes within
+5 s of real tick; sparkline draws from telemetry_pipeline curve.
+
+**Tests (+4 backend, +3 frontend):** health shape validation,
+default-OFF 503, hermes event emit, sparkline render, hermes refresh
+listener, sanitize numeric values.
+
+**Files:** `backend/optimizer.py` (~50 LOC reducer),
+`backend/optimizer_routes.py` (~30 LOC endpoint), `backend/hermes.py`
+(~10 LOC event), `views/optimizer.js` (~80 LOC strip),
+`core/hermes_events.js` (+1 subscription).
+
+**Skills:** S-ROUTE-02, S-SEC-01, S-DET-01, S-TEST-01, S-TEST-02.
+
+### E5.B — Approval history sidebar (~5 h) · Sprint 2
+
+**Problem:** `GET /api/optimizer/approvals` exists
+(`optimizer_routes.py:281`) but no frontend consumer. Operator does
+not see decision history or the write -> ledger trace.
+
+- Backend: **zero changes** -- endpoint already exposes
+  `OptimizerApproval.to_dict()` with proposal_id, decision,
+  operator_id, actor_role, decision_at, bms_write_success,
+  bms_write_message, bms_tag_id, approval_id.
+- Frontend: collapsible right-aside `<aside data-opt-history>` with
+  last 10 decisions. Per row: relative timestamp, pid (8 chars),
+  decision badge (green/red), operator_id, BMS write status. Expand
+  shows approval_id + full reason.
+
+**Acceptance:** empty when total=0; renders last N otherwise;
+auto-refresh on `hermes:optimizer-proposal` (assumes dequeue ->
+approval); XSS sanitization on reason field.
+
+**Tests (+3 frontend):** render empty / render N / hermes refresh.
+
+**Files:** `views/optimizer.js` (~70 LOC sidebar).
+
+**Skills:** S-SEC-01, S-TEST-02.
+
+### E5.C — Per-agent voting breakdown in each card (~7 h) · Sprint 1
+
+**Problem:** Card shows only rolled-up `consensus_verdict` +
+combined `consensus_rationale`. The 6 individual agent voices are
+invisible. This IS the project's differentiator and it is hidden.
+
+- Backend: `QueuedProposal` gains
+  `agent_breakdown: list[AgentVote]` where
+  `AgentVote = {agent_id, verdict, rationale_oneline}`. The
+  orchestrator already has this data; just stop discarding it in the
+  roll-up.
+- Frontend: collapsible "6 agents voted" section inside
+  `_renderProposalCard`. Compact table with icons by verdict
+  (✓ APPROVE / ⚠ CAUTION / ✗ HARD_STOP / 🛑 VETO -- VETO only for
+  Safety Officer per S-DET-02).
+
+**Acceptance:** `to_dict()` includes agent_breakdown with exactly 6
+entries (or less when partial consult); frontend degrades cleanly to
+0/n/6; only Safety Officer gets the 🛑 icon (S-DET-02 binding); the
+existing card-header "SAFETY VETO" badge remains the canonical
+operator signal.
+
+**Tests (+4 backend, +3 frontend):** breakdown propagation
+(full / partial / empty / safety_veto), card render, XSS sanitize on
+rationale_oneline, icon mapping per verdict.
+
+**Files:** `backend/optimizer.py` (~30 LOC QueuedProposal),
+`backend/multi_agent.py` (~20 LOC propagate breakdown from
+`_compute_consensus`), `views/optimizer.js` (~60 LOC section).
+
+**Skills:** S-DET-02 (binding test), S-DET-03, S-SEC-01, S-TEST-01,
+S-TEST-02.
+
+**Risk:** touches `multi_agent.py` -- the 8 existing consensus tests
+must remain green. Run `tests/test_multi_agent.py` targeted first per
+S-TEST-01.
+
+### E5.D — Per-card forensic trail link (Epic 4 wire-up, ~4 h) · Sprint 2
+
+**Problem:** Epic 4's forensic ledger is invisible from HMI. The
+operator who approved a proposal cannot see the 2 entries
+(`BMS_WRITE_REQUESTED` + `BMS_WRITE_RESULT`) their action generated.
+
+- Backend: `GET /api/ledger/entries?proposal_id=<uuid>` filter by
+  payload field. SQL:
+  `WHERE payload->>'proposal_id' = $1` in
+  `PostgresPersistence.fetch_all_by_proposal_id` (~30 LOC + protocol
+  method). New JSONB index in a follow-up migration if chains grow
+  past ~10k entries.
+- Frontend: after the approval result block in the card, link
+  "View forensic trail (N entries)" opens a modal showing both
+  entries with HMAC chain visualisation (`entry_hmac` of entry #1 ==
+  `prev_hash` of entry #2).
+
+**Acceptance:** endpoint returns `[]` for unknown proposal_id; full
+chain for approved write. Modal renders chain link explicitly. XSS
+sanitization on message field.
+
+**Tests (+3 backend, +3 frontend):** filter no-match / 2-entry match /
+multiple writes same proposal_id; modal render / chain visualization /
+sanitize.
+
+**Files:** `backend/ledger/forensic_ledger.py` (~30 LOC),
+`backend/main.py` (~15 LOC endpoint variant), `views/optimizer.js`
+(~80 LOC modal).
+
+**Skills:** S-LEDGER-01, S-SEC-01, S-TEST-01, S-TEST-02.
+
+**Dependency:** ship after E5.B (sidebar provides the entry-point UI).
+
+### E5.E — What-If sandbox preview before approve (~9 h) · Sprint 3
+
+**Problem:** `confirm_ashrae` checkbox is an act of faith -- operator
+sees no sandbox projection. Epic 2 brief §6 required it; 2.D shipped
+without it.
+
+- Backend: `POST /api/optimizer/preview/{proposal_id}` runs the
+  deterministic impact computation WITHOUT actuation. Returns
+  `{projected_pue, projected_wue, projected_ashrae_distance,
+  projected_chiller_load_pct, ...}`. Requires extracting projection
+  logic from the tick into a pure function
+  `simulate_setpoint_impact(point, surface, proposed_value)`
+  reusable by both paths.
+- Frontend: "Preview impact" button before Approve renders a preview
+  card with projected vs current values. ASHRAE distance in
+  green/amber/red per tolerance band.
+
+**Acceptance:** preview is purely deterministic (S-DET-01 -- zero LLM
+call); endpoint idempotent (same input -> same output); frontend
+preview persists until new input or cancel.
+
+**Tests (+4 backend, +3 frontend):** verdict-class tests (green /
+amber / red / saturated-out-of-bounds); preview render, color
+mapping, re-fetch on input change.
+
+**Files:** `backend/optimizer.py` (~80 LOC pure function +
+extraction), `backend/optimizer_routes.py` (~30 LOC endpoint),
+`views/optimizer.js` (~100 LOC preview UI).
+
+**Skills:** S-DET-01, S-TEST-01, S-TEST-02.
+
+**Dependency:** no technical blockers, but recommend after A+B+C+D --
+this is polish, not fundamentals.
+
+### E5.F — OptimizerConfig inspector panel (~2 h) · Sprint 3 (cheap)
+
+**Problem:** Operator approving a proposal has no context on why
+the Optimizer chose THIS value vs another. Thresholds
+(`PUE_DRIFT_THRESHOLD`, `MIN_TIME_BETWEEN_PROPOSALS`, surface bounds)
+are invisible.
+
+- Backend: `GET /api/optimizer/config` serialises `OptimizerConfig`
+  dataclass to dict. Read-only -- config is design-time per ADR-006.
+- Frontend: collapsed-by-default "Config & Bounds" panel at view
+  footer. Key/value table with tooltips per threshold.
+
+**Acceptance:** endpoint returns all public OptimizerConfig fields;
+frontend renders human-readable values (e.g. `600s = 10 min`).
+
+**Tests (+1 backend, +1 frontend):** shape validation, render.
+
+**Files:** `backend/optimizer_routes.py` (~20 LOC),
+`views/optimizer.js` (~40 LOC).
+
+**Skills:** S-SEC-01, S-TEST-01, S-TEST-02.
+
+### E5.G — Rejection-reason analytics (~3 h) · Sprint 3
+
+**Problem:** 2.D left a comment "feeds the optional 2.2 learning
+loop" but never surfaced analysis. Reject reasons stay buried in
+`ApprovalLog`.
+
+- Backend: **zero changes** -- `GET /api/optimizer/approvals` already
+  returns all `reason` fields.
+- Frontend: at the end of the approval sidebar (E5.B), block "Common
+  rejection patterns last 30 days" with simple word frequency or
+  surface clustering. If <10 rejections total, show "Not enough data
+  -- need more rejections".
+
+**Acceptance:** purely client-side derivation (no new backend);
+empty / sparse / dense cases render cleanly.
+
+**Tests (+3 frontend):** empty / 5 rejections sparse / 30 rejections
+with clustering.
+
+**Files:** `views/optimizer.js` (~50 LOC analytics block).
+
+**Skills:** S-SEC-01 (reasons are operator-authored -- sanitizeHTML
+before any frequency display), S-TEST-02.
+
+**Dependency:** lives inside the E5.B sidebar.
+
+### Epic 5 sequencing & gate impact
+
+```
+Sprint 1 (~12 h, 1.5 days) -- observability layer
+  E5.A heartbeat -> E5.C per-agent breakdown
+  Core differentiator. Sprint 1 alone delivers the bulk of demo value.
+
+Sprint 2 (~9 h, 1 day) -- auditability layer
+  E5.B approval sidebar -> E5.D forensic trail link
+  Closes the Epic 4 <-> Epic 2 loop (Proposer chain visible).
+
+Sprint 3 (~14 h, 1.5-2 days) -- polish layer
+  E5.F config inspector (2 h, quick win)
+  E5.G rejection analytics (3 h)
+  E5.E What-If preview (9 h, biggest investment, high demo value)
+```
+
+**Total test coverage delta:** +17 backend tests (pytest floor 875 ->
+892), +19 frontend tests (vitest 193 -> 212). Both ruff and AST-
+invariant Proposer Pattern guards continue to hold.
+
+**Risk surface per task** logged in the proposal text; the highest-
+impact one is E5.C's touch of `multi_agent.py` (8 consensus tests
+must remain green) -- mitigate with targeted-first protocol.
 
 ---
 
