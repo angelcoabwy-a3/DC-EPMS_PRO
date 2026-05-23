@@ -126,12 +126,14 @@ async def test_generate_no_llm_returns_deterministic_skeleton():
     assert draft.llm_present is False
     assert "MOP — Method of Procedure" in draft.content
     assert "Replace UPS battery cabinet" in draft.content
-    # Every section header from the spec is present in the skeleton.
+    # Every section header from the Universal 5-Point Structure
+    # (operator mandate 2026-05-23, Epic 6 Commit 3 hardening) is
+    # present in the skeleton.
     for section in (
-        "Identificación de Riesgos",
-        "Protocolo de Aislamiento",
+        "Alcance y Objetivo",
+        "Evaluación de Impacto y Riesgos",
         "Prerrequisitos",
-        "Secuencia de Intervención",
+        "Lista de Pasos Secuenciales",
         "Plan de Reversión",
     ):
         assert section in draft.content
@@ -219,22 +221,35 @@ class TestAuditMOP:
         assert any("MOP refused" in f for f in result.findings)
 
     def test_mop_with_all_three_terms_is_approve(self):
+        # Post Epic-6-hardening (Commit 3, operator mandate 2026-05-23):
+        # the legacy LOTO+PPE+CSA Z462 terms are NECESSARY but no longer
+        # sufficient. A passing MOP must also carry the Universal
+        # 5-Point Structure + voltage verification (or approach limit).
         content = (
             "# MOP — Replace UPS battery\n"
+            "## 1. Alcance y Objetivo\nReplace UPS-B battery cabinet.\n"
+            "## 2. Evaluación de Impacto y Riesgos\n"
             "Riesgos: arc-flash, PPE category 2 per CSA Z462-24.\n"
-            "LOTO: lock breaker UPS-B-MAIN before any work.\n"
+            "## 3. Prerrequisitos\nLOTO: lock breaker UPS-B-MAIN before any work.\n"
+            "## 4. Pasos Secuenciales\nApply Vivo-Muerto-Vivo verification.\n"
+            "## 5. Plan de Reversión / Back-out\n"
+            "If anything fails, revert to redundant path.\n"
         )
         result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
         assert result.verdict == AUDIT_VERDICT_APPROVE
         assert result.findings == []
 
     def test_mop_with_nfpa_70e_instead_of_csa_z462_is_approve(self):
-        # The pattern accepts EITHER standard — this is the US-spec
-        # equivalent. CSA is Canada (Toronto site), NFPA is US, both
-        # are valid arc-flash standards.
+        # The pattern accepts EITHER standard — CSA is Canada (Toronto
+        # site), NFPA is US. Same Epic 6 hardening applies (universal
+        # 5-point + voltage verification still required).
         content = (
-            "MOP draft. PPE per NFPA 70E. Apply Lockout/Tagout on the "
-            "upstream breaker before opening the enclosure."
+            "MOP draft.\n"
+            "## 1. Propósito: tap change\n"
+            "## 2. Riesgos: PPE per NFPA 70E\n"
+            "## 3. Prerrequisitos: Lockout/Tagout on the upstream breaker\n"
+            "## 4. Secuencia: open enclosure after Vivo-Muerto-Vivo check\n"
+            "## 5. Back-out: re-energize and verify tap position\n"
         )
         result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
         assert result.verdict == AUDIT_VERDICT_APPROVE
@@ -318,6 +333,372 @@ class TestAuditOtherTemplates:
 def test_audit_rejects_non_draft_input():
     with pytest.raises(ArtifactDependencyError, match="ProcedureDraft"):
         audit_procedure_safety({"doc_type": "MOP"})  # type: ignore[arg-type]
+
+
+# ─── Commit 3 — SAFETY_PRIORITY_DIRECTIVE + hardened audit ─────────────
+class TestSafetyPriorityDirective:
+    """The system prompt prepends a top-of-stack 'cero incidentes'
+    directive (operator mandate 2026-05-23). The hash test elsewhere
+    asserts the prompt still contains the protected strings; here we
+    pin the directive content + ordering."""
+
+    def test_directive_constant_exists_and_is_top_of_prompt(self):
+        from backend.agents.procedure_architect import (
+            SAFETY_PRIORITY_DIRECTIVE,
+        )
+        assert isinstance(SAFETY_PRIORITY_DIRECTIVE, str)
+        assert "CERO INCIDENTES" in SAFETY_PRIORITY_DIRECTIVE
+        # The directive must appear BEFORE the ROL DEL AGENTE section
+        # so the LLM treats it as the top-of-stack rule.
+        idx_dir = PROCEDURE_ARCHITECT_SYSTEM_PROMPT.index("CERO INCIDENTES")
+        idx_rol = PROCEDURE_ARCHITECT_SYSTEM_PROMPT.index("ROL DEL AGENTE")
+        assert idx_dir < idx_rol, (
+            "SAFETY_PRIORITY_DIRECTIVE must precede ROL DEL AGENTE"
+        )
+
+    def test_directive_enumerates_load_bearing_rules(self):
+        # The 6 load-bearing rules: LOTO, Vivo-Muerto-Vivo, approach
+        # limit, Back-out, PDU/RPP/STS alarm+SCR, Eaton SOW R-48.
+        prompt = PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+        assert "LOTO" in prompt
+        assert "Vivo-Muerto-Vivo" in prompt
+        assert "límite de aproximación restringida" in prompt
+        assert "Back-out" in prompt
+        assert "historial de alarmas" in prompt
+        assert "caja SCR" in prompt
+        assert "Eaton" in prompt
+
+    def test_mop_template_adopts_universal_5_point_structure(self):
+        # The MOP template body must list all 5 universal sections by
+        # name -- this is what the LLM author bases its draft on.
+        prompt = PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+        # Slice MOP template body (delimited by [TEMPLATE: MOP] and the
+        # next template marker).
+        start = prompt.index("[TEMPLATE: MOP]")
+        end = prompt.index("[TEMPLATE: EOP]")
+        mop_body = prompt[start:end]
+        assert "Alcance y Objetivo" in mop_body
+        assert "Evaluación de Impacto y Riesgos" in mop_body
+        assert "Prerrequisitos" in mop_body
+        assert "Pasos Secuenciales" in mop_body
+        assert "Plan de Reversión" in mop_body
+        assert "Cuatro Ojos" in mop_body
+
+
+def _full_mop(extras: str = "") -> str:
+    """Helper: build a MOP that satisfies every base rule. Tests for the
+    new rules append `extras` to verify ONLY the rule under test fires."""
+    return (
+        "# MOP — Standard test\n"
+        "## 1. Alcance y Objetivo: replace battery\n"
+        "## 2. Evaluación de Impacto y Riesgos: arc-flash, PPE Cat 2 "
+        "per CSA Z462-24\n"
+        "## 3. Prerrequisitos: LOTO + PTW\n"
+        "## 4. Pasos Secuenciales: Vivo-Muerto-Vivo before manipulation\n"
+        "## 5. Plan de Reversión: revert before battery autonomy\n"
+        + extras
+    )
+
+
+class TestAuditMOPUniversalSections:
+    """S-SAFETY-01 — the Universal 5-Point Structure is mandatory.
+    Missing ANY of the 5 sections -> hard_stop, and the finding names
+    which section is absent."""
+
+    def test_mop_missing_alcance_section_is_hard_stop(self):
+        content = (
+            "## 2. Riesgos: PPE Cat 2 per CSA Z462-24\n"
+            "## 3. Prerrequisitos: LOTO\n"
+            "## 4. Secuencia: Vivo-Muerto-Vivo\n"
+            "## 5. Reversión: revert\n"
+        )
+        result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
+        assert result.verdict == AUDIT_VERDICT_HARD_STOP
+        assert any("Alcance" in f for f in result.findings)
+
+    def test_mop_missing_impacto_section_is_hard_stop(self):
+        # Tricky: §3 mentions LOTO + PPE + CSA so legacy rules pass, but
+        # NO Risk/Impacto/Riesgos section means §2 is absent. Note we
+        # use a header that does NOT contain "Riesgos" anywhere in
+        # text to isolate the missing-section finding.
+        content = (
+            "## 1. Alcance: smoke test\n"
+            "## 3. Prerrequisitos: PPE Cat 2 per CSA Z462-24 + LOTO\n"
+            "## 4. Secuencia: Vivo-Muerto-Vivo\n"
+            "## 5. Reversión: revert\n"
+        )
+        result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
+        assert result.verdict == AUDIT_VERDICT_HARD_STOP
+        assert any("Impacto" in f or "Riesgos" in f for f in result.findings)
+
+    def test_mop_missing_prerrequisitos_section_is_hard_stop(self):
+        content = (
+            "## 1. Alcance: smoke test\n"
+            "## 2. Riesgos: PPE Cat 2 per CSA Z462-24 + LOTO\n"
+            "## 4. Pasos: Vivo-Muerto-Vivo\n"
+            "## 5. Reversión: revert\n"
+        )
+        result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
+        assert result.verdict == AUDIT_VERDICT_HARD_STOP
+        assert any("Prerrequisitos" in f for f in result.findings)
+
+    def test_mop_missing_pasos_section_is_hard_stop(self):
+        content = (
+            "## 1. Alcance: smoke test\n"
+            "## 2. Riesgos: PPE Cat 2 per CSA Z462-24\n"
+            "## 3. Prerrequisitos: LOTO + Vivo-Muerto-Vivo\n"
+            "## 5. Reversión: revert\n"
+        )
+        result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
+        assert result.verdict == AUDIT_VERDICT_HARD_STOP
+        assert any(
+            "Pasos" in f or "Secuencia" in f or "Step-by-Step" in f
+            for f in result.findings
+        )
+
+    def test_mop_missing_reversion_section_is_hard_stop(self):
+        content = (
+            "## 1. Alcance: smoke test\n"
+            "## 2. Riesgos: PPE Cat 2 per CSA Z462-24\n"
+            "## 3. Prerrequisitos: LOTO\n"
+            "## 4. Pasos: Vivo-Muerto-Vivo before manipulation\n"
+        )
+        result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
+        assert result.verdict == AUDIT_VERDICT_HARD_STOP
+        assert any(
+            "Reversión" in f or "Back-out" in f or "Rollback" in f
+            for f in result.findings
+        )
+
+    def test_mop_with_all_5_sections_passes(self):
+        result = audit_procedure_safety(_draft(DOC_TYPE_MOP, _full_mop()))
+        assert result.verdict == AUDIT_VERDICT_APPROVE
+        assert result.findings == []
+
+
+class TestAuditMOPVoltageVerification:
+    """S-SAFETY-01 — at least ONE of voltage absence (de-energized) OR
+    approach limit (live work) must be present. Both absent ->
+    hard_stop."""
+
+    def test_mop_de_energized_with_vivo_muerto_vivo_passes(self):
+        result = audit_procedure_safety(_draft(DOC_TYPE_MOP, _full_mop()))
+        assert result.verdict == AUDIT_VERDICT_APPROVE
+
+    def test_mop_live_work_with_approach_limit_passes(self):
+        # ATS commutation test pattern: no LOTO, but explicit approach
+        # limit + PPE Cat 4. Replace the Vivo-Muerto-Vivo line in §4
+        # with the approach-limit equivalent.
+        content = (
+            "# MOP — ATS test\n"
+            "## 1. Alcance y Objetivo: ATS commutation\n"
+            "## 2. Evaluación de Impacto y Riesgos: Arc Flash Cat 4 per "
+            "CSA Z462-24\n"
+            "## 3. Prerrequisitos: PPE Cat 4, LOTO not applicable (live "
+            "work) + PTW\n"
+            "## 4. Pasos Secuenciales: personnel outside the límite de "
+            "aproximación restringida during contactor switching\n"
+            "## 5. Plan de Reversión: force Utility on failure\n"
+        )
+        result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
+        assert result.verdict == AUDIT_VERDICT_APPROVE
+
+    def test_mop_neither_voltage_nor_approach_is_hard_stop(self):
+        content = (
+            "# MOP — Bad draft\n"
+            "## 1. Alcance: smoke\n"
+            "## 2. Riesgos: PPE Cat 2 per CSA Z462-24\n"
+            "## 3. Prerrequisitos: LOTO\n"
+            "## 4. Pasos: open the door\n"  # no Vivo-Muerto, no approach limit
+            "## 5. Reversión: revert\n"
+        )
+        result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
+        assert result.verdict == AUDIT_VERDICT_HARD_STOP
+        assert any(
+            "Vivo-Muerto-Vivo" in f or "approach" in f.lower()
+            or "aproximación" in f
+            for f in result.findings
+        )
+
+
+class TestAuditMOPDistributionPreTransfer:
+    """S-DISTRIBUTION-01 — when context or asset_id names PDU/RPP/STS,
+    the body MUST mention alarm history review AND STS/SCR state check."""
+
+    def test_pdu_context_missing_alarm_history_is_hard_stop(self):
+        draft = ProcedureDraft(
+            draft_id="t",
+            doc_type=DOC_TYPE_MOP,
+            context="Maintenance window on PDU rack",
+            content=_full_mop(
+                "## 6. Notes: SCR diagnostics complete\n",  # has SCR, no alarm
+            ),
+            asset_id=None,
+            generated_at=0.0,
+            llm_present=True,
+        )
+        result = audit_procedure_safety(draft)
+        assert result.verdict == AUDIT_VERDICT_HARD_STOP
+        assert any("alarm history" in f.lower() for f in result.findings)
+
+    def test_sts_context_missing_scr_check_is_hard_stop(self):
+        draft = ProcedureDraft(
+            draft_id="t",
+            doc_type=DOC_TYPE_MOP,
+            context="STS load transfer on Path A",
+            content=_full_mop(
+                "## 6. Notes: alarm history reviewed pre-transfer\n",  # alarm yes, SCR no
+            ),
+            asset_id=None,
+            generated_at=0.0,
+            llm_present=True,
+        )
+        result = audit_procedure_safety(draft)
+        assert result.verdict == AUDIT_VERDICT_HARD_STOP
+        assert any("SCR" in f for f in result.findings)
+
+    def test_rpp_asset_id_triggers_distribution_rule(self):
+        # asset_id alone is enough -- "rpp_a1" matches the pattern.
+        draft = ProcedureDraft(
+            draft_id="t",
+            doc_type=DOC_TYPE_MOP,
+            context="Load balancing maintenance",
+            content=_full_mop(),  # no alarm, no SCR
+            asset_id="rpp_a1",
+            generated_at=0.0,
+            llm_present=True,
+        )
+        result = audit_procedure_safety(draft)
+        assert result.verdict == AUDIT_VERDICT_HARD_STOP
+        assert any("alarm history" in f.lower() for f in result.findings)
+        assert any("SCR" in f for f in result.findings)
+
+    def test_pdu_with_alarm_and_scr_passes(self):
+        draft = ProcedureDraft(
+            draft_id="t",
+            doc_type=DOC_TYPE_MOP,
+            context="Transferencia de carga en PDU principal",
+            content=_full_mop(
+                "## 6. Pre-transfer: revisar historial de alarmas + "
+                "verificar estado de la caja SCR del STS antes de "
+                "autorizar el comando\n",
+            ),
+            asset_id=None,
+            generated_at=0.0,
+            llm_present=True,
+        )
+        result = audit_procedure_safety(draft)
+        assert result.verdict == AUDIT_VERDICT_APPROVE
+
+    def test_non_distribution_context_does_not_trigger_rule(self):
+        # UPS context, no distribution gear named -> no alarm/SCR
+        # check required.
+        draft = ProcedureDraft(
+            draft_id="t",
+            doc_type=DOC_TYPE_MOP,
+            context="UPS battery cabinet swap",
+            content=_full_mop(),  # has full safety stack, no alarm, no SCR
+            asset_id="ups_b",
+            generated_at=0.0,
+            llm_present=True,
+        )
+        result = audit_procedure_safety(draft)
+        assert result.verdict == AUDIT_VERDICT_APPROVE
+
+
+class TestAuditMOPEatonVendor:
+    """S-VENDOR-EATON-01 — when context or asset_id mentions 'eaton',
+    surface BCMS / fiber / FSB / alarm-history omissions as CAUTION
+    (not hard_stop). The fleet is multi-brand; hard_stop here would
+    refuse legitimate non-Eaton MOPs."""
+
+    def test_eaton_context_missing_bcms_is_caution(self):
+        draft = ProcedureDraft(
+            draft_id="t",
+            doc_type=DOC_TYPE_MOP,
+            context="Preventive maintenance on Eaton PDU 9395",
+            content=_full_mop(
+                "## 6. Pre-transfer: revisar historial de alarmas + "
+                "estado de la caja SCR del STS\n",
+            ),  # alarm + SCR yes (distribution rule satisfied), BCMS/fiber/FSB no
+            asset_id=None,
+            generated_at=0.0,
+            llm_present=True,
+        )
+        result = audit_procedure_safety(draft)
+        # CAUTION, not hard_stop — the Eaton checks are advisory.
+        assert result.verdict == AUDIT_VERDICT_CAUTION
+        assert any("Eaton SOW R-48" in f for f in result.findings)
+        assert any("BCMS" in f for f in result.findings)
+
+    def test_non_eaton_context_does_not_trigger_eaton_rule(self):
+        # Vertiv PDU -- the Eaton check should NOT fire.
+        draft = ProcedureDraft(
+            draft_id="t",
+            doc_type=DOC_TYPE_MOP,
+            context="Preventive maintenance on Vertiv PDU",
+            content=_full_mop(
+                "## 6. Pre-transfer: revisar historial de alarmas + "
+                "estado de la caja SCR del STS\n",
+            ),
+            asset_id=None,
+            generated_at=0.0,
+            llm_present=True,
+        )
+        result = audit_procedure_safety(draft)
+        assert result.verdict == AUDIT_VERDICT_APPROVE
+        assert not any("Eaton" in f for f in result.findings)
+
+    def test_eaton_with_full_sow_checklist_passes(self):
+        draft = ProcedureDraft(
+            draft_id="t",
+            doc_type=DOC_TYPE_MOP,
+            context="Mantenimiento preventivo en Eaton PDU 9395",
+            content=_full_mop(
+                "## 6. SOW R-48 checklist: verificar BCMS + fibra óptica "
+                "+ historial de alarmas + evaluar FSBs + aprobación "
+                "previa de firmware\n"
+                "## 7. Pre-transfer: estado de la caja SCR del STS\n",
+            ),
+            asset_id=None,
+            generated_at=0.0,
+            llm_present=True,
+        )
+        result = audit_procedure_safety(draft)
+        assert result.verdict == AUDIT_VERDICT_APPROVE
+
+
+class TestSeedMOPsPassNewAuditGate:
+    """The 3 docs/operaciones/mops/MOP-*.md seed files must pass the
+    full hardened audit gate -- they will be pre-seeded into the
+    library on boot (Commit 5) and must not surface as hard_stop."""
+
+    @pytest.mark.parametrize("filename,asset_id,context_hint", [
+        ("MOP-001-ups-bypass-transfer.md",     "ups_b",  "UPS bypass transfer to maintenance"),
+        ("MOP-002-transformer-dry-inspection.md", "xfmr_a", "dry-type transformer inspection"),
+        ("MOP-003-ats-commutation-test.md",    None,    "ATS commutation test"),
+    ])
+    def test_seed_mop_passes_audit(self, filename, asset_id, context_hint):
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parents[1]
+        seed_path = repo_root / "docs" / "operaciones" / "mops" / filename
+        assert seed_path.exists(), f"seed file missing: {seed_path}"
+        content = seed_path.read_text(encoding="utf-8")
+        draft = ProcedureDraft(
+            draft_id="seed",
+            doc_type=DOC_TYPE_MOP,
+            context=context_hint,
+            content=content,
+            asset_id=asset_id,
+            generated_at=0.0,
+            llm_present=False,
+        )
+        result = audit_procedure_safety(draft)
+        assert result.verdict == AUDIT_VERDICT_APPROVE, (
+            f"seed {filename} did NOT pass new audit: "
+            f"verdict={result.verdict}, findings={result.findings}"
+        )
 
 
 # ─── /api/procedures/architect/generate route ────────────────────────
@@ -619,10 +1000,23 @@ def test_audit_procedure_safety_imports_no_llm_modules():
 # Epic 6 Sprint 3 Phase 4 — Maker-Checker witness gate on MOP sign
 # ════════════════════════════════════════════════════════════════════
 SAFE_MOP_CONTENT = (
+    # Updated for Commit 3 hardening (operator mandate 2026-05-23):
+    # the MOP must carry the Universal 5-Point Structure AND the
+    # voltage absence verification (Vivo-Muerto-Vivo) on top of the
+    # legacy LOTO/PPE/CSA Z462 triad. The body below is the minimal
+    # SHAPE that passes the new audit gate -- used by the Maker-Checker
+    # witness-gate tests + the save-to-library tests as their canonical
+    # safe-MOP fixture.
     "# MOP — Replace UPS battery cabinet\n"
-    "Riesgos: arc-flash; PPE category 2 per CSA Z462-24.\n"
-    "LOTO: lock breaker UPS-B-MAIN before any work.\n"
-    "Back-out plan: revert before battery_runtime_min cutoff.\n"
+    "## 1. Alcance y Objetivo: replace UPS-B battery cabinet\n"
+    "## 2. Evaluación de Impacto y Riesgos: arc-flash; PPE category 2 "
+    "per CSA Z462-24.\n"
+    "## 3. Prerrequisitos: LOTO -- lock breaker UPS-B-MAIN before any "
+    "work.\n"
+    "## 4. Pasos Secuenciales: Vivo-Muerto-Vivo verification on the "
+    "isolated bus before manipulation.\n"
+    "## 5. Plan de Reversión / Back-out: revert before "
+    "battery_runtime_min cutoff.\n"
 )
 
 

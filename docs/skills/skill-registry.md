@@ -302,6 +302,67 @@
 
 ---
 
+## Category I — Procedure Authoring Safety (Epic 6 Commit 3 hardening)
+
+The audit gate at `backend/agents/procedure_architect.py:audit_procedure_safety`
+is the deterministic Safety Officer for *documents* (parallel to S-DET-02
+which is the Safety Officer for live operator queries). These three skills
+encode the contracts the operator pinned on 2026-05-23.
+
+### `S-SAFETY-01` · MOPs must satisfy the Universal 5-Point Structure + voltage verification
+
+- **When:** Authoring a new MOP draft (via the Procedure Architect HMI,
+  the `/api/procedures/architect/generate` route, or any pre-seeded
+  catalog body in `docs/operaciones/mops/`).
+- **Rule:** Every MOP must contain ALL FIVE universal sections —
+  (1) Alcance y Objetivo, (2) Evaluación de Impacto y Riesgos,
+  (3) Prerrequisitos, (4) Pasos Secuenciales, (5) Plan de Reversión /
+  Back-out — AND at least ONE of: `Vivo-Muerto-Vivo` (de-energized
+  work) OR `límite de aproximación restringida` (live work). Missing
+  any section OR missing both voltage signals → `hard_stop` and the
+  sign endpoint refuses with HTTP 403. The legacy LOTO + PPE +
+  CSA Z462/NFPA 70E triad remains required (necessary, no longer
+  sufficient).
+- **Verify:** `tests/test_procedure_architect.py::TestAuditMOPUniversalSections`
+  + `::TestAuditMOPVoltageVerification`. The 3 seed bodies in
+  `docs/operaciones/mops/MOP-*.md` are audit-pinned by
+  `::TestSeedMOPsPassNewAuditGate`.
+
+### `S-DISTRIBUTION-01` · PDU / RPP / STS maneuvers require alarm history + SCR check
+
+- **When:** Authoring a MOP whose context or `asset_id` names any
+  distribution-layer gear: PDU, STS, RPP (case-insensitive, asset-id
+  tolerant of underscores — e.g. `rpp_a1` triggers).
+- **Rule:** The body MUST mention `historial de alarmas` /
+  `alarm history` AND `caja SCR` / `STS state` / `tiristor` /
+  `thyristor` before authorizing the transfer. Missing either →
+  `hard_stop`. Rationale: the Eaton SOW R-48 pre-transfer validation
+  + Tier IV operational practice — a transfer commanded without
+  reading the alarm log and confirming SCR health is a known
+  incident-class pattern.
+- **Verify:** `tests/test_procedure_architect.py::TestAuditMOPDistributionPreTransfer`.
+  See also: `config/knowledge/distribution-mop-catalog.md` for the
+  underlying catalog the audit cross-references.
+
+### `S-VENDOR-EATON-01` · Eaton SOW R-48 checklist is CAUTION (not hard_stop)
+
+- **When:** Authoring a MOP whose context (or `asset_id`) mentions
+  `eaton` (case-insensitive substring match).
+- **Rule:** The body SHOULD mention BCMS, fibra óptica / fiber optic,
+  FSB / firmware, and alarm history. Omissions surface as findings
+  at `caution` severity, NOT `hard_stop`. Rationale: the operating
+  fleet is multi-brand; forcing `hard_stop` would refuse legitimate
+  MOPs on non-Eaton equipment. The operator can re-prompt with the
+  full checklist or acknowledge the caution.
+- **TODO (next sprint):** the agent string-matches the
+  operator-supplied context today. Once `backend/cmms_models.py:Asset`
+  gains a `manufacturer` field, switch this to a deterministic asset
+  lookup. Tracked in code as `TODO(asset-manufacturer-migration)`.
+- **Verify:** `tests/test_procedure_architect.py::TestAuditMOPEatonVendor`.
+  See also: `config/knowledge/eaton-sow-r48-mp-checklist.md`.
+
+---
+
 ## Index — quick lookup
 
 | ID | Category | Headline |
@@ -324,6 +385,9 @@
 | `S-RUNTIME-01` | Runtime | Stale-process restart + BOOT log signature |
 | `S-DOC-01` | Documentation | Doc-sync is a separate commit |
 | `S-VOCAB-01` | Vocabulary | 800 VDC is unipolar; never trifásico |
+| `S-SAFETY-01` | Procedure Safety | MOPs need 5 universal sections + voltage verification |
+| `S-DISTRIBUTION-01` | Procedure Safety | PDU/RPP/STS need alarm history + SCR check |
+| `S-VENDOR-EATON-01` | Procedure Safety | Eaton SOW R-48 omissions surface as caution |
 
-**18 skills, 8 categories.** New skills extending this registry must follow
+**21 skills, 9 categories.** New skills extending this registry must follow
 the same template (When / Rule / Verify) and be added to the index above.

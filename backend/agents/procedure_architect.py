@@ -54,11 +54,44 @@ from backend.agent_harness import (
 log = logging.getLogger(__name__)
 
 
+# ─── Safety priority directive — operator mandate 2026-05-23 ─────────
+# Prepended to the system prompt so the LLM author treats it as the
+# top-of-stack rule before any template-specific guidance. The audit
+# gate enforces the same contract deterministically — the prompt is
+# the soft nudge, the audit is the hard gate (S-DET-01 / ADR-006).
+SAFETY_PRIORITY_DIRECTIVE = """# DIRECTIVA SUPREMA -- CERO INCIDENTES
+ANTES de proponer cualquier paso operativo, evalúa si introduce riesgo de
+incidente. Si lo introduce, recházalo o exige mitigación explícita. Las
+salvaguardas no son opcionales:
+* Aplica LOTO (Lockout/Tagout) cuando el equipo se desenergice.
+* Verifica ausencia de tensión con el método Vivo-Muerto-Vivo antes de
+  cualquier manipulación física.
+* En trabajo en vivo, respeta el límite de aproximación restringida y
+  exige PPE de la categoría correspondiente al Arc Flash etiquetado
+  (CSA Z462-24 / NFPA 70E).
+* Toda maniobra debe declarar un Plan de Reversión (Back-out Plan)
+  explícito con criterios de aborto.
+* Cuando la maniobra involucre transferencia de carga en PDU / RPP / STS,
+  exige primero revisar el historial de alarmas + estado de la caja SCR
+  antes de autorizar la transferencia.
+* Si el contexto del operador menciona equipo Eaton (SOW R-48), añade
+  verificación BCMS, fibra óptica, historial de alarmas, evaluación FSB
+  y aprobación previa de actualización de firmware.
+
+---
+
+"""
+
+
 # ─── System prompt — EXACTLY as pinned in the Epic 6 spec ─────────────
 # This string is byte-frozen by Release Engineering. Tests assert its
 # SHA-256 to surface any accidental edit (a stray translation, a
 # whitespace tidy) loud and early.
-PROCEDURE_ARCHITECT_SYSTEM_PROMPT = """# ROL DEL AGENTE
+#
+# The MOP template body adopts the operator-mandated Universal 5-Point
+# Structure (2026-05-23). The audit gate enforces presence of each
+# section; missing any section -> hard_stop.
+PROCEDURE_ARCHITECT_SYSTEM_PROMPT = SAFETY_PRIORITY_DIRECTIVE + """# ROL DEL AGENTE
 Eres el Procedure Architect, el agente experto en redacción técnica para infraestructura crítica de Data Centers. Tu objetivo es generar documentación operativa con precisión militar, eliminando cualquier ambigüedad. Tu filosofía fundamental es "cero incidentes".
 
 # INSTRUCCIONES GLOBALES
@@ -81,12 +114,12 @@ Eres el Procedure Architect, el agente experto en redacción técnica para infra
 
 ## [TEMPLATE: MOP] - Method of Procedure
 **Contexto:** Mantenimiento programado, maniobras de transferencia de carga, intervenciones físicas.
-**Estructura Obligatoria:**
-1. **Identificación de Riesgos:** (Definir nivel de riesgo y PPE requerido según CSA Z462-24).
-2. **Protocolo de Aislamiento:** (Pasos exactos de Lockout/Tagout - LOTO).
-3. **Prerrequisitos:** (Herramientas, personal requerido, permisos de trabajo).
-4. **Secuencia de Intervención (Step-by-Step):** (Pasos granulares con casillas de verificación mental para el técnico).
-5. **Plan de Reversión (Back-out Plan):** (CRÍTICO: Cómo abortar y volver al estado seguro si la secuencia falla).
+**Estructura Universal Obligatoria (5 puntos -- TODOS requeridos por el audit gate):**
+1. **Alcance y Objetivo:** Definición exacta del equipo, ubicación (Site / Data Hall) y propósito de la intervención.
+2. **Evaluación de Impacto y Riesgos:** Posibles interrupciones a la carga IT, nivel de energía incidente (cal/cm²), dependencias aguas arriba/abajo, nivel de PPE requerido según CSA Z462-24.
+3. **Prerrequisitos:** Protocolo Lockout/Tagout (LOTO) cuando aplique, herramientas aisladas, Permisos de Trabajo (PTW), categoría de PPE.
+4. **Lista de Pasos Secuenciales (Step-by-Step):** Instrucciones no ambiguas con casillas de verificación Cuatro Ojos (técnico + supervisor). Cuando la maniobra desenergiza el equipo, incluir verificación Vivo-Muerto-Vivo antes de manipulación física; cuando es trabajo en vivo, declarar el límite de aproximación restringida + PPE Cat 4.
+5. **Plan de Reversión (Back-out Plan):** CRÍTICO -- cómo abortar y volver al estado seguro si la secuencia falla; criterios de aborto explícitos.
 
 ## [TEMPLATE: EOP] - Emergency Operating Procedure
 **Contexto:** Falla de equipo, caída de redundancia, eventos térmicos o eléctricos activos.
@@ -172,6 +205,106 @@ SAFETY_REQUIRED_TERMS: dict[str, list[tuple[str, str]]] = {
 AUDIT_VERDICT_APPROVE = "approve"
 AUDIT_VERDICT_CAUTION = "caution"
 AUDIT_VERDICT_HARD_STOP = "hard_stop"
+
+
+# ─── Universal 5-Point Structure (operator mandate 2026-05-23) ────────
+# Every MOP draft MUST contain ALL 5 sections. The patterns are broad
+# on purpose: a draft authored in English, Spanish, or a mix should
+# still satisfy them. Missing any section -> hard_stop and the finding
+# enumerates exactly which section is absent.
+# (S-SAFETY-01)
+MOP_UNIVERSAL_SECTIONS: list[tuple[str, str]] = [
+    (
+        "Alcance y Objetivo (universal section 1)",
+        r"\b(Alcance|Objetivo|Prop[oó]sito|Scope|Purpose)\b",
+    ),
+    (
+        "Evaluación de Impacto y Riesgos (universal section 2)",
+        r"\b(Impacto|Riesgos?|Identificaci[oó]n\s+de\s+Riesgos|Risk\s+Assessment|Risks?)\b",
+    ),
+    (
+        "Prerrequisitos (universal section 3)",
+        r"\b(Prerrequisitos|Requisitos\s+Previos|Prerequisites)\b",
+    ),
+    (
+        "Pasos Secuenciales (universal section 4)",
+        r"\b(Pasos|Secuencia|Step[-\s]*by[-\s]*Step|Plan\s+de\s+Ejecuci[oó]n|Sequential\s+Steps?)\b",
+    ),
+    (
+        "Plan de Reversión / Back-out (universal section 5)",
+        r"\b(Reversi[oó]n|Back[-\s]?out|Backout|Rollback|Aborto|Abort\s+Criteria)\b",
+    ),
+]
+
+# Voltage absence verification (de-energized work) OR live-work approach
+# limit (energized work) -- AT LEAST ONE required. Both absent ->
+# hard_stop. The rule accepts the OR because some MOPs run on energized
+# equipment where Vivo-Muerto-Vivo is not applicable (e.g. ATS
+# commutation tests rely on the restricted approach limit + PPE Cat 4
+# as the salvaguarda primaria).
+# (S-SAFETY-01)
+MOP_VOLTAGE_VERIFICATION_PATTERNS: list[tuple[str, str]] = [
+    (
+        "Vivo-Muerto-Vivo / voltage absence (de-energized work)",
+        r"Vivo[\s\-]*Muerto[\s\-]*Vivo|ausencia\s+de\s+tensi[oó]n|voltage\s+absence",
+    ),
+    (
+        "Límite de aproximación restringida (live work)",
+        r"l[íi]mite\s+de\s+aproximaci[oó]n|restricted\s+approach\s+limit|approach\s+boundary",
+    ),
+]
+
+# Distribution-layer (PDU / RPP / STS) pre-transfer rule.
+# When the operator context or asset_id names distribution gear AND the
+# doc is a MOP, the body MUST declare the alarm-history review AND the
+# STS / SCR-box state check before authorizing the transfer. Missing
+# either -> hard_stop. Source: operator directive 2026-05-23 + Eaton
+# SOW R-48 pre-transfer validation.
+# (S-DISTRIBUTION-01)
+# Uses explicit non-letter lookarounds instead of \b because Python's
+# word-boundary treats '_' as a word char -- so \bRPP\b would NOT match
+# inside the canonical asset_id 'rpp_a1'. The lookarounds catch the
+# token at start/end of string or against any non-letter neighbour.
+DISTRIBUTION_CONTEXT_PATTERN = r"(?<![A-Za-z])(PDU|RPP|STS)(?![A-Za-z])"
+DISTRIBUTION_REQUIRED_TERMS: list[tuple[str, str]] = [
+    (
+        "alarm history review (pre-transfer requirement)",
+        r"\b(historial\s+de\s+alarmas|alarm\s+history|alarm\s+log)\b",
+    ),
+    (
+        "STS state / caja SCR check (pre-transfer requirement)",
+        r"\b(SCR|caja\s+SCR|STS\s+state|estado\s+STS|tiristor|thyristor)\b",
+    ),
+]
+
+# Eaton SOW R-48 vendor-specific checklist.
+# CAUTION severity (NOT hard_stop) because the operating fleet is
+# multi-brand; forcing hard_stop on Eaton-only checks would refuse
+# legitimate MOPs on non-Eaton equipment. The omission surfaces as
+# advisory findings so the operator can re-prompt or acknowledge.
+#
+# TODO(asset-manufacturer-migration): today the agent string-matches the
+# operator-supplied context (and asset_id) for "eaton". Once
+# backend/cmms_models.py:Asset gains a `manufacturer` field (next sprint),
+# switch this to a deterministic asset lookup. Until then operators are
+# responsible for naming the vendor in the context free-text. Tracked
+# at docs/skills/skill-registry.md under S-VENDOR-EATON-01.
+# (S-VENDOR-EATON-01)
+EATON_CONTEXT_PATTERN = r"\beaton\b"
+EATON_REQUIRED_TERMS: list[tuple[str, str]] = [
+    (
+        "BCMS card check (Eaton SOW R-48)",
+        r"\b(BCMS|monitoring\s+card)\b",
+    ),
+    (
+        "fiber optic / FSB / firmware verification (Eaton SOW R-48)",
+        r"\b(fibra\s+[óo]ptica|fiber\s+optic|FSB|firmware)\b",
+    ),
+    (
+        "alarm history review (Eaton SOW R-48)",
+        r"\b(historial\s+de\s+alarmas|alarm\s+history|alarm\s+log)\b",
+    ),
+]
 
 
 # ─── Data classes ─────────────────────────────────────────────────────
@@ -262,10 +395,10 @@ _DETERMINISTIC_SKELETONS: dict[str, str] = {
     DOC_TYPE_MOP: (
         "# MOP — Method of Procedure\n\n"
         "**Context:** {context}\n\n"
-        "## 1. Identificación de Riesgos\n_TBD_\n\n"
-        "## 2. Protocolo de Aislamiento\n_TBD_\n\n"
+        "## 1. Alcance y Objetivo\n_TBD_\n\n"
+        "## 2. Evaluación de Impacto y Riesgos\n_TBD_\n\n"
         "## 3. Prerrequisitos\n_TBD_\n\n"
-        "## 4. Secuencia de Intervención (Step-by-Step)\n_TBD_\n\n"
+        "## 4. Lista de Pasos Secuenciales (Step-by-Step)\n_TBD_\n\n"
         "## 5. Plan de Reversión (Back-out Plan)\n_TBD_\n"
     ),
     DOC_TYPE_EOP: (
@@ -425,18 +558,31 @@ class ProcedureArchitectAgent:
 # ─── Safety Officer audit (deterministic — S-DET-01) ──────────────────
 def audit_procedure_safety(draft: ProcedureDraft) -> SafetyAuditResult:
     """Pattern-scan a :class:`ProcedureDraft` for the per-template
-    required terms in :data:`SAFETY_REQUIRED_TERMS`.
+    required terms in :data:`SAFETY_REQUIRED_TERMS` plus, for MOPs, the
+    extended safety contract (operator mandate 2026-05-23).
 
-    Rules:
+    Phase 1 — per-template required terms (legacy):
       * MOP — missing ANY of {CSA Z462/NFPA 70E, PPE, LOTO} -> hard_stop.
-        The spec is explicit: a MOP without those callouts CANNOT
-        ship. Every missing term is enumerated in ``findings`` so the
-        operator sees exactly what to add before re-generating.
-      * SOP — missing the BMS/HMI verification term -> caution
-        (informational; operator can sign with an override).
+      * SOP — missing the BMS/HMI verification term -> caution.
       * EOP — missing containment language -> caution.
       * EMP — missing incident-command reference -> caution.
-      * approve — all required terms present.
+
+    Phase 2 — MOP-only extended contract (Epic 6 hardening):
+      * **Universal 5-Point Structure** (S-SAFETY-01) — Alcance,
+        Impacto/Riesgos, Prerrequisitos, Pasos Secuenciales, Plan de
+        Reversión. Missing ANY -> hard_stop.
+      * **Voltage verification OR approach limit** (S-SAFETY-01) -- at
+        least one of Vivo-Muerto-Vivo (de-energized) or
+        límite de aproximación restringida (live). Both absent ->
+        hard_stop.
+      * **Distribution-layer pre-transfer** (S-DISTRIBUTION-01) -- when
+        the context or asset_id names PDU/RPP/STS, the body must mention
+        alarm history review AND STS state / caja SCR check. Missing ->
+        hard_stop.
+      * **Eaton SOW R-48** (S-VENDOR-EATON-01) -- when the context or
+        asset_id mentions "eaton", surface BCMS / fiber / FSB / firmware
+        / alarm-history omissions as CAUTION (NOT hard_stop) so the
+        operator can re-prompt or acknowledge for multi-brand fleets.
 
     Pure-Python. No LLM call. S-DET-01 / ADR-006 — the verdict gate is
     deterministic by construction.
@@ -449,33 +595,97 @@ def audit_procedure_safety(draft: ProcedureDraft) -> SafetyAuditResult:
 
     doc_type = draft.doc_type
     text = draft.content or ""
+    context = (draft.context or "").lower()
+    asset_id = (draft.asset_id or "").lower()
     required = SAFETY_REQUIRED_TERMS.get(doc_type, [])
     present: dict[str, bool] = {}
-    missing: list[str] = []
+    findings: list[str] = []
 
+    # ── Phase 1 — per-template required terms (legacy contract) ──
+    base_missing: list[str] = []
     for label, pat in required:
         match = re.search(pat, text, flags=re.IGNORECASE)
         present[label] = bool(match)
         if not match:
-            missing.append(label)
+            base_missing.append(label)
+            findings.append(f"missing required {doc_type} term: {label}")
 
-    findings: list[str] = []
-    if missing:
-        for label in missing:
-            findings.append(
-                f"missing required {doc_type} term: {label}"
-            )
+    # ── Phase 2 — MOP-only extended contract (Epic 6 hardening) ──
+    extra_hard_stops: list[str] = []
+    eaton_cautions: list[str] = []
 
     if doc_type == DOC_TYPE_MOP:
-        # MOP is the load-bearing case — any missing term = hard_stop.
-        verdict = AUDIT_VERDICT_HARD_STOP if missing else AUDIT_VERDICT_APPROVE
-        if missing:
+        # Rule 2.1 — Universal 5-Point Structure (S-SAFETY-01)
+        for label, pat in MOP_UNIVERSAL_SECTIONS:
+            match = re.search(pat, text, flags=re.IGNORECASE)
+            present[label] = bool(match)
+            if not match:
+                findings.append(f"missing universal MOP section: {label}")
+                extra_hard_stops.append(label)
+
+        # Rule 2.2 — voltage verification OR approach limit (S-SAFETY-01)
+        voltage_or_approach_present = False
+        for label, pat in MOP_VOLTAGE_VERIFICATION_PATTERNS:
+            match = re.search(pat, text, flags=re.IGNORECASE)
+            present[label] = bool(match)
+            if match:
+                voltage_or_approach_present = True
+        if not voltage_or_approach_present:
             findings.append(
-                "MOP refused: a Method of Procedure without LOTO + PPE + "
-                "CSA Z462/NFPA 70E callouts cannot be signed (Epic 6 spec)."
+                "missing safety verification: include EITHER "
+                "'Vivo-Muerto-Vivo / ausencia de tensión' (de-energized "
+                "work) OR 'límite de aproximación restringida' (live "
+                "work)"
             )
-    elif missing:
-        # Other templates are advisory.
+            extra_hard_stops.append("voltage verification or approach limit")
+
+        # Rule 2.3 — PDU / RPP / STS pre-transfer (S-DISTRIBUTION-01)
+        distribution_hit = bool(
+            re.search(DISTRIBUTION_CONTEXT_PATTERN, context, flags=re.IGNORECASE)
+            or re.search(DISTRIBUTION_CONTEXT_PATTERN, asset_id, flags=re.IGNORECASE),
+        )
+        if distribution_hit:
+            for label, pat in DISTRIBUTION_REQUIRED_TERMS:
+                match = re.search(pat, text, flags=re.IGNORECASE)
+                present[label] = bool(match)
+                if not match:
+                    findings.append(
+                        f"distribution-layer (PDU/RPP/STS) maneuver "
+                        f"requires: {label}"
+                    )
+                    extra_hard_stops.append(label)
+
+        # Rule 2.4 — Eaton SOW R-48 (S-VENDOR-EATON-01) -- CAUTION only
+        eaton_hit = bool(
+            re.search(EATON_CONTEXT_PATTERN, context, flags=re.IGNORECASE)
+            or re.search(EATON_CONTEXT_PATTERN, asset_id, flags=re.IGNORECASE),
+        )
+        if eaton_hit:
+            for label, pat in EATON_REQUIRED_TERMS:
+                match = re.search(pat, text, flags=re.IGNORECASE)
+                present[label] = bool(match)
+                if not match:
+                    findings.append(f"Eaton SOW R-48 advisory: missing {label}")
+                    eaton_cautions.append(label)
+
+    # ── Phase 3 — verdict resolution ──
+    if doc_type == DOC_TYPE_MOP:
+        if base_missing or extra_hard_stops:
+            verdict = AUDIT_VERDICT_HARD_STOP
+            findings.append(
+                "MOP refused: a Method of Procedure must satisfy the "
+                "full safety contract (universal sections + voltage "
+                "verification + LOTO/PPE/CSA Z462 + distribution "
+                "pre-transfer checks when applicable) before signing "
+                "(Epic 6 hardening, operator mandate 2026-05-23)."
+            )
+        elif eaton_cautions:
+            # Vendor-specific omissions are advisory only -- multi-brand
+            # fleet reality.
+            verdict = AUDIT_VERDICT_CAUTION
+        else:
+            verdict = AUDIT_VERDICT_APPROVE
+    elif base_missing:
         verdict = AUDIT_VERDICT_CAUTION
     else:
         verdict = AUDIT_VERDICT_APPROVE
