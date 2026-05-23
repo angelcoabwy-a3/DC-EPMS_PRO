@@ -42,9 +42,11 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from backend.agents.procedure_architect import (
@@ -299,6 +301,19 @@ async def architect_sign(
         )
 
     content_sha = hashlib.sha256(req.content.encode("utf-8")).hexdigest()
+
+    # Epic 6 Sprint 3 Phase 4 — Maker-Checker witness gate on MOPs.
+    # Tier IV practice: a Method of Procedure cannot be signed by a
+    # single operator. The first signer is the maker; a second
+    # operator must validate (the checker). Both signatures land in
+    # the same PROCEDURE_SIGNED ledger entry so the chain-of-custody
+    # is a single auditable row, not two.
+    if req.doc_type == DOC_TYPE_MOP:
+        return await _process_mop_signature(
+            req, content_sha, audit, ledger,
+        )
+
+    # SOP / EOP / EMP — single signature is sufficient.
     entry = await ledger.append(
         actor=req.operator_id,
         action="PROCEDURE_SIGNED",
@@ -310,6 +325,7 @@ async def architect_sign(
             "content_sha256": content_sha,
             "content_length": len(req.content),
             "safety_audit_verdict": audit.verdict,
+            "witness_required": False,
         },
     )
     log.info(
@@ -319,7 +335,7 @@ async def architect_sign(
     )
     # Silence ruff for the unused-import noise during static analysis —
     # the doc-type constants are exported here for downstream callers.
-    _ = (DOC_TYPE_SOP, DOC_TYPE_MOP, DOC_TYPE_EOP, DOC_TYPE_EMP, asyncio)
+    _ = (DOC_TYPE_SOP, DOC_TYPE_EOP, DOC_TYPE_EMP, asyncio)
     return {
         "signed": True,
         "draft_id": req.draft_id,
@@ -328,4 +344,143 @@ async def architect_sign(
         "ts": entry.ts,
         "content_sha256": content_sha,
         "safety_audit_verdict": audit.verdict,
+        "witness_required": False,
+    }
+
+
+# ─── Maker-Checker witness store (in-memory) ─────────────────────────
+# Module-level dict keyed by draft_id; tracks the first ("maker")
+# signature awaiting a second ("checker") sign. The store is rebuilt
+# fresh on every process restart -- DB persistence is queued (it
+# would integrate with the existing backend/witness_engine.py 8-state
+# machine). For Epic 6 Sprint 3 the in-memory store is enough: a
+# crash-mid-witness means the operator re-signs the draft, which is
+# the safe failure mode anyway.
+_pending_mop_signatures: dict[str, dict[str, Any]] = {}
+
+
+def _reset_pending_mop_signatures_for_test() -> None:
+    """Test helper -- isolates each test from pending state."""
+    _pending_mop_signatures.clear()
+
+
+async def _process_mop_signature(
+    req: ArchitectSignRequest,
+    content_sha: str,
+    audit: Any,
+    ledger: Any,
+) -> dict[str, Any]:
+    """Maker-Checker flow for MOP drafts.
+
+    First sign: stores the pending maker signature, returns HTTP 202
+    + ``status: awaiting_second_signature`` so the HMI can show a
+    waiting badge. No ledger entry yet.
+
+    Second sign: validates that
+      (a) the draft_id has a pending first signature,
+      (b) the content sha matches (no content drift between signs --
+          would let the checker rubber-stamp a different document),
+      (c) the second operator_id differs from the first (Tier IV
+          practice -- self-witness defeats the purpose).
+    Then appends a single PROCEDURE_SIGNED ledger entry carrying
+    both signers in the payload, removes the pending entry, and
+    returns the entry summary.
+    """
+    pending = _pending_mop_signatures.get(req.draft_id)
+
+    if pending is None:
+        # First signature -- record + wait.
+        _pending_mop_signatures[req.draft_id] = {
+            "first_signer": req.operator_id,
+            "first_signer_role": req.actor_role or "operator",
+            "content_sha256": content_sha,
+            "asset_id": req.asset_id,
+            "ts": time.time(),
+        }
+        log.info(
+            "[procedure_routes] MOP draft %s first sign by %s -- "
+            "awaiting second signature",
+            req.draft_id, req.operator_id,
+        )
+        return JSONResponse(
+            status_code=202,
+            content={
+                "signed": False,
+                "draft_id": req.draft_id,
+                "status": "awaiting_second_signature",
+                "first_signer": req.operator_id,
+                "first_signer_role": req.actor_role or "operator",
+                "content_sha256": content_sha,
+                "doc_type": "MOP",
+                "witness_required": True,
+                "message": (
+                    "Maker-Checker gate: a MOP cannot ship on a single "
+                    "signature. A second operator (different from the "
+                    "first signer) must sign the same content to seal "
+                    "the ledger entry."
+                ),
+            },
+        )
+
+    # Second signature path -- validate the witness contract.
+    if pending["content_sha256"] != content_sha:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"MOP content drift between first + second signature on "
+                f"draft {req.draft_id!r}: first signer "
+                f"{pending['first_signer']} signed sha "
+                f"{pending['content_sha256'][:12]}…, second signer "
+                f"{req.operator_id} attempted sha {content_sha[:12]}…. "
+                "Regenerate the draft and sign the matching content."
+            ),
+        )
+    if pending["first_signer"] == req.operator_id:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Maker-Checker violation on draft {req.draft_id!r}: "
+                f"operator {req.operator_id} attempted both signatures. "
+                "A MOP requires two DIFFERENT operators (Tier IV "
+                "self-witness ban)."
+            ),
+        )
+
+    # Both signatures valid -- land the entry + clear pending.
+    entry = await ledger.append(
+        actor=req.operator_id,   # the checker is the actor of record
+        action="PROCEDURE_SIGNED",
+        payload={
+            "draft_id": req.draft_id,
+            "doc_type": "MOP",
+            "asset_id": req.asset_id,
+            "content_sha256": content_sha,
+            "content_length": len(req.content),
+            "safety_audit_verdict": audit.verdict,
+            "witness_required": True,
+            "first_signer": pending["first_signer"],
+            "first_signer_role": pending["first_signer_role"],
+            "first_signer_ts": pending["ts"],
+            "second_signer": req.operator_id,
+            "second_signer_role": req.actor_role or "operator",
+        },
+    )
+    _pending_mop_signatures.pop(req.draft_id, None)
+    log.info(
+        "[procedure_routes] MOP draft %s SEALED (maker=%s, checker=%s, "
+        "ledger entry %s, seq=%s)",
+        req.draft_id, pending["first_signer"], req.operator_id,
+        entry.entry_id, entry.sequence_no,
+    )
+    return {
+        "signed": True,
+        "draft_id": req.draft_id,
+        "entry_id": entry.entry_id,
+        "sequence_no": entry.sequence_no,
+        "ts": entry.ts,
+        "content_sha256": content_sha,
+        "safety_audit_verdict": audit.verdict,
+        "witness_required": True,
+        "first_signer": pending["first_signer"],
+        "second_signer": req.operator_id,
     }

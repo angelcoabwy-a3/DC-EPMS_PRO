@@ -413,22 +413,17 @@ def test_architect_sign_hard_stop_returns_403(client):
     assert "HARD_STOP" in r.json()["detail"]
 
 
-def test_architect_sign_approved_lands_in_ledger(client, app):
-    """An approved MOP signs through to a PROCEDURE_SIGNED ledger
-    entry — the proof-of-approval the audit trail needs."""
-    safe_mop = (
-        "# MOP — Replace UPS battery cabinet\n"
-        "Riesgos: arc-flash; PPE category 2 per CSA Z462-24.\n"
-        "LOTO: lock breaker UPS-B-MAIN before any work.\n"
-        "Pasos: 1. ... 2. ... 3. ...\n"
-    )
+def test_architect_sign_approved_sop_lands_in_ledger(client, app):
+    """SOP/EOP/EMP follow the single-sign path — one approved sign
+    creates the PROCEDURE_SIGNED ledger entry directly. MOP is the
+    only doc_type that requires the Maker-Checker witness gate."""
+    safe_sop = "Daily round. Verify BMS setpoints are within tolerance."
     r = client.post(
         "/api/procedures/architect/sign",
         json={
-            "draft_id": "qd-good-mop",
-            "doc_type": "MOP",
-            "content": safe_mop,
-            "asset_id": "ups_b",
+            "draft_id": "qd-sop",
+            "doc_type": "SOP",
+            "content": safe_sop,
             "operator_id": "wilmer.angel",
             "actor_role": "SME_L6",
         },
@@ -436,20 +431,18 @@ def test_architect_sign_approved_lands_in_ledger(client, app):
     assert r.status_code == 200
     body = r.json()
     assert body["signed"] is True
-    assert body["draft_id"] == "qd-good-mop"
+    assert body["witness_required"] is False
     assert body["safety_audit_verdict"] == AUDIT_VERDICT_APPROVE
-    assert body["content_sha256"] == hashlib.sha256(
-        safe_mop.encode("utf-8"),
-    ).hexdigest()
-    # The ledger now has exactly one PROCEDURE_SIGNED entry.
+    # The ledger has exactly one PROCEDURE_SIGNED entry, single signer.
     import asyncio as _aio
     entries = _aio.run(app.state.forensic_ledger.fetch_all())
     signed = [e for e in entries if e.action == "PROCEDURE_SIGNED"]
     assert len(signed) == 1
-    assert signed[0].payload["draft_id"] == "qd-good-mop"
-    assert signed[0].payload["doc_type"] == "MOP"
-    assert signed[0].payload["asset_id"] == "ups_b"
+    assert signed[0].payload["witness_required"] is False
     assert signed[0].actor == "wilmer.angel"
+    assert signed[0].payload["content_sha256"] == hashlib.sha256(
+        safe_sop.encode("utf-8"),
+    ).hexdigest()
 
 
 def test_architect_sign_503_when_ledger_unwired():
@@ -620,3 +613,200 @@ def test_audit_procedure_safety_imports_no_llm_modules():
             "crosses before reaching the operator — an LLM-graded "
             "verdict would erode the deterministic guarantee."
         )
+
+
+# ════════════════════════════════════════════════════════════════════
+# Epic 6 Sprint 3 Phase 4 — Maker-Checker witness gate on MOP sign
+# ════════════════════════════════════════════════════════════════════
+SAFE_MOP_CONTENT = (
+    "# MOP — Replace UPS battery cabinet\n"
+    "Riesgos: arc-flash; PPE category 2 per CSA Z462-24.\n"
+    "LOTO: lock breaker UPS-B-MAIN before any work.\n"
+    "Back-out plan: revert before battery_runtime_min cutoff.\n"
+)
+
+
+@pytest.fixture
+def mop_app():
+    """Fresh app + reset pending MOP signature store per test."""
+    from backend.procedure_routes import _reset_pending_mop_signatures_for_test
+    _reset_pending_mop_signatures_for_test()
+    app = FastAPI()
+    app.include_router(procedure_router)
+    app.state.forensic_ledger = ForensicLedger(
+        InMemoryPersistence(),
+        key=secrets.token_bytes(32),
+        key_version=1,
+    )
+    return app
+
+
+@pytest.fixture
+def mop_client(mop_app):
+    return TestClient(mop_app)
+
+
+def _sign_payload(draft_id, content, operator, role="SME_L6"):
+    return {
+        "draft_id": draft_id, "doc_type": "MOP",
+        "content": content, "asset_id": "ups_b",
+        "operator_id": operator, "actor_role": role,
+    }
+
+
+class TestMakerCheckerWitnessGate:
+    def test_mop_first_sign_returns_202_awaiting(self, mop_client):
+        """The maker's signature MUST NOT land in the ledger by
+        itself — the checker has to corroborate first."""
+        r = mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-mop-1", SAFE_MOP_CONTENT, "maker.alice"),
+        )
+        assert r.status_code == 202
+        body = r.json()
+        assert body["signed"] is False
+        assert body["status"] == "awaiting_second_signature"
+        assert body["first_signer"] == "maker.alice"
+        assert body["witness_required"] is True
+        assert "Maker-Checker" in body["message"]
+
+    def test_mop_first_sign_does_not_touch_ledger(self, mop_client, mop_app):
+        import asyncio as _aio
+        mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-mop-1a", SAFE_MOP_CONTENT, "maker.alice"),
+        )
+        entries = _aio.run(mop_app.state.forensic_ledger.fetch_all())
+        signed = [e for e in entries if e.action == "PROCEDURE_SIGNED"]
+        assert len(signed) == 0
+
+    def test_mop_second_sign_by_different_op_seals_the_entry(self, mop_client, mop_app):
+        # Maker
+        r1 = mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-mop-2", SAFE_MOP_CONTENT, "maker.alice"),
+        )
+        assert r1.status_code == 202
+        # Checker (different operator)
+        r2 = mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-mop-2", SAFE_MOP_CONTENT, "checker.bob"),
+        )
+        assert r2.status_code == 200
+        body = r2.json()
+        assert body["signed"] is True
+        assert body["witness_required"] is True
+        assert body["first_signer"] == "maker.alice"
+        assert body["second_signer"] == "checker.bob"
+
+        # Ledger has ONE entry naming both signers + the canonical
+        # actor (checker) on the row.
+        import asyncio as _aio
+        entries = _aio.run(mop_app.state.forensic_ledger.fetch_all())
+        signed = [e for e in entries if e.action == "PROCEDURE_SIGNED"]
+        assert len(signed) == 1
+        p = signed[0].payload
+        assert p["doc_type"] == "MOP"
+        assert p["witness_required"] is True
+        assert p["first_signer"] == "maker.alice"
+        assert p["second_signer"] == "checker.bob"
+        assert signed[0].actor == "checker.bob"
+        # Content sha matches input
+        assert p["content_sha256"] == hashlib.sha256(
+            SAFE_MOP_CONTENT.encode("utf-8"),
+        ).hexdigest()
+
+    def test_mop_second_sign_by_same_operator_is_refused_403(self, mop_client):
+        # Maker
+        mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-mop-self", SAFE_MOP_CONTENT, "maker.alice"),
+        )
+        # Same operator attempts the witness signature
+        r = mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-mop-self", SAFE_MOP_CONTENT, "maker.alice"),
+        )
+        assert r.status_code == 403
+        assert "Maker-Checker violation" in r.json()["detail"]
+        assert "self-witness ban" in r.json()["detail"]
+
+    def test_mop_second_sign_with_drifted_content_is_refused_409(self, mop_client):
+        # Maker signs version A
+        mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-mop-drift", SAFE_MOP_CONTENT, "maker.alice"),
+        )
+        # Checker attempts to seal a DIFFERENT body — must be refused.
+        tampered = SAFE_MOP_CONTENT + "\nAdditional step inserted after maker signed.\n"
+        r = mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-mop-drift", tampered, "checker.bob"),
+        )
+        assert r.status_code == 409
+        assert "content drift" in r.json()["detail"]
+
+    def test_mop_second_sign_must_pass_safety_audit_too(self, mop_client):
+        # Maker signs a safe MOP body
+        mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-mop-audit", SAFE_MOP_CONTENT, "maker.alice"),
+        )
+        # Checker tries to "fix" by submitting unsafe content (missing
+        # LOTO/PPE/CSA) — server re-audits, refuses with 403 before
+        # the witness gate even runs.
+        unsafe = "# MOP\nGo do the thing.\n"
+        r = mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-mop-audit", unsafe, "checker.bob"),
+        )
+        assert r.status_code == 403
+        assert "HARD_STOP" in r.json()["detail"]
+
+    def test_sop_does_not_require_witness(self, mop_client):
+        """Sanity — only MOPs trigger the Maker-Checker gate. SOP/EOP/
+        EMP retain the single-sign path."""
+        r = mop_client.post(
+            "/api/procedures/architect/sign",
+            json={
+                "draft_id": "qd-sop", "doc_type": "SOP",
+                "content": "Daily round. Verify BMS setpoints.",
+                "operator_id": "maker.alice", "actor_role": "SME_L6",
+            },
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["signed"] is True
+        assert body["witness_required"] is False
+
+    def test_mop_pending_state_isolated_per_draft_id(self, mop_client):
+        """Two concurrent MOPs awaiting witness must not cross-talk —
+        the pending store is keyed by draft_id."""
+        mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-A", SAFE_MOP_CONTENT, "maker.alice"),
+        )
+        mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-B", SAFE_MOP_CONTENT, "maker.carol"),
+        )
+        # Bob signs qd-A as checker -> qd-A seals, qd-B stays pending.
+        r_a = mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-A", SAFE_MOP_CONTENT, "checker.bob"),
+        )
+        assert r_a.status_code == 200
+        # qd-B still needs its own checker.
+        r_b_self = mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-B", SAFE_MOP_CONTENT, "maker.carol"),
+        )
+        assert r_b_self.status_code == 403
+        # Different operator (dave) seals qd-B.
+        r_b = mop_client.post(
+            "/api/procedures/architect/sign",
+            json=_sign_payload("qd-B", SAFE_MOP_CONTENT, "checker.dave"),
+        )
+        assert r_b.status_code == 200
+        assert r_b.json()["first_signer"] == "maker.carol"
+        assert r_b.json()["second_signer"] == "checker.dave"
