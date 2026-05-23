@@ -44,6 +44,7 @@ import hashlib
 import logging
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -365,6 +366,115 @@ def _reset_architect_library_for_test() -> None:
     _architect_library.clear()
 
 
+# ─── Commit 5 -- pre-seed library from docs/operaciones/mops/MOP-*.md ─
+# Called from the FastAPI lifespan at boot. Each seed entry carries
+# `source: "catalog"` so the library endpoint can filter them out from
+# operator-signed drafts (`source: "signed"`). Audit gate is applied to
+# every seed body -- a seed that fails audit is logged + skipped, never
+# silently accepted (defence in depth: a future PR that breaks a seed
+# body must surface the failure in boot logs).
+def _seed_architect_library_from_catalog(
+    catalog_dir: Path | None = None,
+) -> int:
+    """Parse every `MOP-*.md` under the catalog dir and append it to the
+    Architect library with `source: "catalog"`. Returns the number of
+    entries seeded. Idempotency is the caller's job; this helper does
+    not de-duplicate -- the lifespan calls it exactly once at startup.
+
+    Each seed entry exposes a `category` tag inferred from the third
+    segment of the filename (`MOP-001-ups-bypass-transfer.md` -> `ups`).
+    Operators can filter the library view by category in a later HMI
+    surface; the tag is also useful for the GraphRAG cross-reference.
+    """
+    catalog_dir = catalog_dir or (
+        Path(__file__).resolve().parent.parent
+        / "docs" / "operaciones" / "mops"
+    )
+    if not catalog_dir.is_dir():
+        log.warning(
+            "[procedure_routes] catalog dir not found, skipping seed: %s",
+            catalog_dir,
+        )
+        return 0
+
+    count = 0
+    for mop_file in sorted(catalog_dir.glob("MOP-*.md")):
+        try:
+            content = mop_file.read_text(encoding="utf-8")
+        except OSError as e:
+            log.warning(
+                "[procedure_routes] could not read catalog seed %s: %s",
+                mop_file.name, e,
+            )
+            continue
+
+        draft = ProcedureDraft(
+            draft_id=f"seed-{mop_file.stem}",
+            doc_type="MOP",
+            context=f"Pre-seeded from catalog ({mop_file.name})",
+            content=content,
+            asset_id=None,
+            generated_at=time.time(),
+            llm_present=False,
+        )
+        audit = audit_procedure_safety(draft)
+        if audit.is_blocking:
+            log.warning(
+                "[procedure_routes] catalog seed %s failed audit "
+                "(skipped): %s",
+                mop_file.name, audit.findings[:2],
+            )
+            continue
+
+        # Filename convention: `MOP-<NNN>-<category>-<rest>.md` --
+        # third dash-segment is the canonical category tag (ups,
+        # transformer, ats, ...). Fallback to "unknown" for files that
+        # do not follow the convention.
+        stem_parts = mop_file.stem.split("-")
+        category = stem_parts[2] if len(stem_parts) >= 3 else "unknown"
+
+        first_h1 = next(
+            (
+                line.strip()[2:].strip()
+                for line in content.splitlines()
+                if line.startswith("# ")
+            ),
+            mop_file.stem,
+        )
+
+        content_sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        entry = {
+            "library_id": str(uuid.uuid4()),
+            "draft_id": f"seed-{mop_file.stem}",
+            "doc_type": "MOP",
+            "asset_id": None,
+            "title": first_h1,
+            "content": content,
+            "content_sha256": content_sha,
+            "operator_id": "catalog",
+            "actor_role": "system",
+            "ledger_entry_id": None,
+            "audit_verdict": audit.verdict,
+            "saved_at": time.time(),
+            "source": "catalog",
+            "category": category,
+            "source_file": mop_file.name,
+        }
+        _architect_library.append(entry)
+        count += 1
+        log.info(
+            "[procedure_routes] catalog seed -> library: %s "
+            "(category=%s, audit=%s)",
+            mop_file.name, category, audit.verdict,
+        )
+
+    log.info(
+        "[procedure_routes] catalog pre-seed complete -- %d MOP(s) in library",
+        count,
+    )
+    return count
+
+
 class ArchitectSaveToLibraryRequest(BaseModel):
     """Body for POST /api/procedures/architect/save-to-library.
 
@@ -439,6 +549,10 @@ async def architect_save_to_library(
         "ledger_entry_id": req.ledger_entry_id,
         "audit_verdict": audit.verdict,
         "saved_at": time.time(),
+        # Commit 5 -- distinguishes operator-signed drafts from
+        # pre-seeded catalog entries on the library endpoint filter.
+        "source": "signed",
+        "category": None,
     }
     _architect_library.append(entry)
     log.info(
@@ -459,15 +573,31 @@ async def architect_save_to_library(
 
 
 @router.get("/architect/library")
-async def architect_list_library(limit: int = 50) -> dict[str, Any]:
-    """List the most recent ``limit`` Architect-saved drafts (newest
-    first). The MOPs library view (post-Option-A cleanup) merges
-    these alongside the static corpus."""
+async def architect_list_library(
+    limit: int = 50,
+    source: str | None = None,
+) -> dict[str, Any]:
+    """List the most recent ``limit`` Architect library entries
+    (newest first).
+
+    Optional ``source`` filter (Commit 5):
+      - ``catalog`` -- only pre-seeded MOPs from
+        ``docs/operaciones/mops/MOP-*.md``.
+      - ``signed``  -- only operator-signed + saved-to-library drafts.
+      - ``None``     -- everything (default; merged view).
+
+    The MOPs library view (post-Option-A cleanup) merges these
+    alongside the static corpus.
+    """
     limit = max(1, min(int(limit), 500))
-    items = list(reversed(_architect_library))[:limit]
+    items_all = list(reversed(_architect_library))
+    if source:
+        items_all = [it for it in items_all if it.get("source") == source]
+    items = items_all[:limit]
     return {
         "items": items,
-        "total": len(_architect_library),
+        "total": len(items_all),
+        "source_filter": source,
     }
 
 

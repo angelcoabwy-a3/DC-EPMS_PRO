@@ -103,9 +103,14 @@ def test_chunk_text_long_overlaps():
 # ────────────────────────────────────────────────────────────────────
 # Corpus loading
 # ────────────────────────────────────────────────────────────────────
-def test_corpus_has_5_docs(docs):
-    assert len(docs) == 5
+def test_corpus_has_baseline_docs(docs):
+    # The 5 baseline docs that shipped at v0.5.0 must remain present.
+    # The corpus has since grown (CDU 2d4ea37, then the Epic 6 Commit 2
+    # electrical/distribution/Eaton triple) -- use >= to stay resilient
+    # against future additions and check named presence instead of an
+    # exact count.
     ids = sorted(d.id for d in docs)
+    assert len(docs) >= 5
     assert "nvidia-800vdc" in ids
     assert "ocp-lvdc" in ids
     assert "stmicro-bms" in ids
@@ -133,9 +138,11 @@ def test_graph_has_expected_component_count(graph):
     assert len(components) == 110
 
 
-def test_graph_has_5_knowledge_nodes(graph):
+def test_graph_has_baseline_knowledge_nodes(graph):
+    # Same rationale as `test_corpus_has_baseline_docs` -- corpus has
+    # grown post-v0.5.0; use >= to stay resilient.
     knowledge = [n for n, d in graph.nodes(data=True) if d.get("kind") == "knowledge"]
-    assert len(knowledge) == 5
+    assert len(knowledge) >= 5
 
 
 def test_graph_has_type_marker_nodes(graph):
