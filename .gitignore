@@ -191,3 +191,6 @@ mlruns/
 # - data/corpus/tier*/ (RAG corpus markdown - 20 docs)
 # - scripts/_archive/<sprint>/*.py (historical iteration scripts archived)
 # - scripts/_archive/<sprint>/*.ps1 (PowerShell orchestrators archived)
+
+# SBOM generator outputs (DC-EPMS-MSD-007) — produced by scripts/generate_sbom.py
+/sbom/
