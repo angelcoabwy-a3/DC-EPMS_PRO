@@ -52,6 +52,7 @@ import { initLotoView } from './views/loto.js';
 import { initTopologyView } from './views/topology.js';
 import { initOverviewView } from './views/overview.js';
 import { initOptimizerView } from './views/optimizer.js';
+import { initProceduresView } from './views/procedures.js';
 import { initBootstrap } from './core/bootstrap.js';
 
 // Telemetry engine flag. core/telemetry_engine.js owns the SSE; this
@@ -117,6 +118,11 @@ initOverviewView();
 // proposal queue + approve/reject under SME_L6 RBAC. Routes through
 // sanitizeHTML for the LLM-authored narratives (S-SEC-01).
 initOptimizerView();
+// Epic 6 — Procedure Architect HMI: LLM-authored SOP / MOP / EOP / EMP
+// with deterministic Safety Officer audit gate. Routes the markdown
+// through a deliberately-minimal escape-then-substitute renderer
+// (no full markdown library = no XSS surface) — S-SEC-01.
+initProceduresView();
 // Router glue — T2.1 Vector 4c: the app.js IIFE residual, promoted to
 // core/bootstrap.js. app.js is now DELETED — Epic T2.1 closed.
 initBootstrap();
