@@ -45,9 +45,222 @@ const VERDICT_APPROVE = 'approve';
 const VERDICT_CAUTION = 'caution';
 const VERDICT_HARD_STOP = 'hard_stop';
 
+// ─── Pre-defined asset picker ────────────────────────────────────────
+// Curated Path-C2 asset list (per CLAUDE.md "config/site_model.yml ←
+// 91 components"). Grouped by domain for the optgroup labels. The
+// operator can also pick "Custom…" to type any canonical_id manually,
+// or leave it blank for a site-wide procedure.
+//
+// This list is intentionally hardcoded (not a /api/site/components
+// fetch) — keeps the view network-independent at activation, and the
+// operator's most common picks load instantly. Extension path: swap
+// to a fetch on activate + cache. The Custom option always escapes.
+const ASSET_PRESETS = [
+    { group: 'Electrical — UPS / Transformers / Switchgear', items: [
+        { id: 'ups_a',         label: 'UPS A (Path A)' },
+        { id: 'ups_b',         label: 'UPS B (Path B)' },
+        { id: 'xfmr_a',        label: 'Transformer A' },
+        { id: 'xfmr_b',        label: 'Transformer B' },
+        { id: 'utility_north', label: 'Utility North (Path A)' },
+        { id: 'utility_south', label: 'Utility South (Path B)' },
+    ] },
+    { group: 'Electrical — Distribution', items: [
+        { id: 'rpp_a1', label: 'RPP A1 (Path A)' },
+        { id: 'rpp_a2', label: 'RPP A2 (Path A)' },
+        { id: 'rpp_b1', label: 'RPP B1 (Path B)' },
+        { id: 'rpp_b2', label: 'RPP B2 (Path B)' },
+        { id: 'busway_a', label: 'Busway A' },
+        { id: 'busway_b', label: 'Busway B' },
+    ] },
+    { group: 'Mechanical — Cooling', items: [
+        { id: 'chiller_1',     label: 'Chiller 1 (York YZ)' },
+        { id: 'chiller_2',     label: 'Chiller 2 (York YZ)' },
+        { id: 'cdu_a',         label: 'CDU A (DLC primary)' },
+        { id: 'cdu_b',         label: 'CDU B (DLC primary)' },
+        { id: 'cooling_tower', label: 'Cooling Tower (N+1)' },
+    ] },
+    { group: 'IT Halls', items: [
+        { id: 'hall_1', label: 'Hall 1 (Building A)' },
+        { id: 'hall_2', label: 'Hall 2 (Building A)' },
+        { id: 'hall_3', label: 'Hall 3 (Building B)' },
+    ] },
+];
+
+const ASSET_CUSTOM_VALUE = '__custom__';
+const ASSET_NONE_VALUE = '';
+
+// ─── Pre-defined context templates per doc_type ──────────────────────
+// Click a chip to pre-fill the textarea. `{asset}` is substituted with
+// the currently selected asset_id (or "the affected asset" when none
+// is picked — keeps the template grammatical without a server round-
+// trip). Operator can edit after the auto-fill — the chip is a starter,
+// not a lock-in.
+//
+// 3-5 templates per doc_type chosen to span the common operator
+// playbook for each category. Free-form context still works — the
+// chips are a UX accelerator, not a constraint.
+const CONTEXT_TEMPLATES = {
+    SOP: [
+        { label: 'Daily round',
+          text: 'Daily round of {asset}. Verify BMS setpoints, '
+                + 'inspect for alarms, log the reading.' },
+        { label: 'Weekly preventive',
+          text: 'Weekly preventive inspection of {asset}. Check '
+                + 'physical condition, BMS trend, no off-nominal '
+                + 'parameters in the EPMS.' },
+        { label: 'Monthly PM',
+          text: 'Monthly preventive maintenance of {asset}. Walk '
+                + 'the unit, verify HMI states match physical state, '
+                + 'record the closure.' },
+        { label: 'Shift handover',
+          text: 'Shift handover round including {asset}. Confirm '
+                + 'BMS values, open incidents, pending MOPs are '
+                + 'communicated to the incoming CET.' },
+    ],
+    MOP: [
+        { label: 'Battery cabinet replace',
+          text: 'Replace battery cabinet on {asset} during the '
+                + 'scheduled maintenance window. Coordinate LOTO + PPE '
+                + 'category 2 per CSA Z462-24. Vendor escort required.' },
+        { label: 'Load transfer',
+          text: 'Planned load transfer maneuver on {asset}. Coordinate '
+                + 'with the redundant path; verify the alternate is '
+                + 'healthy before isolation. LOTO + PPE per CSA Z462-24.' },
+        { label: 'Filter / fluid service',
+          text: 'Scheduled filter and fluid service on {asset}. Isolate '
+                + 'the unit per the LOTO protocol; wear the PPE the '
+                + 'CSA Z462-24 risk table requires for the energy class.' },
+        { label: 'Firmware upgrade',
+          text: 'Firmware upgrade on {asset}. Stage the binary, '
+                + 'arrange the vendor service window, define the LOTO '
+                + 'scope and PPE per CSA Z462-24 for any physical access.' },
+    ],
+    EOP: [
+        { label: 'Loss of redundancy',
+          text: 'Loss of redundancy event on {asset}. Confirm the '
+                + 'alarm, isolate the affected component, escalate per '
+                + 'the redundancy-violation matrix. Contain before '
+                + 'further degradation.' },
+        { label: 'Thermal event',
+          text: 'Thermal event on {asset}. Containment: open the '
+                + 'rack door, reduce IT load, escalate to mechanical '
+                + 'lead. Isolate the affected cooling chain.' },
+        { label: 'Electrical fault',
+          text: 'Electrical fault detected on {asset}. Contention: '
+                + 'isolate the affected bus, transfer load to the '
+                + 'redundant path, halt any in-flight maintenance.' },
+        { label: 'BMS comms loss',
+          text: 'BMS comms loss to {asset}. Containment: fall back to '
+                + 'local control panel, isolate the BMS write path, '
+                + 'escalate to the controls vendor on-call.' },
+    ],
+    EMP: [
+        { label: 'Site-wide power loss',
+          text: 'Site-wide loss-of-utility event. Activate the '
+                + 'incident command bridge; coordinate logistics, '
+                + 'on-site escort, customer communications, vendor '
+                + 'dispatch.' },
+        { label: 'Multi-site coordination',
+          text: 'Multi-site incident coordination. Designate the '
+                + 'incident commander on each side; align customer '
+                + 'communications and escalation paths.' },
+        { label: 'Vendor escalation',
+          text: 'Vendor escalation playbook. Define incident command '
+                + 'authority, dispatch path for field engineers, '
+                + 'access escort, stakeholder communication template.' },
+    ],
+};
+
 let _routeRegistered = false;
 let _viewWired = false;
 let _currentDraft = null;   // last {draft, safety_audit} response
+
+
+// ─── Form helpers — asset picker + context auto-fill ────────────────
+/** Build the asset-id <select>'s inner markup. Includes a "(none)"
+ *  option, the curated optgroups, and the trailing "Custom…" option
+ *  that reveals the manual text input below. Every label + id flows
+ *  through escapeHTML — defensive even though the source is a static
+ *  module-level constant. */
+function _renderAssetSelect() {
+    const none = `<option value="${ASSET_NONE_VALUE}">`
+        + '(none — site-wide procedure)</option>';
+    const groups = ASSET_PRESETS.map((g) => {
+        const opts = g.items.map(
+            (it) => `<option value="${escapeHTML(it.id)}">`
+                + `${escapeHTML(it.label)}</option>`,
+        ).join('');
+        return `<optgroup label="${escapeHTML(g.group)}">${opts}</optgroup>`;
+    }).join('');
+    const custom = `<option value="${ASSET_CUSTOM_VALUE}">`
+        + '(Custom — type below)</option>';
+    return none + groups + custom;
+}
+
+/** Resolve the effective asset id from the form (preset choice OR the
+ *  custom text input when the picker is set to Custom). Returns "" for
+ *  site-wide / unspecified. Trimmed; never returns the sentinel. */
+function _resolveAssetId(root) {
+    const sel = root.querySelector('[data-proc-asset-select]')?.value || '';
+    if (sel === ASSET_CUSTOM_VALUE) {
+        return (
+            root.querySelector('[data-proc-asset-custom]')?.value?.trim() || ''
+        );
+    }
+    return sel === ASSET_NONE_VALUE ? '' : sel;
+}
+
+/** Show / hide the Custom text input based on the picker selection.
+ *  Hidden by default; revealed only when the operator picks the
+ *  sentinel "(Custom)" option. */
+function _syncCustomAssetVisibility(root) {
+    const sel = root.querySelector('[data-proc-asset-select]')?.value || '';
+    const wrap = root.querySelector('[data-proc-asset-custom-wrap]');
+    if (!wrap) return;
+    wrap.hidden = sel !== ASSET_CUSTOM_VALUE;
+}
+
+/** Re-render the context quick-pick chip row for the currently
+ *  selected doc_type. Each chip is a <button data-action="ctx-fill"
+ *  data-ctx-text="..."> — the click dispatcher routes it to
+ *  _applyContextTemplate. */
+function _renderContextChips(root) {
+    const slot = root.querySelector('[data-proc-ctx-chips]');
+    if (!slot) return;
+    const docType = root.querySelector('[data-proc-doc-type]')?.value || 'SOP';
+    const templates = CONTEXT_TEMPLATES[docType] || [];
+    if (templates.length === 0) {
+        slot.innerHTML = '';
+        return;
+    }
+    const chips = templates.map((t) => (
+        '<button type="button" class="proc-chip" '
+        + 'data-action="ctx-fill" '
+        + `data-ctx-text="${escapeHTML(t.text)}">`
+        + escapeHTML(t.label)
+        + '</button>'
+    )).join('');
+    slot.innerHTML = '<span class="proc-chips-hint">'
+        + 'Quick context — click a template to pre-fill:'
+        + '</span> ' + chips;
+}
+
+/** Apply a clicked chip's template to the textarea, substituting
+ *  ``{asset}`` with the currently selected asset_id (or a neutral
+ *  placeholder when none). Replaces existing textarea content —
+ *  intentional, the operator can re-edit. */
+function _applyContextTemplate(root, templateText) {
+    const ta = root.querySelector('[data-proc-context]');
+    if (!ta) return;
+    const asset = _resolveAssetId(root);
+    const replaced = String(templateText || '').replace(
+        /\{asset\}/g,
+        asset || 'the affected asset',
+    );
+    ta.value = replaced;
+    // Visual feedback: focus the textarea so the operator sees the cursor.
+    ta.focus();
+}
 
 
 // ─── Markdown -> safe HTML (deliberately minimal) ────────────────────
@@ -232,7 +445,7 @@ async function _submitGenerate() {
     if (!root) return;
     const docType = root.querySelector('[data-proc-doc-type]')?.value || '';
     const ctx = root.querySelector('[data-proc-context]')?.value?.trim() || '';
-    const assetId = root.querySelector('[data-proc-asset-id]')?.value?.trim() || '';
+    const assetId = _resolveAssetId(root);
     const slot = root.querySelector('[data-proc-result]');
 
     if (!DOC_TYPES.includes(docType)) {
@@ -346,6 +559,13 @@ function _onClick(ev) {
         case 'sign':
             _submitSign(t.dataset.draftId);
             break;
+        case 'ctx-fill': {
+            // Chip click: pre-fill the textarea with the template and
+            // substitute the currently-selected asset_id.
+            const root = $('view-procedures-architect');
+            if (root) _applyContextTemplate(root, t.dataset.ctxText);
+            break;
+        }
     }
 }
 
@@ -375,11 +595,18 @@ function _wireProceduresView() {
             </label>
             <label>
                 Asset id (optional):
-                <input type="text" data-proc-asset-id class="proc-input"
-                       placeholder="ups_b / chiller_1 / …">
+                <select data-proc-asset-select class="proc-select">
+                    ${_renderAssetSelect()}
+                </select>
+            </label>
+            <label data-proc-asset-custom-wrap hidden>
+                Custom asset id:
+                <input type="text" data-proc-asset-custom class="proc-input"
+                       placeholder="any canonical_id (e.g. genset_a, bess_1)">
             </label>
             <label>
                 Operator context:
+                <div data-proc-ctx-chips class="proc-chips-row"></div>
                 <textarea data-proc-context class="proc-textarea" rows="4"
                           placeholder="Describe the maintenance / operation / incident the document must cover. Example: Replace UPS-B battery cabinet on Phase 1 main bus during scheduled window."></textarea>
             </label>
@@ -389,7 +616,18 @@ function _wireProceduresView() {
         </div>
         <div data-proc-result class="proc-result"></div>
     `;
+    // Initial chip render for the default doc_type (SOP).
+    _renderContextChips(root);
     root.addEventListener('click', _onClick);
+    // Re-render chips when doc_type changes; sync custom-asset
+    // visibility when the asset picker changes. Both are 'change'
+    // events (not 'click') so they need dedicated listeners.
+    root.querySelector('[data-proc-doc-type]')?.addEventListener(
+        'change', () => _renderContextChips(root),
+    );
+    root.querySelector('[data-proc-asset-select]')?.addEventListener(
+        'change', () => _syncCustomAssetVisibility(root),
+    );
     _viewWired = true;
 }
 
@@ -424,6 +662,11 @@ export const __procedures_view_test__ = {
     submitGenerate: _submitGenerate,
     submitSign: _submitSign,
     onClick: _onClick,
+    renderAssetSelect: _renderAssetSelect,
+    resolveAssetId: _resolveAssetId,
+    syncCustomAssetVisibility: _syncCustomAssetVisibility,
+    renderContextChips: _renderContextChips,
+    applyContextTemplate: _applyContextTemplate,
     initProceduresView,
     reset: () => {
         _routeRegistered = false;
@@ -431,4 +674,8 @@ export const __procedures_view_test__ = {
         _currentDraft = null;
     },
     DOC_TYPES,
+    ASSET_PRESETS,
+    ASSET_CUSTOM_VALUE,
+    ASSET_NONE_VALUE,
+    CONTEXT_TEMPLATES,
 };
