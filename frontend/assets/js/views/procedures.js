@@ -198,6 +198,16 @@ let _routeRegistered = false;
 let _viewWired = false;
 let _currentDraft = null;   // last {draft, safety_audit} response
 
+// Epic 6 Sprint 3 Phase 2 — stale-verdict invalidation.
+// Snapshot of the context the operator submitted to /generate. When
+// the textarea diverges from this snapshot we mark the result card
+// as stale, hide the Sign button, and surface a "Re-generate
+// required" banner. Prevents the safety-critical class of bug where
+// an operator edits the textarea after seeing APPROVE and then
+// clicks Sign on a draft that doesn't match the current text.
+let _lastGeneratedContext = null;
+let _staleHandlerInstalled = false;
+
 
 // ─── Form helpers — asset picker + context auto-fill ────────────────
 /** Build the asset-id <select>'s inner markup. Includes a "(none)"
@@ -386,6 +396,102 @@ function _verdictPill(verdict) {
 }
 
 
+// ─── Pre-pull telemetry (Epic 6 Sprint 3 Phase 3) ───────────────────
+// Whitelist of telemetry keys that get packed into the Architect
+// metadata block. Keep the set narrow on purpose -- the LLM author
+// only benefits from grounding signals (load + thermal + PUE +
+// scenario), not every column of the telemetry table. A larger set
+// dilutes the prompt + costs tokens for no quality gain.
+const _TELEMETRY_METADATA_KEYS = [
+    'pue',
+    'it_load_kw',
+    'hall_temp_c',
+    'delta_t_c',
+    'scenario',
+];
+
+/** Fetch /api/telemetry/latest and reduce to the curated metadata
+ *  whitelist. Returns ``{}`` on any failure (network down, endpoint
+ *  503, payload missing the ``latest`` field) so the Generate flow
+ *  never aborts on a telemetry hiccup -- the request still goes out,
+ *  just without the LIVE OPERATING METADATA block. */
+async function _fetchTelemetrySnapshot() {
+    try {
+        const resp = await fetch('/api/telemetry/latest');
+        if (!resp.ok) return {};
+        const data = await resp.json();
+        const latest = data && data.latest;
+        if (!latest || typeof latest !== 'object') return {};
+        const out = {};
+        for (const k of _TELEMETRY_METADATA_KEYS) {
+            if (latest[k] !== undefined && latest[k] !== null) {
+                out[k] = latest[k];
+            }
+        }
+        // Tag the snapshot timestamp so the ledger entry can audit
+        // which moment-in-time informed the document.
+        if (typeof data.ts === 'number') out.snapshot_ts = data.ts;
+        return out;
+    } catch (_) {
+        return {};
+    }
+}
+
+
+// ─── Stale-verdict invalidation (Epic 6 Sprint 3 Phase 2) ──────────
+/** True when the operator has edited the textarea AFTER the most
+ *  recent successful generate. The Sign button must be hidden and
+ *  the result card visually marked stale in that case. */
+function _isStaleVsLastGenerate(root) {
+    if (_lastGeneratedContext === null) return false;
+    const ta = root.querySelector('[data-proc-context]');
+    if (!ta) return false;
+    return ta.value !== _lastGeneratedContext;
+}
+
+/** Mark the current result card as stale -- replaces the approve
+ *  card UI with a "re-generate required" banner. Idempotent: calling
+ *  twice in a row is a no-op (the marker is the dataset attr). */
+function _markResultStale(root) {
+    const slot = root.querySelector('[data-proc-result]');
+    if (!slot) return;
+    if (slot.dataset.stale === '1') return;
+    slot.dataset.stale = '1';
+    // Hide any Sign button that's still in the DOM (defence in depth
+    // -- the next render will also drop it, but if the operator races
+    // a click between input + re-render, this catches it).
+    slot.querySelectorAll('.proc-btn-sign').forEach((b) => {
+        b.disabled = true;
+        b.hidden = true;
+    });
+    // Surface the stale banner above whatever's still rendered.
+    if (!slot.querySelector('.proc-banner-stale')) {
+        const banner = document.createElement('div');
+        banner.className = 'proc-banner-stale';
+        banner.textContent = (
+            'The context has been edited since this draft was generated. '
+            + 'The Safety Officer verdict above is STALE and the Sign '
+            + 'button is disabled. Click Generate again to re-evaluate.'
+        );
+        slot.insertBefore(banner, slot.firstChild);
+    }
+}
+
+/** Wire the textarea ``input`` listener once -- subsequent calls are
+ *  no-ops. Each input event compares current text vs the snapshot
+ *  taken at the last successful generate and marks the card stale
+ *  when they diverge. */
+function _installStaleHandler(root) {
+    if (_staleHandlerInstalled) return;
+    const ta = root.querySelector('[data-proc-context]');
+    if (!ta) return;
+    ta.addEventListener('input', () => {
+        if (_isStaleVsLastGenerate(root)) _markResultStale(root);
+    });
+    _staleHandlerInstalled = true;
+}
+
+
 // ─── Result render ───────────────────────────────────────────────────
 function _renderResult(payload) {
     const root = $('view-procedures-architect');
@@ -457,6 +563,9 @@ function _renderResult(payload) {
                  data-draft-id="${idEsc}"></div>
         </div>
     `;
+    // Clear any prior stale marker — a fresh render is by definition
+    // not stale until the operator next edits the textarea.
+    slot.dataset.stale = '';
 
     _currentDraft = payload;
 }
@@ -466,6 +575,10 @@ function _renderResult(payload) {
 async function _submitGenerate() {
     const root = $('view-procedures-architect');
     if (!root) return;
+    // Belt-and-suspenders — install the stale-detection listener on
+    // every generate in case the view was mounted by a test path
+    // that bypassed _wireProceduresView.
+    _installStaleHandler(root);
     const docType = root.querySelector('[data-proc-doc-type]')?.value || '';
     const ctx = root.querySelector('[data-proc-context]')?.value?.trim() || '';
     const assetId = _resolveAssetId(root);
@@ -485,6 +598,14 @@ async function _submitGenerate() {
     }
 
     slot.innerHTML = sanitizeHTML(
+        '<div class="proc-empty">Pulling telemetry snapshot…</div>',
+    );
+    // Phase 3: pre-pull a curated telemetry snapshot so the Architect
+    // grounds the document in current state. Failures here are
+    // tolerated -- the Generate request still goes out without the
+    // metadata block.
+    const metadata = await _fetchTelemetrySnapshot();
+    slot.innerHTML = sanitizeHTML(
         '<div class="proc-empty">Generating…</div>',
     );
     try {
@@ -495,6 +616,7 @@ async function _submitGenerate() {
                 doc_type: docType,
                 context: ctx,
                 asset_id: assetId || null,
+                metadata: Object.keys(metadata).length > 0 ? metadata : null,
             }),
         });
         const data = await resp.json().catch(() => ({}));
@@ -505,6 +627,9 @@ async function _submitGenerate() {
             );
             return;
         }
+        // Snapshot the context that produced this result so the
+        // stale-detection listener can compare against subsequent edits.
+        _lastGeneratedContext = ctx;
         _renderResult(data);
     } catch (e) {
         slot.innerHTML = sanitizeHTML(
@@ -520,12 +645,25 @@ async function _submitSign(draftId) {
     const root = $('view-procedures-architect');
     if (!root || !_currentDraft) return;
     const draft = _currentDraft.draft || {};
-    if (draft.draft_id !== draftId) return;   // staleness guard
+    if (draft.draft_id !== draftId) return;   // staleness guard (race)
 
     const slot = root.querySelector(
         `.proc-sign-result[data-draft-id="${CSS.escape(draftId)}"]`,
     );
     if (!slot) return;
+    // Phase 2 staleness gate: refuse to sign when the textarea has
+    // drifted since the last generate. The server re-audits on /sign
+    // and would also refuse a hard_stop, but this client-side block
+    // is the safety-critical UX layer — the operator never even sees
+    // a "sign in flight" spinner on stale content.
+    if (_isStaleVsLastGenerate(root)) {
+        slot.innerHTML = sanitizeHTML(
+            '<div class="proc-sign-fail">Refusing to sign — context '
+            + 'has been edited since this draft was generated. Click '
+            + 'Generate again to re-evaluate.</div>',
+        );
+        return;
+    }
     slot.innerHTML = sanitizeHTML(
         '<div class="proc-empty">Signing…</div>',
     );
@@ -641,6 +779,9 @@ function _wireProceduresView() {
     `;
     // Initial chip render for the default doc_type (SOP).
     _renderContextChips(root);
+    // Phase 2: textarea input listener — clears verdict + hides Sign
+    // when the operator edits after a generate.
+    _installStaleHandler(root);
     root.addEventListener('click', _onClick);
     // Re-render chips when doc_type changes; sync custom-asset
     // visibility when the asset picker changes. Both are 'change'
@@ -690,11 +831,18 @@ export const __procedures_view_test__ = {
     syncCustomAssetVisibility: _syncCustomAssetVisibility,
     renderContextChips: _renderContextChips,
     applyContextTemplate: _applyContextTemplate,
+    installStaleHandler: _installStaleHandler,
+    isStaleVsLastGenerate: _isStaleVsLastGenerate,
+    markResultStale: _markResultStale,
+    fetchTelemetrySnapshot: _fetchTelemetrySnapshot,
+    TELEMETRY_METADATA_KEYS: _TELEMETRY_METADATA_KEYS,
     initProceduresView,
     reset: () => {
         _routeRegistered = false;
         _viewWired = false;
         _currentDraft = null;
+        _lastGeneratedContext = null;
+        _staleHandlerInstalled = false;
     },
     DOC_TYPES,
     ASSET_PRESETS,

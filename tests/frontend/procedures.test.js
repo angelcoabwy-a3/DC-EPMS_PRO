@@ -33,9 +33,11 @@ const {
     renderAssetSelect, resolveAssetId,
     syncCustomAssetVisibility, renderContextChips,
     applyContextTemplate,
+    installStaleHandler, isStaleVsLastGenerate, markResultStale,
+    fetchTelemetrySnapshot,
     initProceduresView, reset,
     DOC_TYPES, ASSET_PRESETS, ASSET_CUSTOM_VALUE, ASSET_NONE_VALUE,
-    CONTEXT_TEMPLATES,
+    CONTEXT_TEMPLATES, TELEMETRY_METADATA_KEYS,
 } = __procedures_view_test__;
 
 
@@ -279,8 +281,15 @@ describe('Epic 6 — submitGenerate', () => {
         });
         vi.stubGlobal('fetch', spy);
         await submitGenerate();
-        const [url, opts] = spy.mock.calls[0];
-        expect(url).toBe('/api/procedures/architect/generate');
+        // Phase 3 introduced a /api/telemetry/latest pre-pull, so we
+        // can't trust calls[0] to be the architect POST anymore — find
+        // by URL instead. The pre-pull silently returns {} from this
+        // stub (no `latest` field) and the architect call still fires.
+        const archCall = spy.mock.calls.find(
+            (c) => c[0] === '/api/procedures/architect/generate',
+        );
+        expect(archCall).toBeDefined();
+        const [, opts] = archCall;
         expect(opts.method).toBe('POST');
         const body = JSON.parse(opts.body);
         expect(body.doc_type).toBe('MOP');
@@ -404,9 +413,14 @@ describe('Epic 6 — onClick dispatch', () => {
         vi.stubGlobal('fetch', spy);
         const btn = document.querySelector('[data-action="generate"]');
         onClick(_fakeEvent(btn));
-        await Promise.resolve(); await Promise.resolve();
+        // Two awaits per fetch in the chain — telemetry pre-pull +
+        // architect generate. Three awaits is enough margin.
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
         expect(spy).toHaveBeenCalled();
-        expect(spy.mock.calls[0][0]).toBe('/api/procedures/architect/generate');
+        const urls = spy.mock.calls.map((c) => c[0]);
+        expect(urls).toContain('/api/procedures/architect/generate');
     });
 });
 
@@ -710,5 +724,211 @@ describe('Procedure Architect — chip click via onClick dispatcher', () => {
         expect(ta.value.length).toBeGreaterThan(0);
         expect(ta.value).toContain('chiller_1');
         expect(ta.value).not.toContain('{asset}');
+    });
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// Epic 6 Sprint 3 Phase 2 — stale-verdict invalidation
+// ════════════════════════════════════════════════════════════════════
+describe('Sprint 3 Phase 2 — stale-verdict invalidation', () => {
+    function _approvedDraft(id, content = 'Daily round of UPS room.') {
+        return {
+            draft: {
+                draft_id: id, doc_type: 'SOP',
+                content: `# SOP\n${content}\nVerify BMS setpoints.`,
+                llm_present: false,
+            },
+            safety_audit: { verdict: 'approve', findings: [] },
+        };
+    }
+
+    async function _setupApproved(pid = 'qd-stale') {
+        _mountView();
+        const spy = _fakeFetchOK(_approvedDraft(pid));
+        vi.stubGlobal('fetch', spy);
+        document.querySelector('[data-proc-context]').value =
+            'A valid context that will be remembered.';
+        await submitGenerate();
+        vi.unstubAllGlobals();
+        return pid;
+    }
+
+    it('is not stale immediately after a successful generate', async () => {
+        await _setupApproved('qd-fresh');
+        const root = document.getElementById('view-procedures-architect');
+        expect(isStaleVsLastGenerate(root)).toBe(false);
+    });
+
+    it('flips stale when the operator edits the textarea after generate', async () => {
+        await _setupApproved('qd-edit');
+        const root = document.getElementById('view-procedures-architect');
+        const ta = root.querySelector('[data-proc-context]');
+        ta.value += '\nextra text added after generate';
+        expect(isStaleVsLastGenerate(root)).toBe(true);
+    });
+
+    it('marks the result slot stale + hides the Sign button on edit', async () => {
+        await _setupApproved('qd-mark');
+        const root = document.getElementById('view-procedures-architect');
+        // Sign button is present right after generate.
+        expect(root.querySelector('.proc-btn-sign')).not.toBeNull();
+        // Operator edits.
+        const ta = root.querySelector('[data-proc-context]');
+        ta.value = 'completely different content now';
+        ta.dispatchEvent(new Event('input'));
+        const slot = root.querySelector('[data-proc-result]');
+        expect(slot.dataset.stale).toBe('1');
+        expect(slot.querySelector('.proc-banner-stale')).not.toBeNull();
+        // Sign button still in DOM but disabled + hidden defensively.
+        const btn = slot.querySelector('.proc-btn-sign');
+        expect(btn.disabled).toBe(true);
+        expect(btn.hidden).toBe(true);
+    });
+
+    it('submitSign refuses to POST when context is stale', async () => {
+        const pid = await _setupApproved('qd-sign-stale');
+        const root = document.getElementById('view-procedures-architect');
+        // Operator edits AFTER generate.
+        const ta = root.querySelector('[data-proc-context]');
+        ta.value = 'edited after generate';
+        // Click Sign — submitSign must refuse before any network call.
+        const spy = vi.fn();
+        vi.stubGlobal('fetch', spy);
+        await submitSign(pid);
+        expect(spy).not.toHaveBeenCalled();
+        const slot = document.querySelector(
+            `.proc-sign-result[data-draft-id="${pid}"]`,
+        );
+        expect(slot.textContent.toLowerCase()).toContain('refusing to sign');
+        expect(slot.textContent.toLowerCase()).toContain('edited');
+    });
+
+    it('a fresh generate clears the stale marker', async () => {
+        await _setupApproved('qd-renew');
+        const root = document.getElementById('view-procedures-architect');
+        const ta = root.querySelector('[data-proc-context]');
+        ta.value = 'edited content';
+        ta.dispatchEvent(new Event('input'));
+        const slot = root.querySelector('[data-proc-result]');
+        expect(slot.dataset.stale).toBe('1');
+        // Re-generate (the edited content becomes the new baseline).
+        const spy2 = _fakeFetchOK(_approvedDraft('qd-renew2', 'edited content'));
+        vi.stubGlobal('fetch', spy2);
+        await submitGenerate();
+        expect(slot.dataset.stale).toBe('');
+        // Sign button visible again.
+        expect(slot.querySelector('.proc-btn-sign')).not.toBeNull();
+    });
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// Epic 6 Sprint 3 Phase 3 — pre-pull /api/telemetry/latest into metadata
+// ════════════════════════════════════════════════════════════════════
+describe('Sprint 3 Phase 3 — telemetry pre-pull', () => {
+    it('TELEMETRY_METADATA_KEYS is a curated whitelist', () => {
+        expect(Array.isArray(TELEMETRY_METADATA_KEYS)).toBe(true);
+        expect(TELEMETRY_METADATA_KEYS.length).toBeGreaterThan(0);
+        // PUE + IT load are the two most-cited grounding signals.
+        expect(TELEMETRY_METADATA_KEYS).toContain('pue');
+        expect(TELEMETRY_METADATA_KEYS).toContain('it_load_kw');
+    });
+
+    it('fetchTelemetrySnapshot reduces a /latest payload to the whitelist', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                latest: {
+                    pue: 1.32, it_load_kw: 14200, hall_temp_c: 22.4,
+                    delta_t_c: 4.6, scenario: 'NORMAL',
+                    // Keys not on the whitelist must NOT leak through.
+                    raw_pid_dump: { everything: 'else' },
+                    operator: 'private',
+                },
+                ts: 1779562345.7,
+                source: 'timescaledb',
+            }),
+        })));
+        const meta = await fetchTelemetrySnapshot();
+        expect(meta.pue).toBe(1.32);
+        expect(meta.it_load_kw).toBe(14200);
+        expect(meta.snapshot_ts).toBeCloseTo(1779562345.7);
+        // Off-whitelist keys dropped.
+        expect(meta.raw_pid_dump).toBeUndefined();
+        expect(meta.operator).toBeUndefined();
+    });
+
+    it('fetchTelemetrySnapshot returns {} on HTTP failure', async () => {
+        vi.stubGlobal('fetch', _fakeFetchFail(503, 'down'));
+        const meta = await fetchTelemetrySnapshot();
+        expect(meta).toEqual({});
+    });
+
+    it('fetchTelemetrySnapshot returns {} on a network throw', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('net'); }));
+        const meta = await fetchTelemetrySnapshot();
+        expect(meta).toEqual({});
+    });
+
+    it('fetchTelemetrySnapshot returns {} when latest is absent or wrong type', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true, status: 200, json: async () => ({ latest: null }),
+        })));
+        expect(await fetchTelemetrySnapshot()).toEqual({});
+    });
+
+    it('submitGenerate hits /api/telemetry/latest BEFORE /architect/generate', async () => {
+        _mountView();
+        document.querySelector('[data-proc-context]').value =
+            'A valid context for the telemetry path.';
+        const calls = [];
+        vi.stubGlobal('fetch', vi.fn(async (url, opts) => {
+            calls.push({ url, method: (opts && opts.method) || 'GET' });
+            if (url === '/api/telemetry/latest') {
+                return {
+                    ok: true, status: 200, json: async () => ({
+                        latest: { pue: 1.31, it_load_kw: 14000 },
+                        ts: 1.0,
+                    }),
+                };
+            }
+            // architect/generate
+            return {
+                ok: true, status: 200, json: async () => ({
+                    draft: {
+                        draft_id: 'qd-tele', doc_type: 'SOP',
+                        content: '# SOP', llm_present: false,
+                    },
+                    safety_audit: { verdict: 'approve', findings: [] },
+                }),
+            };
+        }));
+        await submitGenerate();
+        // Telemetry comes BEFORE generate.
+        expect(calls.length).toBeGreaterThanOrEqual(2);
+        const teleIdx = calls.findIndex((c) => c.url === '/api/telemetry/latest');
+        const genIdx = calls.findIndex(
+            (c) => c.url === '/api/procedures/architect/generate',
+        );
+        expect(teleIdx).toBeGreaterThanOrEqual(0);
+        expect(genIdx).toBeGreaterThan(teleIdx);
+        // And the generate body carries the curated metadata.
+        const genCall = calls[genIdx];
+        // Re-grab the fetch.mock to read the body sent.
+        const allMock = (await import('vitest')).vi;
+        // Find the architect generate call directly:
+        const arch = (globalThis.fetch).mock
+            ? (globalThis.fetch).mock.calls.find(
+                (c) => c[0] === '/api/procedures/architect/generate',
+              )
+            : null;
+        expect(arch).not.toBeNull();
+        const body = JSON.parse(arch[1].body);
+        expect(body.metadata).toEqual({
+            pue: 1.31, it_load_kw: 14000, snapshot_ts: 1.0,
+        });
+        // Reference the unused name so ruff/lint doesn't flag.
+        void allMock; void genCall;
     });
 });
