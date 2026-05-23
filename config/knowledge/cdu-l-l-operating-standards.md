@@ -1,3 +1,20 @@
+---
+id: cdu-l-l-operating-standards
+title: L-L CDU Operating Standards (Tier IV DLC)
+source: ASHRAE TC 9.9 + vendor operational guidance
+source_type: operational_standard
+applies_to:
+  - cdu
+  - liquid_cooling
+  - dlc_secondary_loop
+  - chiller
+  - cooling_tower
+tags: [cdu, dlc, liquid-cooling, ashrae, fluid-chemistry, loto, filter-spec, hydrostatic-test, condensation]
+jurisdiction: international
+version: "2026.1"
+voltage_class: ""
+---
+
 # Base de Conocimiento para Procedimientos de L-L CDU
 
 **Status:** Operational knowledge — indexed by GraphRAG and surfaced to
