@@ -223,6 +223,53 @@ async def lifespan(app: FastAPI):
             log.warning("PostgreSQL init failed: %s", e)
             db_manager = None
 
+    # ─── ADR-011: Forensic Ledger init (HMAC-chained, append-only) ────
+    # Closes DC-EPMS-MSD-001 + DC-EPMS-MSD-002 from the 2026-05-22 MSD
+    # audit. PostgresPersistence is selected when (a) the asyncpg pool
+    # is live AND (b) the ledger_entries table exists (migration
+    # 2026_05_W4_forensic_ledger.sql applied). Otherwise the boot
+    # falls back to InMemoryPersistence with a loud warning — entries
+    # do NOT survive restart in that mode. S-LEDGER-01 / S-RUNTIME-01.
+    try:
+        from backend.ledger import (
+            ForensicLedger,
+            InMemoryPersistence,
+            PostgresPersistence,
+        )
+        _ledger_persistence = None
+        if db_manager is not None and db_manager.pool is not None:
+            try:
+                async with db_manager.pool.acquire() as _ledger_probe_conn:
+                    _ledger_table_exists = await _ledger_probe_conn.fetchval(
+                        "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+                        "WHERE table_schema='public' AND table_name='ledger_entries')",
+                    )
+                if _ledger_table_exists:
+                    _ledger_persistence = PostgresPersistence(db_manager.pool)
+                    log.info("[BOOT] ForensicLedger -> PostgresPersistence")
+                else:
+                    log.warning(
+                        "[BOOT] ForensicLedger migration NOT applied — apply "
+                        "backend/migrations/2026_05_W4_forensic_ledger.sql and "
+                        "restart for durable forensic audit. Falling back to "
+                        "InMemoryPersistence (entries do NOT survive restart).",
+                    )
+            except Exception as e:
+                log.warning("[BOOT] ledger table probe failed: %s — falling back", e)
+        if _ledger_persistence is None:
+            _ledger_persistence = InMemoryPersistence()
+        app.state.forensic_ledger = ForensicLedger(_ledger_persistence)
+        app.state.forensic_ledger_loop = asyncio.get_running_loop()
+        log.info(
+            "[BOOT] ForensicLedger ready (key_version=%d, persistence=%s)",
+            app.state.forensic_ledger.current_key_version,
+            type(_ledger_persistence).__name__,
+        )
+    except Exception as e:
+        log.error("[BOOT] ForensicLedger init failed: %s", e, exc_info=True)
+        app.state.forensic_ledger = None
+        app.state.forensic_ledger_loop = None
+
     if RAGService:
         try:
             rag_service = RAGService(CHROMA_PATH)
@@ -385,13 +432,61 @@ async def lifespan(app: FastAPI):
             # the OPERATOR's actor_role (SME_L6) authorises the BMS
             # write — the Optimizer service has no actor_role.
             try:
+                from backend.ledger import wrap_bms_write_fn
                 from backend.optimizer_routes import register_optimizer_routes
 
-                def _optimizer_bms_write(tag_id, value, user):
+                def _raw_bms_write(tag_id, value, user):
                     if not BMS_AVAILABLE:
                         return False, "BMS connector unavailable"
                     return get_bms(PROJECT_ROOT).write(
                         tag_id, value, user=user,
+                    )
+
+                def _prev_value_reader(tag_id):
+                    if not BMS_AVAILABLE:
+                        return None
+                    tag = get_bms(PROJECT_ROOT).read(tag_id)
+                    return tag.current_value if tag else None
+
+                # S-LEDGER-01: stash the raw seam on app.state so the
+                # /api/bms/revert endpoint can build a wrapper with
+                # source="revert" later. The wrapped seams created here
+                # carry the source tag at construction time.
+                app.state.raw_bms_write_fn = _raw_bms_write
+                app.state.bms_prev_value_reader = _prev_value_reader
+
+                _ledger_for_wrap = getattr(app.state, "forensic_ledger", None)
+                _loop_for_wrap = getattr(app.state, "forensic_ledger_loop", None)
+                if _ledger_for_wrap is not None:
+                    _optimizer_bms_write = wrap_bms_write_fn(
+                        _raw_bms_write,
+                        ledger=_ledger_for_wrap,
+                        prev_value_reader=_prev_value_reader,
+                        source="optimizer_approval",
+                        loop=_loop_for_wrap,
+                    )
+                    app.state.direct_bms_write_fn = wrap_bms_write_fn(
+                        _raw_bms_write,
+                        ledger=_ledger_for_wrap,
+                        prev_value_reader=_prev_value_reader,
+                        source="direct",
+                        loop=_loop_for_wrap,
+                    )
+                    app.state.revert_bms_write_fn = wrap_bms_write_fn(
+                        _raw_bms_write,
+                        ledger=_ledger_for_wrap,
+                        prev_value_reader=_prev_value_reader,
+                        source="revert",
+                        loop=_loop_for_wrap,
+                    )
+                else:
+                    _optimizer_bms_write = _raw_bms_write
+                    app.state.direct_bms_write_fn = _raw_bms_write
+                    app.state.revert_bms_write_fn = _raw_bms_write
+                    log.warning(
+                        "[BOOT] Optimizer + /api/bms/write wired WITHOUT "
+                        "forensic ledger (init failed). Writes will execute "
+                        "but no ADR-011 audit trail.",
                     )
 
                 register_optimizer_routes(
@@ -399,7 +494,8 @@ async def lifespan(app: FastAPI):
                 )
                 log.info(
                     "[BOOT] Optimizer routes registered "
-                    "(Batch 2.C — approve/reject SME_L6-gated)",
+                    "(Batch 2.C — approve/reject SME_L6-gated, "
+                    "ADR-011 ledger-wrapped)",
                 )
             except Exception as e:
                 log.error(
@@ -2179,14 +2275,27 @@ async def get_bms_tag(tag_id: str):
 
 
 @app.post("/api/bms/write")
-async def write_bms_tag(payload: dict = Body(...)):
+async def write_bms_tag(request: Request, payload: dict = Body(...)):
     """Issue a write command against a writable BMS tag.
 
-    Payload: {"tag_id": str, "value": Any, "user": str (optional)}
-    All writes are logged to an immutable audit log for review.
+    Payload schema (ADR-011 + S-PROPOSER-01):
+        {
+            "tag_id":      str,    # required
+            "value":       Any,    # required
+            "user":        str,    # optional, defaults to "dashboard-user"
+            "actor_role":  str,    # required, SME_L6 only
+            "proposal_id": str,    # optional — when provided, MUST match an
+                                   #   approved row in the Optimizer
+                                   #   ApprovalLog (Proposer chain closure).
+            "source":      str,    # optional informational tag, free-form
+        }
+
+    Every write — whether from the Optimizer approve flow or a direct
+    operator action — appends a pre-entry (``BMS_WRITE_REQUESTED`` with
+    ``prev_value`` for the rollback harness) and a post-entry
+    (``BMS_WRITE_RESULT``) to the forensic ledger (ADR-011).
     """
-    # F3-2: BMS write is a raw control-surface actuation -- SME_L6 only.
-    # (No separate SYSADMIN role added; SME_L6 is the top UserRole tier.)
+    # F3-2 + S-SEC-02: BMS write is a raw control-surface actuation, SME_L6 only.
     from backend.cmms_models import role_rank as _role_rank
     _bms_role = payload.get("actor_role")
     if _role_rank(_bms_role) < 6:
@@ -2196,22 +2305,231 @@ async def write_bms_tag(payload: dict = Body(...)):
         )
     if not BMS_AVAILABLE:
         raise HTTPException(503, "BMS connector unavailable")
+
     tag_id = payload.get("tag_id")
     value = payload.get("value")
     user = payload.get("user", "dashboard-user")
+    proposal_id = payload.get("proposal_id")
     if not tag_id:
         raise HTTPException(400, "tag_id required")
 
-    bms = get_bms(PROJECT_ROOT)
-    success, message = bms.write(tag_id, value, user=user)
+    # S-PROPOSER-01: when a proposal_id is supplied, it MUST reference an
+    # approved Optimizer proposal in the ApprovalLog, AND the (tag_id,
+    # value) MUST match what was approved. This closes the Proposer
+    # chain for AI-originated writes that come back through this endpoint.
+    if proposal_id is not None:
+        approval_log = getattr(request.app.state, "optimizer_approval_log", None)
+        if approval_log is None:
+            raise HTTPException(
+                503,
+                "Optimizer approval log not initialised — cannot validate proposal_id",
+            )
+        approval = approval_log.get(proposal_id)
+        if approval is None:
+            raise HTTPException(
+                404,
+                f"proposal_id={proposal_id!r} not found in ApprovalLog",
+            )
+        if approval.decision != "approved":
+            raise HTTPException(
+                409,
+                f"proposal_id={proposal_id!r} decision={approval.decision!r} "
+                "(not 'approved' — refusing write)",
+            )
+        if approval.bms_tag_id and approval.bms_tag_id != tag_id:
+            raise HTTPException(
+                409,
+                f"proposal_id={proposal_id!r} was approved for "
+                f"tag_id={approval.bms_tag_id!r}, request tag_id={tag_id!r}",
+            )
+
+    # Choose the wrapped seam (ledger pre/post entries automatic).
+    direct_fn = getattr(request.app.state, "direct_bms_write_fn", None)
+    if direct_fn is None:
+        # Boot-time wiring failed — degrade to raw write (no audit trail).
+        # The boot log emits a WARNING in this case; reflect it to the caller.
+        log.warning(
+            "[/api/bms/write] direct_bms_write_fn missing — degrading to raw "
+            "bms.write (no ADR-011 ledger entry)",
+        )
+        bms = get_bms(PROJECT_ROOT)
+        success, message = bms.write(tag_id, value, user=user)
+    else:
+        # S-PROPOSER-01: stamp proposal context onto the ledger entry.
+        from backend.ledger import reset_proposal_context, set_proposal_context
+        token = set_proposal_context(proposal_id)
+        try:
+            success, message = await asyncio.to_thread(
+                direct_fn, tag_id, value, user,
+            )
+        finally:
+            reset_proposal_context(token)
+
     if not success:
         raise HTTPException(400, message)
-    return {"success": True, "message": message, "tag_id": tag_id, "new_value": value}
+    return {
+        "success": True,
+        "message": message,
+        "tag_id": tag_id,
+        "new_value": value,
+        "proposal_id": proposal_id,
+    }
+
+
+@app.post("/api/bms/revert/{entry_id}")
+async def revert_bms_write(entry_id: str, request: Request, payload: dict = Body(default={})):
+    """Rollback Harness (ADR-011 + DC-EPMS-MSD-004).
+
+    Reverts a prior BMS write by replaying its ``prev_value``. The entry
+    referenced by ``entry_id`` MUST be a ``BMS_WRITE_REQUESTED`` ledger
+    entry — its payload carries the ``tag_id`` + ``prev_value`` needed
+    to reconstruct the pre-write state.
+
+    Payload (optional):
+        {"actor_role": str (SME_L6), "user": str, "reason": str}
+
+    Reverting a revert is allowed — it just appends a new chain entry.
+    No special-case prevention; the chain is the audit record.
+    """
+    # SME_L6 gate (IEC 62443-3-3 SR 2.1).
+    from backend.cmms_models import role_rank as _role_rank
+    _bms_role = payload.get("actor_role")
+    if _role_rank(_bms_role) < 6:
+        raise HTTPException(
+            403,
+            f"BMS revert requires SME_L6; actor_role={_bms_role!r} is insufficient.",
+        )
+    if not BMS_AVAILABLE:
+        raise HTTPException(503, "BMS connector unavailable")
+
+    ledger = getattr(request.app.state, "forensic_ledger", None)
+    if ledger is None:
+        raise HTTPException(
+            503,
+            "ForensicLedger not initialised — cannot resolve entry_id",
+        )
+
+    entry = await ledger.fetch_by_id(entry_id)
+    if entry is None:
+        raise HTTPException(404, f"ledger entry_id={entry_id!r} not found")
+
+    from backend.ledger import ACTION_BMS_REVERT, ACTION_BMS_WRITE_REQUESTED
+    if entry.action != ACTION_BMS_WRITE_REQUESTED:
+        raise HTTPException(
+            422,
+            f"ledger entry_id={entry_id!r} action={entry.action!r} "
+            f"(cannot revert; only {ACTION_BMS_WRITE_REQUESTED!r} entries "
+            "are revertable)",
+        )
+
+    tag_id = entry.payload.get("tag_id")
+    prev_value = entry.payload.get("prev_value")
+    if not tag_id:
+        raise HTTPException(
+            422,
+            f"ledger entry_id={entry_id!r} payload missing tag_id",
+        )
+    if prev_value is None:
+        raise HTTPException(
+            422,
+            f"ledger entry_id={entry_id!r} payload has no prev_value to revert to "
+            "(the original write had no captured pre-state)",
+        )
+
+    revert_user = payload.get("user", "revert-operator")
+    reason = payload.get("reason", "")
+
+    # Append a BMS_REVERT marker entry FIRST so the chain records intent
+    # even if the actual counter-write fails. This is the canonical
+    # "intent before action" pattern (S-LEDGER-01).
+    revert_marker = await ledger.append(
+        actor=revert_user,
+        action=ACTION_BMS_REVERT,
+        payload={
+            "reverts_entry_id": entry_id,
+            "tag_id": tag_id,
+            "restoring_value": prev_value,
+            "from_value": entry.payload.get("requested_value"),
+            "reason": reason,
+        },
+    )
+
+    # Execute the counter-write through the same wrapped seam — this
+    # appends its own BMS_WRITE_REQUESTED + BMS_WRITE_RESULT pair so the
+    # chain captures the full action.
+    revert_fn = getattr(request.app.state, "revert_bms_write_fn", None)
+    if revert_fn is None:
+        raise HTTPException(
+            503,
+            "revert_bms_write_fn not wired — boot-time ledger setup failed",
+        )
+    success, message = await asyncio.to_thread(
+        revert_fn, tag_id, prev_value, revert_user,
+    )
+    if not success:
+        raise HTTPException(400, f"revert counter-write failed: {message}")
+    return {
+        "success": True,
+        "message": message,
+        "tag_id": tag_id,
+        "restored_value": prev_value,
+        "reverted_entry_id": entry_id,
+        "revert_marker_entry_id": revert_marker.entry_id,
+    }
+
+
+@app.get("/api/ledger/entries")
+async def list_ledger_entries(
+    request: Request,
+    limit: int = 50,
+    action: str | None = None,
+):
+    """List recent forensic-ledger entries (ADR-011).
+
+    ``action`` optional filter (e.g. ``BMS_WRITE_REQUESTED``,
+    ``BMS_WRITE_RESULT``, ``BMS_REVERT``, ``KEY_ROTATION``).
+    """
+    ledger = getattr(request.app.state, "forensic_ledger", None)
+    if ledger is None:
+        raise HTTPException(503, "ForensicLedger not initialised")
+    entries = await ledger.fetch_all()
+    if action:
+        entries = [e for e in entries if e.action == action]
+    entries = entries[-max(1, int(limit)):]
+    return {
+        "entries": [e.to_dict() for e in entries],
+        "total": await ledger.count(),
+        "key_version": ledger.current_key_version,
+    }
+
+
+@app.get("/api/ledger/verify")
+async def verify_ledger_chain(request: Request):
+    """Replay the chain. Returns the divergence index when broken, else clean."""
+    ledger = getattr(request.app.state, "forensic_ledger", None)
+    if ledger is None:
+        raise HTTPException(503, "ForensicLedger not initialised")
+    from backend.ledger import LedgerChainBrokenError
+    try:
+        await ledger.verify_chain()
+    except LedgerChainBrokenError as exc:
+        return {
+            "verified": False,
+            "divergence_index": exc.divergence_index,
+            "reason": exc.reason,
+            "total_entries": await ledger.count(),
+        }
+    return {"verified": True, "total_entries": await ledger.count()}
 
 
 @app.get("/api/bms/audit")
 async def get_bms_audit(limit: int = 50):
-    """Return recent write audit log entries."""
+    """Return recent write audit log entries.
+
+    Note: this is the legacy in-RAM BMS-side audit (ring buffer, 200
+    entries). The authoritative, tamper-evident log is the forensic
+    ledger at ``GET /api/ledger/entries`` — see ADR-011.
+    """
     if not BMS_AVAILABLE:
         raise HTTPException(503, "BMS connector unavailable")
     bms = get_bms(PROJECT_ROOT)

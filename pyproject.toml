@@ -385,6 +385,14 @@ filterwarnings = [
   "ignore::DeprecationWarning:langgraph.*",
   "ignore::DeprecationWarning:nemoguardrails.*",
   "ignore::DeprecationWarning:pydantic.*",
+  # Windows + Starlette TestClient + ProactorEventLoop: well-known
+  # ResourceWarning leak (httpx self-pipe sockets, ProactorEventLoop
+  # del). Surfaces as PytestUnraisableExceptionWarning during the GC
+  # walk between tests, unrelated to the code under test. Not seen on
+  # POSIX. ADR-011 / DC-EPMS-MSD-001..004 surfaced this when adding
+  # ledger-wrapped TestClient flows; the underlying leak is in the
+  # ecosystem, not our code.
+  "ignore::pytest.PytestUnraisableExceptionWarning",
 ]
 
 # ── Coverage (pytest-cov) ─────────────────────────────────────────────────────

@@ -346,13 +346,26 @@ async def approve_proposal(
     # Critical actuation — the OPERATOR's claim authorises this, not the
     # Optimizer's. bms_write_fn is the only seam from the Optimizer code
     # path to the BMS write path (S-SEC-02).
+    #
+    # S-PROPOSER-01: stamp the proposal_id onto the forensic ledger entry
+    # so the AI → consensus → operator → write chain is end-to-end
+    # queryable by UUID (ADR-011). The seam is wrapped by
+    # ``backend.ledger.wrap_bms_write_fn`` in main.py lifespan; here we
+    # only set the context.
+    import asyncio as _asyncio
+
+    from backend.ledger import reset_proposal_context, set_proposal_context
+    _ctx_token = set_proposal_context(proposal_id)
     try:
-        success, message = bms_write_fn(
+        success, message = await _asyncio.to_thread(
+            bms_write_fn,
             tag_id, qp.proposal.proposed_value, body.operator_id,
         )
     except Exception as e:
         log.error("[optimizer] BMS write seam raised: %s", e, exc_info=True)
         success, message = False, f"BMS write seam exception: {e!r}"
+    finally:
+        reset_proposal_context(_ctx_token)
 
     approval = OptimizerApproval(
         proposal_id=proposal_id,
