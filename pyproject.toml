@@ -385,6 +385,14 @@ filterwarnings = [
   "ignore::DeprecationWarning:langgraph.*",
   "ignore::DeprecationWarning:nemoguardrails.*",
   "ignore::DeprecationWarning:pydantic.*",
+  # FastAPI on_event() is deprecated in favour of lifespan handlers;
+  # backend.agent_copilot still uses the older shape and the warning
+  # fires at module-import time (cannot be silenced per-test). It is
+  # raised via typing_extensions.@deprecated with stacklevel set so
+  # the attribution lands on backend.agent_copilot. Migration to
+  # lifespan is tracked separately (out of scope for the Gentle IA
+  # Agent Harness sprints).
+  "ignore::DeprecationWarning:backend.agent_copilot",
   # Windows + Starlette TestClient + ProactorEventLoop: well-known
   # ResourceWarning leak (httpx self-pipe sockets, ProactorEventLoop
   # del). Surfaces as PytestUnraisableExceptionWarning during the GC
