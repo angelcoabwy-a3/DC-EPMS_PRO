@@ -64,6 +64,13 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.agent_harness import (
+    ArtifactDependencyError,
+    require_artifact,
+    sanitize_history,
+    strip_envelope_markers,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -696,6 +703,16 @@ class FacilityCoPilot:
         """Run the agent loop until the model returns a final assistant
         message (no further tool calls) or max_tool_hops is exceeded.
 
+        Harness #07 (Artifact Dependency): ``operator_message`` is the
+        sub-agent's load-bearing input; an empty string is rejected
+        immediately rather than burning a model round-trip.
+
+        Harness #17 (Sub-Agent Isolation): the system prompt is
+        re-bound on every call (no inherited system context); replayed
+        ``history`` is sanitized so a malicious turn cannot smuggle a
+        fake ``system`` role, an unknown key, or a forged hermetic
+        envelope marker into the dispatch.
+
         Returns:
             {
                 "reply": str,
@@ -705,22 +722,21 @@ class FacilityCoPilot:
                 "hops": int,
             }
         """
+        require_artifact("operator_message", operator_message)
+        if history is not None and not isinstance(history, list):
+            raise ArtifactDependencyError(
+                f"history must be list[dict] or None, got {type(history).__name__}"
+            )
+
         model_id = await self._resolve_model()
         client = await self._client()
 
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         if history:
-            # Defensive copy + filter out our internal-only fields
-            for msg in history:
-                if msg.get("role") in ("user", "assistant", "tool"):
-                    messages.append(
-                        {
-                            k: v
-                            for k, v in msg.items()
-                            if k in ("role", "content", "tool_call_id", "tool_calls", "name")
-                        }
-                    )
-        messages.append({"role": "user", "content": operator_message})
+            messages.extend(sanitize_history(history))
+        messages.append(
+            {"role": "user", "content": strip_envelope_markers(operator_message)}
+        )
 
         invocations: list[dict] = []
         emitted_drafts: list[str] = []

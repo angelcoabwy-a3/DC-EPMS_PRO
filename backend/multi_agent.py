@@ -100,6 +100,12 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from backend.agent_harness import (
+    ArtifactDependencyError,
+    hermetic_prompt,
+    require_artifact,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -115,12 +121,31 @@ VALID_VERDICTS = {VERDICT_APPROVE, VERDICT_CAUTION, VERDICT_HARD_STOP, VERDICT_D
 # ─── Data classes ──────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class ConsultContext:
-    """Inputs to a multi-agent consultation."""
+    """Inputs to a multi-agent consultation.
+
+    Harness #07 (Artifact Dependency): ``query`` is the load-bearing
+    input every agent needs in order to know what is being asked.
+    Empty / whitespace-only queries are rejected at construction time
+    so no downstream agent ever has to handle the degenerate case.
+    Optional fields, if supplied, must be strings (a stray ``int`` or
+    ``UUID`` slipping through would surface as a confusing ``KeyError``
+    deep inside an agent — fail fast at the boundary instead).
+    """
     query: str
     asset_id: str | None = None
     procedure_id: str | None = None
     work_order_id: str | None = None
     cet_id: str | None = None  # who is asking, recorded in audit
+
+    def __post_init__(self) -> None:
+        require_artifact("query", self.query)
+        for field_name in ("asset_id", "procedure_id", "work_order_id", "cet_id"):
+            value = getattr(self, field_name)
+            if value is not None and not isinstance(value, str):
+                raise ArtifactDependencyError(
+                    f"ConsultContext.{field_name} must be str or None, "
+                    f"got {type(value).__name__}"
+                )
 
 
 @dataclass
@@ -462,7 +487,7 @@ class ArchitectAgent:
             if kalman_lines
             else "  (live Kalman tap unavailable this tick)"
         )
-        prompt = (
+        body = (
             "You are the Architect agent of a Tier IV AI-factory "
             "operations platform, responsible for topology and "
             "redundancy. In 2-3 sentences give an advisory structural "
@@ -473,13 +498,16 @@ class ArchitectAgent:
             "strictly in the data provided; do not invent values. Be "
             "concise and factual.\n\n"
             f"ASSET: {ctx.asset_id or 'n/a'}  (type: {comp_type})\n"
-            f"DETERMINISTIC VERDICT (already decided, do not override): "
-            f"{verdict}\n"
             f"REDUNDANCY PILLAR: {pillar}   PATH: {path}   "
             f"CRITICALITY: {criticality}\n"
             "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
             "anomaly):\n"
             f"{kalman_block}\n"
+        )
+        prompt = hermetic_prompt(
+            self.name, body,
+            deterministic_decision=verdict,
+            decision_authority="ADR-006 (Deterministic Sandbox)",
         )
         return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
@@ -645,7 +673,7 @@ class SafetyOfficerAgent:
             if kalman_lines
             else "  (live Kalman tap unavailable this tick)"
         )
-        prompt = (
+        body = (
             "You are the Safety Officer agent of a Tier IV AI-factory "
             "operations platform, governing LOTO and PPE compliance under "
             "CSA Z462 / NFPA 70E / NEC 460.6. In 2-3 sentences give an "
@@ -655,12 +683,15 @@ class SafetyOfficerAgent:
             f"ASSET: {ctx.asset_id or 'n/a'}\n"
             f"WORK ORDER: {ctx.work_order_id or 'n/a'}   "
             f"PROCEDURE: {ctx.procedure_id or 'n/a'}\n"
-            f"DETERMINISTIC VERDICT (already decided, do not override): "
-            f"{verdict}\n"
             f"VERDICT HEADLINE: {summary}\n"
             "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
             "anomaly):\n"
             f"{kalman_block}\n"
+        )
+        prompt = hermetic_prompt(
+            self.name, body,
+            deterministic_decision=verdict,
+            decision_authority="ADR-006 + S-DET-02 (Safety Officer sole vetoer)",
         )
         return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
@@ -830,19 +861,22 @@ class DiagnosticianAgent:
             if kalman_lines
             else "  (live Kalman tap unavailable this tick)"
         )
-        prompt = (
+        body = (
             "You are the Diagnostician agent of a Tier IV AI-factory "
             "operations platform. In 2-3 sentences give a maintenance-"
             "engineering diagnostic narrative for the asset below. Ground "
             "every claim strictly in the data provided; do not invent "
             "values. Be concise and factual.\n\n"
             f"ASSET: {ctx.asset_id}\n"
-            f"DETERMINISTIC VERDICT (already decided, do not override): "
-            f"{verdict}\n"
             f"WORK-ORDER HISTORY: {history_line}\n"
             "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
             "anomaly):\n"
             f"{kalman_block}\n"
+        )
+        prompt = hermetic_prompt(
+            self.name, body,
+            deterministic_decision=verdict,
+            decision_authority="ADR-006 (Deterministic Sandbox)",
         )
         return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
@@ -1028,7 +1062,7 @@ class AnalystAgent:
             if kalman_lines
             else "  (live Kalman tap unavailable this tick)"
         )
-        prompt = (
+        body = (
             "You are the Analyst agent of a Tier IV AI-factory operations "
             "platform, responsible for CapEx-vs-OpEx capital-planning "
             "framing. In 2-3 sentences give an advisory financial-impact "
@@ -1037,14 +1071,17 @@ class AnalystAgent:
             "history. Ground every figure strictly in the data provided; "
             "do not invent costs. Be concise and factual.\n\n"
             f"ASSET: {ctx.asset_id or 'n/a'}  (type: {asset_type})\n"
-            f"DETERMINISTIC VERDICT (already decided, do not override): "
-            f"{verdict}\n"
             f"OPEX REPAIR (heuristic): USD {opex:,}\n"
             f"CAPEX REPLACE (heuristic): USD {capex:,}\n"
             f"PRIOR COMPLETED REPAIRS: {completed_count}\n"
             "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
             "anomaly):\n"
             f"{kalman_block}\n"
+        )
+        prompt = hermetic_prompt(
+            self.name, body,
+            deterministic_decision=verdict,
+            decision_authority="ADR-006 (Deterministic Sandbox)",
         )
         return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
@@ -1254,7 +1291,7 @@ class CapacityPlannerAgent:
             if kalman_lines
             else "  (live Kalman tap unavailable this tick)"
         )
-        prompt = (
+        body = (
             "You are the Capacity Planner agent of a Tier IV AI-factory "
             "operations platform, responsible for forward-looking IT-load "
             "+ cooling + UPS capacity planning. In 2-3 sentences give an "
@@ -1262,14 +1299,17 @@ class CapacityPlannerAgent:
             "every figure strictly in the data provided; do not invent "
             "values. Be concise and factual.\n\n"
             f"ASSET: {ctx.asset_id or 'site-wide'}\n"
-            f"DETERMINISTIC VERDICT (already decided, do not override): "
-            f"{verdict}\n"
             f"SITE IT LOAD UTILISATION: {util_pct:.1f}%\n"
             f"INSTALLED RACK COUNT: {installed_racks}\n"
             f"DESIGN IT CAPACITY: {design_kw:.0f} kW (Path C2 Phase 1)\n"
             "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
             "anomaly):\n"
             f"{kalman_block}\n"
+        )
+        prompt = hermetic_prompt(
+            self.name, body,
+            deterministic_decision=verdict,
+            decision_authority="ADR-006 (Deterministic Sandbox)",
         )
         return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
@@ -1453,7 +1493,7 @@ class CarbonGridAgent:
             if kalman_lines
             else "  (live Kalman tap unavailable this tick)"
         )
-        prompt = (
+        body = (
             "You are the Carbon/Grid agent of a Tier IV AI-factory "
             "operations platform. You reason about Ontario IESO grid-"
             "carbon intensity (gCO2/kWh) + Time-of-Use pricing. In "
@@ -1464,13 +1504,16 @@ class CarbonGridAgent:
             "the recommendation in that context. Be concise and "
             "factual.\n\n"
             f"ASSET: {ctx.asset_id or 'site-wide'}\n"
-            f"DETERMINISTIC VERDICT (already decided, do not override): "
-            f"{verdict}\n"
             f"GRID CARBON INTENSITY: {carbon:.0f} gCO2/kWh\n"
             f"TIME-OF-USE BAND: {tou} ({price:.1f} ¢/kWh)\n"
             "LIVE KALMAN TELEMETRY (Z-score; |z|>=3 is a statistical "
             "anomaly):\n"
             f"{kalman_block}\n"
+        )
+        prompt = hermetic_prompt(
+            self.name, body,
+            deterministic_decision=verdict,
+            decision_authority="ADR-006 + S-DET-02 (no VETO authority)",
         )
         return await _gemma_complete(self._llm_client, prompt, max_tokens=240)
 
@@ -1526,7 +1569,19 @@ class MultiAgentOrchestrator:
                 self._analyst, self._capacity, self._carbon]
 
     async def consult(self, ctx: ConsultContext) -> ConsensusResult:
-        """Run all agents in parallel and aggregate."""
+        """Run all agents in parallel and aggregate.
+
+        Harness #07 fail-fast: ``ctx`` must be a fully-formed
+        :class:`ConsultContext`. A naked ``dict`` or ``None`` is
+        rejected here before any fan-out so a broken caller does not
+        burn six parallel coroutines and a Gemma round-trip apiece.
+        """
+        require_artifact(
+            "ctx",
+            ctx,
+            predicate=lambda c: isinstance(c, ConsultContext),
+            message="MultiAgentOrchestrator.consult requires a ConsultContext instance",
+        )
         t0 = time.perf_counter()
         # asyncio.gather with return_exceptions so one agent crash doesn't
         # take down the whole consultation. We convert exceptions to a
