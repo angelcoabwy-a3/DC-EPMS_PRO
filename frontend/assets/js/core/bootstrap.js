@@ -20,7 +20,42 @@
  *     `epms:overview-ask` DOM event (views/overview.js listens).
  * ════════════════════════════════════════════════════════════════ */
 
+import { APP_VERSION } from './version.js';
+
 const $ = (id) => document.getElementById(id);
+
+
+/**
+ * Release-engineering helper — overwrite every footer / header stamp
+ * with the canonical APP_VERSION, then probe the backend to flag a
+ * frontend/backend drift in the console. Defensive: the HTML literals
+ * already carry the correct version, but rewriting via JS guarantees
+ * a single source of truth even if the served HTML is stale (browser
+ * cache, mid-deploy window). The /api/health probe is best-effort;
+ * an unreachable backend silently leaves the literal in place.
+ *
+ * Returns the drift-probe Promise so callers (e.g. tests) can await
+ * the async tail deterministically. Production callers (initBootstrap)
+ * fire-and-forget — the catch keeps an unreachable backend silent.
+ */
+function _stampAppVersion() {
+    document.querySelectorAll('[data-app-version-stamp]').forEach((el) => {
+        el.textContent = `v${APP_VERSION}`;
+    });
+    return fetch('/api/health')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+            if (!d || !d.version) return;
+            if (d.version !== APP_VERSION) {
+                console.warn(
+                    `[bootstrap] version drift: frontend=v${APP_VERSION} `
+                    + `backend=v${d.version}. Hard-reload (Ctrl+Shift+R) `
+                    + 'to refresh the cached HMI bundle.',
+                );
+            }
+        })
+        .catch(() => { /* swallow — health probe is best-effort */ });
+}
 
 // ── Router + module config ─────────────────────────────────────────
 const MODULES = {
@@ -192,11 +227,12 @@ function setupRouter() {
 /** Public entry — called once from main.js after all routes register. */
 export function initBootstrap() {
     console.log(
-        '%c DC-EPMS PRO v8.1.0 %c a3semi %c Modular HMI — T2.1 closed',
+        `%c DC-EPMS PRO v${APP_VERSION} %c a3semi %c Modular HMI — T2.1 closed`,
         'background:#00B8D4;color:#0B0D10;font-weight:700;padding:2px 6px;border-radius:2px;',
         'background:#1C2128;color:#00B8D4;padding:2px 6px;',
         'color:#9AA0A6;',
     );
+    _stampAppVersion();
     setupRouter();
     console.log('[bootstrap] router glue ready — app.js IIFE eradicated (T2.1 Vector 4c)');
 }
@@ -207,4 +243,6 @@ export const __bootstrap_test__ = {
     navigateTo,
     renderPlaceholder,
     setupRouter,
+    stampAppVersion: _stampAppVersion,
+    APP_VERSION,
 };

@@ -12,7 +12,10 @@ import { describe, it, expect, afterEach } from 'vitest';
 
 import { __bootstrap_test__ } from '/assets/js/core/bootstrap.js';
 
-const { MODULES, navigateTo, renderPlaceholder, setupRouter } = __bootstrap_test__;
+const {
+    MODULES, navigateTo, renderPlaceholder, setupRouter,
+    stampAppVersion, APP_VERSION,
+} = __bootstrap_test__;
 
 afterEach(() => { document.body.innerHTML = ''; });
 
@@ -76,5 +79,84 @@ describe('T2.1 Vector 4c — core/bootstrap.js navigation', () => {
         setupRouter();
         document.querySelector('.nav-item').click();
         expect(document.getElementById('view-placeholder').hasAttribute('hidden')).toBe(false);
+    });
+});
+
+
+// ────────────────────────────────────────────────────────────────────
+// Release-engineering — single APP_VERSION source-of-truth + stamp
+// ────────────────────────────────────────────────────────────────────
+describe('Release Engineering — APP_VERSION stamp', () => {
+    it('APP_VERSION is a non-empty SemVer-ish string', () => {
+        expect(typeof APP_VERSION).toBe('string');
+        expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$/);
+    });
+
+    it('stampAppVersion writes v<APP_VERSION> into every [data-app-version-stamp]', () => {
+        document.body.innerHTML = `
+            <span data-app-version-stamp>STALE</span>
+            <footer><span data-app-version-stamp>ALSO_STALE</span></footer>
+        `;
+        // Stub fetch so the drift probe doesn't throw during the test.
+        const f = vi.fn(async () => ({
+            ok: true, json: async () => ({ version: APP_VERSION }),
+        }));
+        vi.stubGlobal('fetch', f);
+        stampAppVersion();
+        const stamps = document.querySelectorAll('[data-app-version-stamp]');
+        expect(stamps).toHaveLength(2);
+        stamps.forEach((el) => {
+            expect(el.textContent).toBe(`v${APP_VERSION}`);
+        });
+        vi.unstubAllGlobals();
+    });
+
+    it('drift probe emits a console.warn when backend reports a different version', async () => {
+        document.body.innerHTML = '<span data-app-version-stamp>x</span>';
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const f = vi.fn(async () => ({
+            ok: true, json: async () => ({ version: '99.99.99' }),
+        }));
+        vi.stubGlobal('fetch', f);
+        // _stampAppVersion now returns the probe Promise; await it for
+        // deterministic flushing (no microtask-count guesswork).
+        await stampAppVersion();
+        expect(warn).toHaveBeenCalled();
+        const msg = warn.mock.calls[0][0];
+        expect(msg).toContain('version drift');
+        expect(msg).toContain(`v${APP_VERSION}`);
+        expect(msg).toContain('v99.99.99');
+        warn.mockRestore();
+        vi.unstubAllGlobals();
+    });
+
+    it('drift probe is silent when backend matches', async () => {
+        document.body.innerHTML = '<span data-app-version-stamp>x</span>';
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const f = vi.fn(async () => ({
+            ok: true, json: async () => ({ version: APP_VERSION }),
+        }));
+        vi.stubGlobal('fetch', f);
+        await stampAppVersion();
+        // No drift -> no warn.
+        const driftCalls = warn.mock.calls.filter(
+            (c) => String(c[0] || '').includes('version drift'),
+        );
+        expect(driftCalls).toHaveLength(0);
+        warn.mockRestore();
+        vi.unstubAllGlobals();
+    });
+
+    it('a fetch failure does not throw — the probe is best-effort', async () => {
+        document.body.innerHTML = '<span data-app-version-stamp>x</span>';
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('down'); }));
+        // The synchronous stamp must not raise (we never await a
+        // rejected promise here — the .catch inside swallows).
+        let p;
+        expect(() => { p = stampAppVersion(); }).not.toThrow();
+        await p;
+        expect(document.querySelector('[data-app-version-stamp]').textContent)
+            .toBe(`v${APP_VERSION}`);
+        vi.unstubAllGlobals();
     });
 });

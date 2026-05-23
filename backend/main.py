@@ -32,6 +32,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend.__version__ import __version__
 from backend.metrics_router import setup_metrics
 
 # ==============================================================
@@ -210,6 +211,7 @@ class ShiftReportRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_manager, rag_service, agent
+    log.info("[BUILD] DC-EPMS_PRO=v%s", __version__)
     log.info("DC-EPMS PRO starting up...")
     log.info("Operator: %s | Facility: %s", OPERATOR_ORG, FACILITY_NAME)
     log.info("PG DSN:   postgresql://%s:***@%s:%s/%s", _PG_USER, _PG_HOST, _PG_PORT, _PG_DB)
@@ -623,7 +625,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="DC-EPMS PRO",
     description="a3semi Edge Operations - Proprietary EPMS for Blackwell Fleet (Tier IV 2N 40MW)",
-    version="4.1.0-pro",
+    version=__version__,
     lifespan=lifespan,
 )
 
@@ -686,7 +688,7 @@ async def health():
     """Unified health check."""
     checks = {
         "service": "dc-epms-pro",
-        "version": "4.1.0-pro",
+        "version": __version__,
         "operator": OPERATOR_ORG,
         "facility": FACILITY_NAME,
         "timestamp": time.time(),

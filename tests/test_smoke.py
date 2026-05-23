@@ -17,7 +17,9 @@ import pytest
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # noqa: E402  (sys.path mutated above)
+
+from backend.__version__ import __version__  # noqa: E402  (sys.path mutated above)
 
 
 @pytest.fixture(scope="module")
@@ -49,6 +51,30 @@ def test_health_endpoint_reachable(client):
     assert "rag" in data
     assert "gemma" in data
     assert "gpu" in data
+
+
+def test_health_version_matches_canonical_source():
+    """Release Engineering — ``GET /api/health.version`` MUST equal
+    ``backend.__version__.__version__``. If a future PR re-introduces a
+    hardcoded literal (the old ``"4.1.0-pro"`` was stale for years),
+    this test catches the drift before it ships."""
+    from main import app
+
+    test_client = TestClient(app)
+    try:
+        r = test_client.get("/api/health")
+        assert r.status_code == 200
+        assert r.json()["version"] == __version__
+    finally:
+        test_client.close()
+
+
+def test_fastapi_app_version_matches_canonical_source():
+    """The OpenAPI / Swagger banner version MUST equal __version__.
+    Same drift-prevention contract as the /api/health version field."""
+    from main import app
+
+    assert app.version == __version__
 
 
 def test_telemetry_point_validation(client):
