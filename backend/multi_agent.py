@@ -101,9 +101,11 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from backend.agent_harness import (
+    AgentStateStore,
     ArtifactDependencyError,
     hermetic_prompt,
     require_artifact,
+    verify_consensus_contract,
 )
 
 log = logging.getLogger(__name__)
@@ -1531,7 +1533,12 @@ class MultiAgentOrchestrator:
         llm_client: Any | None = None,
         telemetry_provider: Any | None = None,
         grid_provider: Any | None = None,
+        state_store: AgentStateStore | None = None,
     ):
+        # Harness #05 (Artifact Store): when injected, every consensus
+        # the orchestrator returns is also written to this JSONL store
+        # so decisions survive a process restart.
+        self._state_store = state_store
         self._architect    = ArchitectAgent(
             site_model, graphrag, cmms_repo=cmms_repo,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
@@ -1604,13 +1611,29 @@ class MultiAgentOrchestrator:
                 verdicts.append(res)
 
         consensus, veto, rationale = self._compute_consensus(verdicts)
-        return ConsensusResult(
+        result = ConsensusResult(
             consensus=consensus,
             safety_officer_veto=veto,
             agents=verdicts,
             decision_time_ms=_ms_since(t0),
             rationale=rationale,
         )
+        # Harness #12 (Verify): contract check before the caller sees
+        # the result. A violation here is a programming bug in one of
+        # the agents — surface it loudly rather than ship a malformed
+        # consensus to /api/multi-agent/consult.
+        verify_consensus_contract(result)
+        # Harness #05 (Artifact Store): persist when configured. The
+        # write is best-effort — a failed persistence step must NOT
+        # erase a valid consensus that the operator needs to see.
+        if self._state_store is not None:
+            try:
+                self._state_store.persist(ctx, result)
+            except Exception as exc:
+                log.warning(
+                    "[multi_agent] state_store.persist failed: %s", exc
+                )
+        return result
 
     @staticmethod
     def _compute_consensus(
@@ -1658,6 +1681,7 @@ def get_orchestrator(
     llm_client: Any | None = None,
     telemetry_provider: Any | None = None,
     grid_provider: Any | None = None,
+    state_store: AgentStateStore | None = None,
 ) -> MultiAgentOrchestrator:
     global _orchestrator
     if _orchestrator is None:
@@ -1666,13 +1690,14 @@ def get_orchestrator(
             cmms_repo=cmms_repo, rag_service=rag_service,
             llm_client=llm_client, telemetry_provider=telemetry_provider,
             grid_provider=grid_provider,
+            state_store=state_store,
         )
         log.info(
             "[multi_agent] orchestrator initialized "
-            "(site=%s, graphrag=%s, cmms=%s, rag=%s, grid=%s)",
+            "(site=%s, graphrag=%s, cmms=%s, rag=%s, grid=%s, store=%s)",
             site_model is not None, graphrag is not None,
             cmms_repo is not None, rag_service is not None,
-            grid_provider is not None,
+            grid_provider is not None, state_store is not None,
         )
     return _orchestrator
 

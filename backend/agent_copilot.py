@@ -66,6 +66,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.agent_harness import (
     ArtifactDependencyError,
+    intercept_commands,
     require_artifact,
     sanitize_history,
     strip_envelope_markers,
@@ -597,7 +598,26 @@ class _DraftStoreImpl:
         rationale: str,
         metadata: dict | None = None,
         ttl_s: int = DEFAULT_TTL_S,
+        *,
+        human_approved: bool = False,
+        approver: str | None = None,
     ) -> Draft:
+        """Persist a new draft after a Harness #23 permission-security
+        gate. A sub-agent proposing a destructive command (DROP TABLE,
+        shutdown, emergency_stop …) must pass ``human_approved=True``
+        + a named ``approver`` at create time — otherwise the create
+        call raises :class:`DestructiveCommandError` and no draft is
+        persisted.
+
+        Draft *approval* (via :meth:`approve`) is a separate, downstream
+        gate: it is what executes the commands. H23 only governs whether
+        the destructive proposal is even allowed to enter the queue."""
+        intercept_commands(
+            commands,
+            human_approved=human_approved,
+            approver=approver,
+            context=f"DraftStore.create(kind={kind!r})",
+        )
         draft_id = uuid.uuid4().hex
         now = time.time()
         draft = Draft(
