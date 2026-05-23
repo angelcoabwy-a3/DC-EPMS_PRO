@@ -25,6 +25,7 @@
  *   hermes:edge-healing       detail = EDGE_HEALING_RECOMMENDED payload
  *   hermes:agent-consensus    detail = agent_consensus payload
  *   hermes:optimizer-proposal detail = optimizer_proposal payload (Batch 2.D)
+ *   hermes:optimizer-tick     detail = optimizer_tick payload (Epic 5.A)
  * ════════════════════════════════════════════════════════════════ */
 
 import { onHermesStream } from '../services/api.js';
@@ -36,6 +37,7 @@ let _initialized = false;
 let _cmmsAlerts = [];
 let _agentConsensus = [];
 let _optimizerProposals = [];
+let _optimizerTick = null;
 let _cmmsAlertCount = 0;
 
 function _dispatch(name, detail) {
@@ -73,13 +75,24 @@ function _onAgentConsensus(payload) {
 function _onOptimizerProposal(payload) {
     // Epic 2 Batch 2.D — proactive Optimizer events. The backend
     // emit_event payload carries { event, proposal, consensus_verdict,
-    // safety_officer_veto, narrative_present } shaped by
-    // backend/optimizer.py tick(). The HMI views/optimizer.js listens
-    // on the DOM event and refreshes its queue.
+    // safety_officer_veto, agent_verdicts, narrative_present } shaped
+    // by backend/optimizer.py tick(). The HMI views/optimizer.js
+    // listens on the DOM event and refreshes its queue.
     if (!payload || typeof payload !== 'object') return;
     _optimizerProposals = [payload, ..._optimizerProposals].slice(0, _MAX_RETAINED);
     setState('optimizerProposals', _optimizerProposals);
     _dispatch('hermes:optimizer-proposal', payload);
+}
+
+function _onOptimizerTick(payload) {
+    // Epic 5.A — Optimizer loop heartbeat. The backend emits one event
+    // per tick with { tick_unix, tick_count, outcomes, queue_size,
+    // is_running }. The HMI heartbeat strip in views/optimizer.js
+    // listens on the DOM event and refreshes its display.
+    if (!payload || typeof payload !== 'object') return;
+    _optimizerTick = payload;
+    setState('optimizerTick', payload);
+    _dispatch('hermes:optimizer-tick', payload);
 }
 
 /** Public entry — called once from main.js at bootstrap. */
@@ -88,8 +101,9 @@ export function initHermesEvents() {
     onHermesStream('cmms_alerts', _onCmmsAlert);
     onHermesStream('agent_consensus', _onAgentConsensus);
     onHermesStream('optimizer_proposal', _onOptimizerProposal);
+    onHermesStream('optimizer_tick', _onOptimizerTick);
     _initialized = true;
-    console.log('[hermes-events] subscribed: cmms_alerts + agent_consensus + optimizer_proposal');
+    console.log('[hermes-events] subscribed: cmms_alerts + agent_consensus + optimizer_proposal + optimizer_tick');
 }
 
 // Test surface.
@@ -97,13 +111,16 @@ export const __hermes_events_test__ = {
     onCmmsAlert: _onCmmsAlert,
     onAgentConsensus: _onAgentConsensus,
     onOptimizerProposal: _onOptimizerProposal,
+    onOptimizerTick: _onOptimizerTick,
     getCmmsAlerts: () => _cmmsAlerts,
     getAgentConsensus: () => _agentConsensus,
     getOptimizerProposals: () => _optimizerProposals,
+    getOptimizerTick: () => _optimizerTick,
     reset: () => {
         _cmmsAlerts = [];
         _agentConsensus = [];
         _optimizerProposals = [];
+        _optimizerTick = null;
         _cmmsAlertCount = 0;
         _initialized = false;
     },

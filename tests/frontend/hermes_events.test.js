@@ -126,4 +126,34 @@ describe('T3.1 — Hermes EDA frontend routing (core/hermes_events.js)', () => {
         expect(seen).toHaveLength(1);
         expect(seen[0].consensus_verdict).toBe('approve');
     });
+
+    // ── Epic 5.A — optimizer_tick heartbeat stream ──────────────────
+    it('an optimizer_tick payload lands in state + fires a DOM event', () => {
+        const seen = [];
+        const handler = (e) => seen.push(e.detail);
+        document.addEventListener('hermes:optimizer-tick', handler);
+        try {
+            __hermes_events_test__.onOptimizerTick({
+                event: 'optimizer-tick',
+                tick_unix: 1716490000,
+                tick_count: 7,
+                outcomes: { sustained: true, drift: 0.05, n_proposals: 1 },
+                queue_size: 2,
+                is_running: true,
+            });
+        } finally {
+            document.removeEventListener('hermes:optimizer-tick', handler);
+        }
+        expect(getState('optimizerTick').tick_count).toBe(7);
+        expect(__hermes_events_test__.getOptimizerTick().queue_size).toBe(2);
+        expect(seen).toHaveLength(1);
+        expect(seen[0].outcomes.sustained).toBe(true);
+    });
+
+    it('a bad optimizer_tick payload is ignored without throwing', () => {
+        __hermes_events_test__.onOptimizerTick(null);
+        __hermes_events_test__.onOptimizerTick('not-a-dict');
+        // No state mutation, no exception.
+        expect(__hermes_events_test__.getOptimizerTick()).toBeNull();
+    });
 });

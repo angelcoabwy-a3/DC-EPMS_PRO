@@ -479,3 +479,83 @@ class TestRouteRegistration:
         # But the seam is replaced on each call (the most-recent
         # bms_write_fn wins).
         assert app.state.optimizer_bms_write_fn(1, 2, 3) == (True, "ok2")
+
+
+# ════════════════════════════════════════════════════════════════════
+# Epic 5 Sprint 1 — E5.A GET /api/optimizer/health
+# ════════════════════════════════════════════════════════════════════
+class TestOptimizerHealthEndpoint:
+    def test_health_returns_initial_snapshot(self, stack):
+        client, svc, _bms, _app = stack
+        r = client.get("/api/optimizer/health")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["is_running"] is False
+        assert body["pue_target"] == 1.30
+        assert body["last_tick_unix"] == 0.0
+        assert body["tick_count"] == 0
+        assert body["queue_size"] == 0
+        assert body["last_tick_outcomes"] == {}
+        assert body["audit_recent"] == []
+
+    def test_health_reflects_queued_proposals(self, stack):
+        client, svc, _bms, _app = stack
+        svc.queue.enqueue(_make_queued("h-1"))
+        svc.queue.enqueue(_make_queued("h-2", surface=SURFACE_CT_FAN_VFD))
+        r = client.get("/api/optimizer/health")
+        assert r.status_code == 200
+        assert r.json()["queue_size"] == 2
+
+    def test_health_returns_503_when_service_not_wired(self):
+        # Build an app without the optimizer service on app.state.
+        app = FastAPI()
+        register_optimizer_routes(app, bms_write_fn=lambda *a, **k: (True, "ok"))
+        # Note: no app.state.optimizer_service assignment.
+        client = TestClient(app)
+        r = client.get("/api/optimizer/health")
+        assert r.status_code == 503
+        assert "not running" in r.json()["detail"].lower()
+
+
+# ════════════════════════════════════════════════════════════════════
+# Epic 5 Sprint 1 — E5.C per-agent verdicts traverse to JSON
+# ════════════════════════════════════════════════════════════════════
+class TestQueuedProposalAgentVerdictsJSON:
+    def test_proposals_endpoint_carries_agent_verdicts(self, stack):
+        client, svc, _bms, _app = stack
+        # Build a QueuedProposal WITH per-agent breakdown.
+        qp = QueuedProposal(
+            proposal=Proposal(
+                proposal_id="qp-votes",
+                surface=SURFACE_CHILLER_LWT,
+                current_value=7.5,
+                proposed_value=7.0,
+                delta=-0.5,
+                rationale="r",
+                pue_at_emission=1.35,
+                created_at=time.time(),
+            ),
+            consensus_verdict="approve",
+            consensus_rationale="all good",
+            safety_officer_veto=False,
+            optimizer_narrative="n",
+            queued_at=time.time(),
+            agent_verdicts=[
+                {"agent_name": "Architect", "verdict": "approve", "summary": "topology ok"},
+                {"agent_name": "Safety Officer", "verdict": "approve", "summary": "no LOTO"},
+                {"agent_name": "Diagnostician", "verdict": "approve", "summary": "no recurrence"},
+                {"agent_name": "Analyst", "verdict": "approve", "summary": "opex cheap"},
+                {"agent_name": "Capacity Planner", "verdict": "approve", "summary": "headroom"},
+                {"agent_name": "Carbon/Grid", "verdict": "caution", "summary": "on-peak TOU"},
+            ],
+        )
+        svc.queue.enqueue(qp)
+        r = client.get("/api/optimizer/proposals")
+        assert r.status_code == 200
+        body = r.json()
+        out = body["proposals"][0]
+        assert "agent_verdicts" in out
+        assert len(out["agent_verdicts"]) == 6
+        # Safety Officer row identifiable
+        so = next(a for a in out["agent_verdicts"] if a["agent_name"] == "Safety Officer")
+        assert so["verdict"] == "approve"

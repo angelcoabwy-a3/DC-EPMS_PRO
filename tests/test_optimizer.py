@@ -225,10 +225,14 @@ def _sync_provider(point: TelemetryPoint | None):
 
 class TestOptimizerServiceTick:
     @pytest.mark.asyncio
-    async def test_no_telemetry_provider_emits_nothing(self):
+    async def test_no_telemetry_provider_emits_no_proposals(self):
+        # E5.A invariant: every tick writes a heartbeat audit entry,
+        # even when telemetry is absent — operators need proof the
+        # loop ran. So we count proposal-events specifically.
         svc = OptimizerService(telemetry_provider=None)
         assert await svc.tick() == []
-        assert len(svc.audit) == 0
+        proposed = [e for e in svc.audit.entries() if e.event == AUDIT_PROPOSED]
+        assert proposed == []
 
     @pytest.mark.asyncio
     async def test_drift_below_sustain_emits_nothing(self):
@@ -521,11 +525,13 @@ class TestOptimizerEventEmission:
             event_emitter=emit,
         )
         await svc.tick()
-        assert len(events) == 2
-        assert all(name == "optimizer-proposal" for name, _ in events)
+        # E5.A: a tick also emits an 'optimizer-tick' heartbeat event.
+        # Filter to the proposal events for this assertion.
+        proposal_events = [(n, p) for n, p in events if n == "optimizer-proposal"]
+        assert len(proposal_events) == 2
         # Payload carries the serialised proposal
-        assert all("proposal" in payload for _, payload in events)
-        assert {payload["proposal"]["surface"] for _, payload in events} == {
+        assert all("proposal" in payload for _, payload in proposal_events)
+        assert {payload["proposal"]["surface"] for _, payload in proposal_events} == {
             SURFACE_CHILLER_LWT, SURFACE_CT_FAN_VFD,
         }
 
@@ -544,7 +550,7 @@ class TestOptimizerEventEmission:
         assert svc.queue.size() == 2
 
     @pytest.mark.asyncio
-    async def test_safety_veto_does_not_emit_event(self):
+    async def test_safety_veto_does_not_emit_proposal_event(self):
         events: list[tuple[str, dict]] = []
 
         def emit(name: str, payload: dict) -> None:
@@ -559,9 +565,15 @@ class TestOptimizerEventEmission:
             consult_fn=veto, event_emitter=emit,
         )
         await svc.tick()
-        # Vetoed proposals MUST NOT emit a Hermes event (the HMI should
-        # never see a proposal that the Safety Officer killed).
-        assert events == []
+        # S-DET-02: vetoed proposals MUST NOT emit an
+        # 'optimizer-proposal' event (the HMI should never see a
+        # proposal the Safety Officer killed). The 'optimizer-tick'
+        # heartbeat still fires — it's the loop's proof-of-life and
+        # carries n_vetoed in its outcomes payload.
+        proposal_events = [n for n, _ in events if n == "optimizer-proposal"]
+        assert proposal_events == []
+        tick_events = [n for n, _ in events if n == "optimizer-tick"]
+        assert tick_events == ["optimizer-tick"]
 
 
 # ─── ProposalQueue ────────────────────────────────────────────────────
@@ -765,3 +777,243 @@ def test_pue_drift_returns_none_when_pue_missing():
 def test_pue_drift_signed_correctly():
     assert pue_drift(_point(pue=1.35), pue_target=1.30) == pytest.approx(0.05)
     assert pue_drift(_point(pue=1.25), pue_target=1.30) == pytest.approx(-0.05)
+
+
+# ════════════════════════════════════════════════════════════════════
+# Epic 5 Sprint 1 — Observability
+# ════════════════════════════════════════════════════════════════════
+from backend.optimizer import (  # noqa: E402  (kept with Epic 5 block for locality)
+    AUDIT_TICK,
+    _extract_agent_verdicts,
+)
+
+
+# ─── E5.C — per-agent breakdown helper ────────────────────────────────
+class _FakeAgentVerdict:
+    def __init__(self, name, verdict, summary=""):
+        self.agent_name = name
+        self.verdict = verdict
+        self.summary = summary
+
+
+class _FakeConsensusWithAgents:
+    """Duck-types ConsensusResult including the .agents list (E5.C)."""
+
+    def __init__(self, consensus="approve", rationale="ok", veto=False, agents=None):
+        self.consensus = consensus
+        self.rationale = rationale
+        self.safety_officer_veto = veto
+        self.agents = agents or []
+
+
+def test_extract_agent_verdicts_returns_empty_on_none():
+    assert _extract_agent_verdicts(None) == []
+
+
+def test_extract_agent_verdicts_returns_empty_when_no_agents_attr():
+    assert _extract_agent_verdicts(_FakeConsensus()) == []
+
+
+def test_extract_agent_verdicts_returns_six_dicts():
+    cons = _FakeConsensusWithAgents(agents=[
+        _FakeAgentVerdict("Architect", "approve", "topology ok"),
+        _FakeAgentVerdict("Safety Officer", "approve", "no LOTO"),
+        _FakeAgentVerdict("Diagnostician", "approve", "no recurrence"),
+        _FakeAgentVerdict("Analyst", "approve", "opex cheap"),
+        _FakeAgentVerdict("Capacity Planner", "approve", "headroom ok"),
+        _FakeAgentVerdict("Carbon/Grid", "caution", "on-peak TOU"),
+    ])
+    out = _extract_agent_verdicts(cons)
+    assert len(out) == 6
+    assert {a["agent_name"] for a in out} == {
+        "Architect", "Safety Officer", "Diagnostician",
+        "Analyst", "Capacity Planner", "Carbon/Grid",
+    }
+    carbon = next(a for a in out if a["agent_name"] == "Carbon/Grid")
+    assert carbon["verdict"] == "caution"
+    assert carbon["summary"] == "on-peak TOU"
+
+
+def test_extract_agent_verdicts_coerces_missing_fields_to_empty_str():
+    class _Bare:
+        agent_name = "X"
+        # no verdict, no summary
+    cons = _FakeConsensusWithAgents(agents=[_Bare()])
+    out = _extract_agent_verdicts(cons)
+    assert out == [{"agent_name": "X", "verdict": "", "summary": ""}]
+
+
+# ─── E5.C — queued proposal carries per-agent breakdown ──────────────
+class TestQueuedProposalCarriesAgentVerdicts:
+    @pytest.mark.asyncio
+    async def test_queued_proposal_includes_agent_verdicts(self):
+        agents = [
+            _FakeAgentVerdict("Architect", "approve", "topology ok"),
+            _FakeAgentVerdict("Safety Officer", "approve", "no LOTO"),
+            _FakeAgentVerdict("Diagnostician", "approve", "no recurrence"),
+            _FakeAgentVerdict("Analyst", "approve", "opex cheap"),
+            _FakeAgentVerdict("Capacity Planner", "approve", "headroom ok"),
+            _FakeAgentVerdict("Carbon/Grid", "approve", "low carbon"),
+        ]
+
+        async def consult(_ctx):
+            return _FakeConsensusWithAgents(agents=agents)
+
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg, consult_fn=consult,
+        )
+        await svc.tick()
+        for qp in svc.queue.list():
+            assert len(qp.agent_verdicts) == 6
+            assert qp.agent_verdicts[0]["agent_name"] == "Architect"
+            # to_dict propagates the breakdown
+            d = qp.to_dict()
+            assert "agent_verdicts" in d
+            assert len(d["agent_verdicts"]) == 6
+
+    @pytest.mark.asyncio
+    async def test_queued_proposal_empty_breakdown_when_no_consult(self):
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+        )
+        await svc.tick()
+        for qp in svc.queue.list():
+            assert qp.agent_verdicts == []
+
+
+# ─── E5.A — health + heartbeat surfaces ───────────────────────────────
+class TestOptimizerHealth:
+    @pytest.mark.asyncio
+    async def test_health_initial_state_before_any_tick(self):
+        svc = OptimizerService(telemetry_provider=None)
+        h = svc.health()
+        assert h["is_running"] is False
+        assert h["last_tick_unix"] == 0.0
+        assert h["tick_count"] == 0
+        assert h["queue_size"] == 0
+        assert h["last_tick_outcomes"] == {}
+        assert h["audit_recent"] == []
+
+    @pytest.mark.asyncio
+    async def test_health_after_tick_records_wall_clock_and_outcomes(self):
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+        )
+        before = time.time()
+        await svc.tick()
+        after = time.time()
+        h = svc.health()
+        assert h["tick_count"] == 1
+        assert before <= h["last_tick_unix"] <= after
+        o = h["last_tick_outcomes"]
+        assert o["sustained"] is True
+        assert o["telemetry_present"] is True
+        assert o["n_proposals"] == 2
+        assert o["surfaces_emitted"] == [
+            SURFACE_CHILLER_LWT, SURFACE_CT_FAN_VFD,
+        ]
+
+    @pytest.mark.asyncio
+    async def test_health_after_veto_records_n_vetoed(self):
+        async def consult(_ctx):
+            return _FakeConsensus(
+                consensus=VERDICT_HARD_STOP, veto=True,
+                rationale="VETO test",
+            )
+
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg, consult_fn=consult,
+        )
+        await svc.tick()
+        h = svc.health()
+        assert h["last_tick_outcomes"]["n_vetoed"] == 2
+        assert sorted(h["last_tick_outcomes"]["surfaces_vetoed"]) == sorted([
+            SURFACE_CHILLER_LWT, SURFACE_CT_FAN_VFD,
+        ])
+        assert h["last_tick_outcomes"]["n_proposals"] == 0
+
+    @pytest.mark.asyncio
+    async def test_health_records_tick_event_in_audit(self):
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+        )
+        await svc.tick()
+        tick_events = [e for e in svc.audit.entries() if e.event == AUDIT_TICK]
+        assert len(tick_events) == 1
+        assert "tick #1" in tick_events[0].detail
+
+
+# ─── E5.A — optimizer-tick event emission ─────────────────────────────
+import time  # noqa: E402
+
+from backend import optimizer as _opt_mod  # noqa: E402
+
+
+class TestOptimizerTickEvent:
+    @pytest.mark.asyncio
+    async def test_tick_emits_optimizer_tick_event_on_every_tick(self):
+        events: list[tuple[str, dict]] = []
+
+        def emitter(event: str, payload: dict):
+            events.append((event, payload))
+
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+            event_emitter=emitter,
+        )
+        await svc.tick()
+        tick_events = [(e, p) for e, p in events if e == "optimizer-tick"]
+        assert len(tick_events) == 1
+        _, payload = tick_events[0]
+        # Heartbeat payload shape
+        assert "tick_unix" in payload
+        assert payload["tick_count"] == 1
+        assert "outcomes" in payload
+        assert payload["outcomes"]["sustained"] is True
+        assert payload["queue_size"] >= 0
+
+    @pytest.mark.asyncio
+    async def test_tick_event_fires_even_when_no_telemetry(self):
+        events: list[tuple[str, dict]] = []
+
+        def emitter(event: str, payload: dict):
+            events.append((event, payload))
+
+        svc = OptimizerService(
+            telemetry_provider=None,
+            event_emitter=emitter,
+        )
+        await svc.tick()
+        # Heartbeat fires for the operator strip even when telemetry is absent.
+        tick_events = [e for e, _ in events if e == "optimizer-tick"]
+        assert len(tick_events) == 1
+
+    @pytest.mark.asyncio
+    async def test_tick_event_carries_n_proposals_separately_from_emitter(self):
+        events: list[tuple[str, dict]] = []
+
+        def emitter(event: str, payload: dict):
+            events.append((event, payload))
+
+        svc = OptimizerService(
+            telemetry_provider=_async_provider(_point()),
+            pue_target=1.30, cfg=_SustainOnceCfg,
+            event_emitter=emitter,
+        )
+        await svc.tick()
+        # The heartbeat is the LAST event (in `finally`). All proposal
+        # events come before it.
+        kinds = [e for e, _ in events]
+        assert kinds.count("optimizer-tick") == 1
+        assert kinds[-1] == "optimizer-tick"
+        proposal_events = [e for e in kinds if e == "optimizer-proposal"]
+        assert len(proposal_events) == 2
+
+    # Silence unused-import lint when this block runs standalone.
+    _ = _opt_mod

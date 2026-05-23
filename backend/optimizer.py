@@ -56,7 +56,7 @@ import os
 import time
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from backend.multi_agent import VERDICT_HARD_STOP, ConsultContext
@@ -233,6 +233,37 @@ AUDIT_NO_DRIFT = "no_drift"
 AUDIT_REJECTED_PRE_CONSENSUS = "rejected_pre_consensus"  # used from 2.B onward
 AUDIT_SAFETY_VETO = "safety_veto"                         # used from 2.B onward
 AUDIT_APPROVED = "approved"                               # used from 2.C onward
+AUDIT_TICK = "tick"                                       # E5.A heartbeat marker
+
+
+# ─── E5.C helper: per-agent breakdown extraction ──────────────────────
+def _extract_agent_verdicts(consensus: Any) -> list[dict[str, Any]]:
+    """Extract the per-agent voting breakdown from a ConsensusResult.
+
+    Returns a list of ``{agent_name, verdict, summary}`` dicts — one per
+    agent. Empty list when the consult was not wired (``None``) or the
+    result carries no ``agents`` attribute / iterable. Duck-typed on the
+    multi_agent.AgentVerdict shape so a mock or partial implementation
+    stays compatible.
+    """
+    if consensus is None:
+        return []
+    agents = getattr(consensus, "agents", None)
+    if not agents:
+        return []
+    out: list[dict[str, Any]] = []
+    for a in agents:
+        try:
+            out.append({
+                "agent_name": str(getattr(a, "agent_name", "") or ""),
+                "verdict": str(getattr(a, "verdict", "") or ""),
+                "summary": str(getattr(a, "summary", "") or ""),
+            })
+        except Exception:
+            # A malformed agent entry should not poison the queue —
+            # skip it and surface what we can.
+            continue
+    return out
 
 
 # ─── Deterministic core (S-DET-01 — verdict before LLM) ───────────────
@@ -445,7 +476,16 @@ class QueuedProposal:
     """A proposal that has cleared the consensus gate and is awaiting
     operator review. Carries the multi-agent consensus + the Optimizer's
     own advisory narrative. ADR-006: the consensus verdict is the
-    deterministic gate; the narrative is informational only."""
+    deterministic gate; the narrative is informational only.
+
+    Epic 5.C (Observability): ``agent_verdicts`` carries the per-agent
+    breakdown from the multi-agent consensus chain — one dict per agent
+    with ``agent_name`` + ``verdict`` + ``summary`` so the HMI can
+    surface each individual vote without re-querying the orchestrator.
+    Empty list when no consult was wired or the consult returned
+    ``None``. The Safety Officer's row is the load-bearing one — its
+    ``hard_stop`` is the uncrossable veto (S-DET-02).
+    """
 
     proposal: Proposal
     consensus_verdict: str | None       # None when consult_fn not wired
@@ -453,6 +493,7 @@ class QueuedProposal:
     safety_officer_veto: bool
     optimizer_narrative: str
     queued_at: float
+    agent_verdicts: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -540,6 +581,13 @@ class OptimizerService:
         self._event_emitter = event_emitter
         self._task: asyncio.Task[None] | None = None
         self._running = False
+        # E5.A (Observability heartbeat): wall-clock + structured outcome
+        # of the most recent tick — surfaced by ``health()`` and emitted
+        # as a ``hermes:optimizer-tick`` event so the HMI strip stays
+        # live without polling.
+        self._last_tick_unix: float = 0.0
+        self._last_tick_outcomes: dict[str, Any] = {}
+        self._tick_count: int = 0
 
     @property
     def audit(self) -> AuditLog:
@@ -552,6 +600,52 @@ class OptimizerService:
     @property
     def is_running(self) -> bool:
         return self._running
+
+    @property
+    def last_tick_unix(self) -> float:
+        """Wall-clock timestamp of the most recent ``tick()`` start.
+        Zero until the first tick fires. E5.A heartbeat surface."""
+        return self._last_tick_unix
+
+    @property
+    def last_tick_outcomes(self) -> dict[str, Any]:
+        """Structured summary of the most recent tick:
+        ``{sustained, drift, n_proposals, n_paced_out, n_vetoed,
+        surfaces_emitted, surfaces_vetoed}``. Empty until the first
+        tick fires. E5.A heartbeat surface."""
+        return dict(self._last_tick_outcomes)
+
+    @property
+    def tick_count(self) -> int:
+        """Monotonic count of completed ticks since service start."""
+        return self._tick_count
+
+    def health(self) -> dict[str, Any]:
+        """E5.A — operator-facing health snapshot. Cheap, side-effect
+        free, safe to call from a public endpoint at any time.
+
+        Returns:
+            {
+                "is_running": bool,
+                "pue_target": float,
+                "last_tick_unix": float,
+                "tick_count": int,
+                "last_tick_outcomes": {...},
+                "queue_size": int,
+                "audit_recent": [...]  (last 10 entries),
+            }
+        """
+        return {
+            "is_running": self._running,
+            "pue_target": self._pue_target,
+            "last_tick_unix": self._last_tick_unix,
+            "tick_count": self._tick_count,
+            "last_tick_outcomes": dict(self._last_tick_outcomes),
+            "queue_size": self._queue.size(),
+            "audit_recent": [
+                e.to_dict() for e in self._audit.entries(limit=10)
+            ],
+        }
 
     async def _read_telemetry(self) -> TelemetryPoint | None:
         if self._telemetry is None:
@@ -572,89 +666,148 @@ class OptimizerService:
         ADR-006 invariants (audited at every code change):
           * ``compute_proposal`` is pure-Python; no LLM call there.
           * No ``/api/bms/write`` is invoked from this method or its callees.
+
+        E5.A (Observability): every tick records its wall-clock + a
+        structured outcome summary, then emits a ``hermes:optimizer-tick``
+        event so the HMI heartbeat strip updates live.
         """
-        point = await self._read_telemetry()
-        if point is None:
-            return []
+        # E5.A — record the tick attempt up-front so a downstream early-
+        # return still shows a fresh wall-clock to the operator.
+        self._last_tick_unix = time.time()
+        self._tick_count += 1
+        outcomes: dict[str, Any] = {
+            "sustained": False,
+            "drift": None,
+            "n_proposals": 0,
+            "n_paced_out": 0,
+            "n_vetoed": 0,
+            "surfaces_emitted": [],
+            "surfaces_vetoed": [],
+            "telemetry_present": False,
+        }
 
-        drift = pue_drift(point, self._pue_target)
-        sustained = self._drift.update(drift, self._cfg.PUE_DRIFT_THRESHOLD)
-        if not sustained:
-            if drift is not None and drift > self._cfg.PUE_DRIFT_THRESHOLD:
-                self._audit.write(
-                    AUDIT_NO_DRIFT,
-                    detail=f"drift {drift:+.3f} above threshold but sustain "
-                           f"streak {self._drift.streak}/{self._cfg.PUE_SUSTAIN_TICKS}",
+        try:
+            point = await self._read_telemetry()
+            if point is None:
+                return []
+            outcomes["telemetry_present"] = True
+
+            drift = pue_drift(point, self._pue_target)
+            outcomes["drift"] = drift
+            sustained = self._drift.update(drift, self._cfg.PUE_DRIFT_THRESHOLD)
+            outcomes["sustained"] = sustained
+            if not sustained:
+                if drift is not None and drift > self._cfg.PUE_DRIFT_THRESHOLD:
+                    self._audit.write(
+                        AUDIT_NO_DRIFT,
+                        detail=f"drift {drift:+.3f} above threshold but sustain "
+                               f"streak {self._drift.streak}/{self._cfg.PUE_SUSTAIN_TICKS}",
+                    )
+                return []
+
+            emitted: list[Proposal] = []
+            for surface in (SURFACE_CHILLER_LWT, SURFACE_CT_FAN_VFD):
+                if self._pacing.is_paced_out(surface):
+                    self._audit.write(
+                        AUDIT_PACED_OUT,
+                        surface=surface,
+                        detail=f"pacing guard suppressed {surface}",
+                    )
+                    outcomes["n_paced_out"] += 1
+                    continue
+                proposal = compute_proposal(surface, point, self._pue_target, self._cfg)
+                if proposal is None:
+                    continue
+
+                # 2.B: consult the multi-agent consensus chain BEFORE queueing.
+                # The Safety Officer's HARD_STOP veto is uncrossable (S-DET-02).
+                consensus = await self._consult_consensus(proposal)
+                if (consensus is not None
+                        and getattr(consensus, "consensus", None) == VERDICT_HARD_STOP):
+                    self._audit.write(
+                        AUDIT_SAFETY_VETO,
+                        proposal_id=proposal.proposal_id,
+                        surface=surface,
+                        detail=getattr(consensus, "rationale", "") or "consensus hard_stop",
+                    )
+                    self._pacing.record(surface)   # still paces — don't re-flood vetoed surface
+                    outcomes["n_vetoed"] += 1
+                    outcomes["surfaces_vetoed"].append(surface)
+                    continue
+
+                # 2.B: synthesize the Optimizer's own advisory narrative
+                # (S-DET-03 — T3.3 narrative-helper pattern). Verdict and
+                # proposed value are already decided.
+                narrative = await self._synthesize_narrative(proposal, consensus)
+
+                # E5.C — extract the per-agent breakdown so it survives
+                # the roll-up into ConsensusResult.
+                agent_verdicts = _extract_agent_verdicts(consensus)
+
+                queued = QueuedProposal(
+                    proposal=proposal,
+                    consensus_verdict=(
+                        getattr(consensus, "consensus", None) if consensus is not None
+                        else None
+                    ),
+                    consensus_rationale=(
+                        getattr(consensus, "rationale", "") if consensus is not None
+                        else ""
+                    ),
+                    safety_officer_veto=bool(
+                        getattr(consensus, "safety_officer_veto", False)
+                    ) if consensus is not None else False,
+                    optimizer_narrative=narrative,
+                    queued_at=time.time(),
+                    agent_verdicts=agent_verdicts,
                 )
-            return []
-
-        emitted: list[Proposal] = []
-        for surface in (SURFACE_CHILLER_LWT, SURFACE_CT_FAN_VFD):
-            if self._pacing.is_paced_out(surface):
+                self._queue.enqueue(queued)
                 self._audit.write(
-                    AUDIT_PACED_OUT,
-                    surface=surface,
-                    detail=f"pacing guard suppressed {surface}",
-                )
-                continue
-            proposal = compute_proposal(surface, point, self._pue_target, self._cfg)
-            if proposal is None:
-                continue
-
-            # 2.B: consult the multi-agent consensus chain BEFORE queueing.
-            # The Safety Officer's HARD_STOP veto is uncrossable (S-DET-02).
-            consensus = await self._consult_consensus(proposal)
-            if (consensus is not None
-                    and getattr(consensus, "consensus", None) == VERDICT_HARD_STOP):
-                self._audit.write(
-                    AUDIT_SAFETY_VETO,
+                    AUDIT_PROPOSED,
                     proposal_id=proposal.proposal_id,
                     surface=surface,
-                    detail=getattr(consensus, "rationale", "") or "consensus hard_stop",
+                    detail=proposal.rationale,
                 )
-                self._pacing.record(surface)   # still paces — don't re-flood vetoed surface
-                continue
-
-            # 2.B: synthesize the Optimizer's own advisory narrative
-            # (S-DET-03 — T3.3 narrative-helper pattern). Verdict and
-            # proposed value are already decided.
-            narrative = await self._synthesize_narrative(proposal, consensus)
-
-            queued = QueuedProposal(
-                proposal=proposal,
-                consensus_verdict=(
-                    getattr(consensus, "consensus", None) if consensus is not None
-                    else None
-                ),
-                consensus_rationale=(
-                    getattr(consensus, "rationale", "") if consensus is not None
-                    else ""
-                ),
-                safety_officer_veto=bool(
-                    getattr(consensus, "safety_officer_veto", False)
-                ) if consensus is not None else False,
-                optimizer_narrative=narrative,
-                queued_at=time.time(),
-            )
-            self._queue.enqueue(queued)
+                self._pacing.record(surface)
+                await self._emit_event(
+                    "optimizer-proposal",
+                    {
+                        "proposal": proposal.to_dict(),
+                        "consensus_verdict": queued.consensus_verdict,
+                        "safety_officer_veto": queued.safety_officer_veto,
+                        "agent_verdicts": queued.agent_verdicts,
+                        "narrative_present": bool(narrative),
+                    },
+                )
+                emitted.append(proposal)
+                outcomes["n_proposals"] += 1
+                outcomes["surfaces_emitted"].append(surface)
+            return emitted
+        finally:
+            # E5.A — always persist + broadcast the heartbeat, even on
+            # an early return. The HMI strip needs a fresh timestamp on
+            # every tick to prove the loop is alive.
+            self._last_tick_outcomes = outcomes
             self._audit.write(
-                AUDIT_PROPOSED,
-                proposal_id=proposal.proposal_id,
-                surface=surface,
-                detail=proposal.rationale,
+                AUDIT_TICK,
+                detail=(
+                    f"tick #{self._tick_count}: "
+                    f"sustained={outcomes['sustained']}, "
+                    f"proposals={outcomes['n_proposals']}, "
+                    f"paced_out={outcomes['n_paced_out']}, "
+                    f"vetoed={outcomes['n_vetoed']}"
+                ),
             )
-            self._pacing.record(surface)
             await self._emit_event(
-                "optimizer-proposal",
+                "optimizer-tick",
                 {
-                    "proposal": proposal.to_dict(),
-                    "consensus_verdict": queued.consensus_verdict,
-                    "safety_officer_veto": queued.safety_officer_veto,
-                    "narrative_present": bool(narrative),
+                    "tick_unix": self._last_tick_unix,
+                    "tick_count": self._tick_count,
+                    "outcomes": outcomes,
+                    "queue_size": self._queue.size(),
+                    "is_running": self._running,
                 },
             )
-            emitted.append(proposal)
-        return emitted
 
     # ── 2.B: multi-agent consensus integration (S-DET-02) ────────────
     async def _consult_consensus(self, proposal: Proposal) -> Any:

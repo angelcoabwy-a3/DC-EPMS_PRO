@@ -16,7 +16,9 @@ import { isRegistered } from '/assets/js/core/router.js';
 
 const {
     renderQueue, renderProposalCard,
-    submitApprove, submitReject, fetchQueue, onHermesProposal,
+    renderHeartbeat, renderAgentVotesTable,
+    submitApprove, submitReject, fetchQueue, fetchHealth,
+    onHermesProposal, onHermesTick,
     initOptimizerView, reset,
 } = __optimizer_view_test__;
 
@@ -321,5 +323,268 @@ describe('Batch 2.D — views/optimizer.js route registration', () => {
         await fetchQueue();                  // initial fetch
         await onHermesProposal();            // hermes-triggered refetch
         expect(spy.mock.calls.length).toBe(2);
+    });
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// Epic 5 Sprint 1 — Observability
+// ════════════════════════════════════════════════════════════════════
+
+function _mountViewWithHeartbeat() {
+    document.body.innerHTML = `
+        <div id="view-optimizer">
+            <button data-opt-refresh></button>
+            <span data-opt-counter></span>
+            <div data-opt-heartbeat></div>
+            <div data-opt-list></div>
+        </div>`;
+}
+
+// ── E5.A — heartbeat strip ──────────────────────────────────────────
+describe('Epic 5.A — renderHeartbeat', () => {
+    it('renders running + tick count + outcomes', () => {
+        _mountViewWithHeartbeat();
+        renderHeartbeat({
+            is_running: true,
+            last_tick_unix: Math.floor(Date.now() / 1000) - 5,
+            tick_count: 42,
+            last_tick_outcomes: {
+                sustained: true,
+                drift: 0.0432,
+                n_proposals: 2,
+                n_paced_out: 1,
+                n_vetoed: 0,
+            },
+            queue_size: 3,
+        });
+        const strip = document.querySelector('[data-opt-heartbeat]');
+        expect(strip.textContent).toContain('RUNNING');
+        expect(strip.textContent).toContain('tick #42');
+        expect(strip.textContent).toContain('drift sustained');
+        expect(strip.textContent).toContain('drift 0.043');
+        expect(strip.textContent).toContain('proposed 2');
+        expect(strip.textContent).toContain('paced 1');
+        expect(strip.textContent).toContain('vetoed 0');
+        expect(strip.textContent).toContain('queue 3');
+    });
+
+    it('renders STOPPED when is_running=false', () => {
+        _mountViewWithHeartbeat();
+        renderHeartbeat({
+            is_running: false,
+            last_tick_unix: 0,
+            tick_count: 0,
+            last_tick_outcomes: {},
+            queue_size: 0,
+        });
+        const strip = document.querySelector('[data-opt-heartbeat]');
+        expect(strip.textContent).toContain('STOPPED');
+    });
+
+    it('shows "unknown" placeholder when health payload is missing', () => {
+        _mountViewWithHeartbeat();
+        renderHeartbeat(null);
+        const strip = document.querySelector('[data-opt-heartbeat]');
+        expect(strip.textContent).toContain('unknown');
+    });
+
+    it('XSS — hostile tick_count is escaped, not rendered as markup', () => {
+        _mountViewWithHeartbeat();
+        renderHeartbeat({
+            is_running: true,
+            last_tick_unix: Math.floor(Date.now() / 1000),
+            // Number(...) coerces to NaN -> 0, but if the value passes through
+            // it must be escaped, not interpolated as HTML.
+            tick_count: '<img src=x onerror=alert(1)>',
+            last_tick_outcomes: {},
+            queue_size: 0,
+        });
+        const strip = document.querySelector('[data-opt-heartbeat]');
+        expect(strip.querySelector('img')).toBeNull();
+    });
+});
+
+describe('Epic 5.A — fetchHealth', () => {
+    it('GETs /api/optimizer/health and renders the strip', async () => {
+        _mountViewWithHeartbeat();
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200,
+            json: async () => ({
+                is_running: true,
+                last_tick_unix: Math.floor(Date.now() / 1000),
+                tick_count: 5,
+                last_tick_outcomes: { sustained: false, drift: 0.01, n_proposals: 0 },
+                queue_size: 0,
+            }),
+        }));
+        vi.stubGlobal('fetch', spy);
+        await fetchHealth();
+        expect(spy).toHaveBeenCalledWith('/api/optimizer/health');
+        const strip = document.querySelector('[data-opt-heartbeat]');
+        expect(strip.textContent).toContain('RUNNING');
+        expect(strip.textContent).toContain('tick #5');
+    });
+
+    it('renders the "service not running" message on HTTP 503', async () => {
+        _mountViewWithHeartbeat();
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: false, status: 503, json: async () => ({}),
+        })));
+        await fetchHealth();
+        const strip = document.querySelector('[data-opt-heartbeat]');
+        expect(strip.textContent).toContain('Optimizer service not running');
+    });
+
+    it('renders an error message on network failure', async () => {
+        _mountViewWithHeartbeat();
+        vi.stubGlobal('fetch', vi.fn(async () => {
+            throw new Error('Network down');
+        }));
+        await fetchHealth();
+        const strip = document.querySelector('[data-opt-heartbeat]');
+        expect(strip.textContent).toContain('heartbeat error');
+        expect(strip.textContent).toContain('Network down');
+    });
+});
+
+describe('Epic 5.A — onHermesTick event', () => {
+    it('renders the strip from the event detail without re-fetching', () => {
+        _mountViewWithHeartbeat();
+        const fetchSpy = vi.fn();
+        vi.stubGlobal('fetch', fetchSpy);
+        const ev = new CustomEvent('hermes:optimizer-tick', {
+            detail: {
+                tick_unix: Math.floor(Date.now() / 1000),
+                tick_count: 99,
+                outcomes: {
+                    sustained: true, drift: 0.05,
+                    n_proposals: 1, n_paced_out: 0, n_vetoed: 0,
+                },
+                queue_size: 4,
+                is_running: true,
+            },
+        });
+        onHermesTick(ev);
+        const strip = document.querySelector('[data-opt-heartbeat]');
+        expect(strip.textContent).toContain('tick #99');
+        expect(strip.textContent).toContain('queue 4');
+        // The detail-fast-path must NOT trigger a network round-trip.
+        expect(fetchSpy).not.toHaveBeenCalled();
+    });
+});
+
+
+// ── E5.C — per-agent voting table ───────────────────────────────────
+describe('Epic 5.C — renderAgentVotesTable', () => {
+    it('renders one row per agent with name + verdict + summary', () => {
+        const html = renderAgentVotesTable({
+            agent_verdicts: [
+                { agent_name: 'Architect', verdict: 'approve', summary: 'topology ok' },
+                { agent_name: 'Safety Officer', verdict: 'approve', summary: 'no LOTO' },
+                { agent_name: 'Diagnostician', verdict: 'approve', summary: 'no recurrence' },
+                { agent_name: 'Analyst', verdict: 'approve', summary: 'opex cheap' },
+                { agent_name: 'Capacity Planner', verdict: 'approve', summary: 'headroom ok' },
+                { agent_name: 'Carbon/Grid', verdict: 'caution', summary: 'on-peak TOU' },
+            ],
+        });
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        const rows = div.querySelectorAll('tr.opt-vote-row');
+        expect(rows.length).toBe(6);
+        // Architect row content
+        expect(rows[0].querySelector('.opt-vote-name').textContent).toBe('Architect');
+        expect(rows[0].querySelector('.opt-vote-verdict').textContent).toContain('approve');
+        // Carbon/Grid caution row
+        expect(rows[5].querySelector('.opt-vote-name').textContent).toBe('Carbon/Grid');
+        expect(rows[5].querySelector('.opt-vote-verdict').textContent).toContain('caution');
+    });
+
+    it('flags Safety Officer hard_stop with an unmistakable veto badge', () => {
+        const html = renderAgentVotesTable({
+            agent_verdicts: [
+                { agent_name: 'Safety Officer', verdict: 'hard_stop', summary: 'capacitor-class — VETO' },
+                { agent_name: 'Architect', verdict: 'approve', summary: 'topology ok' },
+            ],
+        });
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        const safetyRow = div.querySelector('.opt-vote-row-veto');
+        expect(safetyRow).not.toBeNull();
+        expect(safetyRow.querySelector('.opt-vote-name').textContent).toBe('Safety Officer');
+        // The veto badge carries the BADGE class AND the SAFETY VETO label.
+        const badge = safetyRow.querySelector('.opt-vote-badge-veto');
+        expect(badge).not.toBeNull();
+        expect(badge.textContent).toContain('SAFETY VETO');
+    });
+
+    it('does NOT flag Safety Officer approve as a veto (S-DET-02 binding)', () => {
+        const html = renderAgentVotesTable({
+            agent_verdicts: [
+                { agent_name: 'Safety Officer', verdict: 'approve', summary: 'ok' },
+            ],
+        });
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        expect(div.querySelector('.opt-vote-row-veto')).toBeNull();
+        expect(div.querySelector('.opt-vote-badge-veto')).toBeNull();
+    });
+
+    it('does NOT flag other agents hard_stop as a Safety VETO', () => {
+        // Per the S-DET-02 binding: only the Safety Officer holds VETO
+        // authority. A Carbon/Grid hard_stop (rank-2 branch) is NOT a
+        // veto — must render as a normal hard_stop, no SAFETY VETO badge.
+        const html = renderAgentVotesTable({
+            agent_verdicts: [
+                { agent_name: 'Carbon/Grid', verdict: 'hard_stop', summary: 'carbon HIGH + on-peak' },
+            ],
+        });
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        expect(div.querySelector('.opt-vote-badge-veto')).toBeNull();
+        expect(div.textContent).not.toContain('SAFETY VETO');
+    });
+
+    it('renders an empty-state row when agent_verdicts is missing', () => {
+        const html = renderAgentVotesTable({});
+        expect(html).toContain('no per-agent breakdown');
+    });
+
+    it('XSS — hostile agent_name + summary are escaped', () => {
+        const html = renderAgentVotesTable({
+            agent_verdicts: [
+                {
+                    agent_name: '<img src=x onerror=window.__pwn1=1>',
+                    verdict: 'approve',
+                    summary: '<script>window.__pwn2=1</script>',
+                },
+            ],
+        });
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        expect(div.querySelector('img')).toBeNull();
+        expect(div.querySelector('script')).toBeNull();
+        expect(window.__pwn1).toBeUndefined();
+        expect(window.__pwn2).toBeUndefined();
+    });
+});
+
+// ── E5.C — proposal card embeds the vote table ──────────────────────
+describe('Epic 5.C — renderProposalCard embeds agent votes', () => {
+    it('shows the per-agent table inside the card body', () => {
+        _mountView();
+        renderQueue([{
+            ..._qp({ proposal_id: 'qp-votes' }),
+            agent_verdicts: [
+                { agent_name: 'Architect', verdict: 'approve', summary: 'ok' },
+                { agent_name: 'Safety Officer', verdict: 'hard_stop', summary: 'VETO' },
+            ],
+        }], 1);
+        const card = document.querySelector('.opt-card');
+        const table = card.querySelector('table.opt-votes');
+        expect(table).not.toBeNull();
+        expect(table.querySelectorAll('tr.opt-vote-row').length).toBe(2);
+        // Safety row carries the unmistakable veto badge.
+        expect(table.querySelector('.opt-vote-badge-veto')).not.toBeNull();
     });
 });
