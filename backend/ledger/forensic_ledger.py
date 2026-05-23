@@ -330,7 +330,11 @@ def _row_to_entry(row: Any) -> LedgerEntry:
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=UTC)
     return LedgerEntry(
-        entry_id=row["entry_id"],
+        # asyncpg deserialises the UUID column to ``asyncpg.pgproto.pgproto.UUID``
+        # — coerce to str so _compute_hmac().encode() works and the dataclass
+        # type contract (entry_id: str) holds across persistence backends.
+        # DC-EPMS-MSD-005.
+        entry_id=str(row["entry_id"]),
         sequence_no=int(row["sequence_no"]),
         ts=ts,
         actor=row["actor"],
