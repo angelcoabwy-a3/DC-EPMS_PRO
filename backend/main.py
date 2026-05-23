@@ -1588,122 +1588,55 @@ async def get_mop_endpoint(doc_id: str):
 
 
 @app.post("/api/mops/generate")
-async def generate_mop_endpoint(payload: dict = Body(...)):
-    """Generate a NEW MOP using the LLM agent grounded in the existing corpus.
+async def generate_mop_endpoint_deprecated(_payload: dict = Body(default={})):
+    """DEPRECATED — replaced by ``POST /api/procedures/architect/generate``.
 
-    Payload:
-        {
-          "topic":   str   - what the MOP is for, e.g. "CRAH fan filter inspection"
-          "doc_type": str  - "MOP"|"SOP"|"EOP", default "MOP"
-          "equipment": str - target equipment
-          "duration": str  - estimated duration
-        }
+    Returns HTTP 410 Gone with a redirect message pointing at the
+    successor endpoint. The old route had NO Safety Officer audit and
+    NO Maker-Checker witness gate; signing a MOP through it bypassed
+    the LOTO/PPE/CSA Z462-24 audit + the Tier IV two-operator
+    signature requirement. Closing the bypass is the whole point of
+    Epic 6 Option A (the consolidation work in commit chain
+    7b505b3 -> 05bd7be).
+
+    Callers MUST migrate to:
+        POST /api/procedures/architect/generate
+        POST /api/procedures/architect/sign
+
+    The old request body shape (``{topic, doc_type, equipment, duration}``)
+    is intentionally NOT translated automatically — the new Architect
+    schema is ``{doc_type, context, asset_id?, metadata?}`` and the
+    migration is a UI decision per caller. The HMI generator panel
+    that consumed this endpoint was removed in the same commit; the
+    library view now cross-links to the Architect view directly.
+
+    Why HTTP 410 (not 404 / 308): 410 Gone is the precise REST
+    semantic for "this resource intentionally no longer exists" — it
+    tells API consumers (CLI scripts, future integrations) the
+    endpoint is permanently removed, not just temporarily missing.
+    A 308 redirect would auto-replay the body to the new URL, but
+    the request body shapes are incompatible, so the redirect would
+    only paper over the migration. The deleted body lives in git
+    history at the commit that introduced this stub.
     """
-    from backend.rbac import require_actor_role
-    require_actor_role(payload.get("actor_role"), 5, "generating a MOP")
-    topic = (payload.get("topic") or "").strip()
-    if not topic:
-        raise HTTPException(400, "Field 'topic' is required")
-
-    doc_type = payload.get("doc_type", "MOP").upper()
-    equipment = payload.get("equipment", "Generic")
-    duration = payload.get("duration", "TBD")
-
-    if not agent:
-        raise HTTPException(503, "Agent engine unavailable")
-
-    # Build a structured prompt that asks the LLM to produce a MOP in the
-    # same format as the corpus. We give it 1-2 examples from the corpus
-    # for in-context grounding (not full RAG since this is generative).
-    prompt = f"""Generate a complete {doc_type} document for: "{topic}"
-
-Equipment: {equipment}
-Estimated duration: {duration}
-
-Produce a markdown document in this exact format:
-
----
-doc_id: T4-{doc_type}-NEW-{int(time.time()) % 10000:04d}
-tier: 4
-priority: medium
-doc_type: {doc_type}
-domain: <choose from: mechanical_cooling, electrical_power, fire_safety, network_security, it_infrastructure>
-equipment: {equipment}
-standard_refs: [<applicable standards>]
-duration: {duration}
-personnel_required: <number and qualifications>
----
-
-# {doc_type}: <Title>
-
-**Procedure ID**: T4-{doc_type}-NEW-XXXX
-**Revision**: 2026.1
-
-## Purpose
-
-<2-3 sentences explaining what this procedure achieves>
-
-## Scope
-
-<what is and isn't covered>
-
-## Pre-requisites
-
-- Personnel: <who>
-- Tools: <list>
-- PPE: <list, citing CSA Z462 / NFPA 70E>
-- Documentation: <required>
-
-## Procedure
-
-### Step 1: <Title>
-<numbered actions, observations to record>
-
-### Step 2: <Title>
-<...>
-
-(continue with 4-7 steps total, each with concrete actions)
-
-## Post-procedure
-
-- Record findings in <where>
-- Update CMMS work order
-- File report per a3semi OPS
-
-## Safety considerations
-
-<reference relevant standards: NFPA 70E, CSA Z462, IEC 62443 if applicable>
-
----
-End the procedure here. Do not add commentary outside the document."""
-
-    # Invoke agent (non-streaming for this use case)
-    try:
-        # Collect all tokens
-        full_text = ""
-        async for token in agent.stream(
-            prompt,
-            max_tokens=2000,
-            model_hint="auto",
-        ):
-            full_text += token
-
-        meta, body = _parse_mop_frontmatter(full_text)
-        steps = _extract_mop_steps(body)
-
-        return {
-            "generated": True,
-            "topic": topic,
-            "doc_type": doc_type,
-            "raw_markdown": full_text,
-            "metadata": meta,
-            "body": body,
-            "steps": steps,
-            "step_count": len(steps),
-        }
-    except Exception as e:
-        log.error("MOP generation failed: %s", e)
-        raise HTTPException(500, f"MOP generation failed: {str(e)[:200]}") from e
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "error": "endpoint_removed",
+            "message": (
+                "POST /api/mops/generate has been removed. The "
+                "Procedure Architect (Epic 6) is the single authoring "
+                "path -- it enforces the Safety Officer audit + "
+                "Maker-Checker witness gate that this old endpoint "
+                "lacked."
+            ),
+            "successor": "POST /api/procedures/architect/generate",
+            "sign_path": "POST /api/procedures/architect/sign",
+            "doc": "config/knowledge/cdu-l-l-operating-standards.md "
+                   "and other knowledge base documents are surfaced "
+                   "to the Architect via GraphRAG.",
+        },
+    )
 
 
 # ==============================================================

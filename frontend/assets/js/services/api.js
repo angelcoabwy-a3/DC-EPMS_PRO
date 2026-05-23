@@ -98,16 +98,28 @@ export async function getMop(docId) {
 }
 
 /**
- * AI-generate a new procedure draft from a topic spec.
- * @param {{topic:string, doc_type:string, equipment:string, duration:string}} spec
- * @returns {Promise<object>} the generated procedure (steps + raw_markdown)
+ * DEPRECATED -- replaced by the Procedure Architect view.
+ *
+ * The legacy ``/api/mops/generate`` endpoint was removed in the
+ * Epic 6 Option A consolidation -- it lacked the Safety Officer
+ * audit (LOTO + PPE + CSA Z462-24) and the Maker-Checker witness
+ * gate. The successor is the procedures-architect view, which
+ * POSTs to ``/api/procedures/architect/generate`` then
+ * ``/api/procedures/architect/sign``.
+ *
+ * This helper now always rejects with the same error the backend
+ * would emit so any straggler caller hits the failure synchronously
+ * (no network round-trip) and the migration is obvious in the
+ * stack trace.
+ *
+ * @returns {Promise<never>}
  */
-export async function generateMop(spec) {
-    return apiFetch('/api/mops/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(spec),
-    });
+export async function generateMop(_spec) {
+    throw new Error(
+        'generateMop() is deprecated -- use the Procedure Architect '
+        + '(navigate to #procedures-architect). The legacy '
+        + '/api/mops/generate endpoint returns HTTP 410 Gone.',
+    );
 }
 
 /**

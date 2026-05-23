@@ -25,7 +25,7 @@
 
 import { registerRoute } from '../core/router.js';
 import { escapeHTML as _escape } from '../core/sanitize.js';
-import { getMops, getMop, generateMop } from '../services/api.js';
+import { getMops, getMop } from '../services/api.js';
 
 // ─── Module state ──────────────────────────────────────────────────
 let _initialized = false;
@@ -224,141 +224,21 @@ function _renderMopContent(el, d) {
     }
 }
 
-// ─── AI generator ──────────────────────────────────────────────────
-function _showGenerator() {
-    const detailEl = document.getElementById('mops-detail');
-    if (!detailEl) return;
-    detailEl.innerHTML = `
-        <div class="mop-detail-hdr">
-            <h3>🤖 Generate new procedure with AI</h3>
-            <div class="mop-detail-meta">
-                <span style="color:var(--text-muted)">The AI agent will draft a structured ${_docTypeOptions()} grounded in the corpus format.</span>
-            </div>
-        </div>
-
-        <div class="mop-gen-form">
-            <label class="mop-gen-lbl">Procedure type</label>
-            <select id="mop-gen-type" class="mop-gen-input">
-                <option value="MOP">MOP - Method of Procedure</option>
-                <option value="SOP">SOP - Standard Operating Procedure</option>
-                <option value="EOP">EOP - Emergency Operating Procedure</option>
-            </select>
-
-            <label class="mop-gen-lbl">Topic / Purpose</label>
-            <input type="text" id="mop-gen-topic" class="mop-gen-input"
-                placeholder="e.g. CRAH fan filter inspection and replacement"
-                value="">
-
-            <label class="mop-gen-lbl">Target equipment</label>
-            <input type="text" id="mop-gen-equipment" class="mop-gen-input"
-                placeholder="e.g. Liebert CRV CRAH unit, 30-ton">
-
-            <label class="mop-gen-lbl">Estimated duration</label>
-            <input type="text" id="mop-gen-duration" class="mop-gen-input"
-                placeholder="e.g. 2 hours per unit">
-
-            <div class="mop-gen-actions">
-                <button class="btn" id="mop-gen-go">Generate with AI</button>
-                <button class="btn btn-secondary" id="mop-gen-cancel">Cancel</button>
-            </div>
-
-            <div id="mop-gen-result" class="mop-gen-result"></div>
-        </div>
-    `;
-
-    const goBtn = document.getElementById('mop-gen-go');
-    const cancelBtn = document.getElementById('mop-gen-cancel');
-    if (cancelBtn) {
-        cancelBtn.addEventListener('click', () => {
-            detailEl.innerHTML = '<div class="mops-empty"><div style="font-size:32px;margin-bottom:10px">📋</div>Select a procedure on the left.</div>';
-        });
-    }
-    if (goBtn) goBtn.addEventListener('click', _doGenerate);
-}
-
-async function _doGenerate() {
-    const topic = document.getElementById('mop-gen-topic').value.trim();
-    const docType = document.getElementById('mop-gen-type').value;
-    const equipment = document.getElementById('mop-gen-equipment').value.trim();
-    const duration = document.getElementById('mop-gen-duration').value.trim();
-    const resultEl = document.getElementById('mop-gen-result');
-    const btn = document.getElementById('mop-gen-go');
-
-    if (!topic) {
-        alert('Please enter a topic for the procedure.');
-        return;
-    }
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="loading"></span>Generating (this can take 30-60s)…';
-    }
-    resultEl.innerHTML = '<div class="scenario-running">AI is drafting the procedure with the corpus as a template…</div>';
-
-    try {
-        const d = await generateMop({
-            topic,
-            doc_type: docType,
-            equipment: equipment || 'Not specified',
-            duration: duration || 'TBD',
-        });
-        _renderGeneratedMop(resultEl, d);
-    } catch (e) {
-        resultEl.innerHTML =
-            `<div style="color:var(--crit);padding:14px">Generation failed: ${_escape(e.message)}</div>`;
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = 'Generate with AI';
-        }
-    }
-}
-
-function _renderGeneratedMop(el, d) {
-    const steps = d.steps || [];
-    const stepsHtml = steps.length === 0
-        ? '<div class="mop-no-steps">No explicit steps were extracted. See raw markdown.</div>'
-        : steps.map(s => `<div class="mop-step">
-            <div class="mop-step-hdr">
-                <span class="mop-step-num">${s.step_num}</span>
-                <span class="mop-step-title">${_escape(s.title)}</span>
-            </div>
-            <div class="mop-step-content">${_markdownLite(s.content)}</div>
-        </div>`).join('');
-
-    el.innerHTML = `
-        <div class="mop-gen-output-hdr">
-            <h4>✓ Generated procedure</h4>
-            <div class="mop-detail-meta">
-                <span>Topic: <strong>${_escape(d.topic)}</strong></span>
-                <span>Type: <strong>${_escape(d.doc_type)}</strong></span>
-                <span>${_escape(String(steps.length))} steps extracted</span>
-            </div>
-        </div>
-
-        <div class="mop-steps">
-            ${stepsHtml}
-        </div>
-
-        <details class="mop-raw" open>
-            <summary>View raw generated markdown (you can copy/save this)</summary>
-            <pre class="mop-raw-content">${_escape(d.raw_markdown || '')}</pre>
-            <button class="btn btn-secondary btn-sm" id="mop-gen-copy">Copy markdown to clipboard</button>
-        </details>
-    `;
-
-    const copyBtn = document.getElementById('mop-gen-copy');
-    if (copyBtn) {
-        copyBtn.addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(d.raw_markdown || '');
-                copyBtn.textContent = '✓ Copied';
-                setTimeout(() => { copyBtn.textContent = 'Copy markdown to clipboard'; }, 2000);
-            } catch (_e) {
-                copyBtn.textContent = 'Copy failed';
-            }
-        });
-    }
-}
+// ─── AI generator: REMOVED (Epic 6 Option A consolidation) ─────────
+// The legacy in-view _showGenerator + _renderGeneratedMop + the
+// generateMop() service call were removed when /api/mops/generate was
+// deprecated to HTTP 410 Gone. The Procedure Architect view
+// (#procedures-architect) is the single authoring surface across
+// the stack — it enforces the Safety Officer audit (LOTO + PPE +
+// CSA Z462-24) and the Maker-Checker witness gate on MOPs that
+// the legacy path lacked. See views/procedures.js for the new
+// authoring flow + config/knowledge/cdu-l-l-operating-standards.md
+// for the GraphRAG-indexed domain knowledge surfaced to the agent.
+//
+// MOPs library view retains its browse + step-execution role.
+// _renderList() injects an "Author a new procedure" cross-link
+// button on the library header that hash-navigates to the
+// Architect view.
 
 // ─── EDA — refresh on the Hermes cmms_alerts plane ─────────────────
 function _onCmmsAlert() {
@@ -383,8 +263,17 @@ export function initMopsView() {
     }
     registerRoute('mops', { viewId: 'view-mops', activate: _activate });
 
+    // Epic 6 Option A: the legacy `btn-mop-generate` opened the
+    // in-view generator that bypassed the Safety Officer audit. The
+    // button is now repurposed (or auto-fallback handled by the
+    // library header cross-link) to navigate to the Architect view.
     const genBtn = document.getElementById('btn-mop-generate');
-    if (genBtn) genBtn.addEventListener('click', _showGenerator);
+    if (genBtn) {
+        genBtn.textContent = 'Author a new procedure (Architect →)';
+        genBtn.addEventListener('click', () => {
+            window.location.hash = '#procedures-architect';
+        });
+    }
 
     document.addEventListener('hermes:cmms-alert', _onCmmsAlert);
 

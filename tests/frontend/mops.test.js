@@ -49,23 +49,23 @@ describe('T2.1 — services/api.js MOP endpoints', () => {
         expect(spy).toHaveBeenCalledWith('/api/mops/a%2Fb', undefined);
     });
 
-    it('generateMop POSTs the spec as a JSON body', async () => {
-        const spy = vi.fn(async () => fakeResponse({ topic: 't', steps: [] }));
+    // Epic 6 Option A consolidation -- generateMop() was deprecated.
+    // The previous "POSTs the spec" + "throws on non-2xx" tests are
+    // replaced by a single deprecation contract test. The legacy
+    // endpoint returns HTTP 410 Gone server-side; the client helper
+    // rejects synchronously without a network round-trip so any
+    // straggler caller fails loudly in the stack trace.
+    it('generateMop rejects with a Procedure-Architect migration message (no network call)', async () => {
+        const spy = vi.fn();
         vi.stubGlobal('fetch', spy);
-        await generateMop({ topic: 't', doc_type: 'MOP', equipment: 'e', duration: 'd' });
-        expect(spy).toHaveBeenCalledTimes(1);
-        const [path, opts] = spy.mock.calls[0];
-        expect(path).toBe('/api/mops/generate');
-        expect(opts.method).toBe('POST');
-        expect(JSON.parse(opts.body)).toEqual({
-            topic: 't', doc_type: 'MOP', equipment: 'e', duration: 'd',
-        });
-    });
-
-    it('generateMop throws with the HTTP status on a non-2xx response', async () => {
-        vi.stubGlobal('fetch', vi.fn(async () =>
-            fakeResponse('llm timeout', { ok: false, status: 502 })));
-        await expect(generateMop({ topic: 't' })).rejects.toThrow(/HTTP 502/);
+        await expect(generateMop({ topic: 't' })).rejects.toThrow(
+            /Procedure Architect/,
+        );
+        await expect(generateMop({ topic: 't' })).rejects.toThrow(
+            /410 Gone/,
+        );
+        // No network call -- the deprecation rejects upfront.
+        expect(spy).not.toHaveBeenCalled();
     });
 });
 
