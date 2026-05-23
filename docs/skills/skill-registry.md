@@ -171,6 +171,51 @@
   The route's test file includes both the happy-path and the
   RBAC-denial case.
 
+### `S-LEDGER-01` · All control-surface writes traverse the Forensic Ledger seam
+
+- **When:** Adding any code path that mutates BMS / actuator state, or
+  wiring a new `BmsWriteFn` seam.
+- **Rule:** Every BMS write — AI-originated via the Optimizer approve
+  flow OR human-direct via `/api/bms/write` — MUST go through
+  `backend.ledger.wrap_bms_write_fn`. The wrapper appends a
+  `BMS_WRITE_REQUESTED` pre-entry (carries `tag_id`, `requested_value`,
+  `prev_value`, `source`, `proposal_id`) AND a `BMS_WRITE_RESULT`
+  post-entry (carries `ref_entry_id`, `success`, `message`) to the
+  HMAC-chained ledger. Never call `bms_connector.BMSConnector.write()`
+  directly from an endpoint or agent — go through the wrapped seam
+  stashed on `app.state.direct_bms_write_fn` /
+  `app.state.optimizer_bms_write_fn` / `app.state.revert_bms_write_fn`.
+  Reason: ADR-011 — IEC 62443-3-3 SR 6.1 / 6.2 / 7.3 / 7.4 require an
+  inmutable, tamper-evident, recovery-supporting audit trail. The legacy
+  `bms_connector.write_audit_log[-200:]` ring buffer is informational
+  only, not authoritative. Related: [[S-PROPOSER-01]].
+- **Verify:** `await ledger.verify_chain()` returns `None` after the
+  test; the new write surface's test file asserts pre + post entries
+  exist for both success and failure paths
+  (`test_failed_bms_write_still_appends_result_entry`).
+
+### `S-PROPOSER-01` · AI-originated writes carry an approved proposal_id
+
+- **When:** Implementing or modifying an endpoint that calls a wrapped
+  `BmsWriteFn` with an AI-derived value.
+- **Rule:** When a BMS write originates from the Optimizer (or any
+  future AI proposer), the `proposal_id` UUID MUST be set on the
+  forensic-ledger context via
+  `backend.ledger.set_proposal_context(proposal_id)` BEFORE invoking
+  `await asyncio.to_thread(wrapped, tag_id, value, user)`, and reset in
+  a `try/finally`. `/api/bms/write` ALSO accepts an optional
+  `proposal_id` in the payload; when provided it MUST resolve to an
+  `approved` row in the Optimizer `ApprovalLog` with matching
+  `bms_tag_id` (HTTP 404 if missing, 409 on
+  decision/tag mismatch). This closes the Proposer chain end-to-end:
+  consensus → operator approval → ledger entry, all joined by a single
+  UUID. Reason: ADR-006 §4 *"Auditable provenance"* upgraded to ADR-011
+  scope; DC-EPMS-MSD-003 closure. Related: [[S-DET-02]] (the chain
+  starts at the Safety VETO gate; this skill closes the back end).
+- **Verify:** `tests/test_bms_write_proposer_chain.py` covers the
+  approval-mismatch 404/409 cases AND the happy-path proposal_id
+  stamping in the ledger payload.
+
 ---
 
 ## Category E — Commit & Release Discipline
@@ -272,11 +317,13 @@
 | `S-TEST-03` | Testing | Ruff is a binary gate |
 | `S-SEC-01` | Security | XSS routing — sanitizeHTML vs escapeHTML |
 | `S-SEC-02` | Security | Claim-based RBAC on every write |
+| `S-LEDGER-01` | Security | All control-surface writes traverse the Forensic Ledger seam |
+| `S-PROPOSER-01` | Security | AI-originated writes carry an approved proposal_id |
 | `S-COMMIT-01` | Commit | `-F` file-based, ASCII, signed |
 | `S-COMMIT-02` | Commit | Atomic batches + tag-is-not-closure |
 | `S-RUNTIME-01` | Runtime | Stale-process restart + BOOT log signature |
 | `S-DOC-01` | Documentation | Doc-sync is a separate commit |
 | `S-VOCAB-01` | Vocabulary | 800 VDC is unipolar; never trifásico |
 
-**16 skills, 8 categories.** New skills extending this registry must follow
+**18 skills, 8 categories.** New skills extending this registry must follow
 the same template (When / Rule / Verify) and be added to the index above.

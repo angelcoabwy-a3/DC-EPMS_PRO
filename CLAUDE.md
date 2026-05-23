@@ -16,15 +16,37 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 
 **Vocabulary discipline (CRITICAL)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is unipolar (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in panel review.
 
-## 📊 CURRENT STATE (synced 2026-05-20)
+## 📊 CURRENT STATE (synced 2026-05-23)
 
 ```
-HEAD:  79ed614 (+ this doc-sync)  branch master  —  ahead of origin.
+HEAD:  <Epic-4 batch — pending commit>  branch master  —  ahead of origin.
        Stable baseline = **v0.13.0 "Proactive Edge"** (cut 2026-05-19).
-       Post-release: **EPIC 3 OPEN, Batches 3.A + 3.C delivered** — the
-       Capacity Planner (3.A) + Carbon/Grid (3.C) join the consensus
-       chain. Fleet is now **6 agents** (Architect / Safety Officer /
-       Diagnostician / Analyst / **Capacity Planner** / **Carbon/Grid**).
+       Post-release: **EPIC 4 OPENED + delivered (ADR-011 Forensic Ledger
+       + Proposer-chain closure + Rollback Harness)**, on top of EPIC 3
+       Batches 3.A + 3.C. 6-agent fleet still (Architect / Safety
+       Officer / Diagnostician / Analyst / Capacity Planner / Carbon-Grid).
+
+       Epic 4 (this session) — closes the 4 CRITICAL findings from the
+       2026-05-22 MSD v2.0 forensic audit:
+       * ADR-011 written (HMAC-SHA256 chained, append-only ledger,
+         TimescaleDB-backed, IEC 62443-3-3 SR 6.1 / 6.2 / 7.3 / 7.4).
+       * backend/ledger/ package: ForensicLedger + InMemoryPersistence
+         + PostgresPersistence + wrap_bms_write_fn (the single seam
+         every BMS write traverses). S-LEDGER-01 in the skill registry.
+       * /api/bms/write now accepts optional proposal_id and
+         cross-checks the Optimizer ApprovalLog (HTTP 404/409 on
+         missing/mismatched). S-PROPOSER-01.
+       * /api/bms/revert/{entry_id} (SME_L6): reads the original
+         BMS_WRITE_REQUESTED entry, restores its prev_value via the
+         same wrapped seam, appends a BMS_REVERT marker — full
+         rollback harness, IEC 62443-3-3 SR 7.3/7.4.
+       * /api/ledger/entries + /api/ledger/verify for forensic replay.
+       * Migration 2026_05_W4_forensic_ledger.sql — DDL artifact, NOT
+         auto-applied (DC-EPMS-040 lesson); operator runs
+         `psql -f` and restarts. Until then the lifespan falls back to
+         InMemoryPersistence with a loud WARNING.
+       * 41 new tests (18 ledger + 14 proposer-chain + 9 rollback);
+         pytest 830 -> 871; ruff 0 violations.
 
        3.C — Carbon/Grid: Ontario IESO carbon-intensity + Time-of-Use
        perspective for the CO+I 2030 carbon-negative commitment.
@@ -98,7 +120,14 @@ Tags chronological (41 total):
    test_optimizer.py + test_optimizer_routes.py); frontend Vitest
    176 → 193 (+17 across optimizer.test.js + hermes_events.test.js).
 
-Tests:   backend 830 passed, 5 deselected (slow/FAISS) — full pytest ~43s, 0 fail.
+Tests:   backend 871 passed, 5 deselected (slow/FAISS) — full pytest ~42s, 0 fail.
+         (+41 in Epic 4: 18 in test_forensic_ledger.py — HMAC chain,
+         tamper detection, immutability, key rotation, ephemeral-key
+         warning; 14 in test_bms_write_proposer_chain.py — wrapper
+         pre/post entries, prev_value capture, proposal_id stamping,
+         deadlock-refusal, endpoint RBAC + ApprovalLog cross-check;
+         9 in test_rollback_harness.py — restore, double-revert,
+         SME_L6 gate, 404/422 paths, marker payload linkage.)
          (+8 in tests/test_multi_agent.py for Epic 3 Batch 3.A —
          Capacity Planner: 4 verdict-class tests across the warn/crit
          bands + the 4-test T3.3 narrative pattern.)
@@ -514,6 +543,48 @@ C:\dev\DC-EPMS_PRO\
   `frontend/site_topology_view.html`, `archive/app.js.legacy`; -5706 LOC) and
   resolved the DC-EPMS-039 test-suite hang. The DPO file is recoverable from
   git history if V11 T3.8 revives it.
+
+### Closed in Epic 4 (2026-05-23)
+
+- **DC-EPMS-MSD-001** (CRITICAL) — RESOLVED 2026-05-23.
+  Forensic Ledger module (`backend/ledger/forensic_ledger.py`) added per
+  ADR-011. HMAC-SHA256 chained entries, append-only, key-version-aware,
+  with `InMemoryPersistence` (tests) + `PostgresPersistence` (production).
+  `verify_chain()` returns the divergence index on tamper, `None` clean.
+  IEC 62443-3-3 SR 6.1 / 6.2 / NIST SP 800-53r5 AU-9 / AU-10 satisfied
+  at the construction level.
+
+- **DC-EPMS-MSD-002** (CRITICAL) — RESOLVED 2026-05-23.
+  Migration `backend/migrations/2026_05_W4_forensic_ledger.sql` adds
+  `ledger_entries` table with `BEFORE UPDATE / BEFORE DELETE / BEFORE
+  TRUNCATE` triggers raising exceptions (DB-side immutability), CHECK
+  constraints on HMAC length, gapless `BIGSERIAL sequence_no`,
+  TimescaleDB hypertable when the extension is present. NOT
+  auto-applied (DC-EPMS-040 lesson) — operator runs `psql -f` then
+  restarts; until then the lifespan falls back to InMemoryPersistence
+  with a loud WARNING. The `bms_connector.write_audit_log[-200:]`
+  ring buffer remains as a non-authoritative informational view (the
+  legacy `/api/bms/audit` endpoint docstring now points readers to
+  `/api/ledger/entries` for the binding record).
+
+- **DC-EPMS-MSD-003** (CRITICAL) — RESOLVED 2026-05-23.
+  `/api/bms/write` (`backend/main.py`) now accepts an optional
+  `proposal_id`; when provided it MUST resolve to an `approved` row
+  in the Optimizer `ApprovalLog` with matching `bms_tag_id` (HTTP 404
+  / 409 otherwise). The Optimizer approve path (`optimizer_routes.
+  approve_proposal`) stamps `proposal_id` into the ledger entry via
+  `backend.ledger.set_proposal_context()` and dispatches the seam
+  call via `asyncio.to_thread`. Skill `S-PROPOSER-01` added.
+
+- **DC-EPMS-MSD-004** (CRITICAL) — RESOLVED 2026-05-23.
+  `POST /api/bms/revert/{entry_id}` (SME_L6) added. Reads the original
+  `BMS_WRITE_REQUESTED` ledger entry, extracts `tag_id` + `prev_value`,
+  appends a `BMS_REVERT` marker capturing the causal link (`reverts_
+  entry_id`, `from_value`, `restoring_value`, `reason`), then executes
+  the counter-write through the same wrapped seam (creating its own
+  `BMS_WRITE_REQUESTED` + `BMS_WRITE_RESULT` pair with
+  `source="revert"`). Revert-of-revert is allowed; the chain captures
+  the full causal graph. IEC 62443-3-3 SR 7.3 / SR 7.4 satisfied.
 
 ### Open / Deferred
 
