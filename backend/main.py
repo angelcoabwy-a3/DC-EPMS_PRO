@@ -329,6 +329,32 @@ async def lifespan(app: FastAPI):
             else:
                 log.warning("[BOOT] CMMS seeder skipped: _site_model not available at lifespan time")
 
+            # ─── v0.16.1: Procedure Architect vendor cache ────────────
+            # Closes the S-VENDOR-EATON-01 TODO -- audit gate now uses
+            # deterministic `asset_id -> vendor` lookup before falling
+            # back to the legacy string-match. Cache is populated once
+            # at boot from list_assets_async; restart required to
+            # refresh (vendor changes are operationally rare).
+            try:
+                from backend.agents.procedure_architect import set_vendor_cache
+                _all_assets = await _cmms_repo_instance.list_assets_async(limit=10000)
+                _vendor_cache_dict = {
+                    a.asset_id.lower(): (a.vendor.lower() if a.vendor else None)
+                    for a in _all_assets
+                }
+                set_vendor_cache(_vendor_cache_dict)
+                _with_vendor = sum(1 for v in _vendor_cache_dict.values() if v)
+                log.info(
+                    "[BOOT] Procedure Architect vendor cache primed: %d assets, "
+                    "%d with vendor metadata",
+                    len(_vendor_cache_dict), _with_vendor,
+                )
+            except Exception as e:
+                log.warning(
+                    "[BOOT] vendor cache prime failed (string-match fallback "
+                    "remains active): %s", e,
+                )
+
             # ─── Sprint 9.1: Predictive WO trigger init ───────────────
             # Single-instance state machine that converts Kalman anomalies
             # into CMMS work orders. Hooked into the SSE generator below.
