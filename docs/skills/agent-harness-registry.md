@@ -10,7 +10,14 @@
 * **05. Artifact Store Harness:** El chat no es la verdad. El estado va a artefactos.
 
 ## BLOQUE 2: FASES Y ARTEFACTOS
-* **06. Phase DAG Harness:** Grafo dirigido: Init -> Proposal -> Spec -> Design -> Task -> Apply -> Verify -> Archive.
+* **06. Phase DAG Harness:** Grafo dirigido: Init -> Proposal -> Spec -> Design -> Task -> Apply -> Verify -> Archive.  
+  **DC-EPMS:** OPERATIVO (2026-05-24). Implementado en `backend/phase_dag.py`
+  (`PhaseState` IntEnum 8 phases + `CANONICAL_PHASE_ORDER` tuple + `PhaseTracker`
+  in-memory per-task state + `transition_to()` validator + `enforce_phase_dependency()`
+  decorator sync+async + `PhaseTransitionError`). Skill: `S-PHASE-01`. Cobertura:
+  21 tests en `tests/test_phase_dag.py`. Compone con H13 (`backend/agent_continuity.py`)
+  para recuperación cross-proceso. Cierra el riesgo "auto-pilot agent skips phases"
+  del Gap Analysis 2026-05-24.
 * **07. Artifact Dependency Harness:** Entradas obligatorias para cada fase.
 * **08. Result Contract Harness:** Contratos JSON entre fases.
 * **09. SDD Artifact Grammar Harness:** Gramática compartida del proceso.

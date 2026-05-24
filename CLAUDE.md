@@ -1227,12 +1227,13 @@ This section binds the persistent operational artefacts created at Epic 1 closur
 
 **Companion files (binding):**
 - `docs/engram/main-context.md` — architectural state snapshot.
-- `docs/skills/skill-registry.md` — 26 explicit skills across 11 categories
-  (post-H16: Category K Skill Feedback Audit added with `S-FEEDBACK-01`).
+- `docs/skills/skill-registry.md` — 27 explicit skills across 12 categories
+  (post-H06: Category L Phase Discipline added with `S-PHASE-01`).
 - `docs/skills/agent-harness-registry.md` — the 30-harness Gentle IA master
-  registry. H13 (Apply Continuity), H16 (Skill Resolution Feedback) both
-  OPERATIVO since 2026-05-24. **Bloque 4 (Skills y Subagentes) cerrado.**
-  Implementations: `backend/agent_continuity.py` + `backend/skill_audit.py`.
+  registry. **H06 (Phase DAG), H13 (Apply Continuity), H16 (Skill Resolution
+  Feedback) all OPERATIVO since 2026-05-24.** Bloque 4 (Skills y Subagentes)
+  cerrado completo. Implementations: `backend/phase_dag.py` +
+  `backend/agent_continuity.py` + `backend/skill_audit.py`.
 - Audit CLI: `python -m backend.skill_audit --since HEAD~N` prints a
   per-commit feedback report (CLEAN / GAPS / UNKNOWNS).
 

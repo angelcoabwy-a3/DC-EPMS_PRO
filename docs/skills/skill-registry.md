@@ -542,6 +542,49 @@ encode the contracts the operator pinned on 2026-05-23.
 
 ---
 
+## Category L — Phase Discipline (Gentle IA H06)
+
+### `S-PHASE-01` · Autonomous flows cannot skip SDD phases
+
+- **When:** Wiring an autonomous flow (multi-agent orchestration,
+  procedure-architect autoring, sprint-orchestration agent) that
+  walks more than one logical phase of the SDD lifecycle. The
+  canonical sequence is:
+
+      Init -> Proposal -> Spec -> Design -> Task -> Apply -> Verify -> Archive
+
+- **Rule:** Use :class:`backend.phase_dag.PhaseTracker` to anchor the
+  task at `INIT` via `tracker.start(task_id)` and walk forward one
+  step at a time via `tracker.transition_to(task_id, next_phase)`.
+  Skipping a phase (`INIT -> SPEC`) MUST raise
+  :class:`PhaseTransitionError`. Decorate side-effecting seams (e.g.
+  the Apply-phase action that actually mutates state) with
+  `@enforce_phase_dependency(PhaseState.APPLY, tracker=tracker)` so
+  the refusal happens at the seam, not in the agent's decision code.
+  Idempotent self-transitions (e.g. an Apply retry) are explicitly
+  allowed; the history records each re-entry for forensic
+  provenance. The `ARCHIVE` phase is reachable from any state
+  (early termination -- rejected proposal, abandoned design,
+  failed Apply post-mortem); backward transitions to any other
+  phase are denied.
+- **Composition:** :class:`PhaseTracker` is in-memory; agents that
+  need cross-process recovery should COMBINE it with
+  :mod:`backend.agent_continuity` (H13 / `S-CONTINUITY-01`) -- the
+  two harnesses compose, but each remains independently useful.
+- **Verify:** `tests/test_phase_dag.py` covers the 8-phase enum (3
+  tests), the in-memory tracker (5 tests), transition validation
+  including idempotency + ARCHIVE shortcut + skip-rejection +
+  backward-rejection + never-started rejection (6 tests), the
+  decorator on sync + async functions (5 tests), and the
+  acceptance lifecycle + the explicit skip-attempt-blocked case
+  flagged in the 2026-05-24 Gap Analysis (2 tests). Related:
+  [[S-CONTINUITY-01]] (composable persistence layer for
+  cross-process recovery), [[S-DET-02]] (the Safety-Officer VETO
+  is the rank-1 refusal; H06 is the rank-2 refusal at the phase
+  boundary).
+
+---
+
 ## Index — quick lookup
 
 | ID | Category | Headline |
@@ -572,6 +615,7 @@ encode the contracts the operator pinned on 2026-05-23.
 | `S-HOLD-POINT-01` | Procedure Safety | §4 must include `[HOLD POINT]` markers (caution) |
 | `S-CONTINUITY-01` | Agent Continuity | Long-running agent generations checkpoint pre/post LLM |
 | `S-FEEDBACK-01` | Skill Feedback Audit | Commit citations must reflect skills actually used |
+| `S-PHASE-01` | Phase Discipline | Autonomous flows cannot skip SDD phases |
 
-**26 skills, 11 categories.** New skills extending this registry must follow
+**27 skills, 12 categories.** New skills extending this registry must follow
 the same template (When / Rule / Verify) and be added to the index above.
