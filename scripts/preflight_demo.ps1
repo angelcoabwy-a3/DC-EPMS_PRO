@@ -123,10 +123,17 @@ if ($remaining) {
 
 # ---------------------------------------------------------------------
 # Check 3 -- start backend
+#
+# Capture $bootStart BEFORE spawning so the boot-signature checks
+# below can filter out stale log lines from prior runs. The log file
+# is append-only across reboots; without the timestamp filter, the
+# script can falsely match a prior boot's signatures and declare
+# ready before the new process is actually up.
 # ---------------------------------------------------------------------
+$bootStart = Get-Date
 try {
     Start-Process -FilePath $VENV_PY -ArgumentList $BACKEND_PY -WorkingDirectory $REPO_ROOT -PassThru | Out-Null
-    Set-Check "backend started" $true "spawned python backend\main.py"
+    Set-Check "backend started" $true "spawned python backend\main.py at $($bootStart.ToString('HH:mm:ss'))"
 } catch {
     Set-Check "backend started" $false "spawn failed: $_"
     Test-Final
@@ -134,23 +141,46 @@ try {
 
 # ---------------------------------------------------------------------
 # Checks 4-6 -- wait for boot signatures within timeout
+#
+# Each log line is prefixed with `YYYY-MM-DD HH:MM:SS,fff` -- we parse
+# it and skip lines older than $bootStart so prior runs don't fool us.
 # ---------------------------------------------------------------------
 $deadline = (Get-Date).AddSeconds($BOOT_TIMEOUT_S)
 $seenBuild = $false
 $seenLib   = $false
 $seenGraphRAG = $false
+# Match the leading timestamp + capture as a [datetime].
+$tsPattern = '^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(\d{3})'
 
 while ((Get-Date) -lt $deadline) {
     if (Test-Path $LOG_FILE) {
         $recentLines = @()
         try {
-            $recentLines = Get-Content $LOG_FILE -Tail 500 -ErrorAction SilentlyContinue
+            # Read more lines than the seen-window to be safe; the
+            # post-spawn count of new log lines could be in the
+            # hundreds during GraphRAG warm-up.
+            $recentLines = Get-Content $LOG_FILE -Tail 1000 -ErrorAction SilentlyContinue
         } catch {
-            # Log file may be locked briefly; retry next iteration.
             Start-Sleep -Seconds 2
             continue
         }
         foreach ($line in $recentLines) {
+            # Skip line if it has a parseable timestamp older than the
+            # bootStart we captured. Lines without a leading timestamp
+            # (e.g. multi-line tracebacks) are accepted by default --
+            # they're rare and most often emit AFTER the new boot.
+            if ($line -match $tsPattern) {
+                try {
+                    $lineTs = [datetime]::ParseExact(
+                        "$($matches[1]).$($matches[2])",
+                        "yyyy-MM-dd HH:mm:ss.fff",
+                        $null)
+                    if ($lineTs -lt $bootStart) { continue }
+                } catch {
+                    # Unparseable timestamp -- fall through and consider
+                    # the line.
+                }
+            }
             if (-not $seenBuild    -and ($line -match $BOOT_BUILD_PAT))    { $seenBuild = $true }
             if (-not $seenLib      -and ($line -match $BOOT_LIB_PAT))      { $seenLib = $true }
             if (-not $seenGraphRAG -and ($line -match $BOOT_GRAPHRAG_PAT)) { $seenGraphRAG = $true }
@@ -170,28 +200,49 @@ if (-not ($seenBuild -and $seenLib -and $seenGraphRAG)) {
 }
 
 # ---------------------------------------------------------------------
-# Check 7 -- /api/health
+# Helper: HTTP retry wrapper (belt-and-suspenders).
+#
+# Even after boot signatures appear, uvicorn binding to :8080 can lag
+# by a few seconds. Retry 5x with 3s sleep before declaring failure.
 # ---------------------------------------------------------------------
-try {
-    $health = Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/health" -TimeoutSec 10 -ErrorAction Stop
-    $ok = ($health.version -eq $EXPECTED_VERSION) -and ($health.postgres.status -eq "up")
-    Set-Check "api health" $ok ("version=$($health.version), pg=$($health.postgres.status)")
-} catch {
-    Set-Check "api health" $false "request failed: $_"
+function Invoke-WithRetry([scriptblock]$action, [int]$retries = 5, [int]$sleepSec = 3) {
+    $lastErr = $null
+    for ($i = 1; $i -le $retries; $i++) {
+        try {
+            return & $action
+        } catch {
+            $lastErr = $_
+            if ($i -lt $retries) {
+                Start-Sleep -Seconds $sleepSec
+            }
+        }
+    }
+    throw $lastErr
 }
 
 # ---------------------------------------------------------------------
-# Check 8 -- library has 23 catalog MOPs all audit=approve
+# Check 7 -- /api/health (with retry)
+# ---------------------------------------------------------------------
+try {
+    $health = Invoke-WithRetry { Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/health" -TimeoutSec 10 -ErrorAction Stop }
+    $ok = ($health.version -eq $EXPECTED_VERSION) -and ($health.postgres.status -eq "up")
+    Set-Check "api health" $ok ("version=$($health.version), pg=$($health.postgres.status)")
+} catch {
+    Set-Check "api health" $false "request failed after retries: $_"
+}
+
+# ---------------------------------------------------------------------
+# Check 8 -- library has 23 catalog MOPs all audit=approve (with retry)
 # ---------------------------------------------------------------------
 try {
     # Single-quoted URL avoids PowerShell ampersand parsing.
     $libUrl = 'http://127.0.0.1:8080/api/procedures/architect/library?source=catalog&limit=100'
-    $lib = Invoke-RestMethod -Uri $libUrl -TimeoutSec 10 -ErrorAction Stop
+    $lib = Invoke-WithRetry { Invoke-RestMethod -Uri $libUrl -TimeoutSec 10 -ErrorAction Stop }
     $approveCount = @($lib.items | Where-Object { $_.audit_verdict -eq "approve" }).Count
     $ok = ($lib.total -eq $EXPECTED_LIB) -and ($approveCount -eq $EXPECTED_LIB)
     Set-Check "library catalog audit" $ok ("total=$($lib.total), audit=approve count=$approveCount")
 } catch {
-    Set-Check "library catalog audit" $false "request failed: $_"
+    Set-Check "library catalog audit" $false "request failed after retries: $_"
 }
 
 # ---------------------------------------------------------------------
