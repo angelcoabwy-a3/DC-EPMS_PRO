@@ -112,14 +112,40 @@ Eres el Procedure Architect, el agente experto en redacción técnica para infra
 4. **Pasos de Ejecución:** (Acciones exactas en el HMI o físicamente en sala).
 5. **Criterios de Éxito:** (Qué parámetros del BMS/EPMS indican que la tarea terminó bien).
 
-## [TEMPLATE: MOP] - Method of Procedure
-**Contexto:** Mantenimiento programado, maniobras de transferencia de carga, intervenciones físicas.
+## [TEMPLATE: MOP] - Method of Procedure (Generador Universal -- Mission Critical / Zero Incidents)
+**Directiva:** Eres un Arquitecto de Procedimientos de Infraestructura Crítica. Prioriza la protección de la vida humana (Arc Flash, LOTO) y la continuidad de la carga IT (Uptime) por encima de todo. Sustituye cada `_TBD_` razonando la disciplina a la que pertenece el equipo.
+
 **Estructura Universal Obligatoria (5 puntos -- TODOS requeridos por el audit gate):**
-1. **Alcance y Objetivo:** Definición exacta del equipo, ubicación (Site / Data Hall) y propósito de la intervención.
-2. **Evaluación de Impacto y Riesgos:** Posibles interrupciones a la carga IT, nivel de energía incidente (cal/cm²), dependencias aguas arriba/abajo, nivel de PPE requerido según CSA Z462-24.
-3. **Prerrequisitos:** Protocolo Lockout/Tagout (LOTO) cuando aplique, herramientas aisladas, Permisos de Trabajo (PTW), categoría de PPE.
-4. **Lista de Pasos Secuenciales (Step-by-Step):** Instrucciones no ambiguas con casillas de verificación Cuatro Ojos (técnico + supervisor). Cuando la maniobra desenergiza el equipo, incluir verificación Vivo-Muerto-Vivo antes de manipulación física; cuando es trabajo en vivo, declarar el límite de aproximación restringida + PPE Cat 4.
-5. **Plan de Reversión (Back-out Plan):** CRÍTICO -- cómo abortar y volver al estado seguro si la secuencia falla; criterios de aborto explícitos.
+
+1. **Alcance y Objetivo:**
+   * **Identificador (Tag):** Especifica el tipo de equipo y su nomenclatura estándar (ej. `UPS-A`, `CRAH-02`, `CDU-01`, `VESDA-Z3`).
+   * **Estado Final Esperado:** Define exactamente en qué estado físico y lógico debe quedar el equipo al finalizar la maniobra (ej. "Aislado galvánicamente para mantenimiento", "En derivación mecánica sin carga", "Lazo de detección en bypass").
+
+2. **Evaluación de Impacto y Riesgos (Vectores Multi-Disciplina) -- identifica el vector y aplícalo:**
+   * **Vector Eléctrico** (UPS, PDU, STS, ATS): categoría de energía incidente (Arc Flash boundary), riesgo de choque, estado del bus redundante A/B.
+   * **Vector Mecánico/Térmico** (Chillers, CRAHs, CDUs, Torres): "Tiempo de Inercia" -- minutos que el Data Hall soporta sin el equipo antes de cruzar ASHRAE TC 9.9.
+   * **Vector Life Safety / Contra Incendios** (VESDA, Novec/FM-200): riesgo de descarga accidental; panel en modo "Mantenimiento" o aislamiento de solenoides.
+   * **Vector Combustible** (Tanques, Bombas): riesgo de derrame; autonomía restante en Day Tanks.
+   * **Vector Lógico y Controles** (BMS, DC-EPMS, PLCs): "Pérdida de Visibilidad" -- si reinicia un controlador, ¿el sistema entra en fail-safe?
+   * **Impacto Aguas Arriba/Abajo:** enumera exactamente qué tableros, válvulas o servidores están en la ruta crítica.
+
+3. **Prerrequisitos (Gatekeeper Universal y Conciencia del Sistema):**
+   * **Herramientas Especializadas:** lista exacta (multímetro calibrado CAT IV, torquímetro, kit anti-derrames, calibrador de lazo).
+   * **EPP Específico:** Categoría Arc Flash (cal/cm²) per CSA Z462-24 / NFPA 70E + LOTO + protección facial / respiradores / guantes dieléctricos.
+   * **Condiciones Lógicas y Bypass:** confirmación de cero alarmas activas en DC-EPMS o zonas de detección silenciadas.
+   * **Operabilidad de Agentes (Health Check):** confirmación estricta de que el Agente Revisor (Checker) y los Agentes de Disciplina (HVAC AI, Electrical AI) necesarios para el monitoreo concurrente están `ONLINE` y reportando telemetría vía **MCP**.
+   * **Aprobaciones:** Permiso de trabajo (PTW) + confirmación explícita del NOC (Humano).
+
+4. **Lista de Pasos Secuenciales (Step-by-Step, Cuatro Ojos / Maker-Checker):**
+   * **Sintaxis Obligatoria** -- cada paso atómico: `Verbo de acción + Componente Físico + Resultado Esperado + [ ] Técnico ___ [ ] Supervisor ___`.
+     * Ejemplo correcto: "Abrir el interruptor Q2 (Bypass Input Breaker) y verificar visualmente la bandera verde de 'Abierto'. `[ ] Técnico ___ [ ] Supervisor ___`"
+     * Ejemplo INCORRECTO: "Apagar el bypass."
+   * **Regla Vivo-Muerto-Vivo / LOTO:** obligatorio insertar verificación de energía cero o despiche de presión antes de cualquier contacto físico.
+   * **Puntos de Espera (`[HOLD POINT]`):** inserta marcadores donde el técnico debe detenerse y confirmar un parámetro en HMI antes de continuar (ej. `[HOLD POINT]` "Verificar sincronismo de fase" / "Confirmar ATD en CDU").
+
+5. **Plan de Reversión (Back-out Plan) -- no existe maniobra sin salida de emergencia:**
+   * **Disparadores de Aborto (Triggers):** parámetros exactos que cancelan el MOP (ej. "Si el ATS no conmuta en `< 12 segundos`", "Si la presión de agua helada cae por debajo de `20 PSI`", "Si T_inlet rack > 27 °C por más de 60 s"). Cada disparador con número + unidad.
+   * **Secuencia de Restauración:** lista explícita de pasos para devolver el equipo a su estado original. **PROHIBIDA la frase "deshacer los pasos anteriores"** -- enumera cada paso ("Cerrar interruptor X, verificar alarma Y").
 
 ## [TEMPLATE: EOP] - Emergency Operating Procedure
 **Contexto:** Falla de equipo, caída de redundancia, eventos térmicos o eléctricos activos.
@@ -307,6 +333,104 @@ EATON_REQUIRED_TERMS: list[tuple[str, str]] = [
 ]
 
 
+# ─── Commit 11 -- richer-prompt audit rules (operator mandate 2026-05-24) ─
+# All CAUTION-level by default; the seeded bodies surface as caution
+# until Commit 12 brings them up to the richer template. The
+# parameterized-abort rule becomes HARD_STOP in Commit 12 -- TODO marker
+# below for that promotion.
+#
+# (S-VECTOR-01 / S-MCP-HEALTH-01 / S-HOLD-POINT-01)
+
+# §1 sub-field: Identificador (Tag) -- the equipment's canonical name.
+MOP_TAG_PATTERN = (
+    "Identificador / Tag (universal section 1 sub-field)",
+    r"\b(Identificador|Tag|Equipment\s+ID|Asset\s+ID)\b",
+)
+
+# §1 sub-field: Estado Final Esperado -- exact end-state.
+MOP_FINAL_STATE_PATTERN = (
+    "Estado Final Esperado (universal section 1 sub-field)",
+    r"(Estado\s+Final|Final\s+State|End\s+State|Estado\s+Esperado)",
+)
+
+# §2 vector classification -- at least ONE of the 6 vectors must
+# appear explicitly. Allows operator to omit irrelevant vectors but
+# requires at least one explicit categorization.
+MOP_VECTOR_PATTERNS: list[tuple[str, str]] = [
+    (
+        "Vector Eléctrico classification",
+        r"\bVector\s+El[ée]ctrico\b",
+    ),
+    (
+        "Vector Mecánico/Térmico classification",
+        r"\bVector\s+Mec[áa]nico(?:\s*/\s*T[ée]rmico)?\b|\bVector\s+T[ée]rmico\b",
+    ),
+    (
+        "Vector Life Safety classification",
+        r"\bVector\s+Life\s+Safety\b|\bVector\s+Contra\s+Incendios\b",
+    ),
+    (
+        "Vector Combustible classification",
+        r"\bVector\s+Combustible\b",
+    ),
+    (
+        "Vector Lógico/Controles classification",
+        r"\bVector\s+L[óo]gico\b|\bVector\s+Controles\b",
+    ),
+    (
+        "Vector Aguas Arriba/Abajo (impact chain)",
+        r"(Aguas\s+Arriba|Aguas\s+Abajo|Impacto\s+Aguas)",
+    ),
+]
+
+# §3 Agentes Health Check via MCP -- the operator-mandated runtime
+# precondition. String-match only (no network ping per operator
+# calibration Q3 = option (i)).
+MOP_MCP_HEALTH_PATTERNS: list[tuple[str, str]] = [
+    (
+        "MCP / Agentes ONLINE health check (gatekeeper)",
+        r"\bMCP\b|\b(Health\s+Check|Agente\s+Revisor|Checker\s+ONLINE|Discipline\s+AI|HVAC\s+AI|Electrical\s+AI)\b",
+    ),
+]
+
+# §4 HOLD POINT markers -- explicit checkpoint convention. The pattern
+# matches both the bracketed marker and the operator-friendly synonyms.
+MOP_HOLD_POINT_PATTERN = (
+    "[HOLD POINT] markers in step sequence",
+    r"\[HOLD\s*POINT\]|HOLD\s+POINT|Hold\s+Point",
+)
+
+# §5 parameterized abort triggers -- at least one numeric+unit
+# threshold must appear somewhere in the back-out section. Patterns
+# accept common units across electrical, thermal, hydraulic, and
+# time dimensions. CAUTION-level today; promoted to HARD_STOP in
+# Commit 12 once the 23 seed bodies are brought up to spec.
+#
+# TODO(commit-12-promotion): once docs/operaciones/mops/MOP-*.md
+# bodies have been updated to satisfy this rule, promote it from
+# CAUTION to HARD_STOP. Track here: line in audit_procedure_safety
+# below where the verdict resolution lives.
+MOP_PARAMETERIZED_ABORT_PATTERN = (
+    "Parameterized abort trigger (numeric + unit in §5)",
+    # Number (int or decimal) followed by recognized unit token.
+    # Units cover s/seg/min/h, °C/°F/K, PSI/bar/kPa, %, V/Hz/Hz/A/W/kW,
+    # ppm, CFU, MΩ/Ω, GPM/LPM, cal/cm². Word boundary or non-word
+    # neighbour to avoid matching inside identifiers like 'foo10bar'.
+    (
+        r"(?:[<>≤≥]\s*)?\d+(?:[\.,]\d+)?\s*"
+        r"(?:s|sec|seg|segundos?|min|minutos?|h|hours?|horas?|"
+        r"°\s*C|°\s*F|K|"
+        r"PSI|bar|kPa|MPa|"
+        r"%|"
+        r"V|Hz|A|W|kW|MW|"
+        r"ppm|CFU|"
+        r"M[ΩO]|m[ΩO]|"
+        r"GPM|LPM|cal/cm²|cal/cm2)"
+        r"(?![A-Za-z0-9])"
+    ),
+)
+
+
 # ─── Data classes ─────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class ProcedureDraft:
@@ -395,11 +519,25 @@ _DETERMINISTIC_SKELETONS: dict[str, str] = {
     DOC_TYPE_MOP: (
         "# MOP — Method of Procedure\n\n"
         "**Context:** {context}\n\n"
-        "## 1. Alcance y Objetivo\n_TBD_\n\n"
-        "## 2. Evaluación de Impacto y Riesgos\n_TBD_\n\n"
-        "## 3. Prerrequisitos\n_TBD_\n\n"
-        "## 4. Lista de Pasos Secuenciales (Step-by-Step)\n_TBD_\n\n"
-        "## 5. Plan de Reversión (Back-out Plan)\n_TBD_\n"
+        "## 1. Alcance y Objetivo\n"
+        "* **Identificador (Tag):** _TBD_\n"
+        "* **Estado Final Esperado:** _TBD_\n\n"
+        "## 2. Evaluación de Impacto y Riesgos (vectores)\n"
+        "* Vector (Eléctrico / Mecánico-Térmico / Life Safety / "
+        "Combustible / Lógico): _TBD_\n"
+        "* Impacto Aguas Arriba/Abajo: _TBD_\n\n"
+        "## 3. Prerrequisitos\n"
+        "* Herramientas + EPP + PTW: _TBD_\n"
+        "* Agentes Health Check (Checker + Discipline AI ONLINE via "
+        "MCP): _TBD_\n\n"
+        "## 4. Lista de Pasos Secuenciales (Step-by-Step)\n"
+        "1. _TBD verbo + componente + resultado_ "
+        "`[ ] Técnico ___ [ ] Supervisor ___`\n"
+        "2. `[HOLD POINT]` _TBD verificar parámetro en HMI_\n\n"
+        "## 5. Plan de Reversión (Back-out Plan)\n"
+        "* Disparadores de Aborto (numéricos + unidad): _TBD_\n"
+        "* Secuencia de Restauración (explícita, NO 'deshacer los "
+        "pasos anteriores'): _TBD_\n"
     ),
     DOC_TYPE_EOP: (
         "# EOP — Emergency Operating Procedure\n\n"
@@ -583,6 +721,12 @@ def audit_procedure_safety(draft: ProcedureDraft) -> SafetyAuditResult:
         asset_id mentions "eaton", surface BCMS / fiber / FSB / firmware
         / alarm-history omissions as CAUTION (NOT hard_stop) so the
         operator can re-prompt or acknowledge for multi-brand fleets.
+      * **Richer-template structural** (S-VECTOR-01 / S-MCP-HEALTH-01 /
+        S-HOLD-POINT-01) -- Identificador (Tag), Estado Final Esperado,
+        at least one Vector classification, MCP Health Check, [HOLD POINT]
+        markers, parameterized abort triggers (numeric+unit). All
+        CAUTION today; the parameterized-abort rule is promoted to
+        HARD_STOP in Commit 12 once the 23 seed bodies satisfy it.
 
     Pure-Python. No LLM call. S-DET-01 / ADR-006 — the verdict gate is
     deterministic by construction.
@@ -613,6 +757,7 @@ def audit_procedure_safety(draft: ProcedureDraft) -> SafetyAuditResult:
     # ── Phase 2 — MOP-only extended contract (Epic 6 hardening) ──
     extra_hard_stops: list[str] = []
     eaton_cautions: list[str] = []
+    richer_cautions: list[str] = []
 
     if doc_type == DOC_TYPE_MOP:
         # Rule 2.1 — Universal 5-Point Structure (S-SAFETY-01)
@@ -668,6 +813,82 @@ def audit_procedure_safety(draft: ProcedureDraft) -> SafetyAuditResult:
                     findings.append(f"Eaton SOW R-48 advisory: missing {label}")
                     eaton_cautions.append(label)
 
+        # ── Commit 11 -- Richer-prompt structural rules (CAUTION) ──
+        # All six rules below surface as CAUTION (not HARD_STOP). The
+        # existing 23 seed bodies may not satisfy them; Commit 12
+        # brings them up to spec. The parameterized-abort rule
+        # specifically is promoted to HARD_STOP in Commit 12.
+        # (S-VECTOR-01 / S-MCP-HEALTH-01 / S-HOLD-POINT-01)
+        # `richer_cautions` is initialized above with the other
+        # accumulators -- safe to populate here.
+
+        # Rule 2.5 -- §1 Identificador / Tag sub-field.
+        tag_label, tag_pat = MOP_TAG_PATTERN
+        tag_match = re.search(tag_pat, text, flags=re.IGNORECASE)
+        present[tag_label] = bool(tag_match)
+        if not tag_match:
+            findings.append(f"richer-template advisory: missing {tag_label}")
+            richer_cautions.append(tag_label)
+
+        # Rule 2.6 -- §1 Estado Final Esperado sub-field.
+        final_label, final_pat = MOP_FINAL_STATE_PATTERN
+        final_match = re.search(final_pat, text, flags=re.IGNORECASE)
+        present[final_label] = bool(final_match)
+        if not final_match:
+            findings.append(f"richer-template advisory: missing {final_label}")
+            richer_cautions.append(final_label)
+
+        # Rule 2.7 -- §2 at least ONE vector classification.
+        vector_present = False
+        for label, pat in MOP_VECTOR_PATTERNS:
+            m = re.search(pat, text, flags=re.IGNORECASE)
+            present[label] = bool(m)
+            if m:
+                vector_present = True
+        if not vector_present:
+            findings.append(
+                "richer-template advisory: §2 must explicitly name "
+                "at least ONE vector (Eléctrico / Mecánico / Life "
+                "Safety / Combustible / Lógico / Aguas Arriba-Abajo)"
+            )
+            richer_cautions.append("vector classification")
+
+        # Rule 2.8 -- §3 MCP / Agentes Health Check (string-match).
+        mcp_present = False
+        for label, pat in MOP_MCP_HEALTH_PATTERNS:
+            m = re.search(pat, text, flags=re.IGNORECASE)
+            present[label] = bool(m)
+            if m:
+                mcp_present = True
+        if not mcp_present:
+            findings.append(
+                "richer-template advisory: §3 must mention MCP / "
+                "Agentes ONLINE health check (operator-supplied "
+                "system-prompt gatekeeper)"
+            )
+            richer_cautions.append("MCP health check")
+
+        # Rule 2.9 -- §4 [HOLD POINT] markers.
+        hold_label, hold_pat = MOP_HOLD_POINT_PATTERN
+        hold_match = re.search(hold_pat, text, flags=re.IGNORECASE)
+        present[hold_label] = bool(hold_match)
+        if not hold_match:
+            findings.append(f"richer-template advisory: missing {hold_label}")
+            richer_cautions.append(hold_label)
+
+        # Rule 2.10 -- §5 at least ONE parameterized abort trigger
+        # (numeric + unit). CAUTION today; HARD_STOP after Commit 12.
+        param_label, param_pat = MOP_PARAMETERIZED_ABORT_PATTERN
+        param_match = re.search(param_pat, text, flags=re.IGNORECASE)
+        present[param_label] = bool(param_match)
+        if not param_match:
+            findings.append(
+                "richer-template advisory: §5 must include at least "
+                "one parameterized abort trigger (number + unit, e.g. "
+                "'< 12 segundos', '> 27 °C', '< 20 PSI')"
+            )
+            richer_cautions.append(param_label)
+
     # ── Phase 3 — verdict resolution ──
     if doc_type == DOC_TYPE_MOP:
         if base_missing or extra_hard_stops:
@@ -679,9 +900,11 @@ def audit_procedure_safety(draft: ProcedureDraft) -> SafetyAuditResult:
                 "pre-transfer checks when applicable) before signing "
                 "(Epic 6 hardening, operator mandate 2026-05-23)."
             )
-        elif eaton_cautions:
-            # Vendor-specific omissions are advisory only -- multi-brand
-            # fleet reality.
+        elif eaton_cautions or richer_cautions:
+            # Advisory: either vendor-specific (Eaton multi-brand
+            # fleet) or richer-template structural rules (Commit 11
+            # operator-supplied prompt). The seal still proceeds; the
+            # operator sees the findings to re-prompt or acknowledge.
             verdict = AUDIT_VERDICT_CAUTION
         else:
             verdict = AUDIT_VERDICT_APPROVE

@@ -73,6 +73,17 @@ def test_system_prompt_sha256_is_pinned():
     assert "[TEMPLATE: EMP]" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
     assert "cero incidentes" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
     assert "CSA Z462-24" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+    # Commit 11 -- richer-prompt content assertions.
+    assert "Identificador (Tag)" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+    assert "Estado Final Esperado" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+    assert "Vector Eléctrico" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+    assert "Vector Mecánico" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+    assert "Vector Life Safety" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+    assert "Vector Combustible" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+    assert "Vector Lógico" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+    assert "Operabilidad de Agentes" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+    assert "MCP" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+    assert "[HOLD POINT]" in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
     # The pinned sha — round-trip its computation as documentation
     # for the contract.
     assert len(PINNED_SHA) == 64
@@ -221,19 +232,28 @@ class TestAuditMOP:
         assert any("MOP refused" in f for f in result.findings)
 
     def test_mop_with_all_three_terms_is_approve(self):
-        # Post Epic-6-hardening (Commit 3, operator mandate 2026-05-23):
-        # the legacy LOTO+PPE+CSA Z462 terms are NECESSARY but no longer
-        # sufficient. A passing MOP must also carry the Universal
-        # 5-Point Structure + voltage verification (or approach limit).
+        # Post Commit 11 (operator mandate 2026-05-24): in addition to
+        # the legacy LOTO+PPE+CSA Z462 triad + Universal 5-Point +
+        # voltage verification, the MOP must also satisfy the richer-
+        # template fields (Identificador / Estado Final / Vector /
+        # MCP Health Check / [HOLD POINT] / parameterized abort).
         content = (
             "# MOP — Replace UPS battery\n"
-            "## 1. Alcance y Objetivo\nReplace UPS-B battery cabinet.\n"
+            "## 1. Alcance y Objetivo\n"
+            "* Identificador (Tag): UPS-B\n"
+            "* Estado Final Esperado: battery cabinet replaced\n"
             "## 2. Evaluación de Impacto y Riesgos\n"
-            "Riesgos: arc-flash, PPE category 2 per CSA Z462-24.\n"
-            "## 3. Prerrequisitos\nLOTO: lock breaker UPS-B-MAIN before any work.\n"
-            "## 4. Pasos Secuenciales\nApply Vivo-Muerto-Vivo verification.\n"
+            "* Vector Eléctrico: arc-flash, PPE category 2 per CSA "
+            "Z462-24.\n"
+            "## 3. Prerrequisitos\n"
+            "* LOTO: lock breaker UPS-B-MAIN before any work.\n"
+            "* Agentes Health Check (Checker ONLINE via MCP).\n"
+            "## 4. Pasos Secuenciales\n"
+            "1. Apply Vivo-Muerto-Vivo verification.\n"
+            "2. [HOLD POINT] verify isolation on HMI.\n"
             "## 5. Plan de Reversión / Back-out\n"
-            "If anything fails, revert to redundant path.\n"
+            "* Disparador: revert if battery_runtime_min < 4 min.\n"
+            "* Restauración: cerrar Q2 (MIB), verificar bypass OK.\n"
         )
         result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
         assert result.verdict == AUDIT_VERDICT_APPROVE
@@ -241,15 +261,20 @@ class TestAuditMOP:
 
     def test_mop_with_nfpa_70e_instead_of_csa_z462_is_approve(self):
         # The pattern accepts EITHER standard — CSA is Canada (Toronto
-        # site), NFPA is US. Same Epic 6 hardening applies (universal
-        # 5-point + voltage verification still required).
+        # site), NFPA is US. Commit 11 richer fields also required.
         content = (
             "MOP draft.\n"
-            "## 1. Propósito: tap change\n"
-            "## 2. Riesgos: PPE per NFPA 70E\n"
-            "## 3. Prerrequisitos: Lockout/Tagout on the upstream breaker\n"
-            "## 4. Secuencia: open enclosure after Vivo-Muerto-Vivo check\n"
-            "## 5. Back-out: re-energize and verify tap position\n"
+            "## 1. Alcance y Objetivo\n"
+            "* Identificador (Tag): XFMR-A\n"
+            "* Estado Final Esperado: tap moved + verified\n"
+            "## 2. Vector Eléctrico (Riesgos): PPE per NFPA 70E.\n"
+            "## 3. Prerrequisitos: Lockout/Tagout on the upstream "
+            "breaker + Agentes Health Check via MCP.\n"
+            "## 4. Secuencia: open enclosure after Vivo-Muerto-Vivo "
+            "check. [HOLD POINT] verify tap position.\n"
+            "## 5. Back-out: re-energize within 60 s if tap setting "
+            "wrong. Restauración: cerrar Q1, verificar voltaje "
+            "secundario.\n"
         )
         result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
         assert result.verdict == AUDIT_VERDICT_APPROVE
@@ -386,16 +411,26 @@ class TestSafetyPriorityDirective:
 
 
 def _full_mop(extras: str = "") -> str:
-    """Helper: build a MOP that satisfies every base rule. Tests for the
-    new rules append `extras` to verify ONLY the rule under test fires."""
+    """Helper: build a MOP that satisfies every base rule + the richer
+    rules introduced in Commit 11 (Identificador, Estado Final, Vector,
+    MCP Health Check, HOLD POINT, parameterized abort trigger). Tests
+    for the new rules append `extras` to verify ONLY the rule under
+    test fires."""
     return (
         "# MOP — Standard test\n"
-        "## 1. Alcance y Objetivo: replace battery\n"
-        "## 2. Evaluación de Impacto y Riesgos: arc-flash, PPE Cat 2 "
-        "per CSA Z462-24\n"
-        "## 3. Prerrequisitos: LOTO + PTW\n"
-        "## 4. Pasos Secuenciales: Vivo-Muerto-Vivo before manipulation\n"
-        "## 5. Plan de Reversión: revert before battery autonomy\n"
+        "## 1. Alcance y Objetivo\n"
+        "* Identificador (Tag): UPS-B-TEST\n"
+        "* Estado Final Esperado: isolated for maintenance\n"
+        "## 2. Evaluación de Impacto y Riesgos\n"
+        "* Vector Eléctrico: arc-flash, PPE Cat 2 per CSA Z462-24\n"
+        "## 3. Prerrequisitos\n"
+        "* LOTO + PTW + Agentes MCP Health Check (Checker ONLINE)\n"
+        "## 4. Pasos Secuenciales\n"
+        "1. Vivo-Muerto-Vivo before manipulation\n"
+        "2. [HOLD POINT] verify sync\n"
+        "## 5. Plan de Reversión\n"
+        "* Disparador: revert if T > 27 °C for > 60 s\n"
+        "* Restauración: cerrar Q2, verificar alarma B7\n"
         + extras
     )
 
@@ -487,18 +522,26 @@ class TestAuditMOPVoltageVerification:
 
     def test_mop_live_work_with_approach_limit_passes(self):
         # ATS commutation test pattern: no LOTO, but explicit approach
-        # limit + PPE Cat 4. Replace the Vivo-Muerto-Vivo line in §4
-        # with the approach-limit equivalent.
+        # limit + PPE Cat 4 (plus Commit 11 richer fields).
         content = (
             "# MOP — ATS test\n"
-            "## 1. Alcance y Objetivo: ATS commutation\n"
-            "## 2. Evaluación de Impacto y Riesgos: Arc Flash Cat 4 per "
-            "CSA Z462-24\n"
-            "## 3. Prerrequisitos: PPE Cat 4, LOTO not applicable (live "
-            "work) + PTW\n"
-            "## 4. Pasos Secuenciales: personnel outside the límite de "
-            "aproximación restringida during contactor switching\n"
-            "## 5. Plan de Reversión: force Utility on failure\n"
+            "## 1. Alcance y Objetivo\n"
+            "* Identificador (Tag): ATS-A\n"
+            "* Estado Final Esperado: commutation validated\n"
+            "## 2. Evaluación de Impacto y Riesgos\n"
+            "* Vector Eléctrico: Arc Flash Cat 4 per CSA Z462-24.\n"
+            "## 3. Prerrequisitos\n"
+            "* PPE Cat 4, LOTO not applicable (live work) + PTW.\n"
+            "* Agentes Health Check (Checker ONLINE via MCP).\n"
+            "## 4. Pasos Secuenciales\n"
+            "1. Personnel outside the límite de aproximación "
+            "restringida during contactor switching.\n"
+            "2. [HOLD POINT] verify generator V/Hz nominal in HMI.\n"
+            "## 5. Plan de Reversión\n"
+            "* Disparador: force Utility return if generator not "
+            "assuming load within 15 s.\n"
+            "* Restauración: cerrar manual Utility breaker, verificar "
+            "ATS in Utility.\n"
         )
         result = audit_procedure_safety(_draft(DOC_TYPE_MOP, content))
         assert result.verdict == AUDIT_VERDICT_APPROVE
@@ -669,13 +712,127 @@ class TestAuditMOPEatonVendor:
 
 
 # ─── Commit 5 — library pre-seed from docs/operaciones/mops/ ──────────
+# ─── Commit 11 — richer-prompt audit rules (all CAUTION) ──────────────
+def _mop_missing(field: str) -> str:
+    """Build a MOP body that is FULL except for one richer-template
+    field, to verify each rule fires independently. The base body is
+    _full_mop()'s structure inlined; `field` names which line to drop:
+    'tag' / 'final' / 'vector' / 'mcp' / 'hold' / 'param'."""
+    parts = {
+        "tag": "* Identificador (Tag): UPS-X" if field != "tag" else "",
+        "final": "* Estado Final Esperado: isolated" if field != "final" else "",
+        "vector": "* Vector Eléctrico: arc-flash, PPE Cat 2" if field != "vector" else "* Riesgos: arc-flash, PPE Cat 2",
+        "mcp": "* Agentes MCP Health Check (Checker ONLINE)" if field != "mcp" else "* Notification done",
+        "hold": "2. [HOLD POINT] verify isolation" if field != "hold" else "2. verify isolation",
+        "param": "* Disparador: revert if T > 27 °C for > 60 s" if field != "param" else "* Disparador: revert if it goes wrong",
+    }
+    return (
+        "# MOP — Test\n"
+        "## 1. Alcance y Objetivo\n"
+        f"{parts['tag']}\n"
+        f"{parts['final']}\n"
+        "## 2. Evaluación de Impacto y Riesgos\n"
+        f"{parts['vector']} per CSA Z462-24\n"
+        "## 3. Prerrequisitos\n"
+        "* LOTO + PTW\n"
+        f"{parts['mcp']}\n"
+        "## 4. Pasos Secuenciales\n"
+        "1. Apply Vivo-Muerto-Vivo before manipulation\n"
+        f"{parts['hold']}\n"
+        "## 5. Plan de Reversión\n"
+        f"{parts['param']}\n"
+        "* Restauración: cerrar Q2, verificar bypass OK\n"
+    )
+
+
+class TestAuditMOPRicherTemplate:
+    """Commit 11 -- 6 new CAUTION rules from the operator-supplied
+    richer system prompt (Identificador / Estado Final / Vector / MCP
+    Health Check / [HOLD POINT] / parameterized abort)."""
+
+    def test_full_richer_mop_is_approve(self):
+        result = audit_procedure_safety(_draft(DOC_TYPE_MOP, _full_mop()))
+        assert result.verdict == AUDIT_VERDICT_APPROVE
+        assert result.findings == []
+
+    def test_missing_tag_is_caution_not_hard_stop(self):
+        result = audit_procedure_safety(
+            _draft(DOC_TYPE_MOP, _mop_missing("tag")),
+        )
+        assert result.verdict == AUDIT_VERDICT_CAUTION
+        assert any("Identificador" in f or "Tag" in f for f in result.findings)
+
+    def test_missing_final_state_is_caution(self):
+        result = audit_procedure_safety(
+            _draft(DOC_TYPE_MOP, _mop_missing("final")),
+        )
+        assert result.verdict == AUDIT_VERDICT_CAUTION
+        assert any("Estado Final" in f for f in result.findings)
+
+    def test_missing_vector_is_caution(self):
+        result = audit_procedure_safety(
+            _draft(DOC_TYPE_MOP, _mop_missing("vector")),
+        )
+        assert result.verdict == AUDIT_VERDICT_CAUTION
+        assert any("vector" in f.lower() for f in result.findings)
+
+    def test_missing_mcp_health_check_is_caution(self):
+        result = audit_procedure_safety(
+            _draft(DOC_TYPE_MOP, _mop_missing("mcp")),
+        )
+        assert result.verdict == AUDIT_VERDICT_CAUTION
+        assert any("MCP" in f or "Agentes" in f for f in result.findings)
+
+    def test_missing_hold_point_is_caution(self):
+        result = audit_procedure_safety(
+            _draft(DOC_TYPE_MOP, _mop_missing("hold")),
+        )
+        assert result.verdict == AUDIT_VERDICT_CAUTION
+        assert any("HOLD POINT" in f for f in result.findings)
+
+    def test_missing_parameterized_abort_is_caution(self):
+        # The "wrong" trigger has no numeric+unit; only the qualitative
+        # phrase "if it goes wrong" remains in §5. CAUTION today;
+        # promoted to HARD_STOP in Commit 12.
+        result = audit_procedure_safety(
+            _draft(DOC_TYPE_MOP, _mop_missing("param")),
+        )
+        assert result.verdict == AUDIT_VERDICT_CAUTION
+        assert any(
+            "parameterized abort" in f.lower() or "número" in f.lower()
+            or "number" in f.lower() or "numeric" in f.lower()
+            for f in result.findings
+        )
+
+    def test_all_six_richer_rules_can_be_simultaneously_missing(self):
+        # Even with EVERY richer rule failing, verdict is CAUTION (not
+        # HARD_STOP) because the core 5-Point + voltage + LOTO + PPE +
+        # CSA Z462 are still satisfied.
+        body = (
+            "# MOP — Sparse\n"
+            "## 1. Alcance y Objetivo\nGeneric scope.\n"  # no Tag, no Final
+            "## 2. Riesgos: arc-flash, PPE Cat 2 per CSA Z462-24.\n"
+            "## 3. Prerrequisitos: LOTO + PTW.\n"
+            "## 4. Pasos: Apply Vivo-Muerto-Vivo.\n"  # no [HOLD POINT]
+            "## 5. Plan de Reversión: revert if it goes wrong.\n"  # no number
+        )
+        result = audit_procedure_safety(_draft(DOC_TYPE_MOP, body))
+        assert result.verdict == AUDIT_VERDICT_CAUTION
+        # At least 5 of the 6 advisories should fire.
+        advisory_count = sum(
+            1 for f in result.findings
+            if "richer-template" in f or "advisory" in f
+        )
+        assert advisory_count >= 5
+
+
 class TestSeedArchitectLibraryFromCatalog:
     """The _seed_architect_library_from_catalog helper parses every
     MOP-*.md in docs/operaciones/mops/ and appends to the in-memory
     Architect library with source='catalog'. Audit gate is applied to
     every seed; failures are logged + skipped (defence in depth)."""
 
-    def test_seed_loads_3_canonical_mops_from_real_dir(self):
+    def test_seed_loads_canonical_mops_from_real_dir(self):
         from backend.procedure_routes import (
             _architect_library,
             _reset_architect_library_for_test,
@@ -683,16 +840,27 @@ class TestSeedArchitectLibraryFromCatalog:
         )
         _reset_architect_library_for_test()
         count = _seed_architect_library_from_catalog()
-        assert count == 3
-        # All 3 entries present + categorized + source-tagged.
-        cats = sorted(e["category"] for e in _architect_library)
-        assert cats == ["ats", "transformer", "ups"]
+        # 23 canonical bodies after Commits 1-8 (infrastructure 3 +
+        # distribution 9 + mechanical 9 + global 2).
+        assert count == 23
+        # The original 3 categories MUST still be present; the full
+        # set extends with the distribution + mechanical + global
+        # categories.
+        cats = set(e["category"] for e in _architect_library)
+        assert {"ats", "transformer", "ups"}.issubset(cats)
+        assert {"sts", "pdu", "rpp", "busway"}.issubset(cats)
+        assert {"chiller", "crah", "tower"}.issubset(cats)
         for e in _architect_library:
             assert e["source"] == "catalog"
             assert e["operator_id"] == "catalog"
             assert e["actor_role"] == "system"
             assert e["doc_type"] == "MOP"
-            assert e["audit_verdict"] == AUDIT_VERDICT_APPROVE
+            # Commit 11 introduces caution-level richer-template
+            # rules; existing seed bodies surface as CAUTION until
+            # Commit 12 brings them up to spec. Library accepts both.
+            assert e["audit_verdict"] in (
+                AUDIT_VERDICT_APPROVE, AUDIT_VERDICT_CAUTION,
+            )
             assert e["source_file"].startswith("MOP-")
             assert e["source_file"].endswith(".md")
             assert e["title"].startswith("MOP-")
@@ -744,8 +912,9 @@ class TestArchitectLibraryFilter:
         from backend.procedure_routes import (
             _seed_architect_library_from_catalog,
         )
-        # Seed 3 catalog entries.
-        _seed_architect_library_from_catalog()
+        # Seed catalog entries (23 after Commits 1-8).
+        seeded = _seed_architect_library_from_catalog()
+        assert seeded == 23
         # Operator-sign one extra to the library.
         r = library_client.post(
             "/api/procedures/architect/save-to-library",
@@ -759,18 +928,18 @@ class TestArchitectLibraryFilter:
             },
         )
         assert r.status_code == 200
-        # Default (no source filter) -> 4 entries (3 catalog + 1 signed)
-        r2 = library_client.get("/api/procedures/architect/library")
+        # Default (no source filter) -> seeded + 1 signed = 24.
+        r2 = library_client.get("/api/procedures/architect/library?limit=100")
         body = r2.json()
-        assert body["total"] == 4
+        assert body["total"] == 24
         assert body["source_filter"] is None
-        assert len(body["items"]) == 4
+        assert len(body["items"]) == 24
 
     def test_library_filter_source_catalog_returns_only_seeds(self, library_client):
         from backend.procedure_routes import (
             _seed_architect_library_from_catalog,
         )
-        _seed_architect_library_from_catalog()
+        seeded = _seed_architect_library_from_catalog()
         # Add a signed entry too.
         library_client.post(
             "/api/procedures/architect/save-to-library",
@@ -783,10 +952,10 @@ class TestArchitectLibraryFilter:
             },
         )
         r = library_client.get(
-            "/api/procedures/architect/library?source=catalog",
+            "/api/procedures/architect/library?source=catalog&limit=100",
         )
         body = r.json()
-        assert body["total"] == 3
+        assert body["total"] == seeded
         assert body["source_filter"] == "catalog"
         for item in body["items"]:
             assert item["source"] == "catalog"
@@ -843,7 +1012,14 @@ class TestSeedMOPsPassNewAuditGate:
             llm_present=False,
         )
         result = audit_procedure_safety(draft)
-        assert result.verdict == AUDIT_VERDICT_APPROVE, (
+        # Commit 11 introduces the richer-template audit rules at
+        # CAUTION level; the seed bodies were written under the
+        # earlier 5-Point contract and surface as CAUTION until
+        # Commit 12 brings them up to spec. Both verdicts are
+        # acceptable here -- the bodies must NOT hard_stop.
+        assert result.verdict in (
+            AUDIT_VERDICT_APPROVE, AUDIT_VERDICT_CAUTION,
+        ), (
             f"seed {filename} did NOT pass new audit: "
             f"verdict={result.verdict}, findings={result.findings}"
         )
@@ -1148,23 +1324,28 @@ def test_audit_procedure_safety_imports_no_llm_modules():
 # Epic 6 Sprint 3 Phase 4 — Maker-Checker witness gate on MOP sign
 # ════════════════════════════════════════════════════════════════════
 SAFE_MOP_CONTENT = (
-    # Updated for Commit 3 hardening (operator mandate 2026-05-23):
-    # the MOP must carry the Universal 5-Point Structure AND the
-    # voltage absence verification (Vivo-Muerto-Vivo) on top of the
-    # legacy LOTO/PPE/CSA Z462 triad. The body below is the minimal
-    # SHAPE that passes the new audit gate -- used by the Maker-Checker
-    # witness-gate tests + the save-to-library tests as their canonical
-    # safe-MOP fixture.
+    # Updated for Commit 11 (operator mandate 2026-05-24): the MOP
+    # must satisfy BOTH the original 5-Point Universal contract AND
+    # the new richer-template structural rules (Identificador / Estado
+    # Final / Vector / MCP Health Check / [HOLD POINT] / parameterized
+    # abort trigger) so the audit returns APPROVE (not CAUTION).
     "# MOP — Replace UPS battery cabinet\n"
-    "## 1. Alcance y Objetivo: replace UPS-B battery cabinet\n"
-    "## 2. Evaluación de Impacto y Riesgos: arc-flash; PPE category 2 "
-    "per CSA Z462-24.\n"
-    "## 3. Prerrequisitos: LOTO -- lock breaker UPS-B-MAIN before any "
-    "work.\n"
-    "## 4. Pasos Secuenciales: Vivo-Muerto-Vivo verification on the "
-    "isolated bus before manipulation.\n"
-    "## 5. Plan de Reversión / Back-out: revert before "
-    "battery_runtime_min cutoff.\n"
+    "## 1. Alcance y Objetivo\n"
+    "* Identificador (Tag): UPS-B\n"
+    "* Estado Final Esperado: battery cabinet replaced + isolated\n"
+    "## 2. Evaluación de Impacto y Riesgos\n"
+    "* Vector Eléctrico: arc-flash; PPE category 2 per CSA Z462-24.\n"
+    "## 3. Prerrequisitos\n"
+    "* LOTO -- lock breaker UPS-B-MAIN before any work.\n"
+    "* Agentes Health Check (Checker ONLINE via MCP).\n"
+    "## 4. Pasos Secuenciales\n"
+    "1. Vivo-Muerto-Vivo verification on the isolated bus before "
+    "manipulation.\n"
+    "2. [HOLD POINT] verify ATD on the secondary loop.\n"
+    "## 5. Plan de Reversión / Back-out\n"
+    "* Disparador: revert if battery_runtime_min < 4 min during "
+    "transfer.\n"
+    "* Restauración: cerrar Q2 (MIB), verificar alarma 'BYPASS OK'.\n"
 )
 
 
