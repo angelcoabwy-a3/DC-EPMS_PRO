@@ -26,7 +26,7 @@ build-backend = "setuptools.build_meta"
 # ── Project metadata (PEP 621) ────────────────────────────────────────────────
 [project]
 name = "dc-epms-pro"
-version = "0.16.1"
+version = "0.17.0"
 description = "AI-native edge operations platform for Tier IV AI factories — A3-Alpha Toronto Area simulator"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

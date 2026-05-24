@@ -20,6 +20,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > record and are transcribed faithfully here. Forward planning lives in
 > `docs/ROADMAP-V11.md` (locked 2026-05-10).
 
+## [v0.17.0] — 2026-05-24 (Life Safety + Combustible — catalog expansion to 29 canonical MOPs)
+
+> **Theme:** asset-category expansion. The catalog grows from 23
+> to 29 canonical MOP bodies with 2 new vector layers (Life Safety
+> + Combustible) the system prompt already enumerated since v0.16.0
+> but had no canonical bodies for. Built ON TOP of the v0.16.1
+> hardened audit gate; no audit changes were needed. Minor version
+> bump because the new asset categories are user-facing feature
+> surface (HMI chips + library + GraphRAG).
+
+### Added
+
+- **3 Life Safety canonical bodies** (`docs/operaciones/mops/`):
+  MOP-024 VESDA Zone Functional Test (FM 7745 annual), MOP-025
+  Novec/FM-200 Cylinder Pressure Annual Verification (NFPA 12
+  §4.7.4 dual manómetro + balanza cross-check), MOP-026 Clean
+  Agent Discharge Reset (post-event recovery + bomberos clearance
+  + SCBA + multi-gas).
+- **3 Combustible canonical bodies** (`docs/operaciones/mops/`):
+  MOP-027 Day Tank Bulk Fuel Transfer (NFPA 30/110 + IEC 60079 +
+  bonding cable + spill containment), MOP-028 Day Tank Fuel
+  Polishing (ASTM D6304 Karl Fischer + circuit cerrado), MOP-029
+  Generator Extended Runtime > 12 h (NFPA 110 §A.5.6.4 + winding
+  temp 110 °C critical + fuel sampling cada 24 h).
+- **`config/knowledge/life-safety-combustible-references.md`**
+  (GraphRAG 10 → 11): NFPA 12/72/75/110/30 + FM 7745 + ISO 14520 +
+  ASTM D2276/D6304 + IEC 60079 + ANSI/AIHA Z9.5 cross-references +
+  physics + chemistry (VESDA aspirating, Novec NOAEL, diesel
+  biofilm, Karl Fischer method, Arrhenius insulation, ISO 10816).
+- **HMI chip categorías 10 → 12** in
+  `frontend/assets/js/views/procedures.js`:
+  - `life_safety` (3 chips) + `combustible` (3 chips).
+  - Total chips 32 → 38.
+  - Each chip pre-seeds the full safety contract + category-specific
+    vocabulary (SCBA, bonding cable, Maintenance Mode, ASTM
+    sampling, Karl Fischer, winding temp monitoring).
+
+### Changed
+
+- **Architect library** pre-seeds **23 → 29** catalog entries at
+  boot. Boot log: `[BOOT] Architect library pre-seeded with 29
+  catalog MOP(s)`.
+- **GraphRAG corpus** loads **10 → 11** knowledge documents at
+  boot.
+- **CLAUDE.md** updated: CURRENT STATE block reflects v0.17.0
+  expansion.
+- Backend `__version__` 0.16.1 → 0.17.0; mirrored in 5 stack
+  locations.
+
+### Not changed (deliberate)
+
+- **Audit gate** — no changes. The hardened contract supports Life
+  Safety + Combustible as 2 of the 6 enumerated vectors since
+  v0.16.0. Audit verification: 29/29 verdict=APPROVE end-to-end.
+- **Skills registry** — 24 skills unchanged. Existing S-SAFETY-01 +
+  S-VECTOR-01 + S-MCP-HEALTH-01 + S-HOLD-POINT-01 contracts cover
+  the new MOPs.
+- **Test floors** — pytest 1143 + vitest 313 unchanged. Pure
+  content expansion; chip shape assertions updated in place
+  (12 categorías, 38 chips).
+
 ## [v0.16.1] — 2026-05-24 (Procedure Architect Universal: deterministic vendor lookup + MCP runtime probe)
 
 > **Theme:** post-v0.16.0 architectural close-out. Two explicit TODOs
