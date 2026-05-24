@@ -20,6 +20,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > record and are transcribed faithfully here. Forward planning lives in
 > `docs/ROADMAP-V11.md` (locked 2026-05-10).
 
+## [v0.16.0] "Procedure Architect Universal" — 2026-05-24
+
+> **Theme:** Epic 6 catalog integration + operator-supplied richer
+> system prompt fully adopted. 23 canonical MOP bodies, all
+> verdict=APPROVE under the Universal 5-Point + multi-vector risk
+> taxonomy + MCP agent health check + parameterized abort triggers
+> (HARD_STOP) contract.
+
+### Added
+
+- **Procedure Architect agent** (`backend/agents/procedure_architect.py`):
+  LLM-authored SOP/MOP/EOP/EMP with deterministic Safety Officer audit
+  pipeline. Hermetic prompt envelope (H17) + deterministic-skeleton
+  fallback when no LLM is wired. Authoring is LLM-driven; the audit
+  verdict is pure-Python pattern matching (S-DET-01 / ADR-006).
+- **Operator-supplied "Generador Universal de MOPs" system prompt**
+  (Commit 11) -- MOP template body explicitly demands Identificador
+  (Tag) + Estado Final Esperado in §1, six risk Vectors (Eléctrico /
+  Mecánico-Térmico / Life Safety / Combustible / Lógico /
+  Aguas Arriba-Abajo) in §2, MCP Agent Health Check in §3, formal
+  step syntax + `[HOLD POINT]` markers in §4, and parameterized
+  abort triggers (number + unit, NEVER vague) in §5.
+- **Hardened audit gate** -- 10 deterministic rules total across two
+  phases. Phase 1 (legacy): per-template required terms. Phase 2
+  (Epic 6 hardening + Commit 11 richer-template): Universal 5
+  sections, voltage-verification-or-approach-limit, PDU/RPP/STS
+  pre-transfer alarm + SCR check, Eaton SOW R-48 (caution),
+  Identificador (caution), Estado Final (caution), Vector
+  classification (caution), MCP Health Check (caution), `[HOLD
+  POINT]` markers (caution), parameterized abort triggers
+  (HARD_STOP -- vague back-out criteria block signing).
+- **23 canonical MOP bodies** in `docs/operaciones/mops/`:
+  infrastructure (UPS bypass / Transformer dry inspection / ATS
+  commutation) + distribution (STS load transfer / PDU PM /
+  PDU breaker replacement / RPP load balancing / RPP whip
+  installation / RPP EPO reset / Busway tap-off install /
+  Busway joint maintenance / Busway thermographic scan) +
+  mechanical (Chiller staging / Chiller trip response / Chiller
+  ride-through recovery / CRAH hot-swappable filters / CRAH
+  VFD-valve calibration / CRAH psychrometric control / Tower
+  chemical dosing / Tower pan cleaning / Tower free-cooling
+  transition) + global (IST full-load test / DBB main-ring
+  isolation). Every body satisfies the full richer-template
+  contract -- audit=APPROVE.
+- **Library pre-seed at boot** -- `_seed_architect_library_from_catalog`
+  parses every `MOP-*.md` and appends to the Architect library
+  with `source="catalog"` + category tag. Boot log:
+  `[BOOT] Architect library pre-seeded with 23 catalog MOP(s)`.
+- **GraphRAG corpus expansion 6 → 10 documents**:
+  `electrical-mop-catalog.md` + `distribution-mop-catalog.md` +
+  `eaton-sow-r48-mp-checklist.md` + `cooling-thermodynamics-references.md`
+  (ASHRAE TC 9.9 + Uptime Tier IV + OCP + CTI ATC-105 + physics
+  equations).
+- **HMI MOP chip categorías 4 → 10** with 32 chip starter templates
+  (UPS / Transformer / Utility / PDU-STS / RPP / Busway / Chiller /
+  CRAH / Cooling Tower / Global). Each chip embeds the full safety
+  contract (LOTO + PPE + CSA Z462 + voltage-or-approach + back-out +
+  {asset} substitution).
+- **Maker-Checker witness gate** (Sprint 3 Phase 4 alignment):
+  MOPs require two distinct `operator_id`s to seal into the
+  Forensic Ledger. Self-witnessing → HTTP 403. Content drift
+  between signs → HTTP 409. Documented in
+  `docs/architecture/maker-checker-cuatro-ojos.md`.
+- **6 new skills** in Category I "Procedure Authoring Safety" --
+  `S-SAFETY-01` (Universal 5-Point + voltage verification),
+  `S-DISTRIBUTION-01` (PDU/RPP/STS pre-transfer alarm + SCR),
+  `S-VENDOR-EATON-01` (Eaton SOW R-48 caution),
+  `S-VECTOR-01` (vector classification),
+  `S-MCP-HEALTH-01` (MCP / agent health check string-match),
+  `S-HOLD-POINT-01` (`[HOLD POINT]` markers). Registry 18 → 24.
+- **Save-to-library endpoint** + `source` filter -- operator can
+  pin approved Architect drafts into the in-memory library;
+  `GET /api/procedures/architect/library?source=catalog|signed`
+  filters by origin.
+- **Option A consolidation** -- legacy `POST /api/mops/generate`
+  retired with HTTP 410 Gone + migration pointer. MOPs view cross-
+  links to the Procedure Architect for new procedure authoring.
+
+### Changed
+
+- `PROCEDURE_ARCHITECT_SYSTEM_PROMPT` MOP template body replaced
+  with the operator-supplied "Generador Universal" structure (the
+  prior Universal 5-Point with extra sub-fields).
+- `MOP_PARAMETERIZED_ABORT_PATTERN` promoted from CAUTION to
+  HARD_STOP (Commit 12) -- vague abort criteria are safety-critical.
+- HMI MOP chip categorías: previously a single flat list of 4
+  generic templates; now 10 categorías with 32 specialized chips,
+  each pre-seeding the safety vocabulary the audit gate enforces.
+- Backend `__version__` 0.15.0 → 0.16.0; mirrored in `package.json`,
+  `pyproject.toml`, `frontend/assets/js/core/version.js`, and the
+  two `<span data-app-version-stamp>` literals in
+  `frontend/index.html`.
+
+### Fixed
+
+- `DC-EPMS-MSD-006` (HIGH, resolved earlier in cycle): asyncpg
+  UUID → str coercion in `forensic_ledger.PostgresPersistence`
+  `_row_to_entry`. `/api/ledger/verify` no longer 500s against
+  Postgres-backed deployments. +4 integration tests in
+  `test_forensic_ledger_postgres.py`.
+
+### Tests + tooling
+
+- pytest **875 → 1126** (+251 cumulative across Epic 4 + DC-EPMS-MSD-005
+  + Epic 3 Capacity Planner + Epic 6 catalog integration + Epic 6
+  richer-template adoption).
+- vitest **193 → 313** (+120 across optimizer view, Hermes stream,
+  MOP categorías, chip filter, safety-contract assertions).
+- ruff: 0 violations in `backend/`.
+- GraphRAG: 10 knowledge documents indexed at boot.
+- Architect library: 23 catalog MOP entries pre-seeded at boot, all
+  verdict=APPROVE.
+
 ## [v0.10.13-modal-fix] - 2026-05-10
 
 ### Fixed
