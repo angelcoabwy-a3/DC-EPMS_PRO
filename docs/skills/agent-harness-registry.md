@@ -32,7 +32,14 @@
 ## BLOQUE 4: SKILLS Y SUBAGENTES
 * **14. Skill Registry Harness:** Índice de capacidades del proyecto.
 * **15. Skill Digestion Harness:** Compila contexto en instrucciones precisas.
-* **16. Skill Resolution Feedback Harness:** Auditoría de uso de skills.
+* **16. Skill Resolution Feedback Harness:** Auditoría de uso de skills.  
+  **DC-EPMS:** OPERATIVO (2026-05-24). Implementado en `backend/skill_audit.py`
+  (`SKILL_ID_PATTERN` regex + `parse_commit_citations()` + `load_skill_registry()`
+  + `expected_skills_for_files()` heuristic table + `audit_commit()` + CLI
+  `python -m backend.skill_audit --since HEAD~N`). Skill: `S-FEEDBACK-01`.
+  Cobertura: 22 tests en `tests/test_skill_audit.py`. **Bloque 4 ahora cerrado**
+  (H14 ✓ skill-registry.md, H15 ✓ Skill Digestion in CLAUDE.md OPERATIONAL RULE,
+  H16 ✓ this commit, H17 ✓ hermetic_prompt / sanitize_history).
 * **17. Sub-Agent Isolation Harness:** (CRÍTICO) Aislamiento total de contexto para subagentes.
 
 ## BLOQUE 5: ENTREGA Y REVISIÓN

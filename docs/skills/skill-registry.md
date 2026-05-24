@@ -501,6 +501,47 @@ encode the contracts the operator pinned on 2026-05-23.
 
 ---
 
+## Category K — Skill Feedback Audit (Gentle IA H16)
+
+### `S-FEEDBACK-01` · Commit citations must reflect skills actually used
+
+- **When:** Every commit that touches production code or production
+  documentation. The skill is observational: it does NOT block
+  commits, but the report surfaces drift between citation discipline
+  and actual file impact.
+- **Rule:** Cite skill IDs in canonical `S-XXX-NN` form within the
+  commit message body for every skill the change *relies on*
+  (verdict gate, persistence shape, RBAC, etc.). After a sprint,
+  invoke the auditor:
+
+      python -m backend.skill_audit --since HEAD~N
+
+  and review the report. The auditor classifies each commit:
+  - **CLEAN** — the expected skills (heuristic-derived from
+    touched paths) were all cited, and no unknown citations
+    appeared.
+  - **GAPS** — files touched suggest a skill that was NOT cited
+    (e.g. touched `backend/ledger/` without citing `S-LEDGER-01`).
+  - **UNKNOWNS** — a cited ID does not appear in the registry
+    (typo, hallucination, or a skill that should be added).
+
+  Gaps are not always real misses (a one-line import change in
+  `backend/agents/` may not need `S-DET-01`) — the human reviewer
+  judges. The auditor exists to make the judgement *visible*.
+- **Heuristic table:** `backend.skill_audit._FILE_TO_SKILLS` maps
+  path regex -> expected skills. The table is intentionally
+  conservative (favors false positives over false negatives —
+  surfacing a spurious gap is recoverable, missing a real gap is
+  not).
+- **Verify:** `tests/test_skill_audit.py` covers the citation parser
+  (5 tests), registry loader (3 tests), heuristic table (8 tests),
+  per-commit auditor (4 tests), and the real-git acceptance test
+  (1 test). Related: [[S-CONTINUITY-01]] (same Gentle IA registry
+  lineage), [[S-DOC-01]] (the doc-sync skill the feedback rule
+  polices alongside code skills).
+
+---
+
 ## Index — quick lookup
 
 | ID | Category | Headline |
@@ -530,6 +571,7 @@ encode the contracts the operator pinned on 2026-05-23.
 | `S-MCP-HEALTH-01` | Procedure Safety | §3 must mention MCP / agent health check (caution, string-match) |
 | `S-HOLD-POINT-01` | Procedure Safety | §4 must include `[HOLD POINT]` markers (caution) |
 | `S-CONTINUITY-01` | Agent Continuity | Long-running agent generations checkpoint pre/post LLM |
+| `S-FEEDBACK-01` | Skill Feedback Audit | Commit citations must reflect skills actually used |
 
-**25 skills, 10 categories.** New skills extending this registry must follow
+**26 skills, 11 categories.** New skills extending this registry must follow
 the same template (When / Rule / Verify) and be added to the index above.
