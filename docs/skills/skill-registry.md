@@ -397,23 +397,44 @@ encode the contracts the operator pinned on 2026-05-23.
 - **Verify:** `tests/test_procedure_architect.py::TestAuditMOPRicherTemplate::test_missing_vector_is_caution`.
   Constants: `MOP_VECTOR_PATTERNS` in `backend/agents/procedure_architect.py`.
 
-### `S-MCP-HEALTH-01` · §3 must mention MCP / Agent health-check gate
+### `S-MCP-HEALTH-01` · §3 must mention MCP / Agent health-check gate (+ optional runtime probe)
 
 - **When:** Authoring a MOP. The operator-supplied richer prompt
   mandates that the gatekeeper section includes confirmation that the
   Agente Revisor (Checker) and Discipline AIs (HVAC AI, Electrical AI)
   are `ONLINE` and reporting via **MCP** for concurrent monitoring.
-- **Rule:** Audit string-matches the body for `MCP`, `Agente Revisor`,
-  `Health Check`, `Checker ONLINE`, `Discipline AI`, `HVAC AI`, or
-  `Electrical AI`. Missing all of them → `caution`. Per operator
-  calibration Q3 (option (i)), the audit does NOT make a real network
-  ping to the MCP server — that would introduce runtime latency and
-  break determinism. Static string-match suffices for the LLM author
+- **Rule (option (i), always on):** audit string-matches the body for
+  `MCP`, `Agente Revisor`, `Health Check`, `Checker ONLINE`,
+  `Discipline AI`, `HVAC AI`, or `Electrical AI`. Missing all of them
+  → `caution`. Per operator calibration the audit does NOT block on
+  the string check; static string-match suffices for the LLM author
   nudge.
-- **TODO (future option (ii)):** add a feature-flagged runtime check
-  that pings the MCP server before signing, with a graceful timeout.
-- **Verify:** `tests/test_procedure_architect.py::TestAuditMOPRicherTemplate::test_missing_mcp_health_check_is_caution`.
-  Constants: `MOP_MCP_HEALTH_PATTERNS`.
+- **Rule (option (ii), feature-flagged via `DC_EPMS_MCP_PROBE`):**
+  v0.16.1 -- the closeout. When the env flag is enabled, an asyncio
+  background task in `backend/mcp_health.py` polls
+  `DC_EPMS_MCP_PROBE_URL` (default LM Studio at
+  `http://127.0.0.1:1234/v1/models`) every `DC_EPMS_MCP_PROBE_INTERVAL_S`
+  seconds (default 60s, 5s timeout). The audit gate reads the cached
+  result sync (zero I/O in the verdict path) via `get_mcp_health()`.
+  - State **None** (probe disabled) → behavior is identical to v0.16.0
+    (string-match only); no extra finding.
+  - State **True** (probe up) → no extra finding; rule satisfied by
+    the operational fact of agent reachability.
+  - State **False** (probe failing) → CAUTION finding with the probe
+    reason annotated, e.g.
+    `MCP health probe FAILED [URLError: Connection refused] -- Discipline AI agents may not be reachable; operator should verify before signing`.
+  The string-match rule above runs independently; both can fire
+  together when both omissions are present.
+- **Lifecycle:** background task started in `backend/main.py` lifespan
+  after CMMS seed; pinned onto `app.state.mcp_probe_task`; cancelled
+  cleanly on shutdown. Initial sync probe runs before the loop so the
+  first audit call sees a fresh result.
+- **Verify:** `tests/test_procedure_architect.py::TestAuditMOPRicherTemplate::test_missing_mcp_health_check_is_caution`
+  (string-match path) + `tests/test_mcp_health.py` (12 tests covering
+  cache state transitions, probe success/failure modes, audit
+  integration, and compound advisories). Constants:
+  `MOP_MCP_HEALTH_PATTERNS` + `backend.mcp_health.{probe_mcp_sync,
+  get_mcp_health, start_probe_background_task}`.
 
 ### `S-HOLD-POINT-01` · §4 must include `[HOLD POINT]` markers
 

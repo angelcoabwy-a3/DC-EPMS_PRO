@@ -922,6 +922,32 @@ def audit_procedure_safety(draft: ProcedureDraft) -> SafetyAuditResult:
             )
             richer_cautions.append("MCP health check")
 
+        # Rule 2.8b -- v0.16.1 MCP probe option (ii). When the env
+        # flag DC_EPMS_MCP_PROBE is enabled, an async background
+        # task in backend.mcp_health polls a configured URL (default
+        # LM Studio's /v1/models). Audit reads the cached state
+        # sync. If probe disabled (state=None), behavior is identical
+        # to v0.16.0 -- string-match only. If probe is UP, no
+        # additional finding. If probe is DOWN, emit a caution
+        # annotating the probe reason so operator knows the
+        # Discipline AI agents are unreachable.
+        try:
+            from backend.mcp_health import get_mcp_health
+            mcp_state, mcp_reason, _last_ts = get_mcp_health()
+            present["MCP probe state"] = mcp_state if mcp_state is not None else "disabled"
+            if mcp_state is False:
+                findings.append(
+                    f"MCP health probe FAILED [{mcp_reason}] -- "
+                    "Discipline AI agents may not be reachable; "
+                    "operator should verify before signing"
+                )
+                richer_cautions.append("MCP probe failed")
+        except Exception:
+            # Probe module unavailable / import error -- silently
+            # degrade to string-match-only behavior. This keeps the
+            # audit gate robust against partial deployments.
+            pass
+
         # Rule 2.9 -- §4 [HOLD POINT] markers.
         hold_label, hold_pat = MOP_HOLD_POINT_PATTERN
         hold_match = re.search(hold_pat, text, flags=re.IGNORECASE)
