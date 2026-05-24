@@ -16,17 +16,60 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 
 **Vocabulary discipline (CRITICAL)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is unipolar (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in panel review.
 
-## 📊 CURRENT STATE (synced 2026-05-23)
+## 📊 CURRENT STATE (synced 2026-05-23 — Epic 6 catalog integration delivered)
 
 ```
-HEAD:  <Epic-4 batch — pending commit>  branch master  —  ahead of origin.
+HEAD:  <Epic-6 catalog integration, 10 commits ahead of origin/master>.
        Stable baseline = **v0.13.0 "Proactive Edge"** (cut 2026-05-19).
-       Post-release: **EPIC 4 OPENED + delivered (ADR-011 Forensic Ledger
-       + Proposer-chain closure + Rollback Harness)**, on top of EPIC 3
-       Batches 3.A + 3.C. 6-agent fleet still (Architect / Safety
-       Officer / Diagnostician / Analyst / Capacity Planner / Carbon-Grid).
+       Post-release: **EPIC 4 delivered (Forensic Ledger + Proposer-
+       chain closure + Rollback Harness)** + **EPIC 6 OPENED + delivered
+       (Procedure Architect + Hardened Audit Gate + Library Pre-seed)**,
+       on top of EPIC 3 Batches 3.A + 3.C. 6-agent fleet still
+       (Architect / Safety Officer / Diagnostician / Analyst / Capacity
+       Planner / Carbon-Grid).
 
-       Epic 4 (this session) — closes the 4 CRITICAL findings from the
+       Epic 6 (this session, 10 atomic commits) — operator-mandated
+       catalog integration for electrical infrastructure +
+       white-space distribution + mechanical cooling:
+       * 23 canonical MOP bodies in `docs/operaciones/mops/`:
+         - Infrastructure (3): UPS-bypass / Transformer-dry-inspection
+           / ATS-commutation (MOP-001/002/003).
+         - Distribution (9): STS / PDU x 2 / RPP x 3 / Busway x 3
+           (MOP-004 through MOP-012).
+         - Mechanical (9): Chiller x 3 / CRAH x 3 / Tower x 3
+           (MOP-013 through MOP-021).
+         - Global (2): IST plena-carga + DBB ring-isolation
+           (MOP-022, MOP-023).
+         Every body passes the hardened audit gate end-to-end.
+       * GraphRAG corpus 6 → 10 documents (electrical-mop-catalog +
+         distribution-mop-catalog + eaton-sow-r48-mp-checklist +
+         cooling-thermodynamics-references). All YAML-frontmatter
+         compliant (lesson 2d4ea37).
+       * `SAFETY_PRIORITY_DIRECTIVE` prepended to the byte-pinned
+         system prompt (CERO INCIDENTES); MOP template replaced by
+         the Universal 5-Point Structure mandated by the operator.
+       * Audit gate hardened with 4 new rules: universal 5 sections
+         (hard_stop), voltage verification OR approach limit
+         (hard_stop), PDU/RPP/STS pre-transfer alarm+SCR (hard_stop),
+         Eaton SOW R-48 checklist (caution -- multi-brand fleet).
+       * 3 new skills (`S-SAFETY-01`, `S-DISTRIBUTION-01`,
+         `S-VENDOR-EATON-01`) -- registry grows 18 → 21.
+       * HMI MOP chip categorías 4 → 10 (UPS / Transformer / Utility
+         / PDU-STS / RPP / Busway / Chiller / CRAH / Tower / Global)
+         with 32 chip starter templates (was 4 generic). Each chip
+         pre-seeds LOTO + PPE + CSA Z462-24 + Vivo-Muerto-Vivo OR
+         aproximación + Back-out + {asset} -- the LLM author starts
+         already inside the safety envelope.
+       * Library pre-seed: boot parses every MOP-*.md and appends to
+         `_architect_library` with `source="catalog"` + category.
+         `GET /api/procedures/architect/library?source=catalog|signed`
+         filters the merged view.
+       * Maker-Checker witness gate alignment doc
+         (`docs/architecture/maker-checker-cuatro-ojos.md`) maps the
+         §4 paper-trail checkboxes to the Sprint 3 Phase 4 digital
+         witness gate -- the Cuatro Ojos contract is COMPLETE.
+
+       Epic 4 (prior session) — closed the 4 CRITICAL findings from the
        2026-05-22 MSD v2.0 forensic audit:
        * ADR-011 written (HMAC-SHA256 chained, append-only ledger,
          TimescaleDB-backed, IEC 62443-3-3 SR 6.1 / 6.2 / 7.3 / 7.4).
@@ -120,30 +163,32 @@ Tags chronological (41 total):
    test_optimizer.py + test_optimizer_routes.py); frontend Vitest
    176 → 193 (+17 across optimizer.test.js + hermes_events.test.js).
 
-Tests:   backend 875 passed, 5 deselected (slow/FAISS) — full pytest ~44s, 0 fail.
-         (+41 in Epic 4: 18 in test_forensic_ledger.py — HMAC chain,
-         tamper detection, immutability, key rotation, ephemeral-key
-         warning; 14 in test_bms_write_proposer_chain.py — wrapper
-         pre/post entries, prev_value capture, proposal_id stamping,
-         deadlock-refusal, endpoint RBAC + ApprovalLog cross-check;
-         9 in test_rollback_harness.py — restore, double-revert,
-         SME_L6 gate, 404/422 paths, marker payload linkage.)
-         (+4 in DC-EPMS-MSD-005 fix: test_forensic_ledger_postgres.py
-         — verify_chain through asyncpg, UUID->str boundary coercion,
-         DB-side trigger immutability, cross-backend HMAC parity.)
-         (+8 in tests/test_multi_agent.py for Epic 3 Batch 3.A —
-         Capacity Planner: 4 verdict-class tests across the warn/crit
-         bands + the 4-test T3.3 narrative pattern.)
-         frontend 193 passed (19 Vitest files) — 16 new in
-         tests/frontend/optimizer.test.js cover 2.D render + S-SEC-01
-         XSS (img/script/proposal_id) + fetchQueue + S-SEC-02 approve
-         POST + reject POST + route registration + Hermes refresh; +1
-         test in hermes_events.test.js for the optimizer_proposal
-         stream subscription. ruff: 0 violations in backend/.
-         frontend 176 passed — Vitest (npm test, 18 files): mission_control +
-         scenarios + incidents + mops + power + cooling + copilot + bms + loto +
-         topology + overview + bootstrap + sanitize + hermes (slice / cutover /
-         EDA) + maintenance + rack_heatmap + site_topology. Both green.
+Tests:   backend 1118 passed, 5 deselected (slow/FAISS) — full pytest ~50s, 0 fail.
+         Epic 6 contribution to pytest: +29 tests across Commits 3+5
+         (TestSafetyPriorityDirective 3, TestAuditMOPUniversalSections
+         6, TestAuditMOPVoltageVerification 3,
+         TestAuditMOPDistributionPreTransfer 5, TestAuditMOPEatonVendor
+         3, TestSeedMOPsPassNewAuditGate parametrized 3,
+         TestSeedArchitectLibraryFromCatalog 3,
+         TestArchitectLibraryFilter 3).
+         frontend 313 vitest passed (20 files) — Epic 6 contribution
+         +13 (8 in MOP categorías + chip filter, 5 in shape /
+         pdu_sts hint). The 32 MOP chips x 6 safety-contract
+         properties each = 192 explicit assertion checks.
+         (Prior tests preserved: 41 Epic 4 forensic-ledger / proposer
+         / rollback; 4 DC-EPMS-MSD-005 postgres; 8 multi_agent Capacity
+         Planner; 16 optimizer.test.js render+RBAC+XSS; 1
+         hermes_events.test.js stream subscription.)
+         GraphRAG corpus: 10 knowledge documents indexed at boot
+         (was 6 pre-Epic-6) — boot log signature:
+         `[graphrag] loaded 10 knowledge documents from
+         C:\dev\DC-EPMS_PRO\config\knowledge`.
+         Architect library: 23 catalog MOP entries pre-seeded at boot
+         (`docs/operaciones/mops/MOP-001..023.md`) — boot log:
+         `[BOOT] Architect library pre-seeded with 23 catalog MOP(s)`.
+         Skills registry: 21 explicit skills (was 18 pre-Epic-6) —
+         new Category I "Procedure Authoring Safety" houses
+         S-SAFETY-01 / S-DISTRIBUTION-01 / S-VENDOR-EATON-01.
          ruff: 0 violations in backend/.
 
 Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
@@ -196,6 +241,16 @@ docs/ROADMAP-V11.md (v11.7, 2026-05-19). NOTE: OBS demo-recording descoped.
 
 **Recent commits (latest at top)**:
 ```
+8f823a9  feat(hmi): Commit 9 -- MOP chip categorias expand 6 -> 10 (21 -> 32 chips)
+69ac474  docs(mops): Commit 8 -- 11 mechanical+global canonical bodies (MOP-013 to MOP-023)
+609d925  feat(knowledge): Commit 7 -- cooling/thermodynamics references (GraphRAG 9 -> 10)
+c877280  docs(mops): Commit 6 -- 9 distribution canonical bodies (MOP-004 to MOP-012)
+bec2c0a  feat(architect): Commit 5 -- library pre-seed from catalog + Cuatro Ojos alignment doc
+f551c35  feat(hmi): Commit 4 -- MOP chip categorias expand 12 -> 21 (6 categorias)
+9b5e608  feat(architect): Commit 3 hardening -- SAFETY_PRIORITY_DIRECTIVE + 3 audit rules + 3 skills
+0ad5156  feat(knowledge): GraphRAG corpus grows 6 -> 9 -- electrical + distribution + Eaton SOW R-48
+bfa631c  docs(mops): seed catalog -- MOP-001 UPS bypass + MOP-002 transformer + MOP-003 ATS
+[merge]  Epic 6 Commits 1-5 (catalog integration first wave) merged to master 2026-05-23
 491e9f6  fix(ledger): DC-EPMS-MSD-005 -- coerce UUID->str in PostgresPersistence row->entry
 de41703  docs: sync compass -- Epic 4 delivered (Forensic Ledger + Proposer chain)
 5b0cb68  feat(bms): Epic 4 -- close Proposer chain + Rollback Harness on /api/bms
@@ -972,34 +1027,43 @@ finding: MOP-ATS-MONTHLY-001 + `ups_a` = NEC 460.6 violation flagged in ~12 ms.
 4. **Read `docs/ROADMAP-V11.md`** — the live backlog. Tier 1 = demo readiness.
 5. **Wait for explicit GO** from Wilmer before starting any V11 work.
 
-## ⏸ PAUSE_STATE (last updated 2026-05-17)
+## ⏸ PAUSE_STATE (last updated 2026-05-23 — Epic 6 catalog integration delivered)
 
-> No active pause. V9 is feature-complete; the live backlog is
-> `docs/ROADMAP-V11.md` (v11.1). Since v0.10.13 the project shipped the
-> ProcedureGenerator sprint (C0 + G1-G6), hyperscale RBAC, an E2E security
-> audit + CRITICAL remediation, and an SRE dead-code eradication — 24
-> untagged commits, HEAD `d495c7b`.
+> No active pause. V9 is feature-complete; Epic 6 catalog integration
+> delivered (10 atomic commits, then push to origin); the live backlog
+> is `docs/ROADMAP-V11.md`. Master now carries 23 canonical MOP bodies
+> + 10-doc GraphRAG corpus + hardened audit gate enforcing the
+> operator-mandated Universal 5-Point Structure + voltage verification
+> + distribution pre-transfer + Eaton SOW R-48 caution.
 
 ### State at sync time
 
-- HEAD `d495c7b`; `master` is 24 commits AHEAD of `origin/master` (unpushed)
-  and of tag `v0.10.13-modal-fix`. Tree clean (`.claude/` + `PRIMER_PROMPT.md`
-  + modified `DEMO_SCRIPT.md` aside).
-- Test suite: 690 passed, 0 fail, 41s end-to-end (DC-EPMS-039 hang eradicated).
-- `config/.env` carries the PG credentials (DC-EPMS-DB-001 fix) — local-only,
-  gitignored, persistent across restarts.
+- Master is ahead of `origin/master` with the Epic 6 commits (post-Commit-5
+  merge plus Commits 6-10). Will be pushed in the Final task.
+- Test suite: **1118 pytest passed** + **313 vitest passed**, 0 fail.
+- GraphRAG: 10 documents loaded at boot (was 6 pre-Epic-6).
+- Architect library: 23 catalog MOP entries pre-seeded at boot.
+- Skills registry: 21 skills, 9 categories (was 18 / 8).
+- `config/.env` carries the PG credentials (DC-EPMS-DB-001 fix).
 
 ### Resumption protocol (next session entry)
 
 1. Run the `## 🎯 IMMEDIATE NEXT STEPS` checklist (verify state, bring up stack).
 2. Read `docs/ROADMAP-V11.md` for the live backlog.
-3. Wait for Wilmer's explicit GO before starting any V11 work.
+3. Verify boot log shows `[graphrag] loaded 10 knowledge documents` +
+   `[BOOT] Architect library pre-seeded with 23 catalog MOP(s)`.
+4. Wait for Wilmer's explicit GO before starting any new work.
 
 ### Open bugs at sync time (see BUGS REGISTRY for detail)
 
 - DC-EPMS-029c (LOW): physics_engine SHI rollup insensitive to some LOTO types.
 - E2E audit WARNING-tier findings (`docs/audit/E2E_Security_Orphan_Audit.md`) —
   the 3 CRITICAL RBAC findings are closed (`b34efb1`); WARNINGs remain open.
+- TODO(asset-manufacturer-migration): the Eaton vendor audit rule
+  (S-VENDOR-EATON-01) string-matches the context for "eaton" today;
+  next sprint should add `Asset.manufacturer` to `backend/cmms_models.py`
+  for deterministic lookup. Tracked in code at
+  `backend/agents/procedure_architect.py`.
 
 RESOLVED since the last sync: DC-EPMS-021 + DC-EPMS-022 (`136c7ef`);
 DC-EPMS-019 + DC-EPMS-039 (`ebefdb6` + `d495c7b`).
