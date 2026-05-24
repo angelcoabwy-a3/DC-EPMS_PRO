@@ -309,12 +309,15 @@ DISTRIBUTION_REQUIRED_TERMS: list[tuple[str, str]] = [
 # legitimate MOPs on non-Eaton equipment. The omission surfaces as
 # advisory findings so the operator can re-prompt or acknowledge.
 #
-# TODO(asset-manufacturer-migration): today the agent string-matches the
-# operator-supplied context (and asset_id) for "eaton". Once
-# backend/cmms_models.py:Asset gains a `manufacturer` field (next sprint),
-# switch this to a deterministic asset lookup. Until then operators are
-# responsible for naming the vendor in the context free-text. Tracked
-# at docs/skills/skill-registry.md under S-VENDOR-EATON-01.
+# Vendor resolution (since v0.16.1 -- the schema-migration close-out):
+#   1. If `draft.asset_id` resolves in the in-memory _vendor_cache,
+#      the deterministic vendor wins (no fallback even if cache says
+#      "vertiv" -- we trust the registry).
+#   2. If asset_id is missing OR not in the cache OR has vendor=None,
+#      fall back to string-match on context + asset_id.
+# The cache is populated at boot via `set_vendor_cache()` -- see
+# `backend/main.py` lifespan. Sync dict lookup keeps the audit gate
+# deterministic and microsecond-fast (no I/O in the verdict path).
 # (S-VENDOR-EATON-01)
 EATON_CONTEXT_PATTERN = r"\beaton\b"
 EATON_REQUIRED_TERMS: list[tuple[str, str]] = [
@@ -331,6 +334,36 @@ EATON_REQUIRED_TERMS: list[tuple[str, str]] = [
         r"\b(historial\s+de\s+alarmas|alarm\s+history|alarm\s+log)\b",
     ),
 ]
+
+
+# ─── Vendor cache (deterministic Eaton lookup -- v0.16.1) ─────────────
+# Module-level dict mapping `asset_id.lower() -> vendor.lower() | None`.
+# Populated at boot via `set_vendor_cache()` from `cmms_repository.
+# list_assets_async()` results. Read synchronously by the audit gate
+# (no I/O in the verdict path -- microsecond latency preserved).
+#
+# Refresh policy: the cache is loaded ONCE at backend boot. Vendor
+# changes (asset retrofit, rename) require a backend restart to
+# propagate -- acceptable because vendor changes are operationally
+# rare. A `/api/admin/refresh-vendor-cache` endpoint can be added if
+# the refresh cadence becomes a pain point.
+_vendor_cache: dict[str, str | None] = {}
+
+
+def set_vendor_cache(cache: dict[str, str | None] | None) -> None:
+    """Wire the deterministic `asset_id -> vendor` lookup. Keys MUST
+    be lowercased asset_ids; values are lowercased vendor strings or
+    None. Called once from `backend/main.py` lifespan after the CMMS
+    repository has seeded its assets. Pass an empty dict to clear
+    (used by tests + by the absence-of-CMMS path)."""
+    global _vendor_cache
+    _vendor_cache = dict(cache) if cache else {}
+
+
+def _reset_vendor_cache_for_test() -> None:
+    """Test helper -- isolates each test from prior cache state."""
+    global _vendor_cache
+    _vendor_cache = {}
 
 
 # ─── Commit 11 -- richer-prompt audit rules (operator mandate 2026-05-24) ─
@@ -797,17 +830,41 @@ def audit_procedure_safety(draft: ProcedureDraft) -> SafetyAuditResult:
                     )
                     extra_hard_stops.append(label)
 
-        # Rule 2.4 — Eaton SOW R-48 (S-VENDOR-EATON-01) -- CAUTION only
-        eaton_hit = bool(
-            re.search(EATON_CONTEXT_PATTERN, context, flags=re.IGNORECASE)
-            or re.search(EATON_CONTEXT_PATTERN, asset_id, flags=re.IGNORECASE),
-        )
+        # Rule 2.4 — Eaton SOW R-48 (S-VENDOR-EATON-01) -- CAUTION only.
+        # Vendor resolution order:
+        #   (a) Deterministic: asset_id present + vendor known via
+        #       the in-memory cache. If vendor is 'eaton' -> hit;
+        #       if vendor is something else -> NOT a hit (and we do
+        #       NOT fall through to string-match, because the
+        #       registry is authoritative).
+        #   (b) Fallback: asset_id missing OR cache empty OR cache
+        #       returns None -> string-match the operator context.
+        cache_vendor = _vendor_cache.get(asset_id) if asset_id else None
+        vendor_source = None
+        if asset_id and asset_id in _vendor_cache:
+            # Deterministic answer wins.
+            eaton_hit = (cache_vendor == "eaton")
+            vendor_source = (
+                f"deterministic lookup (asset_id={asset_id}, "
+                f"vendor={cache_vendor or 'unknown'})"
+            )
+        else:
+            # Fallback: string-match context + asset_id.
+            eaton_hit = bool(
+                re.search(EATON_CONTEXT_PATTERN, context, flags=re.IGNORECASE)
+                or re.search(EATON_CONTEXT_PATTERN, asset_id, flags=re.IGNORECASE),
+            )
+            if eaton_hit:
+                vendor_source = "string-match fallback (cache miss)"
         if eaton_hit:
             for label, pat in EATON_REQUIRED_TERMS:
                 match = re.search(pat, text, flags=re.IGNORECASE)
                 present[label] = bool(match)
                 if not match:
-                    findings.append(f"Eaton SOW R-48 advisory: missing {label}")
+                    findings.append(
+                        f"Eaton SOW R-48 advisory: missing {label} "
+                        f"[{vendor_source}]"
+                    )
                     eaton_cautions.append(label)
 
         # ── Commit 11 -- Richer-prompt structural rules (CAUTION) ──

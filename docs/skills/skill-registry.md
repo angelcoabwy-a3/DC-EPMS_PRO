@@ -344,22 +344,42 @@ encode the contracts the operator pinned on 2026-05-23.
   See also: `config/knowledge/distribution-mop-catalog.md` for the
   underlying catalog the audit cross-references.
 
-### `S-VENDOR-EATON-01` · Eaton SOW R-48 checklist is CAUTION (not hard_stop)
+### `S-VENDOR-EATON-01` · Eaton SOW R-48 checklist is CAUTION (deterministic vendor lookup with string-match fallback)
 
-- **When:** Authoring a MOP whose context (or `asset_id`) mentions
-  `eaton` (case-insensitive substring match).
+- **When:** Authoring a MOP whose `asset_id` resolves to vendor=eaton
+  in the deterministic cache, OR whose context/asset_id string-matches
+  `eaton` (case-insensitive) when the cache cannot resolve.
 - **Rule:** The body SHOULD mention BCMS, fibra óptica / fiber optic,
   FSB / firmware, and alarm history. Omissions surface as findings
   at `caution` severity, NOT `hard_stop`. Rationale: the operating
   fleet is multi-brand; forcing `hard_stop` would refuse legitimate
-  MOPs on non-Eaton equipment. The operator can re-prompt with the
-  full checklist or acknowledge the caution.
-- **TODO (next sprint):** the agent string-matches the
-  operator-supplied context today. Once `backend/cmms_models.py:Asset`
-  gains a `manufacturer` field, switch this to a deterministic asset
-  lookup. Tracked in code as `TODO(asset-manufacturer-migration)`.
-- **Verify:** `tests/test_procedure_architect.py::TestAuditMOPEatonVendor`.
-  See also: `config/knowledge/eaton-sow-r48-mp-checklist.md`.
+  MOPs on non-Eaton equipment.
+- **Vendor resolution** (since v0.16.1 -- the schema-migration
+  close-out, replacing the earlier TODO):
+  1. **Deterministic** -- if `draft.asset_id` is present AND the
+     in-memory `_vendor_cache` (populated at boot from
+     `cmms_repository.list_assets_async()`) has an entry, the
+     registry vendor wins. `vendor=eaton` -> rule fires;
+     `vendor=vertiv` or any other -> rule does NOT fire (string-
+     match is NOT consulted -- the registry is authoritative);
+     `vendor=None` -> rule does NOT fire (vendor known-null is a
+     deterministic answer, not "unknown").
+  2. **Fallback string-match** -- if `asset_id` is missing OR not
+     in the cache, regex-search `context + asset_id` for `\beaton\b`.
+- **Cache lifecycle:** loaded once at boot via `set_vendor_cache()`
+  from `backend/main.py` lifespan. Vendor changes require a backend
+  restart (operationally rare). A `/api/admin/refresh-vendor-cache`
+  endpoint can be added later if needed.
+- **Finding annotation:** every Eaton finding now annotates the
+  resolution source (`[deterministic lookup ...]` or
+  `[string-match fallback (cache miss)]`) so the operator + future
+  audits can trace why the rule fired.
+- **Verify:** `tests/test_procedure_architect.py::TestAuditMOPEatonVendor`
+  (legacy string-match) + `::TestAuditMOPEatonVendorDeterministicLookup`
+  (5 tests covering cache hit eaton, cache hit non-eaton, cache miss,
+  cache hit vendor=None, asset_id absent).
+  See also: `config/knowledge/eaton-sow-r48-mp-checklist.md`,
+  `backend/main.py` lifespan vendor-cache prime block.
 
 ### `S-VECTOR-01` · §2 must name at least one risk vector
 
