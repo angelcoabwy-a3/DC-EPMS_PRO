@@ -727,13 +727,15 @@ describe('Procedure Architect — MOP_CATEGORIES shape (Commit 4)', () => {
     const { MOP_CATEGORIES, MOP_CATEGORY_KEYS, MOP_CATEGORY_LABELS,
         MOP_CATEGORY_DEFAULT } = __procedures_view_test__;
 
-    it('exposes 6 categorías matching the operator catalog (2026-05-23)', () => {
-        expect(MOP_CATEGORY_KEYS).toEqual(
-            ['ups', 'transformer', 'utility', 'pdu_sts', 'rpp', 'busway'],
-        );
+    it('exposes 10 categorías matching the operator catalog (Commit 9 expansion)', () => {
+        expect(MOP_CATEGORY_KEYS).toEqual([
+            'ups', 'transformer', 'utility',
+            'pdu_sts', 'rpp', 'busway',
+            'chiller', 'crah', 'tower', 'global',
+        ]);
         for (const k of MOP_CATEGORY_KEYS) {
             expect(Array.isArray(MOP_CATEGORIES[k])).toBe(true);
-            expect(MOP_CATEGORIES[k].length).toBeGreaterThanOrEqual(3);
+            expect(MOP_CATEGORIES[k].length).toBeGreaterThanOrEqual(2);
             expect(typeof MOP_CATEGORY_LABELS[k]).toBe('string');
             expect(MOP_CATEGORY_LABELS[k].length).toBeGreaterThan(0);
         }
@@ -744,11 +746,11 @@ describe('Procedure Architect — MOP_CATEGORIES shape (Commit 4)', () => {
         expect(MOP_CATEGORIES[MOP_CATEGORY_DEFAULT]).toBeDefined();
     });
 
-    it('21 total chips across the 6 categorías (4+4+4+3+3+3)', () => {
+    it('32 total chips across the 10 categorías (4+4+4+3+3+3+3+3+3+2)', () => {
         const total = MOP_CATEGORY_KEYS.reduce(
             (sum, k) => sum + MOP_CATEGORIES[k].length, 0,
         );
-        expect(total).toBe(21);
+        expect(total).toBe(32);
     });
 
     it('every chip in every category embeds the safety contract', () => {

@@ -335,9 +335,137 @@ const MOP_CATEGORIES = {
                 + 'reducir carga sobre esa tap-off box + abrir WO de '
                 + 'inspección mecánica antes que el ΔT escale.' },
     ],
+    chiller: [
+        { label: 'Staging / rotación secuencial',
+          text: 'Arranque del Chiller standby {asset} + bombas '
+                + 'asociadas con ecualización previa de presiones '
+                + 'para prevenir golpes de ariete. Mechanical LOTO en '
+                + 'válvulas motorizadas + Motor LOTO eléctrico + PPE '
+                + 'Cat 3 per CSA Z462-24 + Vivo-Muerto-Vivo en motor '
+                + 'disconnect del compresor a desactivar. Back-out: '
+                + 'si T_suministro > 12 °C por más de 45 s o '
+                + 'vibración anómala en válvulas, restaurar Chiller '
+                + 'primario antes del Tiempo de Tolerancia Térmica '
+                + '(~5 min ASHRAE A2 breach).' },
+        { label: 'Trip response (emergencia)',
+          text: 'Conmutación de emergencia a bypass + Chiller de '
+                + 'respaldo tras trip del compresor en {asset}. '
+                + 'Restauración debe completarse en < 90 s vs ~2 min '
+                + 'Tiempo de Tolerancia Térmica crítica. LOTO '
+                + 'mecánico + eléctrico aplicados post-trip + '
+                + 'Vivo-Muerto-Vivo en motor disconnect del compresor '
+                + 'fallido + PPE Cat 3 per CSA Z462-24. Back-out: si '
+                + 'respaldo no asume en 90 s, escalar a IT Load '
+                + 'Shedding (EOP separado).' },
+        { label: 'Ride-through recovery',
+          text: 'Reinicio escalonado de compresores del Chiller '
+                + '{asset} post-transición a generador. Monitorear '
+                + 'Lift (relación de presiones, P_cond/P_evap) ≤ 1.5x '
+                + 'baseline y rampa de carga del generador. Motor '
+                + 'LOTO eléctrico disponible para abort + PPE Cat 3 '
+                + 'per CSA Z462-24 + Vivo-Muerto-Vivo si se aplica '
+                + 'LOTO. Back-out: si Lift excede umbral, abortar '
+                + 'arranque del compresor afectado y continuar con '
+                + 'los demás (operación con menor N).' },
+    ],
+    crah: [
+        { label: 'Reemplazo de filtros en caliente',
+          text: 'Reemplazo de bancos de filtros de la CRAH {asset} '
+                + 'sin apagar ventiladores; monitoreo de dP para no '
+                + 'perder presión estática del piso falso. Mechanical '
+                + 'LOTO en latch del banco + Motor LOTO eléctrico '
+                + 'disponible para abort + PPE Cat 1 per CSA Z462-24. '
+                + 'Durante el reemplazo, respetar límite de '
+                + 'aproximación restringida al gabinete del VFD. '
+                + 'Back-out: si T_inlet rack > 27 °C (ASHRAE A1) por '
+                + '> 60 s o presión estática del piso cae > 15%, '
+                + 'reinstalar filtros viejos temporalmente.' },
+        { label: 'Calibración VFD + válvulas',
+          text: 'Calibración dinámica de VFD + válvulas modulantes '
+                + 'de la CRAH {asset} (Leyes de Afinidad P~N³: -10% '
+                + 'RPM = -27% consumo). Motor LOTO eléctrico + '
+                + 'Vivo-Muerto-Vivo en bornes del VFD si se abre '
+                + 'panel + Mechanical LOTO en válvula si se '
+                + 'interviene físicamente + PPE Cat 2 per CSA Z462-24. '
+                + 'Back-out: walk-back automático del VFD a baseline '
+                + 'si T_inlet > 27 °C o oscilación de la válvula '
+                + '(hunting) por > 2 min.' },
+        { label: 'Control psicrométrico (anti-condensación)',
+          text: 'Ajuste de setpoints de la CRAH {asset} ante alta '
+                + 'humedad relativa; mantener T_serpentin ≥ '
+                + 'T_punto_de_rocio + 1.5 °C para prevenir '
+                + 'condensación. PPE Cat 1 + CSA Z462-24 + Motor '
+                + 'LOTO eléctrico si se abre VFD (Vivo-Muerto-Vivo en '
+                + 'bornes) + Mechanical LOTO si se ajusta válvula '
+                + 'modulante. Back-out: si HR > 55% por > 15 min o '
+                + 'condensación visible, revertir setpoint y escalar '
+                + 'a Engineering para evaluar carga latente externa.' },
+    ],
+    tower: [
+        { label: 'Dosificación química + Legionella',
+          text: 'Dosificación dinámica de biocidas (oxidantes / no '
+                + 'oxidantes) y anti-incrustantes en la torre '
+                + '{asset} según LSI (banda objetivo 0.2-0.5) y CoC. '
+                + 'PPE químico completo + Motor LOTO eléctrico en '
+                + 'bombas dosificadoras + Vivo-Muerto-Vivo en bornes '
+                + '+ Mechanical LOTO en válvulas si se intervienen + '
+                + 'PPE Cat 2 per CSA Z462-24. Muestra microbiológica '
+                + 'a laboratorio certificado (ASHRAE 188 + CTI '
+                + 'ATC-105). Back-out: si Legionella ≥ 100 CFU/mL, '
+                + 'dosificación de choque + notificación regulatoria.' },
+        { label: 'Limpieza de piletas (celda aislada)',
+          text: 'Aislamiento hidráulico de una celda de la torre '
+                + '{asset} para limpieza de piletas + rociadores; '
+                + 'celdas remanentes a máxima velocidad sostienen '
+                + 'Q_rej (Tiempo de Tolerancia Térmica ~6 min). '
+                + 'Mechanical LOTO en válvulas de la celda + Motor '
+                + 'LOTO eléctrico en ventilador + Vivo-Muerto-Vivo + '
+                + 'PPE biológico + Cat 2 per CSA Z462-24. Back-out: '
+                + 'si T_retorno sube > 3 °C sobre baseline, '
+                + 're-conectar la celda inmediatamente.' },
+        { label: 'Transición a Free Cooling',
+          text: 'Transición de la torre {asset} a modo Free Cooling '
+                + '(water-side economizer); apagado de compresores + '
+                + 'redirección al intercambiador de placas cuando '
+                + 'T_wb ≤ T_suministro - 5 °C. Motor LOTO eléctrico '
+                + 'en compresores apagados + Vivo-Muerto-Vivo + '
+                + 'Mechanical LOTO en válvulas de bypass + PPE Cat 3 '
+                + 'per CSA Z462-24. Back-out: si T_suministro excede '
+                + 'setpoint + 2 °C o T_wb se degrada, revertir a '
+                + 'modo Chiller en < 60 s (Tiempo de Tolerancia '
+                + 'Térmica ~5 min).' },
+    ],
+    global: [
+        { label: 'IST (Integrated System Testing) plena carga',
+          text: 'Prueba de Sistemas Integrados a plena carga del '
+                + 'sitio completo (bancos de carga al 100% sobre '
+                + '{asset} y su path). Simulación controlada de '
+                + 'pérdida de utility; valida generadores + UPS + '
+                + 'Chillers + envolvente ASHRAE. Mechanical LOTO + '
+                + 'Motor LOTO eléctrico disponibles para abort + '
+                + 'Vivo-Muerto-Vivo + PPE Cat 4 per CSA Z462-24 + '
+                + 'CIO + Safety Officer en sala de control. '
+                + 'Back-out: si generadores no arrancan en 15 s o '
+                + 'T_inlet excede 30 °C, restaurar utility + escalar.' },
+        { label: 'Aislamiento de anillo (Double Block and Bleed)',
+          text: 'Aislamiento de tramo del anillo principal de agua '
+                + 'helada que alimenta {asset} usando configuración '
+                + 'Double Block and Bleed (Uptime Tier IV / '
+                + 'Mantenibilidad Concurrente). Mechanical LOTO en '
+                + 'ambas válvulas DBB + purga intermedia + Motor '
+                + 'LOTO eléctrico en bombas asociadas + '
+                + 'Vivo-Muerto-Vivo + PPE Cat 3 per CSA Z462-24. '
+                + 'Back-out: si T_suministro CRAHs sube > setpoint + '
+                + '2 °C o purga intermedia no detiene flujo (DBB no '
+                + 'sella), restaurar tramo en < 5 min.' },
+    ],
 };
 
-const MOP_CATEGORY_KEYS = ['ups', 'transformer', 'utility', 'pdu_sts', 'rpp', 'busway'];
+const MOP_CATEGORY_KEYS = [
+    'ups', 'transformer', 'utility',
+    'pdu_sts', 'rpp', 'busway',
+    'chiller', 'crah', 'tower', 'global',
+];
 const MOP_CATEGORY_LABELS = {
     ups:         'UPS',
     transformer: 'Transformer',
@@ -345,6 +473,10 @@ const MOP_CATEGORY_LABELS = {
     pdu_sts:     'PDU / STS',
     rpp:         'RPP',
     busway:      'Busway',
+    chiller:     'Chiller',
+    crah:        'CRAH',
+    tower:       'Cooling Tower',
+    global:      'Global / IST / Ring',
 };
 const MOP_CATEGORY_DEFAULT = 'ups';
 
