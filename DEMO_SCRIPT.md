@@ -1,4 +1,4 @@
-# DC-EPMS PRO — Canonical Demo Script v6 (2026-05-24, v0.16.0 "Procedure Architect Universal")
+# DC-EPMS PRO — Canonical Demo Script v6.1 (2026-05-24, v0.16.0 "Procedure Architect Universal")
 
 **Audience:** Microsoft CO+I — Critical Environment Technician (CET)
 managers + infrastructure recruiters. Assume deep data-center fluency,
@@ -6,11 +6,11 @@ low patience for hand-waving. Every claim is cited or shown.
 
 **Duration:** **6:30 walkthrough** (+ unlimited Q&A buffer).
 
-**Mode:** **Hybrid** — Beats 0-1 (0:00-2:00, the riskiest opening)
-are **pre-recorded via OBS** to insulate the panel from any HMI lag.
-Beats 2-5 (2:00-6:30) are **live**, on this laptop, browser at
-`http://127.0.0.1:8080/`, terminal in second window. Hybrid maximizes
-"polished first impression + interactive depth".
+**Mode:** **All-live** — all 6 beats are presented live on this laptop,
+browser at `http://127.0.0.1:8080/`, terminal in second window. OBS
+recording is **descoped** per the 2026-05-17 decision; this script
+treats every beat as a live performance with explicit `[FALLBACK]`
+flows for any HMI/network hiccup.
 
 **Anchor narrative:** the **deterministic audit gate** as the
 architectural moat. Competitors ship LLM dashboards. DC-EPMS PRO
@@ -18,9 +18,10 @@ ships an LLM author + a Tier-IV-grade Safety Officer who can refuse.
 
 **Maintainer:** Wilmer Y. Angel Beltran · a3semi.
 
-**Supersedes:** DEMO_SCRIPT v5 (2026-05-16, pre-Epic-6, ~14-15 min,
-B1 Mission Control focus). v5 is archived in git history at the
-last commit before this rewrite.
+**Supersedes:** DEMO_SCRIPT v6 (2026-05-24, hybrid pre-recorded
+intro). v6.1 honors the OBS-descope by going fully live. v5 (the
+pre-Epic-6 14-15 min B1 Mission Control variant) remains archived
+in git history.
 
 ---
 
@@ -86,21 +87,19 @@ cd C:\dev\DC-EPMS_PRO
 $cmd = 'curl -s http://127.0.0.1:8080/api/ledger/verify | python -m json.tool'
 ```
 
-### Recording config (OBS, Beats 0-1 only)
+### Display config (all-live)
 
-- Source: **Display Capture** of monitor with browser on Tab 1.
-- Resolution: 1920x1080, 30 fps.
-- Audio: USB microphone, **NOT laptop builtin** (panel reviewers can
-  tell). Test levels: speak normally, peak around -12 dB.
-- Mouse cursor: **enlarged + click-highlight** (System Preferences →
-  Accessibility on Mac / Mouse settings → Cursor on Windows).
-- Recording length target: **2:05 ± 5 s** (Beats 0+1 only).
-- Save as `demo_v6_intro.mp4`. Embed via PowerPoint or play
-  full-screen before transitioning to live.
+- Browser: full-screen mode (F11) on the presentation monitor.
+- Mouse cursor: **enlarged + click-highlight** so the panel can
+  follow your clicks (Windows: Settings → Accessibility → Mouse
+  pointer → enable Mouse pointer trails + larger size).
+- Mic: USB if available, laptop built-in acceptable in a quiet room.
+- Notifications: silenced (Slack, Teams, email). The panel sees
+  desktop notifications too.
 
 ---
 
-## BEAT 0 — Hook (0:00 – 0:30) · [PRE-RECORDED]
+## BEAT 0 — Hook (0:00 – 0:30) · [LIVE]
 
 `[ACTION]` Open browser to `http://127.0.0.1:8080/` (Overview view).
 The footer reads `DC-EPMS PRO v0.16.0`.
@@ -125,7 +124,7 @@ chained per IEC 62443-3-3. **Let me show you why that matters.**"
 
 ---
 
-## BEAT 1 — Mission Control + Multi-Agent Fleet (0:30 – 2:00) · [PRE-RECORDED]
+## BEAT 1 — Mission Control + Multi-Agent Fleet (0:30 – 2:00) · [LIVE]
 
 `[ACTION]` (~0:30) Tab 2 active. `#mission-control` renders the
 3D scene with floating telemetry panels.
@@ -166,18 +165,8 @@ show you the **authoring plane** — the Procedure Architect — and the
 deterministic gate that prevents it from shipping an unsafe procedure.
 **This is the moat.**"
 
-`[ACTION]` Fade out / cut. End of recorded segment.
-
----
-
-## ★ TRANSITION TO LIVE (2:00) ★
-
-`[ACTION]` Stop OBS playback. Switch projector / share to **live
-browser, Tab 3**, `#procedures-architect` already loaded.
-
-`[SAY]` (~2:00) "Switching to live now."
-
-`[FALLBACK]` If browser is on wrong tab: `Cmd-3` / `Ctrl-3` → Tab 3.
+`[ACTION]` Click sidebar nav-item "Procedure Architect" OR
+`Cmd-3` / `Ctrl-3` to switch to Tab 3.
 
 ---
 
@@ -432,28 +421,6 @@ ask. Tight answers ≤ 30s each. Full prep is Phase 4.
 
 ---
 
-## Recording Architecture (post-demo if hybrid is enabled)
-
-Beats 0-1 OBS recording (2:00 total):
-- File: `demo_v6_intro.mp4`, H.264, 5-10 Mbps.
-- 3 takes recommended; pick best.
-- Embed in PowerPoint slide as Auto-Play full-screen.
-
-Live segments (Beats 2-5, 4:30 total):
-- No recording during live — too much risk of audio dropout, OBS
-  resource contention with three.js.
-- **Post-demo**: optionally re-shoot Beat 2-5 standalone for a
-  leave-behind reel. Single take with the same fallback flows
-  documented above.
-
-Final leave-behind (post-rehearsal):
-- 6:30 stitched MP4 (Beats 0-1 recorded + Beats 2-5 re-recorded
-  cleanly).
-- Hosted on `claude.ai/code` share OR a private S3 bucket.
-- Link shared with the CO+I panel within 24h of the live demo.
-
----
-
 ## Reality Checks (the operator's CLAUDE.md discipline)
 
 - This demo runs on a **6 GB RTX 3060 laptop**. Every claim above is
@@ -488,5 +455,6 @@ These are all interesting; they are all out-of-scope for **this
 
 ---
 
-**Locked: 2026-05-24. Aligned to v0.16.0 "Procedure Architect
-Universal". Next revision: post-rehearsal Phase 2 feedback.**
+**Locked: 2026-05-24 (v6.1 all-live). Aligned to v0.16.0 "Procedure
+Architect Universal". OBS recording descoped per 2026-05-17.
+Next revision: post-rehearsal Phase 2 feedback.**
