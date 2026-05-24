@@ -459,12 +459,78 @@ const MOP_CATEGORIES = {
                 + '2 °C o purga intermedia no detiene flujo (DBB no '
                 + 'sella), restaurar tramo en < 5 min.' },
     ],
+    life_safety: [
+        { label: 'VESDA zone functional test',
+          text: 'Prueba funcional anual de la zona VESDA {asset}: '
+                + 'panel en Maintenance Mode + solenoides Novec '
+                + 'aislados + LOTO eléctrico en bornes del solenoide + '
+                + 'Vivo-Muerto-Vivo + PPE Cat 1 per CSA Z462-24. '
+                + 'Generar humo de prueba en el punto de muestreo más '
+                + 'lejano + cronometrar hasta Fire 2. Back-out: si '
+                + 'sensitivity drift > 25% del baseline por > 60 s o '
+                + 'time-to-Fire2 > 180 s, abortar y escalar a '
+                + 'fabricante.' },
+        { label: 'Cylinder pressure annual (Novec / FM-200)',
+          text: 'Verificación anual de presión del cilindro de clean '
+                + 'agent {asset}: panel en Maintenance Mode + LOTO '
+                + 'eléctrico en solenoide + LOTO mecánico en válvula '
+                + 'manual (cadena + candado) + Vivo-Muerto-Vivo + '
+                + 'bonding cable + PPE químico + PPE Cat 2 per CSA '
+                + 'Z462-24. Manómetro dual + balanza cross-check vs '
+                + 'stencil. Back-out: si presión < 85% nominal o masa '
+                + 'difiere > 10% del stencil, cilindro PENDING '
+                + 'RECHARGE; no re-armar la zona.' },
+        { label: 'Clean agent discharge reset (post-event)',
+          text: 'Recovery post-discharge del sistema clean agent en '
+                + 'la zona afectada por {asset}: bomberos clearance '
+                + '+ análisis multi-gas + LOTO completo + PPE Cat 4 + '
+                + 'SCBA + Vivo-Muerto-Vivo + Lockout/Tagout en panel '
+                + 'de supresión per CSA Z462-24. Cilindro nuevo + '
+                + 'self-test + 30 min monitoreo re-armado. Back-out: '
+                + 'si daño estructural visible o panel reporta '
+                + 'trouble dentro de los 30 min, mantener fire watch '
+                + 'humano 24/7 hasta dictamen estructural.' },
+    ],
+    combustible: [
+        { label: 'Day tank bulk fuel transfer',
+          text: 'Reabastecimiento del day tank {asset} desde bulk '
+                + 'tank: bonding cable < 1 Ω + spill containment + '
+                + 'PPE químico + LOTO mecánico en válvula de bulk + '
+                + 'LOTO eléctrico en motor de bomba + Vivo-Muerto-Vivo '
+                + 'en bornes + PPE Cat 2 per CSA Z462-24. Stop al 95% '
+                + 'target para overshoot prevention. Back-out: si '
+                + 'nivel > 98% sin parar bomba, E-stop físico + '
+                + 'cerrar válvulas manuales; si derrame > 1 galón, '
+                + 'protocolo HAZMAT + notificación ambiental en < 2 h.' },
+        { label: 'Fuel polishing (water removal ASTM D6304)',
+          text: 'Polishing en circuit cerrado del day tank {asset}: '
+                + 'sample S1 pre-polishing + Karl Fischer + LOTO '
+                + 'mecánico en day-to-engine valve + LOTO eléctrico '
+                + 'en bomba del skid + Vivo-Muerto-Vivo + bonding '
+                + 'cable + PPE químico + respirador orgánico + PPE '
+                + 'Cat 2 per CSA Z462-24. Bottom sediment drain a '
+                + 'HAZMAT. Back-out: si water-cut sample S2 > 500 '
+                + 'ppm tras 2 ciclos, escalar a tank cleaning (full '
+                + 'drain + manual cleaning per ANSI/AIHA Z9.5).' },
+        { label: 'Generator extended runtime (> 12 h)',
+          text: 'Operación coordinada del generador {asset} bajo '
+                + 'load IT del sitio durante outage extendido (NFPA '
+                + '110 §A.5.6.4). Monitoreo continuo de winding '
+                + 'temp (< 110 °C), oil pressure, fuel consumption + '
+                + 'samples ASTM cada 24 h. LOTO mecánico/eléctrico '
+                + 'disponible para abort + Vivo-Muerto-Vivo capacity '
+                + 'confirmed + PPE Cat 3 per CSA Z462-24. Back-out: '
+                + 'si winding > 110 °C por > 30 s, reducir IT load '
+                + '25%; si oil pressure < 80% nominal por > 60 s, '
+                + 'shutdown controlado + transfer a N+1 o utility.' },
+    ],
 };
 
 const MOP_CATEGORY_KEYS = [
     'ups', 'transformer', 'utility',
     'pdu_sts', 'rpp', 'busway',
     'chiller', 'crah', 'tower', 'global',
+    'life_safety', 'combustible',
 ];
 const MOP_CATEGORY_LABELS = {
     ups:         'UPS',
@@ -477,6 +543,8 @@ const MOP_CATEGORY_LABELS = {
     crah:        'CRAH',
     tower:       'Cooling Tower',
     global:      'Global / IST / Ring',
+    life_safety: 'Life Safety (VESDA / Clean Agent)',
+    combustible: 'Combustible (Day Tank / Generator)',
 };
 const MOP_CATEGORY_DEFAULT = 'ups';
 

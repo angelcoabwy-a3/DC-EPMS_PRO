@@ -85,6 +85,22 @@ Missing any of the above → audit returns `hard_stop` (see
 | [MOP-020](MOP-020-tower-pan-cleaning.md) | Cooling Tower | Limpieza de Piletas y Rociadores (Celda Aislada) | LOTO en celda |
 | [MOP-021](MOP-021-tower-free-cooling-transition.md) | Cooling Tower | Transición a Free Cooling (Water-Side Economizer) | Live coordinated |
 
+### Life Safety layer (VESDA / Clean-Agent Suppression)
+
+| ID | Asset Category | Title | Work Mode |
+|---|---|---|---|
+| [MOP-024](MOP-024-vesda-zone-functional-test.md) | VESDA | Zone Functional Test (Annual Calibration) | Live + Maintenance Mode |
+| [MOP-025](MOP-025-novec-cylinder-pressure-annual.md) | Novec/FM-200 | Verificación Anual de Presión de Cilindro | LOTO dual mecánico + eléctrico |
+| [MOP-026](MOP-026-clean-agent-discharge-reset.md) | Novec/FM-200 | Restablecimiento Post-Discharge (Recovery) | De-energizado + SCBA + bomberos clearance |
+
+### Combustible layer (Day Tank / Generator extended runtime)
+
+| ID | Asset Category | Title | Work Mode |
+|---|---|---|---|
+| [MOP-027](MOP-027-day-tank-bulk-fuel-transfer.md) | Day Tank + XFER Pump | Transferencia de Combustible desde Bulk a Day Tank | Live (operación normal) |
+| [MOP-028](MOP-028-day-tank-water-removal-polishing.md) | Day Tank + Polish Skid | Water Removal / Fuel Polishing (circuit cerrado) | Live + LOTO en day-to-engine |
+| [MOP-029](MOP-029-generator-extended-runtime.md) | Generator (Cummins QSK95) | Operación Runtime Extendido (> 12 h continuas) | Live coordinated |
+
 ### Global system layer (sitio completo)
 
 | ID | Asset Category | Title | Work Mode |

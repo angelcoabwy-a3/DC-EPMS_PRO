@@ -34,4 +34,4 @@ Release flow:
   5. Tag the repo: ``git tag -a v<x.y.z> -m "..."``.
 """
 
-__version__ = "0.16.1"
+__version__ = "0.17.0"

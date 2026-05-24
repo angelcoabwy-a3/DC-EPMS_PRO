@@ -727,11 +727,12 @@ describe('Procedure Architect — MOP_CATEGORIES shape (Commit 4)', () => {
     const { MOP_CATEGORIES, MOP_CATEGORY_KEYS, MOP_CATEGORY_LABELS,
         MOP_CATEGORY_DEFAULT } = __procedures_view_test__;
 
-    it('exposes 10 categorías matching the operator catalog (Commit 9 expansion)', () => {
+    it('exposes 12 categorías matching the operator catalog (v0.17.0 expansion)', () => {
         expect(MOP_CATEGORY_KEYS).toEqual([
             'ups', 'transformer', 'utility',
             'pdu_sts', 'rpp', 'busway',
             'chiller', 'crah', 'tower', 'global',
+            'life_safety', 'combustible',
         ]);
         for (const k of MOP_CATEGORY_KEYS) {
             expect(Array.isArray(MOP_CATEGORIES[k])).toBe(true);
@@ -746,11 +747,11 @@ describe('Procedure Architect — MOP_CATEGORIES shape (Commit 4)', () => {
         expect(MOP_CATEGORIES[MOP_CATEGORY_DEFAULT]).toBeDefined();
     });
 
-    it('32 total chips across the 10 categorías (4+4+4+3+3+3+3+3+3+2)', () => {
+    it('38 total chips across the 12 categorías (4+4+4+3+3+3+3+3+3+2+3+3)', () => {
         const total = MOP_CATEGORY_KEYS.reduce(
             (sum, k) => sum + MOP_CATEGORIES[k].length, 0,
         );
-        expect(total).toBe(32);
+        expect(total).toBe(38);
     });
 
     it('every chip in every category embeds the safety contract', () => {

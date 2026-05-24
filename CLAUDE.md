@@ -16,10 +16,10 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 
 **Vocabulary discipline (CRITICAL)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is unipolar (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in panel review.
 
-## 📊 CURRENT STATE (synced 2026-05-24 — Epic 6 richer-template adoption delivered)
+## 📊 CURRENT STATE (synced 2026-05-24 — v0.17.0 Life Safety + Combustible expansion)
 
 ```
-HEAD:  <Epic-6 catalog integration (10 commits) + richer-template adoption (Commits 11-13)>.
+HEAD:  <v0.17.0 -- Life Safety + Combustible asset categories on top of v0.16.1>.
        Stable baseline = **v0.13.0 "Proactive Edge"** (cut 2026-05-19).
        Post-release: **EPIC 4 delivered (Forensic Ledger + Proposer-
        chain closure + Rollback Harness)** + **EPIC 6 OPENED + delivered
@@ -68,6 +68,16 @@ HEAD:  <Epic-6 catalog integration (10 commits) + richer-template adoption (Comm
          (`docs/architecture/maker-checker-cuatro-ojos.md`) maps the
          §4 paper-trail checkboxes to the Sprint 3 Phase 4 digital
          witness gate -- the Cuatro Ojos contract is COMPLETE.
+
+       v0.17.0 (2026-05-24) -- Life Safety + Combustible asset
+       categories expand the catalog with 6 new canonical bodies
+       (MOP-024 through MOP-029) + 1 new knowledge doc + 2 new HMI
+       chip categorías. Built ON TOP of the v0.16.1 richer-template
+       audit contract (no audit changes needed -- "Vector Life
+       Safety" and "Vector Combustible" are 2 of the 6 vectors
+       already enumerated in the system prompt). Library 23 -> 29,
+       GraphRAG 10 -> 11, chip categorías 10 -> 12, total chips
+       32 -> 38.
 
        Epic 6 richer-template adoption (Commits 11-13, 2026-05-24)
        -- the operator-supplied "Generador Universal de MOPs"
