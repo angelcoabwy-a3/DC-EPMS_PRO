@@ -71,6 +71,27 @@ Missing any of the above → audit returns `hard_stop` (see
 | [MOP-011](MOP-011-busway-joint-maintenance.md) | Busway | Mantenimiento de Juntas Mecánicas + Tapas | De-energized (per sector) |
 | [MOP-012](MOP-012-busway-thermographic-scan.md) | Busway | Escaneo Termográfico Operativo bajo Carga | LIVE (no invasivo) |
 
+### Mechanical / Cooling layer (Chiller / CRAH / Cooling Tower)
+
+| ID | Asset Category | Title | Work Mode |
+|---|---|---|---|
+| [MOP-013](MOP-013-chiller-staging-rotation.md) | Chiller | Cambio de Operación y Rotación Secuencial (Staging) | Live + LOTO en transferencia |
+| [MOP-014](MOP-014-chiller-trip-response.md) | Chiller | Respuesta y Aislamiento por Disparo Térmico | Emergency response |
+| [MOP-015](MOP-015-chiller-ride-through-recovery.md) | Chiller | Recuperación Eléctrica en Generador (Ride-Through) | Live coordination |
+| [MOP-016](MOP-016-crah-hot-swappable-filters.md) | CRAH | Reemplazo de Filtros en Caliente (Hot-Swappable) | Live |
+| [MOP-017](MOP-017-crah-vfd-valve-calibration.md) | CRAH | Calibración Dinámica de VFDs + Válvulas Modulantes | Live tuning |
+| [MOP-018](MOP-018-crah-psychrometric-control.md) | CRAH | Control Psicrométrico + Mitigación de Condensación | Live tuning |
+| [MOP-019](MOP-019-tower-chemical-dosing.md) | Cooling Tower | Dosificación Química Dinámica + Control de Legionella | Live (química) |
+| [MOP-020](MOP-020-tower-pan-cleaning.md) | Cooling Tower | Limpieza de Piletas y Rociadores (Celda Aislada) | LOTO en celda |
+| [MOP-021](MOP-021-tower-free-cooling-transition.md) | Cooling Tower | Transición a Free Cooling (Water-Side Economizer) | Live coordinated |
+
+### Global system layer (sitio completo)
+
+| ID | Asset Category | Title | Work Mode |
+|---|---|---|---|
+| [MOP-022](MOP-022-ist-full-load-test.md) | Global / IST | Pruebas de Sistemas Integrados a Plena Carga | Controlled simulation (peor caso) |
+| [MOP-023](MOP-023-main-ring-valve-isolation.md) | Global / Hydraulics | Aislamiento por Válvulas de Anillo (Double Block and Bleed) | LOTO en tramo aislado |
+
 ### Companion knowledge (GraphRAG-indexed)
 
 - `config/knowledge/electrical-mop-catalog.md` — infrastructure catalog
@@ -79,6 +100,10 @@ Missing any of the above → audit returns `hard_stop` (see
   (PDU/RPP/Busway scope + Universal 5-Point Structure).
 - `config/knowledge/eaton-sow-r48-mp-checklist.md` — vendor-specific
   Eaton SOW R-48 PM checklist (BCMS / fibra óptica / FSBs / firmware).
+- `config/knowledge/cooling-thermodynamics-references.md` — ASHRAE
+  TC 9.9 + Uptime Tier IV + OCP + CTI ATC-105 + physics/chemistry
+  equations (chiller `Q_rej`, `COP`, `Lift`; CRAH affinity laws;
+  cooling tower `LSI`, `CoC`).
 - `docs/architecture/maker-checker-cuatro-ojos.md` — alignment doc:
   the §4 checkboxes paper-trail + the Sprint 3 Phase 4
   Maker-Checker witness gate digital-trail.
