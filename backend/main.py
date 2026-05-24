@@ -355,6 +355,25 @@ async def lifespan(app: FastAPI):
                     "remains active): %s", e,
                 )
 
+            # ─── v0.16.1: MCP health probe option (ii) ────────────────
+            # Closes S-MCP-HEALTH-01 future-option-(ii) TODO. When the
+            # env flag DC_EPMS_MCP_PROBE=true, a background asyncio
+            # task polls the configured URL (default LM Studio at
+            # 127.0.0.1:1234/v1/models). Audit gate reads the cached
+            # state sync. Default OFF -- behavior is identical to
+            # v0.16.0 unless explicitly enabled.
+            try:
+                from backend.mcp_health import start_probe_background_task
+                _mcp_probe_task = start_probe_background_task(
+                    asyncio.get_running_loop(),
+                )
+                if _mcp_probe_task is not None:
+                    # Pin onto app.state so shutdown can cancel it
+                    # cleanly + avoid orphan task warnings.
+                    app.state.mcp_probe_task = _mcp_probe_task
+            except Exception as e:
+                log.warning("[BOOT] MCP probe init failed (continuing): %s", e)
+
             # ─── Sprint 9.1: Predictive WO trigger init ───────────────
             # Single-instance state machine that converts Kalman anomalies
             # into CMMS work orders. Hooked into the SSE generator below.
@@ -641,6 +660,16 @@ async def lifespan(app: FastAPI):
     yield
 
     log.info("DC-EPMS PRO shutting down...")
+
+    # Cancel the MCP probe background task (v0.16.1) before tearing
+    # down the rest of the loop. Safe no-op when probe was disabled.
+    _mcp_task = getattr(app.state, "mcp_probe_task", None)
+    if _mcp_task is not None:
+        _mcp_task.cancel()
+        import contextlib
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await _mcp_task
+        log.info("[SHUTDOWN] MCP probe task cancelled cleanly")
 
     # Stop the Optimizer asyncio task first so it doesn't see a
     # half-torn-down DB pool. Safe no-op when 2.B is not running.
