@@ -8,6 +8,10 @@ válvula). **Compliance:** CSA Z462-24, NFPA 70E, ASHRAE TC 9.9.
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** CRAH-XX + VFD + válvula modulante asociada
+* **Estado Final Esperado:** Setpoints VFD + apertura de válvula calibrados + curvas operativas actualizadas + walk-back baseline registrado
+
 Ajustar la lógica de apertura de las válvulas de agua helada de 2 o
 3 vías en concordancia con las RPM del ventilador del CRAH para
 **optimizar el `dT` de la sala blanca** y reducir el consumo
@@ -20,6 +24,9 @@ modulante asociada. **Ubicación:** Data Hall + sala de control.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos Térmicos
+
+
+- **Vector Lógico/Controles + Mecánico (riesgo de hunting en PID; pérdida de coordinación RPM/válvula)**
 
 - **Impacto en carga IT:** la calibración modifica activamente RPM +
   apertura de válvula; si el `dT` resultante sale del rango ASHRAE
@@ -56,6 +63,8 @@ modulante asociada. **Ubicación:** Data Hall + sala de control.
 - Personal: técnico de control + supervisor en HMI (Maker + Checker —
   **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -84,6 +93,8 @@ modulante asociada. **Ubicación:** Data Hall + sala de control.
    `dT`, presión estática piso falso, ruido / vibración del
    ventilador durante 5 min.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar estabilidad de dT + presión estática durante 5 min antes del siguiente paso de reducción de RPM.
 
 6. Si estable: aplicar siguiente paso. Repetir hasta alcanzar
    objetivo o disparar criterio de aborto.

@@ -8,6 +8,10 @@ CSA Z462-24, NFPA 70E §130, Eaton SOW R-48 pre-transfer validation.
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** STS-A or STS-B
+* **Estado Final Esperado:** Carga transferida a la fuente alterna (o bypass de mantenimiento); SCR sin alarmas + sincronización confirmada
+
 Conmutar la carga del Static Transfer Switch desde la fuente preferida
 hacia la fuente alterna (o hacia el bypass de mantenimiento) sin
 interrupción de la carga IT aguas abajo (PDUs / RPPs / racks).
@@ -18,6 +22,9 @@ servidas. **Ubicación:** sala eléctrica del Building.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 3 en panel STS; SCR temperature risk durante 4ms commutación)**
 
 - **Impacto en carga IT:** la conmutación es sub-ciclo (típicamente
   ≤ 4 ms vía SCR); si la maniobra falla, la pérdida de potencia se
@@ -53,6 +60,8 @@ servidas. **Ubicación:** sala eléctrica del Building.
 - Personal: técnico ejecutante en sala STS + supervisor en el HMI
   (Maker + Checker — **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -74,6 +83,8 @@ servidas. **Ubicación:** sala eléctrica del Building.
 4. Verificar sincronización de las dos fuentes en el HMI (ángulo
    de fase < 5°, V dentro de ±2%, Hz dentro de ±0.5 Hz).
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar ángulo de fase < 5°, V ± 2%, Hz ± 0.5 Hz en HMI antes de comando de transferencia.
 
 5. Personal en sala STS se posiciona FUERA del **límite de
    aproximación restringida** + verifica PPE Cat 4.

@@ -9,6 +9,10 @@ Z462-24, NFPA 70E, NFPA 110, ASHRAE TC 9.9.
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Chiller-1 .. Chiller-N (N+1) post ride-through
+* **Estado Final Esperado:** N+1 Chillers en línea + ATD restaurado al baseline + T_suministro < 8 °C + frecuencia del generador estable
+
 Programar el reinicio escalonado de los compresores de los Chillers
 tras una transición a energía de respaldo (`ride-through`), limitando
 la rampa de carga para evitar variaciones críticas de frecuencia en
@@ -21,6 +25,9 @@ de emergencia. **Ubicación:** Planta Mecánica + sala de generadores.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos Térmicos
+
+
+- **Vector Mecánico/Térmico (Tiempo de Inercia ~4 min; Lift effect risk durante reinicio de compresores)**
 
 - **Impacto en carga IT:** durante la transición sin chiller (~15-30 s
   típico hasta arranque del primer compresor), la inercia del agua
@@ -54,6 +61,8 @@ de emergencia. **Ubicación:** Planta Mecánica + sala de generadores.
 - Personal: técnico de turno + supervisor remoto via HMI
   (Maker + Checker — **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -63,6 +72,8 @@ de emergencia. **Ubicación:** Planta Mecánica + sala de generadores.
 1. Confirmar transición a generador completada en HMI (ATS muestra
    fuente alterna activa + V/Hz nominales).
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > `[HOLD POINT]` Confirmar Lift < 1.5 × baseline + frecuencia del generador estable (± 0.5 Hz) antes del siguiente arranque escalonado.
 
 2. Verificar bombas de condensador + evaporador de los Chillers
    arrancadas o arrancando primero (deben asentar flujo antes que

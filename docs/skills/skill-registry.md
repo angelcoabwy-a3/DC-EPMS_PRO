@@ -361,6 +361,59 @@ encode the contracts the operator pinned on 2026-05-23.
 - **Verify:** `tests/test_procedure_architect.py::TestAuditMOPEatonVendor`.
   See also: `config/knowledge/eaton-sow-r48-mp-checklist.md`.
 
+### `S-VECTOR-01` · §2 must name at least one risk vector
+
+- **When:** Authoring a MOP. The operator-supplied richer system
+  prompt (2026-05-24) requires §2 to classify the maneuver under at
+  least ONE of six explicit risk vectors:
+  `Vector Eléctrico`, `Vector Mecánico/Térmico`, `Vector Life Safety`,
+  `Vector Combustible`, `Vector Lógico/Controles`, or
+  `Impacto Aguas Arriba/Abajo`.
+- **Rule:** Audit surfaces a `caution` finding if §2 has no explicit
+  vector label. Verdict stays signable; the operator can re-prompt to
+  enrich. Rationale: vectors force the LLM author to confront the
+  multi-discipline reality of mission-critical infrastructure (an
+  electrical MOP that ignores thermal cascade is incomplete).
+- **Verify:** `tests/test_procedure_architect.py::TestAuditMOPRicherTemplate::test_missing_vector_is_caution`.
+  Constants: `MOP_VECTOR_PATTERNS` in `backend/agents/procedure_architect.py`.
+
+### `S-MCP-HEALTH-01` · §3 must mention MCP / Agent health-check gate
+
+- **When:** Authoring a MOP. The operator-supplied richer prompt
+  mandates that the gatekeeper section includes confirmation that the
+  Agente Revisor (Checker) and Discipline AIs (HVAC AI, Electrical AI)
+  are `ONLINE` and reporting via **MCP** for concurrent monitoring.
+- **Rule:** Audit string-matches the body for `MCP`, `Agente Revisor`,
+  `Health Check`, `Checker ONLINE`, `Discipline AI`, `HVAC AI`, or
+  `Electrical AI`. Missing all of them → `caution`. Per operator
+  calibration Q3 (option (i)), the audit does NOT make a real network
+  ping to the MCP server — that would introduce runtime latency and
+  break determinism. Static string-match suffices for the LLM author
+  nudge.
+- **TODO (future option (ii)):** add a feature-flagged runtime check
+  that pings the MCP server before signing, with a graceful timeout.
+- **Verify:** `tests/test_procedure_architect.py::TestAuditMOPRicherTemplate::test_missing_mcp_health_check_is_caution`.
+  Constants: `MOP_MCP_HEALTH_PATTERNS`.
+
+### `S-HOLD-POINT-01` · §4 must include `[HOLD POINT]` markers
+
+- **When:** Authoring a MOP. The operator-supplied richer prompt
+  mandates explicit `[HOLD POINT]` markers in the step sequence
+  whenever the technician must pause and confirm a parameter in HMI
+  before continuing (e.g. sync-check, ATD verification, sequencer
+  approval).
+- **Rule:** Audit fires `caution` when §4 contains no `[HOLD POINT]`
+  (or `HOLD POINT` / `Hold Point` variants). Rationale: hold points
+  are the single biggest defence against "auto-pilot" execution of a
+  MOP where a step succeeds physically but the operator missed a
+  precondition.
+- **TODO (Commit 12 promotion):** the `MOP_PARAMETERIZED_ABORT_PATTERN`
+  rule co-located in this skill family is currently CAUTION; Commit
+  12 promotes it to HARD_STOP after the 23 seed bodies are updated
+  to comply.
+- **Verify:** `tests/test_procedure_architect.py::TestAuditMOPRicherTemplate::test_missing_hold_point_is_caution`.
+  Constants: `MOP_HOLD_POINT_PATTERN`.
+
 ---
 
 ## Index — quick lookup
@@ -388,6 +441,9 @@ encode the contracts the operator pinned on 2026-05-23.
 | `S-SAFETY-01` | Procedure Safety | MOPs need 5 universal sections + voltage verification |
 | `S-DISTRIBUTION-01` | Procedure Safety | PDU/RPP/STS need alarm history + SCR check |
 | `S-VENDOR-EATON-01` | Procedure Safety | Eaton SOW R-48 omissions surface as caution |
+| `S-VECTOR-01` | Procedure Safety | §2 must name ≥ 1 of 6 risk vectors (caution) |
+| `S-MCP-HEALTH-01` | Procedure Safety | §3 must mention MCP / agent health check (caution, string-match) |
+| `S-HOLD-POINT-01` | Procedure Safety | §4 must include `[HOLD POINT]` markers (caution) |
 
-**21 skills, 9 categories.** New skills extending this registry must follow
+**24 skills, 9 categories.** New skills extending this registry must follow
 the same template (When / Rule / Verify) and be added to the index above.

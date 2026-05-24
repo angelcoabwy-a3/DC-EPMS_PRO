@@ -10,6 +10,10 @@ CSA Z462-24, NFPA 70E, ASHRAE TC 9.9, Uptime Tier IV
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Chiller-1 / Chiller-2 / Chiller-3 / Chiller-4 (N+1)
+* **Estado Final Esperado:** Chiller standby asume carga + ATD restaurado + Chiller primario aislado con LOTO mecánico + LOTO eléctrico + Vivo-Muerto-Vivo confirmado
+
 Arrancar un Chiller secundario (Standby) y sus bombas asociadas
 (condensador + evaporador), ecualizando previamente las presiones en
 el colector de agua helada antes de abrir las válvulas motorizadas
@@ -22,6 +26,9 @@ Chiller liberando al primario para mantenimiento.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos Térmicos
+
+
+- **Vector Mecánico/Térmico (Tiempo de Inercia ~5 min ASHRAE A2 breach si flujo se interrumpe; golpe de ariete si presiones no ecualizan)**
 
 - **Impacto en carga IT:** durante la transición ambos Chillers
   comparten brevemente el rechazo de calor (`Q_rej = Q_load +
@@ -57,6 +64,8 @@ Chiller liberando al primario para mantenimiento.
 - Personal: técnico mecánico + supervisor (Maker + Checker —
   **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -66,6 +75,8 @@ Chiller liberando al primario para mantenimiento.
 1. Notificar al NOC + verificar estado del Chiller primario + standby
    en el HMI (sin alarmas activas).
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > `[HOLD POINT]` Confirmar presión del colector ecualizada ± 10 % en 60 s antes de continuar.
 
 2. Arrancar bombas de condensador + evaporador del Chiller standby
    en modo **soft-start**; verificar caudal alcanzado ≥ 70% nominal.

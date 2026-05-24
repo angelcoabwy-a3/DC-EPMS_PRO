@@ -9,6 +9,10 @@ ASTM E1934 (IR thermography of electrical systems).
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Busway sector + tap-off boxes activas
+* **Estado Final Esperado:** Escaneo termográfico completo + todos los puntos documentados con ΔT + cualquier hot-spot flagged para WO de seguimiento
+
 Escaneo termográfico operativo del busway bajo carga real para
 identificar gradientes térmicos inusuales en puntos de contacto con
 las tap-off boxes y en juntas mecánicas. Indicador anticipado de
@@ -21,6 +25,9 @@ white space.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 3 durante proximidad al busway energizado; inspección no invasiva)**
 
 - **Impacto en carga IT:** ninguno (inspección no invasiva — el
   busway sigue alimentando la carga sin interrupción).
@@ -55,6 +62,8 @@ white space.
   ASNT/ISO 18436) + supervisor (Maker + Checker —
   **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -77,6 +86,8 @@ white space.
 4. Posicionarse DESDE FUERA del **límite de aproximación
    restringida** con **PPE Cat 3** + guantes anti-térmicos.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar carga del busway ≥ 70% nominal antes de iniciar escaneo (carga baja produce falsos negativos).
 
 5. Escanear cada junta mecánica del sector con la cámara
    termográfica; capturar imagen + temperatura puntual de cada junta.

@@ -16,10 +16,10 @@ DC-EPMS PRO is an AI-native edge operations platform simulating **A3-Alpha Toron
 
 **Vocabulary discipline (CRITICAL)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is unipolar (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in panel review.
 
-## 📊 CURRENT STATE (synced 2026-05-23 — Epic 6 catalog integration delivered)
+## 📊 CURRENT STATE (synced 2026-05-24 — Epic 6 richer-template adoption delivered)
 
 ```
-HEAD:  <Epic-6 catalog integration, 10 commits ahead of origin/master>.
+HEAD:  <Epic-6 catalog integration (10 commits) + richer-template adoption (Commits 11-13)>.
        Stable baseline = **v0.13.0 "Proactive Edge"** (cut 2026-05-19).
        Post-release: **EPIC 4 delivered (Forensic Ledger + Proposer-
        chain closure + Rollback Harness)** + **EPIC 6 OPENED + delivered
@@ -68,6 +68,33 @@ HEAD:  <Epic-6 catalog integration, 10 commits ahead of origin/master>.
          (`docs/architecture/maker-checker-cuatro-ojos.md`) maps the
          §4 paper-trail checkboxes to the Sprint 3 Phase 4 digital
          witness gate -- the Cuatro Ojos contract is COMPLETE.
+
+       Epic 6 richer-template adoption (Commits 11-13, 2026-05-24)
+       -- the operator-supplied "Generador Universal de MOPs"
+       system prompt is now the source of truth:
+       * MOP template body in PROCEDURE_ARCHITECT_SYSTEM_PROMPT
+         replaced with the richer 5-section structure that
+         explicitly enumerates Identificador (Tag), Estado Final
+         Esperado, 6 risk Vectors (Eléctrico / Mecánico-Térmico /
+         Life Safety / Combustible / Lógico / Aguas Arriba-Abajo),
+         MCP Agent Health Check, [HOLD POINT] markers, formal step
+         syntax (Verbo + Componente + Resultado + checkboxes), and
+         parameterized abort triggers (number + unit, NEVER vague).
+       * Audit gate adds 6 new rules. 5 at CAUTION
+         (Tag / Estado Final / Vector / MCP / HOLD POINT). The
+         parameterized-abort rule is HARD_STOP (Commit 12): vague
+         abort criteria are safety-critical and block signing.
+       * 3 new skills (`S-VECTOR-01`, `S-MCP-HEALTH-01`,
+         `S-HOLD-POINT-01`) -- registry grows 21 → 24.
+       * All 23 canonical MOP bodies updated to satisfy the richer
+         contract -- each now carries explicit Tag, Estado Final,
+         Vector classification, MCP Health Check bullet, at least
+         one [HOLD POINT] marker, and parameterized abort triggers.
+         Audit verification: 23/23 verdict=APPROVE.
+       * MCP health-check rule uses STRING-MATCH (per operator
+         calibration Q3 option (i)) -- no network ping today,
+         keeping the gate deterministic + low-latency. Tracked as
+         a future option (ii) for feature-flagged runtime ping.
 
        Epic 4 (prior session) — closed the 4 CRITICAL findings from the
        2026-05-22 MSD v2.0 forensic audit:
@@ -163,32 +190,30 @@ Tags chronological (41 total):
    test_optimizer.py + test_optimizer_routes.py); frontend Vitest
    176 → 193 (+17 across optimizer.test.js + hermes_events.test.js).
 
-Tests:   backend 1118 passed, 5 deselected (slow/FAISS) — full pytest ~50s, 0 fail.
-         Epic 6 contribution to pytest: +29 tests across Commits 3+5
+Tests:   backend 1126 passed, 5 deselected (slow/FAISS) — full pytest ~50s, 0 fail.
+         Epic 6 cumulative pytest contribution: +37 tests across
+         Commits 3, 5, 11
          (TestSafetyPriorityDirective 3, TestAuditMOPUniversalSections
          6, TestAuditMOPVoltageVerification 3,
          TestAuditMOPDistributionPreTransfer 5, TestAuditMOPEatonVendor
          3, TestSeedMOPsPassNewAuditGate parametrized 3,
          TestSeedArchitectLibraryFromCatalog 3,
-         TestArchitectLibraryFilter 3).
+         TestArchitectLibraryFilter 3, TestAuditMOPRicherTemplate 8).
          frontend 313 vitest passed (20 files) — Epic 6 contribution
-         +13 (8 in MOP categorías + chip filter, 5 in shape /
-         pdu_sts hint). The 32 MOP chips x 6 safety-contract
-         properties each = 192 explicit assertion checks.
-         (Prior tests preserved: 41 Epic 4 forensic-ledger / proposer
-         / rollback; 4 DC-EPMS-MSD-005 postgres; 8 multi_agent Capacity
-         Planner; 16 optimizer.test.js render+RBAC+XSS; 1
-         hermes_events.test.js stream subscription.)
+         +13. The 32 MOP chips x 6 safety-contract properties each
+         = 192 explicit assertion checks.
          GraphRAG corpus: 10 knowledge documents indexed at boot
          (was 6 pre-Epic-6) — boot log signature:
          `[graphrag] loaded 10 knowledge documents from
          C:\dev\DC-EPMS_PRO\config\knowledge`.
          Architect library: 23 catalog MOP entries pre-seeded at boot
-         (`docs/operaciones/mops/MOP-001..023.md`) — boot log:
-         `[BOOT] Architect library pre-seeded with 23 catalog MOP(s)`.
-         Skills registry: 21 explicit skills (was 18 pre-Epic-6) —
-         new Category I "Procedure Authoring Safety" houses
-         S-SAFETY-01 / S-DISTRIBUTION-01 / S-VENDOR-EATON-01.
+         with **audit=APPROVE** (richer-template compliant) —
+         boot log: `[BOOT] Architect library pre-seeded with 23
+         catalog MOP(s)`.
+         Skills registry: 24 explicit skills (was 21 pre-Commit-11) —
+         Category I "Procedure Authoring Safety" now houses
+         S-SAFETY-01 / S-DISTRIBUTION-01 / S-VENDOR-EATON-01 /
+         S-VECTOR-01 / S-MCP-HEALTH-01 / S-HOLD-POINT-01.
          ruff: 0 violations in backend/.
 
 Perf baseline (2026-05-09 AMD Ryzen + Windows — Sprint 5 era, still valid):
@@ -241,6 +266,9 @@ docs/ROADMAP-V11.md (v11.7, 2026-05-19). NOTE: OBS demo-recording descoped.
 
 **Recent commits (latest at top)**:
 ```
+641ca28  docs(mops): Commit 12 -- enrich 23 bodies + promote parameterized-abort to HARD_STOP
+e2071dd  feat(architect): Commit 11 -- adopt richer system prompt (Generador Universal) + 6 caution audit rules + 3 skills
+f1868dc  merge: Epic 6 wave 2 -- mechanical/cooling catalog integration (Commits 6-10)
 8f823a9  feat(hmi): Commit 9 -- MOP chip categorias expand 6 -> 10 (21 -> 32 chips)
 69ac474  docs(mops): Commit 8 -- 11 mechanical+global canonical bodies (MOP-013 to MOP-023)
 609d925  feat(knowledge): Commit 7 -- cooling/thermodynamics references (GraphRAG 9 -> 10)
@@ -1027,23 +1055,24 @@ finding: MOP-ATS-MONTHLY-001 + `ups_a` = NEC 460.6 violation flagged in ~12 ms.
 4. **Read `docs/ROADMAP-V11.md`** — the live backlog. Tier 1 = demo readiness.
 5. **Wait for explicit GO** from Wilmer before starting any V11 work.
 
-## ⏸ PAUSE_STATE (last updated 2026-05-23 — Epic 6 catalog integration delivered)
+## ⏸ PAUSE_STATE (last updated 2026-05-24 — Epic 6 richer-template adoption delivered)
 
-> No active pause. V9 is feature-complete; Epic 6 catalog integration
-> delivered (10 atomic commits, then push to origin); the live backlog
-> is `docs/ROADMAP-V11.md`. Master now carries 23 canonical MOP bodies
-> + 10-doc GraphRAG corpus + hardened audit gate enforcing the
-> operator-mandated Universal 5-Point Structure + voltage verification
-> + distribution pre-transfer + Eaton SOW R-48 caution.
+> No active pause. Epic 6 catalog integration (10 commits) +
+> richer-template adoption (Commits 11-13, 3 additional commits =
+> 13 total) delivered. Master carries 23 canonical MOP bodies all
+> verdict=APPROVE under the operator-supplied "Generador Universal de
+> MOPs (Mission Critical / Zero Incidents)" prompt + 6-vector risk
+> taxonomy + MCP agent health check + [HOLD POINT] markers +
+> parameterized abort triggers (HARD_STOP).
 
 ### State at sync time
 
-- Master is ahead of `origin/master` with the Epic 6 commits (post-Commit-5
-  merge plus Commits 6-10). Will be pushed in the Final task.
-- Test suite: **1118 pytest passed** + **313 vitest passed**, 0 fail.
-- GraphRAG: 10 documents loaded at boot (was 6 pre-Epic-6).
-- Architect library: 23 catalog MOP entries pre-seeded at boot.
-- Skills registry: 21 skills, 9 categories (was 18 / 8).
+- Master ahead of `origin/master` with the Epic 6 commits + Commits
+  11-13. Will be pushed in the Final task.
+- Test suite: **1126 pytest passed** + **313 vitest passed**, 0 fail.
+- GraphRAG: 10 documents loaded at boot.
+- Architect library: 23 catalog MOP entries, all audit=APPROVE.
+- Skills registry: 24 skills, 9 categories (was 21 / 9 pre-Commit-11).
 - `config/.env` carries the PG credentials (DC-EPMS-DB-001 fix).
 
 ### Resumption protocol (next session entry)

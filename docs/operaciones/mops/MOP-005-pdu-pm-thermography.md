@@ -8,6 +8,10 @@ preventive maintenance checklist (cuando aplique).
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** PDU-A or PDU-B
+* **Estado Final Esperado:** PDU desenergizada + LOTO + termografía completada + conexiones reapretadas a spec + filtros limpios + paneles reinstalados
+
 Mantenimiento preventivo integral de PDU (Power Distribution Unit):
 inspección termográfica bajo Arc Flash, revisión de lógica de control,
 calibración de displays, limpieza de filtros de aire de ventilación
@@ -19,6 +23,9 @@ forzada, y reapriete de conexiones de barras principales.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 3 en paneles abiertos durante IR scan + reapriete)**
 
 - **Impacto en carga IT:** la PDU alimenta múltiples RPPs aguas abajo;
   su desenergización corta esa rama. Confirmar que la carga IT está
@@ -53,6 +60,8 @@ forzada, y reapriete de conexiones de barras principales.
 - Personal: técnico ejecutante + supervisor (Maker + Checker —
   **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -81,6 +90,8 @@ forzada, y reapriete de conexiones de barras principales.
 6. Ejecutar prueba **Vivo-Muerto-Vivo** en barras principales con
    multímetro calibrado para confirmar ausencia de tensión.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar ausencia de tensión en barras principales antes de retirar paneles + iniciar termografía.
 
 7. Escaneo termográfico bajo carga preliminar (antes de aplicar LOTO
    completo si la PDU lo permite con paneles laterales abiertos);

@@ -10,6 +10,10 @@ permanece operativo (Mantenibilidad Concurrente / Uptime Tier IV).
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Anillo principal de agua helada + 2 válvulas DBB + purga intermedia
+* **Estado Final Esperado:** Tramo intervenido + válvulas DBB reabiertas + T_suministro y dP en CRAHs servidas vueltos a baseline + bypass del anillo restaurado
+
 Intervenir tramos específicos de la tubería matriz de agua helada
 utilizando configuraciones de **doble bloqueo y purga** (`Double
 Block and Bleed` — DBB) para garantizar la **Mantenibilidad
@@ -23,6 +27,9 @@ helada + dos válvulas DBB que lo aíslan + purga intermedia.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos Térmicos
+
+
+- **Vector Mecánico/Térmico (Tiempo de Inercia ~8 min para CRAHs sin bypass; presión hidrotérmica en bridas)**
 
 - **Impacto en carga IT:** el flujo a las CRAHs servidas por el
   anillo se redirige por el tramo redundante (sitio en N degradado
@@ -69,6 +76,8 @@ helada + dos válvulas DBB que lo aíslan + purga intermedia.
 - Personal: técnico mecánico calificado en DBB + supervisor (Maker
   + Checker — **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -79,6 +88,8 @@ helada + dos válvulas DBB que lo aíslan + purga intermedia.
    capacidad de la rama redundante + `T_suministro` baseline en
    CRAHs servidas.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > `[HOLD POINT]` Confirmar bypass del anillo activo + capacidad de la rama redundante antes de cerrar la primera válvula DBB.
 
 2. Cerrar la **primera válvula DBB** (lado upstream) +
    monitorear el redireccionamiento de flujo en el bypass.

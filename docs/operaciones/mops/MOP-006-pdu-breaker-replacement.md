@@ -8,6 +8,10 @@ study verification), Eaton SOW R-48 (cuando aplique).
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** PDU-{A|B}-MAIN (or sub-feeder ID)
+* **Estado Final Esperado:** Breaker nuevo instalado en posición conectada + prueba secundaria PASS + curva de coordinación validada + LOTO retirado + rama energizada
+
 Reemplazo físico de interruptor principal o sub-alimentador en una
 PDU por falla, fin de vida útil o mejora de capacidad. Incluye
 verificación de la curva de coordinación en prueba secundaria antes
@@ -19,6 +23,9 @@ de re-energizar.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 4 durante racking out/in del breaker)**
 
 - **Impacto en carga IT:** desenergización completa de la rama servida
   por el breaker; downstream loads MUST estar en el path redundante.
@@ -54,6 +61,8 @@ de re-energizar.
 - Personal: técnico ejecutante (calificado en racking) + supervisor
   (Maker + Checker — **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -80,6 +89,8 @@ de re-energizar.
    bornes del breaker (line + load) para confirmar ausencia de
    tensión.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar Vivo-Muerto-Vivo en bornes line + load antes de iniciar racking out.
 
 6. Racking-out del breaker viejo con racking handle aislado;
    posición de prueba primero, luego extracción.
@@ -130,5 +141,5 @@ de re-energizar.
 4. Notificar al NOC + Manager on Duty.
 
 **Ventana de reversión bounded by:** la autonomía de baterías de los
-UPS aguas abajo (si esta PDU es parte del path principal); coordinar
+UPS aguas abajo (≈ 10 min al 100 % carga); la reversión debe iniciarse en < 5 min de detectar el disparador para no exceder el 50 % de la ventana de UPS. (si esta PDU es parte del path principal); coordinar
 con el CET de turno.

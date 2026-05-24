@@ -8,6 +8,10 @@ NFPA 70E, ASHRAE TC 9.9 (envolvente psicrométrica A1-A4 + 40-55% RH).
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** CRAH-XX (psychrometric setpoint adjust)
+* **Estado Final Esperado:** HR < 55% + T_serpentín ≥ T_punto_de_rocío + 1.5 °C + sin condensación visible en bandejas + curvas T-HR documentadas
+
 Ajustar los setpoints de la CRAH ante alarmas de **alta humedad
 relativa** en el Data Hall, regulando la **temperatura de la
 superficie del serpentín** para mantenerla siempre **por encima del
@@ -21,6 +25,9 @@ psicrométricas. **Ubicación:** Data Hall + sala de control.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos Térmicos
+
+
+- **Vector Mecánico/Térmico + Vector Lógico (riesgo de condensación = corrosión + arc tracking en racks; over-cooling sube W_comp)**
 
 - **Impacto en carga IT:** condensación en componentes eléctricos =
   corrosión + falla por arc tracking + corto en racks; humedad
@@ -57,6 +64,8 @@ psicrométricas. **Ubicación:** Data Hall + sala de control.
 - Personal: técnico de control + supervisor (Maker + Checker —
   **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -80,6 +89,8 @@ psicrométricas. **Ubicación:** Data Hall + sala de control.
 4. Aplicar el nuevo setpoint en HMI; monitorear durante 10 min
    sin tocar nada (deja que el lazo PID estabilice).
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar T_serpentín estable ≥ T_punto_de_rocío + 1.5 °C durante 10 min antes de cerrar WO.
 
 5. Verificar HR del Data Hall cae a < 55% + `T_serpentín` se
    mantiene en el umbral seguro + no aparece condensación visible
