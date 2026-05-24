@@ -49,25 +49,39 @@ Missing any of the above → audit returns `hard_stop` (see
 
 ## Current Catalog
 
+### Infrastructure layer (UPS / Transformer / Utility)
+
 | ID | Asset Category | Title | Work Mode |
 |---|---|---|---|
 | [MOP-001](MOP-001-ups-bypass-transfer.md) | UPS | Transferencia a Bypass de Mantenimiento Externo | De-energized (after transfer) |
 | [MOP-002](MOP-002-transformer-dry-inspection.md) | Transformer | Inspección Interna y Limpieza de Transformador de Tipo Seco | De-energized |
 | [MOP-003](MOP-003-ats-commutation-test.md) | ATS / Utility | Prueba de Conmutación en Vacío y con Carga en ATS | Live (operational test) |
 
----
+### Distribution layer (PDU / STS / RPP / Busway)
 
-## Distribution-layer MOPs (catalog only — no full body yet)
+| ID | Asset Category | Title | Work Mode |
+|---|---|---|---|
+| [MOP-004](MOP-004-sts-load-transfer.md) | STS | Transferencia de Carga (Preferred → Alternate / Bypass) | Live |
+| [MOP-005](MOP-005-pdu-pm-thermography.md) | PDU | Mantenimiento Preventivo Anual (Termografía + Lógica de Control) | De-energized |
+| [MOP-006](MOP-006-pdu-breaker-replacement.md) | PDU | Reemplazo de Breaker Principal o Sub-Alimentador | De-energized |
+| [MOP-007](MOP-007-rpp-load-balancing.md) | RPP | Balanceo de Carga de Fases A/B/C | De-energized (per circuit) |
+| [MOP-008](MOP-008-rpp-whip-installation.md) | RPP | Instalación de Látigos (Whips) Bajo Piso Falso / Bandeja Aérea | De-energized |
+| [MOP-009](MOP-009-rpp-epo-reset.md) | RPP | Restablecimiento Post-EPO (Humo / Fuego) | De-energized + Inspección |
+| [MOP-010](MOP-010-busway-tap-off-install.md) | Busway | Instalación / Retiro de Tap-off Boxes | LIVE (high risk) |
+| [MOP-011](MOP-011-busway-joint-maintenance.md) | Busway | Mantenimiento de Juntas Mecánicas + Tapas | De-energized (per sector) |
+| [MOP-012](MOP-012-busway-thermographic-scan.md) | Busway | Escaneo Termográfico Operativo bajo Carga | LIVE (no invasivo) |
 
-The 9 distribution-layer MOPs (PDU/STS, RPP, Busway) live as a catalog in
-`config/knowledge/distribution-mop-catalog.md` (GraphRAG-indexed). The
-Procedure Architect can author full bodies on demand; until they are
-operator-validated the catalog entries stay there, not here.
+### Companion knowledge (GraphRAG-indexed)
 
-The Eaton SOW R-48 preventive maintenance checklist (BCMS, fiber-optic
-plate, control cable boxes, alarm history, FSBs, firmware) lives at
-`config/knowledge/eaton-sow-r48-mp-checklist.md` and is surfaced to the
-LLM author whenever the operator's context mentions `eaton`.
+- `config/knowledge/electrical-mop-catalog.md` — infrastructure catalog
+  (UPS / Transformer / Utility 12 títulos).
+- `config/knowledge/distribution-mop-catalog.md` — distribution catalog
+  (PDU/RPP/Busway scope + Universal 5-Point Structure).
+- `config/knowledge/eaton-sow-r48-mp-checklist.md` — vendor-specific
+  Eaton SOW R-48 PM checklist (BCMS / fibra óptica / FSBs / firmware).
+- `docs/architecture/maker-checker-cuatro-ojos.md` — alignment doc:
+  the §4 checkboxes paper-trail + the Sprint 3 Phase 4
+  Maker-Checker witness gate digital-trail.
 
 ---
 
