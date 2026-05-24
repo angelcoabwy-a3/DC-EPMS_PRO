@@ -219,8 +219,42 @@ function setupRouter() {
     document.querySelectorAll('.nav-item').forEach((item) => {
         item.addEventListener('click', () => {
             const route = item.dataset.route;
-            if (route) navigateTo(route);
+            if (route) {
+                // Sync the URL hash so back/forward + bookmarks work.
+                // Skip in happy-dom (vitest) -- happy-dom schedules a
+                // hashchange timeout that throws inside Location.js
+                // when document.title is null (common in test stubs).
+                // Production browsers do not exhibit this.
+                const isHappyDom = typeof window !== 'undefined' && window.happyDOM;
+                if (!isHappyDom && window.location.hash !== `#${route}`) {
+                    try {
+                        window.history.replaceState(null, '', `#${route}`);
+                    } catch (_) { /* belt-and-suspenders */ }
+                }
+                navigateTo(route);
+            }
         });
+    });
+
+    // Direct-URL entry: read the hash on load so visiting
+    // http://127.0.0.1:8080/#procedures-architect actually lands on
+    // Procedure Architect (without this, the router only reacts to
+    // nav-item clicks and direct hash URLs fall through to overview).
+    window.addEventListener('hashchange', () => {
+        const target = (window.location.hash || '').replace(/^#/, '');
+        if (target) navigateTo(target);
+    });
+
+    // Initial route from URL hash. Run on next tick so any view that
+    // registers via registerRoute() during module-init (procedures,
+    // mission_control, etc.) has settled into __epmsRouter before we
+    // route. Without the queueMicrotask, the early hash read can race
+    // the route registrations and we silently fall through to overview.
+    queueMicrotask(() => {
+        const initialHash = (window.location.hash || '').replace(/^#/, '');
+        if (initialHash && initialHash !== 'overview') {
+            navigateTo(initialHash);
+        }
     });
 }
 
