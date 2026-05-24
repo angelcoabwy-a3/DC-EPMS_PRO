@@ -8,6 +8,10 @@ CSA Z462-24, NFPA 70E, NEC 220.61 (neutral conductor load balance).
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** RPP-A1 / RPP-A2 / RPP-B1 / RPP-B2
+* **Estado Final Esperado:** Fases A/B/C balanceadas (ninguna > 80% nominal); breakers cerrados + circuitos re-asignados según plan
+
 Re-balancear las fases A, B y C en un RPP al instalar nuevos circuitos
 de rack, asegurando que ninguna línea supere el 80% de su capacidad
 nominal y previniendo disparos térmicos por desequilibrio.
@@ -18,6 +22,9 @@ circuitos individuales bajo intervención. **Ubicación:** sala blanca.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 2 en breakers individuales; sobre-corriente en neutro NEC 220.61 si desbalance > 10%)**
 
 - **Impacto en carga IT:** los racks afectados por el reruteo de
   circuitos pierden uno de sus dos cordones de alimentación durante
@@ -53,6 +60,8 @@ circuitos individuales bajo intervención. **Ubicación:** sala blanca.
 - Personal: técnico ejecutante + supervisor (Maker + Checker —
   **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -78,6 +87,8 @@ circuitos individuales bajo intervención. **Ubicación:** sala blanca.
 5. Abrir el primer breaker objetivo + aplicar **LOTO** (candado +
    tarjeta personalizados) + **Vivo-Muerto-Vivo** en bornes de salida.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar ausencia de tensión en bornes del breaker + redundancia path B activa antes de re-conectar circuito.
 
 6. Reconectar el circuito a la fase nueva según plan; reapretar a
    torque del fabricante.

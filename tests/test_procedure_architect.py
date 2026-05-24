@@ -790,24 +790,22 @@ class TestAuditMOPRicherTemplate:
         assert result.verdict == AUDIT_VERDICT_CAUTION
         assert any("HOLD POINT" in f for f in result.findings)
 
-    def test_missing_parameterized_abort_is_caution(self):
-        # The "wrong" trigger has no numeric+unit; only the qualitative
-        # phrase "if it goes wrong" remains in §5. CAUTION today;
-        # promoted to HARD_STOP in Commit 12.
+    def test_missing_parameterized_abort_is_hard_stop(self):
+        # Commit 12: promoted from CAUTION to HARD_STOP. Vague abort
+        # criteria ("if it goes wrong") block signing -- safety-
+        # critical contract.
         result = audit_procedure_safety(
             _draft(DOC_TYPE_MOP, _mop_missing("param")),
         )
-        assert result.verdict == AUDIT_VERDICT_CAUTION
-        assert any(
-            "parameterized abort" in f.lower() or "número" in f.lower()
-            or "number" in f.lower() or "numeric" in f.lower()
-            for f in result.findings
-        )
+        assert result.verdict == AUDIT_VERDICT_HARD_STOP
+        assert any("REFUSAL" in f and "parameterized" in f.lower()
+                   for f in result.findings)
 
-    def test_all_six_richer_rules_can_be_simultaneously_missing(self):
-        # Even with EVERY richer rule failing, verdict is CAUTION (not
-        # HARD_STOP) because the core 5-Point + voltage + LOTO + PPE +
-        # CSA Z462 are still satisfied.
+    def test_all_richer_rules_simultaneously_missing_is_hard_stop(self):
+        # With parameterized-abort now a HARD_STOP rule, missing every
+        # richer field results in HARD_STOP (the param rule alone is
+        # sufficient to block). The other 5 rules surface as caution
+        # findings alongside.
         body = (
             "# MOP — Sparse\n"
             "## 1. Alcance y Objetivo\nGeneric scope.\n"  # no Tag, no Final
@@ -817,11 +815,12 @@ class TestAuditMOPRicherTemplate:
             "## 5. Plan de Reversión: revert if it goes wrong.\n"  # no number
         )
         result = audit_procedure_safety(_draft(DOC_TYPE_MOP, body))
-        assert result.verdict == AUDIT_VERDICT_CAUTION
-        # At least 5 of the 6 advisories should fire.
+        assert result.verdict == AUDIT_VERDICT_HARD_STOP
+        # The 5 OTHER richer advisories still fire as findings (just
+        # not as hard_stop contributors); plus the param REFUSAL.
         advisory_count = sum(
             1 for f in result.findings
-            if "richer-template" in f or "advisory" in f
+            if "richer-template" in f
         )
         assert advisory_count >= 5
 
@@ -855,12 +854,9 @@ class TestSeedArchitectLibraryFromCatalog:
             assert e["operator_id"] == "catalog"
             assert e["actor_role"] == "system"
             assert e["doc_type"] == "MOP"
-            # Commit 11 introduces caution-level richer-template
-            # rules; existing seed bodies surface as CAUTION until
-            # Commit 12 brings them up to spec. Library accepts both.
-            assert e["audit_verdict"] in (
-                AUDIT_VERDICT_APPROVE, AUDIT_VERDICT_CAUTION,
-            )
+            # Commit 12: all 23 seed bodies are richer-template
+            # compliant -- audit must return APPROVE.
+            assert e["audit_verdict"] == AUDIT_VERDICT_APPROVE
             assert e["source_file"].startswith("MOP-")
             assert e["source_file"].endswith(".md")
             assert e["title"].startswith("MOP-")
@@ -873,12 +869,17 @@ class TestSeedArchitectLibraryFromCatalog:
             _seed_architect_library_from_catalog,
         )
         # Write a synthetic catalog with one PASSING + one FAILING body.
+        # Commit 12 promoted parameterized-abort to HARD_STOP, so the
+        # "good" stub must include a numeric+unit trigger to avoid
+        # blocking. Caution-level richer fields (Tag / Estado Final /
+        # Vector / MCP / HOLD POINT) are missing -- they surface as
+        # caution but DO NOT block the load.
         (tmp_path / "MOP-100-good-stub.md").write_text(
             "# Good seed\n## 1. Alcance: x\n"
             "## 2. Riesgos: PPE Cat 2 per CSA Z462-24\n"
             "## 3. Prerrequisitos: LOTO\n"
             "## 4. Pasos: Vivo-Muerto-Vivo\n"
-            "## 5. Reversión: revert\n",
+            "## 5. Reversión: revert if T > 27 °C for > 60 s\n",
             encoding="utf-8",
         )
         (tmp_path / "MOP-101-bad-stub.md").write_text(
@@ -1012,15 +1013,12 @@ class TestSeedMOPsPassNewAuditGate:
             llm_present=False,
         )
         result = audit_procedure_safety(draft)
-        # Commit 11 introduces the richer-template audit rules at
-        # CAUTION level; the seed bodies were written under the
-        # earlier 5-Point contract and surface as CAUTION until
-        # Commit 12 brings them up to spec. Both verdicts are
-        # acceptable here -- the bodies must NOT hard_stop.
-        assert result.verdict in (
-            AUDIT_VERDICT_APPROVE, AUDIT_VERDICT_CAUTION,
-        ), (
-            f"seed {filename} did NOT pass new audit: "
+        # Commit 12: all 23 seed bodies have been upgraded to the
+        # full richer-template structure (Identificador / Estado
+        # Final / Vector / MCP Health Check / [HOLD POINT] /
+        # parameterized abort). Verdict must be APPROVE.
+        assert result.verdict == AUDIT_VERDICT_APPROVE, (
+            f"seed {filename} did NOT pass full audit: "
             f"verdict={result.verdict}, findings={result.findings}"
         )
 

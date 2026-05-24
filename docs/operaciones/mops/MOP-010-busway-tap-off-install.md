@@ -8,6 +8,10 @@ CSA Z462-24, NFPA 70E §130, IEC 61439-6 (busbar trunking systems).
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Busway-A or Busway-B + Tap-off Box ID
+* **Estado Final Esperado:** Tap-off box instalada + LEDs de estado correctos + breaker downstream cerrado + tensión nominal en conector + perímetro retirado
+
 Operación de alto riesgo: enchufar o retirar una `tap-off box` (caja
 de derivación) en un busway energizado. La inserción/extracción
 mecánica de la garra sobre las barras vivas requiere postura corporal
@@ -20,6 +24,9 @@ white space.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 4 -- TRABAJO EN VIVO; postura corporal lateral mandatoria)**
 
 - **Impacto en carga IT:** ninguno si el tap-off es nuevo (no
   alimenta carga aún); si se retira uno activo, los racks aguas abajo
@@ -59,6 +66,8 @@ white space.
 - Personal: técnico calificado en racking de busway + supervisor
   (Maker + Checker — **Cuatro Ojos**); ambos con PPE Cat 4.
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -91,6 +100,8 @@ white space.
    alinear garras + insertar hasta el tope mecánico de diseño +
    confirmar acople visual completo.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar ausencia de alarmas en sector del busway + PPE Cat 4 + posición lateral antes de inserción mecánica.
 
 7. Verificar **LEDs de estado** de la tap-off box (presencia de
    tensión, polaridad correcta, sin alarmas) DESDE FUERA del límite
@@ -133,6 +144,8 @@ white space.
 4. La tap-off box queda fuera de uso hasta dictamen del fabricante;
    el sector del busway puede continuar en servicio si no hubo daño
    colateral verificado.
+
+**Disparador numérico:** si la temperatura de la carcasa del busway en el sector intervenido excede 60 °C sobre ambiente durante o tras la maniobra, evacuar al instante; si la corriente de la tap-off salta > 110 % de la nominal en los primeros 30 s post-cierre, abrir breaker downstream y etiquetar pending vendor inspection.
 
 **Nota safety-critical:** un intento de "forzar" la inserción es la
 causa raíz documentada de los arc flash más severos en busway de

@@ -9,6 +9,10 @@ Equipment), NFPA 70E §130.
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** RPP-XYZ (post-EPO)
+* **Estado Final Esperado:** RPP energizado + contactores funcionales + cableado validado + carga IT restaurada escalonadamente
+
 Protocolo de restablecimiento post-EPO (Emergency Power Off) en un
 RPP tras evento de humo o fuego. Incluye inspección visual de daños
 térmicos en contactores y cableado, verificación de causa raíz vía
@@ -20,6 +24,9 @@ loads aguas abajo. **Ubicación:** sala blanca / pasillo afectado.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 4 -- daño térmico potencial pre-inspección)**
 
 - **Impacto en carga IT:** completo (todos los racks alimentados por
   ese RPP perdieron path A o B según topología); los racks han estado
@@ -61,6 +68,8 @@ loads aguas abajo. **Ubicación:** sala blanca / pasillo afectado.
 - Personal: técnico ejecutante + supervisor (Maker + Checker —
   **Cuatro Ojos**) + Engineering on-call.
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -93,6 +102,8 @@ loads aguas abajo. **Ubicación:** sala blanca / pasillo afectado.
    de tensión + prueba **Megger** de aislamiento en cableado interno
    (umbral del fabricante; típico > 100 MΩ).
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar autorización de bomberos + Megger > 100 MΩ + inspección visual SIN daño estructural antes de retirar LOTO.
 
 7. Si la inspección + Megger son OK: limpiar residuos con productos
    compatibles + reemplazar contactores comprometidos + reset manual

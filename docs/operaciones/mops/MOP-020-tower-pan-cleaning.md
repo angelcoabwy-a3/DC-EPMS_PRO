@@ -9,6 +9,10 @@ CTI ATC-105, ANSI/ASSE A10.32 (fall protection).
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Cooling Tower Cell ID (e.g. Tower-1 Cell-A)
+* **Estado Final Esperado:** Pileta limpia + rociadores funcionales + fill sin daño + celda re-conectada + ventilador en soft-start + T_retorno baseline restaurado
+
 Aislar hidráulicamente **una celda** de la torre de enfriamiento
 para la remoción de sedimentos de la pileta + limpieza de rociadores
 + inspección del fill, **manteniendo las celdas remanentes
@@ -21,6 +25,9 @@ etc.). **Ubicación:** techo / nivel exterior de la torre.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos Térmicos
+
+
+- **Vector Mecánico/Térmico (Tiempo de Inercia ~6 min; biofilm Legionella en sedimentos)**
 
 - **Impacto en carga IT:** durante la intervención, las celdas
   remanentes (típicamente 2 o 3 de 3 o 4 en N+1) absorben el
@@ -66,6 +73,8 @@ etc.). **Ubicación:** techo / nivel exterior de la torre.
 - Personal: técnico mecánico calificado en altura + supervisor
   (Maker + Checker — **Cuatro Ojos**) + observador de safety.
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -84,6 +93,8 @@ etc.). **Ubicación:** techo / nivel exterior de la torre.
    la carga (ajustar VFDs si aplica); verificar que `T_retorno` se
    mantiene dentro del rango.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar T_retorno se mantiene dentro del rango con celdas remanentes a max velocidad antes de aislar la celda objetivo.
 
 4. Apagar el ventilador de la celda objetivo + aplicar **Motor
    LOTO eléctrico** + **Vivo-Muerto-Vivo** en bornes del motor

@@ -8,6 +8,10 @@ NFPA 70E, ASHRAE TC 9.9, OCP Cooling Environments.
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** CRAH-XX (per Data Hall)
+* **Estado Final Esperado:** Bancos de filtros nuevos instalados + sellado perimetral validado + dP y presión estática vueltos a baseline ± 10%
+
 Sustituir los bancos de filtros internos de una CRAH operativa **sin
 apagar los ventiladores**, monitoreando la presión diferencial (`dP`)
 de la manejadora para evitar la pérdida de presión estática en el
@@ -20,6 +24,9 @@ filtros. **Ubicación:** Data Hall / pasillo caliente.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos Térmicos
+
+
+- **Vector Mecánico/Térmico (Tiempo de Inercia ~10 min breach ASHRAE A1; bypass de aire caliente si presión estática cae)**
 
 - **Impacto en carga IT:** durante el reemplazo, el caudal volumétrico
   (`V_dot`) cae transitoriamente; el `dT` del aire sube por
@@ -65,6 +72,8 @@ filtros. **Ubicación:** Data Hall / pasillo caliente.
 - Personal: técnico ejecutante + supervisor (Maker + Checker —
   **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -75,6 +84,8 @@ filtros. **Ubicación:** Data Hall / pasillo caliente.
    vecinas + documentar `dP` baseline + presión estática del piso
    falso baseline.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > `[HOLD POINT]` Confirmar dP y presión estática del piso falso dentro de ± 10 % baseline antes de iniciar el reemplazo.
 
 2. Verificar que el VFD del ventilador está en modo Auto (sin
    intervenir; la CRAH compensará el `dP` creciente subiendo RPM).

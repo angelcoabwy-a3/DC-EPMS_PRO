@@ -8,6 +8,10 @@ IEEE C57.94 (dry-type maintenance practices).
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** XFMR-A or XFMR-B
+* **Estado Final Esperado:** Transformador desenergizado + LOTO aplicado en breaker primario; bobinas inspeccionadas + conexiones torqueadas a spec + paneles reinstalados
+
 Desenergizar, aislar y realizar el mantenimiento preventivo anual
 (limpieza en seco y reapriete de conexiones) en un transformador de
 distribución (ej. 480V a 208/120V) minimizando el riesgo de relámpago
@@ -20,6 +24,9 @@ Building correspondiente.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 3-4 en paneles primario / secundario expuestos)**
 
 - **Impacto en carga IT:** el transformador alimenta los tableros de
   distribución aguas abajo (PDUs/RPPs); su desenergización corta esa
@@ -61,6 +68,8 @@ Building correspondiente.
 - Personal mínimo: técnico ejecutante + supervisor (Maker + Checker —
   Cuatro Ojos).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -88,6 +97,8 @@ Building correspondiente.
    primario y secundario para confirmar la **ausencia total de
    tensión**.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Verificar ausencia total de tensión en primario Y secundario antes de iniciar inspección física.
 
 6. Inspeccionar visualmente las bobinas, soportes aislantes y
    terminales buscando signos de decoloración, agrietamiento o

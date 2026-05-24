@@ -8,6 +8,10 @@ CSA Z462-24, NFPA 70E, ASHRAE TC 9.9, Uptime Tier IV.
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Chiller primario (en trip) + Chiller de respaldo
+* **Estado Final Esperado:** Carga absorbida por Chiller de respaldo + ATD restaurado + temperatura de suministro < 8 °C + Chiller fallido con LOTO completo
+
 Secuencia de emergencia automatizada / manual para conmutar las
 válvulas de derivación (`bypass`) hacia una enfriadora de respaldo
 tras un fallo repentino del compresor del Chiller primario, **antes
@@ -20,6 +24,9 @@ Chiller de respaldo (`chiller_2`). **Ubicación:** Planta Mecánica.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos Térmicos
+
+
+- **Vector Mecánico/Térmico (Tiempo de Inercia ~2 min ASHRAE A2 breach -- emergencia)**
 
 - **Impacto en carga IT:** durante el trip, la carga térmica
   (`Q_load`) deja de ser rechazada; la inercia del bucle de agua
@@ -53,6 +60,8 @@ Chiller de respaldo (`chiller_2`). **Ubicación:** Planta Mecánica.
   (Maker + Checker — **Cuatro Ojos**); el técnico es el ejecutor
   físico, el supervisor monitorea HMI + cronometra.
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -80,6 +89,8 @@ Chiller de respaldo (`chiller_2`). **Ubicación:** Planta Mecánica.
 5. Confirmar restauración: temperatura de suministro vuelve dentro
    del rango (< 8 °C nominal) dentro de los 90 s del cronómetro.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar absorción de carga por el respaldo + T_suministro < 8 °C antes de aplicar LOTO al Chiller fallido.
 
 6. Una vez estabilizado: aplicar **Motor LOTO eléctrico** al
    compresor fallido + **Vivo-Muerto-Vivo** en motor disconnect +

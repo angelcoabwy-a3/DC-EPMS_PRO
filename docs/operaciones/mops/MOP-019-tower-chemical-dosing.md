@@ -9,6 +9,10 @@ ANSI/AIHA Z9.5.
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Cooling Tower + sistema de dosificación química
+* **Estado Final Esperado:** LSI dentro de banda 0.2-0.5 + CoC ≤ 5 + dosificación calibrada + muestra microbiológica enviada a laboratorio
+
 Inyectar biocidas (oxidantes + no oxidantes) y anti-incrustantes en
 las torres de enfriamiento basándose en mediciones en tiempo real
 del **Índice de Saturación de Langelier (LSI)** y de los **Ciclos
@@ -22,6 +26,9 @@ química + bombas dosificadoras. **Ubicación:** Planta Mecánica / techo.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos Térmicos
+
+
+- **Vector Combustible/Químico + Vector Life Safety (biocidas oxidantes corrosivos; riesgo Legionella ≥ 100 CFU/mL)**
 
 - **Impacto en carga IT:** ninguno directo (la dosificación no
   interrumpe el flujo); INdirecto si LSI fuera de banda causa
@@ -67,6 +74,8 @@ química + bombas dosificadoras. **Ubicación:** Planta Mecánica / techo.
 - Personal: técnico químico calificado + supervisor (Maker +
   Checker — **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -108,6 +117,8 @@ química + bombas dosificadoras. **Ubicación:** Planta Mecánica / techo.
 7. Monitorear pH + conductividad + LSI durante 60 min post-
    dosificación; verificar convergencia hacia el rango objetivo.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar pH + conductividad + LSI convergiendo al rango objetivo durante 60 min antes de cerrar dosificación.
 
 8. Documentar nuevas tasas de dosificación + muestra enviada al
    laboratorio + resultados psicrométricos + notificar al NOC la

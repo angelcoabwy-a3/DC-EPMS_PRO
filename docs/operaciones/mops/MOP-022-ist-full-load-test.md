@@ -9,6 +9,10 @@ NFPA 70E, NFPA 110, Uptime Tier IV (annual IST mandate), ASHRAE TC 9.9.
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Sitio completo (utility intake + generadores + UPS + Chillers + CRAHs + bancos de carga)
+* **Estado Final Esperado:** IST validado + tiempos cronometrados documentados + utility restaurada + generadores apagados + sistema en operación normal
+
 Protocolo macro para **simular la pérdida catastrófica de la
 acometida principal** con el centro de datos operando al **100% de
 su carga térmica simulada** (bancos de carga). Valida la respuesta
@@ -24,6 +28,11 @@ generadores + cuarto de control.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos Térmicos
+
+
+- **Vector Eléctrico:** Arc Flash Categoría 4 en todos los paneles principales durante la transición; ningún operador debe acercarse a switchgear durante la maniobra.
+- **Vector Mecánico/Térmico:** Tiempo de Inercia ≈ 4 min antes de breach ASHRAE A2 al 100 % carga sin rechazo activo; UPS proporcionan ride-through eléctrico ≈ 10 min pero el rechazo térmico es el hard limit.
+- **Vector Lógico/Controles:** los controladores deben entrar en fail-safe coordinado si la simulación falla; reinicio masivo de PLCs aumenta el riesgo de pérdida de visibilidad sistémica.
 
 - **Impacto en carga IT:** **CRÍTICO** — durante el IST, los
   bancos de carga simulan IT al 100%. Si la prueba falla, el sitio
@@ -68,6 +77,8 @@ generadores + cuarto de control.
   exterior); cada par opera Maker + Checker (**Cuatro Ojos**) +
   un Incident Commander supervisando todo.
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -79,6 +90,8 @@ generadores + cuarto de control.
    operativa, abort criteria revisados, equipo de bomberos en
    standby. Notificar al NOC + cliente + stakeholders.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > `[HOLD POINT]` Confirmar briefing pre-prueba completo + roles asignados + equipo de bomberos en standby antes de simular pérdida de utility.
 
 2. Cargar bancos de carga al 100% de carga térmica simulada del
    sitio; verificar `T_inlet` racks dentro de ASHRAE A2 baseline.
@@ -92,6 +105,8 @@ generadores + cuarto de control.
    **≤ 10 s** + V/Hz nominales en **≤ 15 s** + ATS conmutado
    completamente en **≤ 30 s** total.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar generadores asumen carga en ≤ 15 s + V/Hz nominales antes de continuar.
 
 5. Monitorear UPS: deben absorber el transitorio sin descarga
    excesiva (`battery_runtime_min` no debe caer > 30% en los

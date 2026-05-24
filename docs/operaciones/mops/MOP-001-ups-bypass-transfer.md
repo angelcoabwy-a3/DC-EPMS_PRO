@@ -9,6 +9,12 @@ Sprint 3 Phase 4 Maker-Checker witness gate.
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** UPS-A or UPS-B (per Path)
+* **Estado Final Esperado:** Módulo UPS aislado galvánicamente; carga en bypass de mantenimiento externo; banco de baterías abierto + Vivo-Muerto-Vivo confirmado
+
+   > [HOLD POINT] Confirmar bypass estático sincronizado en HMI antes de cerrar MBB.
+
 Transferir la carga crítica IT desde la salida del inversor del UPS hacia
 el bypass de mantenimiento (Wrap-Around) de forma segura
 ("make-before-break"), permitiendo el aislamiento eléctrico total del
@@ -22,6 +28,9 @@ baterías. **Ubicación:** sala UPS del Data Hall correspondiente.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 2 en MBB; pérdida transitoria de filtrado de inversor durante la transferencia)**
 
 - **Impacto en carga IT:** durante la transferencia la carga IT queda
   momentáneamente alimentada por el bypass estático (sin filtrado de
@@ -60,6 +69,8 @@ baterías. **Ubicación:** sala UPS del Data Hall correspondiente.
 - Personal mínimo: técnico ejecutante + supervisor (Maker + Checker
   para satisfacer el **Principio de los Cuatro Ojos** —
   alineado con el Maker-Checker witness gate del Sprint 3 Phase 4).
+
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
 
 ---
 

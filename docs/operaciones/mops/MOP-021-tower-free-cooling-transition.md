@@ -9,6 +9,10 @@ ASHRAE TC 9.9, ASHRAE 90.4 (Energy Standard for Data Centers).
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Cooling Tower + Chillers + Plate HX
+* **Estado Final Esperado:** Compresores apagados con LOTO + Free Cooling activo + T_suministro dentro del rango sin compresores + reducción 60-80% en W_comp
+
 Maniobra crítica de **eficiencia energética**: apagar los compresores
 de los Chillers y redirigir el agua de las torres directamente a un
 **intercambiador de calor de placas** de alta eficiencia cuando las
@@ -23,6 +27,9 @@ válvulas de bypass + bombas. **Ubicación:** Planta Mecánica.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos Térmicos
+
+
+- **Vector Mecánico/Térmico (Tiempo de Inercia ~5 min; bulbo húmedo crítico T_wb ≤ T_supply - 5 °C)**
 
 - **Impacto en carga IT:** durante la transición, el `Q_rej` debe
   mantenerse continuo; un timing pobre permite que `T_suministro`
@@ -60,6 +67,8 @@ válvulas de bypass + bombas. **Ubicación:** Planta Mecánica.
 - Personal: técnico mecánico + supervisor (Maker + Checker —
   **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -69,6 +78,8 @@ válvulas de bypass + bombas. **Ubicación:** Planta Mecánica.
 1. Notificar al NOC + verificar `T_wb exterior ≤ T_suministro -
    5 °C` con tendencia estable la última hora.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > `[HOLD POINT]` Confirmar T_wb exterior ≤ T_suministro - 5 °C con tendencia estable la última hora antes de iniciar la transición.
 
 2. Verificar plate HX limpio (`ATD < 2 °C`) + bombas de
    condensador con margen de caudal.

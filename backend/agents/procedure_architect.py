@@ -403,13 +403,10 @@ MOP_HOLD_POINT_PATTERN = (
 # §5 parameterized abort triggers -- at least one numeric+unit
 # threshold must appear somewhere in the back-out section. Patterns
 # accept common units across electrical, thermal, hydraulic, and
-# time dimensions. CAUTION-level today; promoted to HARD_STOP in
-# Commit 12 once the 23 seed bodies are brought up to spec.
-#
-# TODO(commit-12-promotion): once docs/operaciones/mops/MOP-*.md
-# bodies have been updated to satisfy this rule, promote it from
-# CAUTION to HARD_STOP. Track here: line in audit_procedure_safety
-# below where the verdict resolution lives.
+# time dimensions. **PROMOTED to HARD_STOP in Commit 12** (operator
+# mandate 2026-05-24): all 23 seed bodies now carry parameterized
+# triggers, so any new draft missing them indicates a safety-critical
+# omission that must block signing.
 MOP_PARAMETERIZED_ABORT_PATTERN = (
     "Parameterized abort trigger (numeric + unit in §5)",
     # Number (int or decimal) followed by recognized unit token.
@@ -877,17 +874,19 @@ def audit_procedure_safety(draft: ProcedureDraft) -> SafetyAuditResult:
             richer_cautions.append(hold_label)
 
         # Rule 2.10 -- §5 at least ONE parameterized abort trigger
-        # (numeric + unit). CAUTION today; HARD_STOP after Commit 12.
+        # (numeric + unit). Promoted to HARD_STOP in Commit 12 --
+        # vague abort criteria are safety-critical.
         param_label, param_pat = MOP_PARAMETERIZED_ABORT_PATTERN
         param_match = re.search(param_pat, text, flags=re.IGNORECASE)
         present[param_label] = bool(param_match)
         if not param_match:
             findings.append(
-                "richer-template advisory: §5 must include at least "
+                "richer-template REFUSAL: §5 must include at least "
                 "one parameterized abort trigger (number + unit, e.g. "
-                "'< 12 segundos', '> 27 °C', '< 20 PSI')"
+                "'< 12 segundos', '> 27 °C', '< 20 PSI'). Vague "
+                "abort criteria are safety-critical and block signing."
             )
-            richer_cautions.append(param_label)
+            extra_hard_stops.append(param_label)
 
     # ── Phase 3 — verdict resolution ──
     if doc_type == DOC_TYPE_MOP:

@@ -9,6 +9,10 @@ connector standards.
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Whip-XYZ (per design)
+* **Estado Final Esperado:** Whip instalado + continuidad PASS + Megger > 100 MΩ + polaridad correcta + etiquetado IEC 60446 + breaker energizado + tensión nominal en conector rack
+
 Despliegue de cables de potencia (whips) desde el RPP hacia los racks
 nuevos, ya sea bajo piso falso o en bandeja aérea, garantizando
 radios de curvatura, etiquetado normativo + conectores IEC 309 /
@@ -20,6 +24,9 @@ destino. **Ubicación:** sala blanca / pasillo frío.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 2 en RPP durante conexión final)**
 
 - **Impacto en carga IT:** ninguno directo si el circuito es nuevo
   (el rack aún no recibe esa rama); si se trata de un cordón existente
@@ -51,6 +58,8 @@ destino. **Ubicación:** sala blanca / pasillo frío.
 - Personal: técnico ejecutante + supervisor (Maker + Checker —
   **Cuatro Ojos**) + responsable de bandeja/piso falso.
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -64,6 +73,8 @@ destino. **Ubicación:** sala blanca / pasillo frío.
 2. Aplicar **LOTO** en breaker objetivo (candado + tarjeta
    personalizados) + Vivo-Muerto-Vivo en bornes para confirmar.
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar Vivo-Muerto-Vivo + prueba de continuidad PASS antes de cerrar breaker.
 
 3. Stage el cable + verificar contra plan de diseño (calibre,
    longitud, corriente nominal).

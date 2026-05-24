@@ -8,6 +8,10 @@ IEEE 1584 (Arc Flash hazard calculations).
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** Busway sector (entre breakers de seccionamiento)
+* **Estado Final Esperado:** Sector desenergizado + juntas reapretadas a spec + resistencia de contacto < umbral fabricante + tapas reinstaladas + sector re-energizado
+
 Mantenimiento mecánico de un sector del busway: reapriete de uniones,
 medición de resistencia de contacto, limpieza de polvo acumulado, y
 verificación del estado de las tapas. Operación preventiva para
@@ -21,6 +25,9 @@ pasillo del Data Hall.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 3 durante apertura de tapas; residual capacitivo posible)**
 
 - **Impacto en carga IT:** los racks alimentados por tap-off boxes en
   el sector aislado pierden ese cordón; deben estar servidos por el
@@ -52,6 +59,8 @@ pasillo del Data Hall.
 - Personal: técnico ejecutante + supervisor (Maker + Checker —
   **Cuatro Ojos**).
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -75,6 +84,8 @@ pasillo del Data Hall.
    multímetro calibrado para confirmar ausencia de tensión (incluye
    residual capacitivo).
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Confirmar Vivo-Muerto-Vivo en barras del sector + descarga capacitiva completa antes de manipular juntas.
 
 5. Inspección visual de las juntas mecánicas: buscar decoloración,
    corrosión, acumulación de polvo o evidencia de hot-spot histórico

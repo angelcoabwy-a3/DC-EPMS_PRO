@@ -9,6 +9,10 @@ NFPA 70E §130.
 
 ## 1. Alcance y Objetivo
 
+
+* **Identificador (Tag):** ATS-A or ATS-B
+* **Estado Final Esperado:** ATS operativo + lógica de transferencia validada + generador en modo Auto + UPS en flotación
+
 Verificar la integridad operativa y la lógica de control del Tablero
 de Transferencia Automática, asegurando que la carga crítica sea
 asumida por el generador de respaldo frente a una simulación de
@@ -21,6 +25,9 @@ principal + caseta del generador.
 ---
 
 ## 2. Evaluación de Impacto y Riesgos
+
+
+- **Vector Eléctrico (Arc Flash Cat 4 durante conmutación mecánica)**
 
 - **Impacto en carga IT:** durante la prueba con carga, la totalidad
   del Path bajo ese ATS pasa por una transición Utility → Generator
@@ -69,6 +76,8 @@ principal + caseta del generador.
 > primaria es el **respeto al límite de aproximación restringida**
 > + PPE Cat 4, NO el aislamiento.
 
+- **Operabilidad de Agentes (Health Check):** confirmar que el Agente Revisor (Checker) y los Discipline AIs (HVAC AI / Electrical AI según vector) están `ONLINE` y reportando telemetría vía **MCP** antes de iniciar la maniobra.
+
 ---
 
 ## 4. Lista de Pasos Secuenciales
@@ -105,6 +114,8 @@ principal + caseta del generador.
    generador. **Personal fuera del límite de aproximación restringida
    durante la conmutación.**
    `[ ] Técnico: __________  [ ] Supervisor: __________`
+
+   > [HOLD POINT] Verificar V/Hz nominales del generador en HMI antes de la conmutación mecánica.
 
 7. Verificar la estabilidad de voltaje (`sags`) y frecuencia en los
    tableros de distribución aguas abajo tras la conmutación.
