@@ -20,6 +20,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > record and are transcribed faithfully here. Forward planning lives in
 > `docs/ROADMAP-V11.md` (locked 2026-05-10).
 
+## [v0.16.1] — 2026-05-24 (Procedure Architect Universal: deterministic vendor lookup + MCP runtime probe)
+
+> **Theme:** post-v0.16.0 architectural close-out. Two explicit TODOs
+> tracked in the skill registry since Commit 11 are now closed in
+> code + tests + tagged release. No new user-facing features; both
+> changes harden the deterministic Safety Officer audit gate.
+
+### Added
+
+- **`backend/agents/procedure_architect.py` -- deterministic Eaton
+  vendor lookup** (closes the S-VENDOR-EATON-01 TODO from Commit 11).
+  Module-level `_vendor_cache: dict[asset_id.lower(), vendor.lower() | None]`
+  populated at boot from `cmms_repository.list_assets_async()`.
+  Audit gate now resolves vendor in this order:
+  - **(a) deterministic** -- if `draft.asset_id` is in the cache,
+    registry vendor wins (no fallback even on non-eaton -- registry
+    is authoritative). vendor=None is a deterministic answer.
+  - **(b) string-match fallback** -- only when asset_id is missing
+    or not in cache.
+  Findings annotate the resolution source: `[deterministic lookup
+  (asset_id=X, vendor=Y)]` or `[string-match fallback (cache miss)]`.
+  New `set_vendor_cache(dict)` injection + `_reset_vendor_cache_for_test()`
+  test helper.
+- **`backend/mcp_health.py` -- MCP runtime probe (option ii)**
+  (closes the S-MCP-HEALTH-01 "future option (ii)" TODO).
+  Feature-flagged behind `DC_EPMS_MCP_PROBE` (default OFF). When
+  enabled, an asyncio background task polls a configured URL
+  (`DC_EPMS_MCP_PROBE_URL`, default `http://127.0.0.1:1234/v1/models`
+  -- LM Studio's OpenAI-compatible endpoint) every
+  `DC_EPMS_MCP_PROBE_INTERVAL_S` seconds (default 60s, 5s timeout).
+  Audit gate reads cached state sync via `get_mcp_health()`. Tri-state:
+  - **None** (probe disabled) -- behavior identical to v0.16.0
+  - **True** (probe up) -- no extra finding
+  - **False** (probe failing) -- CAUTION finding annotating the
+    probe reason, e.g. `MCP health probe FAILED [URLError:
+    Connection refused] -- Discipline AI agents may not be
+    reachable; operator should verify before signing`
+- **`backend/main.py` lifespan hooks** prime both the vendor cache
+  (after CMMS seed) and the MCP probe background task (after vendor
+  cache). MCP probe task pinned onto `app.state.mcp_probe_task` and
+  cancelled cleanly on shutdown.
+
+### Changed
+
+- **`docs/skills/skill-registry.md`** -- S-VENDOR-EATON-01 + S-MCP-
+  HEALTH-01 entries rewritten. The "TODO future option (ii)" / "TODO
+  asset-manufacturer-migration" notes are gone; replaced with the
+  full deterministic-or-fallback resolution spec + env knob list.
+- **`docs/operaciones/mops/MOP-*.md`** -- no body changes; the audit
+  gate now resolves the Eaton rule deterministically for any future
+  Eaton-vendored asset.
+- Backend `__version__` 0.16.0 → 0.16.1; mirrored in `package.json`,
+  `pyproject.toml`, `frontend/assets/js/core/version.js`, and the
+  two `<span data-app-version-stamp>` literals in
+  `frontend/index.html`.
+
+### Tests + tooling
+
+- pytest **1126 → 1143** (+17 across `TestAuditMOPEatonVendorDeterministicLookup`
+  (5 tests covering cache-hit / cache-miss / vendor-None / no-
+  asset_id) and `tests/test_mcp_health.py` (12 tests covering
+  module state, probe sync wrapper with mocked urlopen, and audit
+  integration including compound advisories)).
+- ruff: 0 violations in `backend/`.
+- vitest: 313 passed (unchanged; this release is backend-only).
+- GraphRAG: 10 knowledge documents indexed at boot (unchanged).
+- Architect library: 23 catalog MOP entries pre-seeded with
+  `audit_verdict=approve` (unchanged).
+- Skills registry: **24** explicit skills (unchanged from v0.16.0;
+  both S-VENDOR-EATON-01 and S-MCP-HEALTH-01 already existed,
+  this release replaces their TODO notes with shipped functionality).
+
+### Environment knobs added (all optional, sane defaults)
+
+- `DC_EPMS_MCP_PROBE` -- master switch for option (ii) (default `false`)
+- `DC_EPMS_MCP_PROBE_URL` -- URL to probe (default LM Studio /v1/models)
+- `DC_EPMS_MCP_PROBE_INTERVAL_S` -- background poll cadence (default 60)
+- `DC_EPMS_MCP_PROBE_TIMEOUT_S` -- per-probe timeout (default 5)
+
 ## [v0.16.0] "Procedure Architect Universal" — 2026-05-24
 
 > **Theme:** Epic 6 catalog integration + operator-supplied richer
