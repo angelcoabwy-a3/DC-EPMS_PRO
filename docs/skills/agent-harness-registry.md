@@ -19,7 +19,15 @@
 ## BLOQUE 3: CONTINUIDAD Y VERIFICACIÓN
 * **11. Strict TDD Harness:** Red -> Green -> Triangulate -> Refactor.
 * **12. Verify Harness:** Exige pruebas y outputs antes de terminar.
-* **13. Apply Continuity Harness:** Guarda progreso intra-tarea.
+* **13. Apply Continuity Harness:** Guarda progreso intra-tarea.  
+  **DC-EPMS:** OPERATIVO (2026-05-24). Implementado en `backend/agent_continuity.py`
+  (`CheckpointStore` JSONL append-only + `Checkpoint` dataclass + phases
+  `PHASE_PRE_LLM`/`PHASE_POST_LLM`). Wired into `ProcedureArchitectAgent`
+  (`generate()` emite pre/post-LLM; `resume_from_checkpoint()` recupera
+  con 3 ramas: ninguno→None, post_llm→reconstrucción sin LLM,
+  pre_llm→re-dispatch). Skill: `S-CONTINUITY-01`. Cobertura: 18 tests en
+  `tests/test_agent_continuity.py` (10 store primitives + 4 hook
+  emission + 3 resume paths + 1 acceptance crash+recovery).
 
 ## BLOQUE 4: SKILLS Y SUBAGENTES
 * **14. Skill Registry Harness:** Índice de capacidades del proyecto.

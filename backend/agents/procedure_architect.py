@@ -45,6 +45,11 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from backend.agent_continuity import (
+    PHASE_POST_LLM,
+    PHASE_PRE_LLM,
+    CheckpointStore,
+)
 from backend.agent_harness import (
     ArtifactDependencyError,
     hermetic_prompt,
@@ -625,10 +630,38 @@ class ProcedureArchitectAgent:
         llm_client: Any | None = None,
         model_router: Any | None = None,
         max_tokens: int = 800,
+        checkpoint_store: CheckpointStore | None = None,
     ):
         self._llm_client = llm_client
         self._model_router = model_router
         self._max_tokens = int(max_tokens)
+        # H13 Apply Continuity. When None, generate() works exactly as
+        # before (backwards-compatible). When wired, pre/post-LLM
+        # checkpoints are appended so a crashed process can resume.
+        self._checkpoint_store = checkpoint_store
+
+    # ─── H13 Apply Continuity helpers ──────────────────────────────────
+    def _checkpoint(
+        self,
+        draft_id: str,
+        phase: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Persist a checkpoint when a store is wired. Best-effort: a
+        store I/O failure must NOT propagate into the agent's primary
+        contract (a checkpoint is recovery instrumentation, not the
+        load-bearing data path)."""
+        if self._checkpoint_store is None:
+            return
+        try:
+            self._checkpoint_store.record(
+                draft_id=draft_id, phase=phase, payload=payload,
+            )
+        except Exception as exc:                             # pragma: no cover
+            log.warning(
+                "[procedure_architect] checkpoint %s for draft %s failed: %s",
+                phase, draft_id, exc,
+            )
 
     async def generate(
         self,
@@ -665,17 +698,37 @@ class ProcedureArchitectAgent:
 
         draft_id = str(uuid.uuid4())
         if self._llm_client is None or not hasattr(self._llm_client, "complete_gemma"):
+            # Path A — no LLM wired. There is no expensive call to
+            # guard, so only post_llm is meaningful (it captures the
+            # final reconstructible state).
+            generated_at = time.time()
+            content = _deterministic_skeleton(doc_type, context)
+            self._checkpoint(
+                draft_id, PHASE_POST_LLM,
+                {
+                    "doc_type": doc_type,
+                    "context": context,
+                    "asset_id": asset_id,
+                    "metadata": normalised_metadata,
+                    "content": content,
+                    "llm_present": False,
+                    "generated_at": generated_at,
+                },
+            )
             return ProcedureDraft(
                 draft_id=draft_id,
                 doc_type=doc_type,
                 context=context,
-                content=_deterministic_skeleton(doc_type, context),
+                content=content,
                 asset_id=asset_id,
-                generated_at=time.time(),
+                generated_at=generated_at,
                 llm_present=False,
                 metadata=normalised_metadata,
             )
 
+        # Path B — LLM wired. Emit pre_llm BEFORE the (potentially
+        # crash-prone) dispatch so a hard interrupt leaves a recovery
+        # anchor on disk.
         metadata_block = _format_metadata_block(normalised_metadata)
         body = (
             f"{self.SYSTEM_PROMPT}\n"
@@ -696,6 +749,23 @@ class ProcedureArchitectAgent:
             decision_authority=None,
         )
 
+        # H13 pre_llm checkpoint — carries everything needed to
+        # re-dispatch the LLM on resume.
+        self._checkpoint(
+            draft_id, PHASE_PRE_LLM,
+            {
+                "doc_type": doc_type,
+                "context": context,
+                "asset_id": asset_id,
+                "metadata": normalised_metadata,
+                "prompt": prompt,
+                "max_tokens": self._max_tokens,
+            },
+        )
+
+        # Existing contract preserved: ``llm_present=True`` means "an
+        # LLM client was wired AND dispatch was attempted" -- regardless
+        # of whether the call succeeded or fell back to the skeleton.
         try:
             text = await self._llm_client.complete_gemma(
                 prompt, max_tokens=self._max_tokens,
@@ -711,16 +781,153 @@ class ProcedureArchitectAgent:
         if not text or text.startswith(("[Gemma error", "[Gemma stream error")):
             text = _deterministic_skeleton(doc_type, context)
 
+        llm_present = True
+        generated_at = time.time()
+        # H13 post_llm checkpoint — carries the full reconstructible
+        # draft so a resume returns a completed object with NO new LLM
+        # dispatch (idempotency property).
+        self._checkpoint(
+            draft_id, PHASE_POST_LLM,
+            {
+                "doc_type": doc_type,
+                "context": context,
+                "asset_id": asset_id,
+                "metadata": normalised_metadata,
+                "content": text,
+                "llm_present": llm_present,
+                "generated_at": generated_at,
+            },
+        )
+
         return ProcedureDraft(
             draft_id=draft_id,
             doc_type=doc_type,
             context=context,
             content=text,
             asset_id=asset_id,
-            generated_at=time.time(),
-            llm_present=True,
+            generated_at=generated_at,
+            llm_present=llm_present,
             metadata=normalised_metadata,
         )
+
+    # ─── H13 — Resume from checkpoint ─────────────────────────────────
+    async def resume_from_checkpoint(
+        self, draft_id: str,
+    ) -> ProcedureDraft | None:
+        """Recover a draft from its latest checkpoint.
+
+        Three paths:
+
+        * **No checkpoint** — returns ``None``. The draft was never
+          started, or its checkpoints were purged.
+        * **Latest = post_llm** — reconstruct the
+          :class:`ProcedureDraft` from the payload and return it
+          *without* re-dispatching the LLM. This is the idempotency
+          property — re-resuming a completed draft costs zero LLM tokens.
+        * **Latest = pre_llm** — the LLM call was in flight when the
+          process crashed. Re-dispatch using the persisted prompt; then
+          write a post_llm checkpoint so a subsequent crash short-
+          circuits via the path above.
+
+        Returns ``None`` only when no checkpoint exists; in every other
+        case a fully-formed :class:`ProcedureDraft` is returned (the
+        deterministic skeleton fallback fires if the LLM is now absent
+        or fails again).
+        """
+        require_artifact("draft_id", draft_id)
+        if self._checkpoint_store is None:
+            log.warning(
+                "[procedure_architect] resume_from_checkpoint(%s) called "
+                "without a checkpoint_store wired -- nothing to resume from",
+                draft_id,
+            )
+            return None
+
+        latest = self._checkpoint_store.latest_for_draft(draft_id)
+        if latest is None:
+            return None
+
+        payload = latest.payload or {}
+        doc_type = payload.get("doc_type") or ""
+        context = payload.get("context") or ""
+        asset_id = payload.get("asset_id")
+        metadata = dict(payload.get("metadata") or {})
+
+        if latest.phase == PHASE_POST_LLM:
+            # Idempotent path — work was already done. Rebuild + return.
+            return ProcedureDraft(
+                draft_id=draft_id,
+                doc_type=doc_type,
+                context=context,
+                content=str(payload.get("content", "")),
+                asset_id=asset_id,
+                generated_at=float(payload.get("generated_at") or time.time()),
+                llm_present=bool(payload.get("llm_present", False)),
+                metadata=metadata,
+            )
+
+        if latest.phase == PHASE_PRE_LLM:
+            # Re-dispatch path — the LLM was mid-flight at crash time.
+            prompt = str(payload.get("prompt") or "")
+            max_tokens = int(payload.get("max_tokens") or self._max_tokens)
+
+            # llm_present mirrors generate()'s contract: True iff an
+            # LLM client is wired AND dispatch was attempted. The
+            # skeleton fallback does NOT flip the flag.
+            llm_present = self._llm_client is not None and hasattr(
+                self._llm_client, "complete_gemma",
+            )
+            text = ""
+            if llm_present:
+                try:
+                    text = await self._llm_client.complete_gemma(
+                        prompt, max_tokens=max_tokens,
+                    )
+                except Exception as exc:
+                    log.warning(
+                        "[procedure_architect] resume LLM dispatch failed "
+                        "(%s) -- falling back to skeleton", exc,
+                    )
+                    text = ""
+
+            text = (text or "").strip()
+            if not text or text.startswith(("[Gemma error", "[Gemma stream error")):
+                text = _deterministic_skeleton(doc_type, context)
+
+            generated_at = time.time()
+            # Anchor the recovered work with a post_llm checkpoint so a
+            # subsequent crash returns to the idempotent path.
+            self._checkpoint(
+                draft_id, PHASE_POST_LLM,
+                {
+                    "doc_type": doc_type,
+                    "context": context,
+                    "asset_id": asset_id,
+                    "metadata": metadata,
+                    "content": text,
+                    "llm_present": llm_present,
+                    "generated_at": generated_at,
+                },
+            )
+            return ProcedureDraft(
+                draft_id=draft_id,
+                doc_type=doc_type,
+                context=context,
+                content=text,
+                asset_id=asset_id,
+                generated_at=generated_at,
+                llm_present=llm_present,
+                metadata=metadata,
+            )
+
+        # Unknown phase — defensive return None rather than reconstruct
+        # something the caller cannot trust.
+        log.warning(
+            "[procedure_architect] resume_from_checkpoint(%s) found "
+            "unknown phase %r -- refusing to reconstruct",
+            draft_id, latest.phase,
+        )
+        return None
 
 
 # ─── Safety Officer audit (deterministic — S-DET-01) ──────────────────

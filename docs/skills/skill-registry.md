@@ -457,6 +457,50 @@ encode the contracts the operator pinned on 2026-05-23.
 
 ---
 
+## Category J — Agent Continuity (Gentle IA H13)
+
+### `S-CONTINUITY-01` · Long-running agent generations checkpoint pre/post LLM
+
+- **When:** Wiring any agent whose `generate()` (or equivalent) makes a
+  potentially-fragile LLM dispatch and whose work would be expensive
+  (or impossible) to redo: ProcedureArchitect, future Diagnostician-RCA,
+  any orchestration spanning multiple LLM calls.
+- **Rule:** The agent accepts an optional
+  `checkpoint_store: CheckpointStore | None` in its constructor.
+  When wired, it MUST emit two checkpoints per generation:
+  1. `PHASE_PRE_LLM` — recorded BEFORE the LLM call, carrying every
+     input the dispatch needs (`doc_type`, `context`, `asset_id`,
+     `metadata`, the hermetic `prompt`, `max_tokens`). This is the
+     recovery anchor when a hard interrupt (SIGKILL, KeyboardInterrupt,
+     network reset) escapes the agent's `except Exception`.
+  2. `PHASE_POST_LLM` — recorded AFTER the LLM resolves (or after the
+     deterministic skeleton fallback fires), carrying the full
+     reconstructible draft (`content`, `llm_present`, `generated_at`).
+     This is the idempotency anchor: a resume from a `post_llm` row
+     MUST return the completed object WITHOUT a new LLM dispatch.
+  The agent MUST expose `async resume_from_checkpoint(draft_id)` with
+  three branches: (a) no checkpoint → `None`; (b) `post_llm` → rebuild
+  + return, NO LLM call; (c) `pre_llm` → re-dispatch the persisted
+  prompt + write the missing `post_llm` checkpoint so a second crash
+  short-circuits via path (b).
+  A store I/O failure MUST NOT propagate into the agent's primary
+  contract — checkpointing is recovery instrumentation, not the
+  load-bearing data path.
+  Reason: H13 of the Gentle IA Agent Harness registry. Long-running
+  authoring flows (the Procedure Architect ships 6+ step MOPs) lose
+  load-bearing operator work when crash recovery is absent.
+- **Verify:** `tests/test_agent_continuity.py` covers `CheckpointStore`
+  primitives (10 tests), pre/post-LLM hook emission (4 tests), the
+  three resume paths (3 tests), and an end-to-end crash + recovery
+  acceptance test (1 test). The acceptance test uses
+  `KeyboardInterrupt` (a `BaseException`, not caught by the agent's
+  `except Exception`) to model a SIGKILL-class interrupt that escapes
+  the LLM dispatch. Related: [[S-DET-01]] (the verdict path is
+  independent of continuity), [[S-LEDGER-01]] (the audit trail for
+  *write* actions; H13 is the recovery trail for *authoring* actions).
+
+---
+
 ## Index — quick lookup
 
 | ID | Category | Headline |
@@ -485,6 +529,7 @@ encode the contracts the operator pinned on 2026-05-23.
 | `S-VECTOR-01` | Procedure Safety | §2 must name ≥ 1 of 6 risk vectors (caution) |
 | `S-MCP-HEALTH-01` | Procedure Safety | §3 must mention MCP / agent health check (caution, string-match) |
 | `S-HOLD-POINT-01` | Procedure Safety | §4 must include `[HOLD POINT]` markers (caution) |
+| `S-CONTINUITY-01` | Agent Continuity | Long-running agent generations checkpoint pre/post LLM |
 
-**24 skills, 9 categories.** New skills extending this registry must follow
+**25 skills, 10 categories.** New skills extending this registry must follow
 the same template (When / Rule / Verify) and be added to the index above.

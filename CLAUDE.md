@@ -1227,7 +1227,11 @@ This section binds the persistent operational artefacts created at Epic 1 closur
 
 **Companion files (binding):**
 - `docs/engram/main-context.md` — architectural state snapshot.
-- `docs/skills/skill-registry.md` — 16 explicit skills across 8 categories.
+- `docs/skills/skill-registry.md` — 25 explicit skills across 10 categories
+  (post-H13: Category J Agent Continuity added with `S-CONTINUITY-01`).
+- `docs/skills/agent-harness-registry.md` — the 30-harness Gentle IA master
+  registry. H13 (Apply Continuity) is OPERATIVO since 2026-05-24 via
+  `backend/agent_continuity.py`.
 
 ## 🚨 DO NOT TOUCH
 
