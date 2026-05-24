@@ -11,6 +11,35 @@
 #   - epms-backend = FastAPI on 8080
 #   - Network isolation: backend → db on internal bridge, NOT exposed
 #
+# =============================================================================
+# F3-6 audit closeout (2026-05-24) — DEV-ONLY CREDENTIAL POLICY
+# =============================================================================
+# The literal `epms_dev_only_change_me` appearing as POSTGRES_PASSWORD default
+# below is INTENTIONALLY labeled with the rotation reminder embedded in its
+# own value. It is the LOCAL-DEV placeholder ONLY.
+#
+# Non-local deployments (staging / production / customer environments):
+#   1. NEVER ship this literal. Either:
+#      (a) Create a `.env` file in the repo root with overrides:
+#          POSTGRES_USER=<prod_user>
+#          POSTGRES_PASSWORD=<rotated_secret>
+#          POSTGRES_DB=<prod_db>
+#          Docker Compose reads `.env` automatically. The file is
+#          gitignored.
+#      (b) Set env vars in the orchestrator (kubernetes secret,
+#          systemd EnvironmentFile, etc.) before `docker compose up`.
+#   2. The `${VAR:-default}` syntax means the default fires only if VAR
+#      is unset. Setting any of POSTGRES_USER / POSTGRES_PASSWORD /
+#      POSTGRES_DB to a real value externally overrides the dev literal.
+#   3. The backend itself reads PG_HOST / PG_PORT / PG_DB / PG_USER /
+#      PG_PASSWORD from `config/.env` (per DC-EPMS-DB-001 fix). Those
+#      must be aligned with whatever is set here.
+#
+# This block + the embedded "change_me" string in the literal value
+# satisfy F3-6 (E2E Security Audit 2026-05-17): the rotation requirement
+# is documented in tracked source, not a verbal handshake.
+# =============================================================================
+#
 # Run:
 #   docker compose up -d
 #   docker compose logs -f epms-backend

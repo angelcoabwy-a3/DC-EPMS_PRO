@@ -326,7 +326,14 @@
                 <div class="agent-input-row">
                     <input type="text" class="agent-input" id="agent-input"
                            placeholder="Ask about procedures, standards, telemetry, incidents...">
-                    <button class="btn btn-voice" id="agent-voice" title="Voice (Riva ASR)">🎤</button>
+                    <!-- F1-1 audit closeout 2026-05-24: Riva ASR was never integrated.
+     Button hidden until the backend integration lands; the
+     overview.js handlers (lines 436/448/642) are already null-safe
+     so this hidden attribute is a clean no-op. Restore by removing
+     `hidden` once `backend/agent_voice.py` (or equivalent) exists. -->
+<button class="btn btn-voice" id="agent-voice"
+        title="Voice (Riva ASR — feature pending backend integration)"
+        data-feature-pending="riva-asr" hidden>🎤</button>
                     <button class="btn" id="agent-send">Send</button>
                 </div>
 

@@ -981,16 +981,19 @@ class TestSeedArchitectLibraryFromCatalog:
         )
         _reset_architect_library_for_test()
         count = _seed_architect_library_from_catalog()
-        # 23 canonical bodies after Commits 1-8 (infrastructure 3 +
-        # distribution 9 + mechanical 9 + global 2).
-        assert count == 23
+        # 29 canonical bodies after v0.17.0 (infrastructure 3 +
+        # distribution 9 + mechanical 9 + global 2 + life_safety 3
+        # + combustible 3).
+        assert count == 29
         # The original 3 categories MUST still be present; the full
-        # set extends with the distribution + mechanical + global
-        # categories.
+        # set extends with the distribution + mechanical + global +
+        # life_safety + combustible categories.
         cats = set(e["category"] for e in _architect_library)
         assert {"ats", "transformer", "ups"}.issubset(cats)
         assert {"sts", "pdu", "rpp", "busway"}.issubset(cats)
         assert {"chiller", "crah", "tower"}.issubset(cats)
+        assert {"vesda", "novec", "clean"}.issubset(cats)
+        assert {"day", "generator"}.issubset(cats)
         for e in _architect_library:
             assert e["source"] == "catalog"
             assert e["operator_id"] == "catalog"
@@ -1057,7 +1060,7 @@ class TestArchitectLibraryFilter:
         )
         # Seed catalog entries (23 after Commits 1-8).
         seeded = _seed_architect_library_from_catalog()
-        assert seeded == 23
+        assert seeded == 29
         # Operator-sign one extra to the library.
         r = library_client.post(
             "/api/procedures/architect/save-to-library",
@@ -1074,9 +1077,9 @@ class TestArchitectLibraryFilter:
         # Default (no source filter) -> seeded + 1 signed = 24.
         r2 = library_client.get("/api/procedures/architect/library?limit=100")
         body = r2.json()
-        assert body["total"] == 24
+        assert body["total"] == 30
         assert body["source_filter"] is None
-        assert len(body["items"]) == 24
+        assert len(body["items"]) == 30
 
     def test_library_filter_source_catalog_returns_only_seeds(self, library_client):
         from backend.procedure_routes import (

@@ -7,6 +7,23 @@
   `innerHTML` sinks and credential literals. `vulture` is **not installed** in the venv,
   so backend dead-code detection is grep + import-graph reasoning, not a full pass.
 
+## Closure status (2026-05-24 v0.17.0 cycle)
+
+| Finding | Status | Closure |
+|---|---|---|
+| **CRITICAL × 3** (F3-1 / F3-2 / F3-3 RBAC gaps) | ✅ CLOSED | `b34efb1` (2026-05-17) |
+| **F1-1** Riva ASR ghost button | ✅ CLOSED | v0.17.0 cycle -- button `hidden` with HTML comment + `data-feature-pending="riva-asr"` marker; handlers already null-safe |
+| **F3-6** dev DB password literal | ✅ CLOSED | v0.17.0 cycle -- `docker-compose.yml` header expanded with explicit DEV-ONLY CREDENTIAL POLICY block + override mechanism documented (env vars OR `.env` file) |
+| **F2-3** `write_procedure_yaml` orphan | 🟡 DEFER | Acceptable per audit ("intentional for now, production-orphan until draft store lands"). Tracked in V11 roadmap (draft persistence) |
+| **F3-4** RBAC coverage of remaining mutating endpoints | 🟡 DEFER | Scope = router-wide auth dependency + RBAC gate. Estimated 1-2 day surgical work. Tracked for future sprint |
+| **F3-5** 73 `.innerHTML =` sinks | 🟡 DEFER | Scope = systematic refactor to `sanitizeHTML` wrapper. Estimated 1-2 day surgical work. Tracked for future sprint |
+| **CLEANUP × 6** | (per individual finding) | mostly handled in `d495c7b` dead-code eradication |
+
+DEFERRED items are NOT regressions — they are explicit scope decisions
+documented for traceability. Closure of the 2 QUICK WINS (F1-1 + F3-6)
+in this cycle reduces the WARNING-tier count from 4 to 2. Remaining
+deferrals are intentional and scheduled.
+
 ## Severity legend
 
 - **[CRITICAL]** — security exposure or a defect that breaks a contract. Fix before any non-local deploy.
