@@ -1,433 +1,492 @@
-# DC-EPMS PRO — Canonical Demo Script (v5, ~14-15 min)
+# DC-EPMS PRO — Canonical Demo Script v6 (2026-05-24, v0.16.0 "Procedure Architect Universal")
 
-**Audience**: Microsoft CO+I — Critical Environment (CET) managers and
-infrastructure recruiters. Assume deep data-center fluency, low patience
-for hand-waving. Every claim is cited or shown.
-**Duration**: ~14-15 min walkthrough (+ Q&A buffer)
-**Mode**: Live, this laptop, browser at `http://127.0.0.1:8080/`
-**Maintainer**: Wilmer Y. Angel Beltran · a3semi
-**Locked**: 2026-05-16 — v5 supersedes v4. Changes: opens on the B1
-Mission Control 3D scene (not the KPI grid); adds the floating HUD, the
-3D drill-down, and a 15-second SRE chaos-testing pitch; whole script
-re-cut into beat blocks with synced screen choreography for OBS.
+**Audience:** Microsoft CO+I — Critical Environment Technician (CET)
+managers + infrastructure recruiters. Assume deep data-center fluency,
+low patience for hand-waving. Every claim is cited or shown.
 
-## How to read this while recording
+**Duration:** **6:30 walkthrough** (+ unlimited Q&A buffer).
 
-- `[ACTION]` — do this with the mouse / keyboard. Do it, *then* speak.
-- `[SAY]`    — speak this. Conversational, not read-aloud-stiff.
-- `~m:ss`    — cumulative clock; use it to keep pace.
-- Anything not in a beat is **out of scope** for the live demo — Q&A only.
+**Mode:** **Hybrid** — Beats 0-1 (0:00-2:00, the riskiest opening)
+are **pre-recorded via OBS** to insulate the panel from any HMI lag.
+Beats 2-5 (2:00-6:30) are **live**, on this laptop, browser at
+`http://127.0.0.1:8080/`, terminal in second window. Hybrid maximizes
+"polished first impression + interactive depth".
+
+**Anchor narrative:** the **deterministic audit gate** as the
+architectural moat. Competitors ship LLM dashboards. DC-EPMS PRO
+ships an LLM author + a Tier-IV-grade Safety Officer who can refuse.
+
+**Maintainer:** Wilmer Y. Angel Beltran · a3semi.
+
+**Supersedes:** DEMO_SCRIPT v5 (2026-05-16, pre-Epic-6, ~14-15 min,
+B1 Mission Control focus). v5 is archived in git history at the
+last commit before this rewrite.
 
 ---
 
-## PRE-FLIGHT  (15 min before recording)
+## How to read this while presenting
+
+- `[ACTION]` — do this with the mouse / keyboard. Do it, **then** speak.
+- `[SAY]` — speak this. Conversational, not read-aloud-stiff. Bold is
+  the load-bearing claim you must land.
+- `[HOLD]` — pause 1-2 seconds for the panel to absorb the screen.
+- `[FALLBACK]` — what to say/do if the live path misbehaves.
+- `~m:ss` — cumulative clock; keep pace.
+- Anything not in a beat is **out of scope for the live demo** — Q&A.
+
+---
+
+## PRE-FLIGHT (15 minutes before the panel)
+
+Run the verifier script from a clean PowerShell prompt:
 
 ```powershell
-# Idempotent state reset to the known demo baseline (~2 s)
-.\scripts\_demo\replay_demo.ps1
+cd C:\dev\DC-EPMS_PRO
+.\scripts\preflight_demo.ps1
 ```
 
-Injects four `pending_approval` LOTO work orders:
+The script:
+1. Verifies `epms-db` docker container is **healthy**.
+2. Kills any orphan python on `:8080`.
+3. Starts `backend\main.py` in a tracked process.
+4. **Tails the boot log until** `[BUILD] DC-EPMS_PRO=v0.16.0` + `[BOOT]
+   Architect library pre-seeded with 23 catalog MOP(s)` + `[graphrag]
+   loaded 10 knowledge documents` all appear.
+5. Curls `/api/health` and `GET /api/procedures/architect/library?source=catalog`
+   to confirm `version=0.16.0`, `pg=up`, library `total=23`, every
+   entry `audit_verdict=approve`.
+6. Reports **GREEN/RED** summary per check. Refuses to declare ready if
+   any check fails.
 
-| Asset | Trigger | LOR / Pri | LOTO | MOP | Used in |
-|---|---|---|---|---|---|
-| `rpp_a_01` | predictive_kalman (THDi z=12.8) | 20 / **P1** | YES | yes | Beat 6 + Beat 7A |
-| `cdu_a_01` | predictive_kalman (flow z=15.6) | 20 / **P1** | YES | yes | Beat 6 |
-| `genset_a_01` | predictive_kalman (oil z=19.2) | 20 / **P1** | YES | yes | Beat 6 |
-| `genset_b_01` | manual (shift handover) | 12 / P2 | YES | **NO** | Beat 7B — VETO target |
+If GREEN → proceed. If RED → fix root cause before continuing; **do
+NOT demo against a degraded stack**.
 
-**Browser pre-checks** — `Ctrl+Shift+R` hard reload FIRST (defeats the
-static `?v=` cache):
-- `/api/health` → `postgres=up`, `gemma=up`
-- `/#mission-control` → 3D scene renders; 4 floating panels in the
-  corners; Building A panel reads **CAUTION (amber)**, Building B
-  **HEALTHY**; SVG connector lines visible; `⟳ Reset Panel Layout`
-  button bottom-right
-- `/#maintenance` → 3 predictive P1 + 1 manual P2 + historical rows
-- `/#tech-assist`, `/#multi-agent` → render clean
+### Browser pre-checks (operator does manually after `preflight_demo.ps1` is GREEN)
 
-**Terminal pre-staged** (second window, for Beat 4 + Beat 10):
-`cd C:\dev\DC-EPMS_PRO` · venv activated.
+- **Hard reload**: `Ctrl+Shift+R` (defeats `?v=` static cache).
+- Open in this order, leave each tab pinned:
+  - Tab 1: `http://127.0.0.1:8080/` (Overview — landing for Beat 0)
+  - Tab 2: `http://127.0.0.1:8080/#mission-control` (Beat 1)
+  - Tab 3: `http://127.0.0.1:8080/#procedures-architect` (Beats 2-4)
+  - Tab 4: `http://127.0.0.1:8080/#mops` (Beat 5 close)
+- DevTools console open in a Z-order behind (Cmd+Shift+I on Mac, F12
+  on Windows). Footer must read `DC-EPMS PRO v0.16.0`. Console banner
+  must show `%c DC-EPMS PRO v0.16.0`.
 
----
+### Terminal pre-staged
 
-━━ BEAT 1 · Cold open — Mission Control ━━   ~0:00-1:15
+Second PowerShell window, side-by-side with browser:
 
-[ACTION]  Open already on `http://127.0.0.1:8080/#mission-control`.
-          The isometric 3D campus is the first thing on screen. Let it
-          breathe 2 s before speaking — the cyan power-flow particles
-          should be moving.
+```powershell
+cd C:\dev\DC-EPMS_PRO
+.\.venv\Scripts\Activate.ps1
+# Stage the verify-chain command -- you press ENTER live in Beat 4.
+# The panel sees the staged command before you execute, which builds
+# anticipation. Do NOT execute now -- only during Beat 4.
+$cmd = 'curl -s http://127.0.0.1:8080/api/ledger/verify | python -m json.tool'
+```
 
-[SAY]  "I'm Wilmer Angel Beltran, a Critical Environment Technician.
-        This is DC-EPMS PRO — an AI-native edge operations platform I
-        built to run a Tier IV AI factory at hyperscale. What you're
-        looking at is the command surface: A3-Alpha Toronto Area,
-        Path C2 — 67 megawatts, 368 racks."
+### Recording config (OBS, Beats 0-1 only)
 
-[ACTION]  Brief mouse circle over Buildings A and B, then the Yard
-          fixtures, then the dim Building D.
-
-[SAY]  "Phase 1 is deployed — Buildings A and B: 118 NVIDIA GB200
-        NVL72 racks at 142 kilowatts, on 480 VAC trifásico, 2N. Phase 2,
-        Building D, target Q2 2026 — the dim one: 250 GB300 NVL144 racks
-        at 200 kilowatts, on an 800 VDC unipolar TN-S bus. Unipolar —
-        the DC bus has no phases; 'trifásico' only applies to the AC
-        upstream of the rectifier. That distinction is not pedantry, it
-        is the difference between a correct and a dangerous mental model."
-
-[ACTION]  Hands off the mouse — let the 3D scene idle while these words land.
-
-[SAY]  "The whole platform runs on this laptop — RTX 3060, 6 gigs of
-        VRAM, zero cloud dependency. Deliberate, per ADR-006: the AI
-        drafts, the CET approves, the LLM is never on the critical path."
-
----
-
-━━ BEAT 2 · The living HUD ━━   ~1:15-2:50
-
-[ACTION]  Hover slowly over Building A. Hold 2 s — its floating glass
-          panel brightens (backdrop-blur up) and the connector line
-          lights cyan. As you say "three anomalies", rest the cursor on
-          that panel's Anom counter.
-
-[SAY]  "Every building carries a floating telemetry panel — live PUE,
-        IT load, rack count, anomaly count — anchored in 3D space by
-        a connector line. Building A is amber: CAUTION. Three anomalies
-        queued on Path A right now. Hold that thought."
-
-[ACTION]  Hover Building B — its panel is green, HEALTHY. Then hover
-          the Yard panel (NOMINAL) and Building D (DESIGN).
-
-[SAY]  "Building B, healthy. Yard nominal. Building D still in design.
-        In a real NOC an operator scans flat dashboards and mentally
-        maps numbers onto physical locations. This collapses that step
-        — the data lives where the asset physically is. Under an
-        incident, locate-time is downtime. Spatial visibility is a
-        direct cut to mean-time-to-locate."
-
-[ACTION]  Click-drag the Building A panel a few inches, release. Drag
-          the Yard panel too. The connector lines follow in real time.
-
-[SAY]  "The panels are a heads-up display — drag any of them, the
-        operator owns the layout, and it persists across reloads."
-
-[ACTION]  Click the `⟳ Reset Panel Layout` button (bottom-right).
-          The 4 panels snap back to the corners.
-
-[SAY]  "And one click restores the default layout. Small thing — but
-        operator-grade affordances are what separate a dashboard from
-        a tool someone trusts at 3 a.m."
+- Source: **Display Capture** of monitor with browser on Tab 1.
+- Resolution: 1920x1080, 30 fps.
+- Audio: USB microphone, **NOT laptop builtin** (panel reviewers can
+  tell). Test levels: speak normally, peak around -12 dB.
+- Mouse cursor: **enlarged + click-highlight** (System Preferences →
+  Accessibility on Mac / Mouse settings → Cursor on Windows).
+- Recording length target: **2:05 ± 5 s** (Beats 0+1 only).
+- Save as `demo_v6_intro.mp4`. Embed via PowerPoint or play
+  full-screen before transitioning to live.
 
 ---
 
-━━ BEAT 3 · 3D drill-down ━━   ~2:50-3:50
+## BEAT 0 — Hook (0:00 – 0:30) · [PRE-RECORDED]
 
-[ACTION]  Single-click Building A. The view drills straight into the
-          Rack Heatmap.
+`[ACTION]` Open browser to `http://127.0.0.1:8080/` (Overview view).
+The footer reads `DC-EPMS PRO v0.16.0`.
 
-[SAY]  "One click — from the 67-megawatt campus view down to the
-        rack-level thermal heatmap of that building. No menu, no
-        breadcrumb hunt. Same spatial model at a different zoom:
-        campus, building, rack — one continuous drill."
+`[SAY]` (~0:00-0:10) "Good morning. This is **DC-EPMS PRO** —
+an AI-native edge operations platform for Tier IV AI factories. The
+simulator runs A3-Alpha Toronto, **67 MW Path C2**: Phase 1 with **118
+NVIDIA GB200 racks at 142 kW each**, Phase 2 with **250 GB300 racks at
+200 kW upstream 800 VDC unipolar TN-S** with **SSCB** clearing in the
+**1 to 100 microsecond** band per IEC 60947-2."
 
-[ACTION]  Hover 1-2 of the warmer cells so the per-rack detail shows.
+`[HOLD]` 1 second. Let the spec land.
 
-[SAY]  "Each cell is a real rack — live junction temperature and load.
-        This is the thermal layer. The three infrastructure anomalies
-        behind Building A's CAUTION state — power, cooling, genset —
-        are not racks; they live one layer up, in the Maintenance
-        backlog. Let me show you that."
+`[SAY]` (~0:10-0:30) "What makes this platform different from every
+AI ops dashboard you've seen is this: **every LLM-authored procedure
+crosses a deterministic Safety Officer audit before it can be signed
+into a forensic ledger**. The LLM is the author. The Safety Officer is
+pure Python pattern matching. The Forensic Ledger is HMAC-SHA256
+chained per IEC 62443-3-3. **Let me show you why that matters.**"
 
----
-
-━━ BEAT 4 · SRE — the drill-down is chaos-armored ━━   ~3:50-4:15
-
-[ACTION]  MANDATORY. The pre-staged terminal already shows the output of
-          `npx vitest run --reporter=verbose`. As you say "...stubs out
-          requestAnimationFrame...", rest the cursor exactly on the line
-          `✓ TC2 — the watchdog self-heals _transitioning even if the
-          rAF chain breaks` — that line is the visual proof of the claim.
-
-[SAY]  "Fifteen seconds on engineering discipline. That drill-down you
-        just watched? It used to deadlock — a camera-animation flag
-        could get stuck and silently freeze every click and hover on
-        the view. I found it, decoupled navigation from the animation,
-        and added a self-healing watchdog. Then I armored it: a Vitest
-        suite where one test stubs out requestAnimationFrame to
-        simulate a broken execution chain — and proves the watchdog
-        still recovers the state. That's chaos engineering applied to
-        a UI. I don't just fix the bug; I prove it stays fixed."
+`[ACTION]` (transition) Click Mission Control nav-item → fade.
 
 ---
 
-━━ BEAT 5 · PUE physics — the audit-grade answer ━━   ~4:15-5:15
+## BEAT 1 — Mission Control + Multi-Agent Fleet (0:30 – 2:00) · [PRE-RECORDED]
 
-[ACTION]  Navigate to `/#overview`. Point at the two-card PUE widget.
+`[ACTION]` (~0:30) Tab 2 active. `#mission-control` renders the
+3D scene with floating telemetry panels.
 
-[SAY]  "The question every infrastructure panel asks first. Phase 1,
-        480 VAC trifásico — PUE 1.32 live, target 1.30. Phase 2,
-        800 VDC unipolar TN-S — design forecast 1.16 at full load."
+`[SAY]` (~0:30-0:50) "Mission Control. The 3D scene is **three.js
+WebGL** — runs on this RTX 3060 laptop. The four floating panels are
+the live KPI surface: Path A, Path B, environmental envelope, and the
+6-agent verdict ribbon at the bottom."
 
-[ACTION]  Point at the first-law cross-check residual card.
+`[ACTION]` Hover over the Path A panel. Pulse animation fires.
 
-[SAY]  "The 16-point delta is what eliminating per-rack rectification
-        buys you — one MV rectifier upstream at 97% efficiency replaces
-        the whole AC conversion chain. And this number is not a guess:
-        the bottom card shows a first-law energy-balance cross-check,
-        residual 0.4% — audit-grade. ADR-004 documents the math. Pure
-        deterministic Python, no LLM on the critical path."
+`[SAY]` (~0:50-1:15) "Below the visualization, **238 telemetry
+channels** are streaming through a **Kalman pipeline**. Only the
+**innovation residuals** propagate upstream — ODE-explained behavior
+is filtered locally. **Send-on-delta compresses by 12x** at steady
+state. Same discipline you'd use on an orbital telemetry uplink. On
+this machine, the per-step Kalman is **4.3 microseconds** — well under
+the SSCB protection-coordination target."
 
----
+`[ACTION]` (~1:15) Click an asset on the scene to expand the asset
+panel.
 
-━━ BEAT 6 · The 3-subsystem predictive arc ━━   ~5:15-8:15   *the demo killer*
+`[SAY]` (~1:15-1:45) "Six AI agents are reasoning concurrently —
+**Architect, Safety Officer, Diagnostician, Analyst, Capacity Planner,
+Carbon-Grid**. They vote deterministically. The **Safety Officer
+holds the only veto** — uncrossable, no other agent can override.
+That's skill `S-DET-02`, binding test in the suite. Carbon-Grid uses
+**live Ontario IESO carbon intensity** with **time-of-use**
+perspective to keep us aligned with the CO+I 2030 carbon-negative
+commitment, but it has no veto authority — it surfaces as
+`HARD_STOP` through the standard rank-2 path, never the rank-1 VETO
+branch."
 
-[ACTION]  Click `Maintenance` in the sidebar. Three pending P1 LOTO
-          work orders, three different subsystems.
+`[ACTION]` (~1:45) Transition out — navigate to Tab 3 / `#procedures-architect`.
 
-[SAY]  "Those three anomalies on Building A — here they are. Three
-        predictive_kalman work orders. None created by a human. The
-        Kalman pipeline — a Send-on-Delta filter watching 238 telemetry
-        channels — emitted them when the innovation residual on a
-        channel broke 3-sigma, sustained over 3 windows."
+`[SAY]` (~1:45-2:00) "All that is the **reactive plane**. Now let me
+show you the **authoring plane** — the Procedure Architect — and the
+deterministic gate that prevents it from shipping an unsafe procedure.
+**This is the moat.**"
 
-[ACTION]  Click the chevron `▶` on `rpp_a_01`.
-
-[SAY]  "Power distribution. Total Harmonic Distortion of current at
-        18.4% — IEEE 519-2014 Section 5.1 caps that at 8%. The
-        telemetry snapshot below froze the per-phase currents at the
-        moment of anomaly — 412 / 398 / 421 amps, 2.8% imbalance —
-        in the work-order JSON, for forensics."
-
-[ACTION]  Click the chevron `▶` on `cdu_a_01`.
-
-[SAY]  "Coolant Distribution Unit, loop-flow drift. Rated 180 LPM,
-        last emission 142 — a 22% deficit. The risk is GPU junction
-        temperature excursion at the next training-step burst. Kalman
-        z-score 15.6 — flagged before any thermal alarm fired."
-
-[ACTION]  Click the chevron `▶` on `genset_a_01`.
-
-[SAY]  "Backup genset. Oil pressure down to 38 psi during the weekly
-        load-bank exercise — rated band is 45 to 65. NFPA 110-2022
-        Section 8.4, Level 1 EPSS. Inspect the pump and change the
-        filter before this genset is ever called for a real outage."
-
-[ACTION]  Click `✓` (Approve) on `rpp_a_01` → enter CET id → confirm.
-          Row flips to `approved` with timestamp + CET id.
-
-[SAY]  "Pending-approval to approved. CET signature locked. ADR-006
-        satisfied — the human made the call."
-
-[ACTION]  Switch to the pre-staged terminal. Run the re-approve curl
-          on the SAME work-order id (a `mallory.attacker` cet_id). When
-          it returns, rest the cursor on the `409` in the output.
-
-[SAY]  "Watch the second approval attempt. HTTP 409 Conflict. The
-        state machine refuses it — the original CET signature can
-        never be silently overwritten. That's the audit-trail
-        integrity guarantee. We caught this gap in our own session
-        and shipped the fix as DC-EPMS-040."
+`[ACTION]` Fade out / cut. End of recorded segment.
 
 ---
 
-━━ BEAT 7 · Multi-Agent consultation + VETO ━━   ~8:15-10:00
+## ★ TRANSITION TO LIVE (2:00) ★
 
-[SAY]  "Before approving predictive work, an experienced CET consults
-        colleagues — architect, safety officer, diagnostician, analyst.
-        The platform formalizes that."
+`[ACTION]` Stop OBS playback. Switch projector / share to **live
+browser, Tab 3**, `#procedures-architect` already loaded.
 
-### Part A — 4-perspective consultation
+`[SAY]` (~2:00) "Switching to live now."
 
-[ACTION]  Navigate `/#multi-agent`. Click `Load RPP scenario` → click
-          `Consult all 4 agents`.
-
-[SAY]  "Eight to fourteen milliseconds. Four agents in parallel via
-        asyncio.gather. Architect: Path A drops from 2N to 1N for the
-        LOTO duration — approve only if Path B is healthy.
-        Diagnostician: five prior work orders on this asset — that's
-        accelerated wear, investigate the root cause, don't just fix
-        it again. Analyst: OpEx repair 3,200 dollars versus CapEx
-        replace 42,000. Consensus: caution. Structured reasoning an
-        auditor can follow."
-
-### Part B — The VETO
-
-[ACTION]  Switch to `/#maintenance`. Point at the `genset_b_01` row —
-          P2, manual, `loto=YES`, `mop=null`. Click its WO id → Ctrl+C.
-
-[SAY]  "Fourth row. Genset B-01 — manual draft, requires LOTO, but the
-        MOP column is empty. Someone drafted a lockout without
-        attaching the procedure. Watch the Multi-Agent."
-
-[ACTION]  Back to `/#multi-agent`. Clear the textarea, type
-          `Approve this work order? Found during shift handover, no MOP
-          linked.` Paste the WO id into `work_order_id`. Leave
-          `asset_id` / `procedure_id` empty. Click `Consult all 4 agents`.
-
-[ACTION]  As the result paints, move the cursor ONE element per spoken
-          phrase: the red HARD STOP banner -> the Safety Officer card's
-          red border -> the rationale line at the bottom of that card.
-
-[SAY]  "Four milliseconds. Red banner — HARD STOP. The Safety Officer
-        card: red border, HARD STOP. One agent, and only one, holds
-        veto power. LOTO required, no MOP linked — it does not matter
-        what the other three say. The work order is gated until a CET
-        attaches the procedure. CSA Z462 Section 4.2, NFPA 70E Section
-        130. ADR-006 enforced in Python, not in process."
+`[FALLBACK]` If browser is on wrong tab: `Cmd-3` / `Ctrl-3` → Tab 3.
 
 ---
 
-━━ BEAT 8 · LOTO Auditor — the safety-critical agent ━━   ~10:00-12:00
+## BEAT 2 — Procedure Architect Authoring (2:00 – 4:00) · [LIVE]
 
-[SAY]  "Predictive maintenance is half the picture. The other half is
-        making sure the work itself is safe."
+`[ACTION]` (~2:00) Confirm view header reads "Procedure Architect ·
+SOP / MOP / EOP / EMP".
 
-[ACTION]  Navigate `/#loto`. In the pre-staged terminal, run the audit
-          curl: `MOP-ATS-MONTHLY-001` against `ups_a`, `cet_on_duty=wilmer`.
-          Refresh `/#loto` if it does not auto-update with the result.
+`[SAY]` (~2:00-2:15) "This is the Procedure Architect view. Operator
+picks document type, asset, and a context starter. **Every starter is
+engineered to seed the LLM with the safety vocabulary the audit gate
+requires.**"
 
-[SAY]  "Twelve milliseconds end-to-end. Sixteen sources consulted. The
-        verdict cites NEC 460.6 by section — because the procedure
-        forgot capacitor discharge. A 600-volt DC link, hundreds of
-        joules in the bus capacitors; breaker open, lockout on — and a
-        CET reaching in could still die. The auditor catches that in
-        twelve milliseconds."
+`[ACTION]` In Document type dropdown → select **MOP**.
 
-[ACTION]  Point at the 6 pillar results on screen.
+`[ACTION]` **Wait** for the form to reveal the new **MOP category**
+dropdown (Commit 9 feature). Should appear above the chip row.
 
-[SAY]  "Six pillars, each grounded in a standard. Topology impact
-        radius via GraphRAG. 2N redundancy survival. Capacitor
-        discharge per NEC 460.6. Witness gate per CSA Z462-24. Cooling
-        chain integrity. PPE matrix per NFPA 70E 130. All six are pure
-        Python — no LLM in the critical path. The LLM only writes the
-        human-readable summary, and only if asked."
+`[FALLBACK]` If MOP category dropdown does not appear: hard refresh
+`Ctrl+Shift+R`, repeat. Console-check `MOP_CATEGORY_KEYS` is
+defined.
 
----
+`[ACTION]` (~2:20) In MOP category dropdown → select **Chiller**.
 
-━━ BEAT 9 · Tech Assist — the operator-facing layer ━━   ~12:00-13:15
+`[SAY]` (~2:20-2:35) "32 chip starter templates across **10
+categorías** — UPS, Transformer, Utility, PDU/STS, RPP, Busway,
+Chiller, CRAH, Cooling Tower, Global. Pick Chiller for this demo."
 
-[SAY]  "Operators don't speak JSON. Tech Assist gives them three tools."
+`[HOLD]` Chips re-render. Verify 3 chips appear: "Staging / rotación
+secuencial", "Trip response (emergencia)", "Ride-through recovery".
 
-[ACTION]  Navigate `/#tech-assist`. Click `Load sample` → `Extract + match`.
+`[ACTION]` (~2:35) In Asset id picker → select **Chiller 1 (York YZ)**.
 
-[SAY]  "Six milliseconds. A nameplate — vendor canonicalized, 'Square D'
-        normalizes to 'Schneider Electric'; model, serial, kVA, voltage
-        extracted by regex, with a gemma fallback on low confidence.
-        The asset matcher scores it against the registry — link,
-        confirm, or seed new."
+`[ACTION]` Click chip **"Staging / rotación secuencial"**.
 
-[ACTION]  In Troubleshoot, type a short question (e.g. about arc flash).
-          Show the cited answer + the safety banner.
+`[HOLD]` Textarea fills with full chip text — verify visible: `LOTO`,
+`PPE Cat 3`, `CSA Z462-24`, `Vivo-Muerto-Vivo`, `battery_runtime_min`,
+`Back-out`, `chiller_1`.
 
-[SAY]  "Troubleshoot retrieves from a 4-tier corpus — Safety, Vendor,
-        Standards, MOPs — plus asset failure history, feeds gemma a
-        tier-aware prompt, returns ranked citations. Mention 'arc
-        flash' and a banner reminds you of the PPE category — every
-        time."
+`[SAY]` (~2:50-3:10) "The chip pre-fills with the full safety
+vocabulary the audit gate enforces — **Mechanical LOTO on motorized
+valves, Motor LOTO on the compressor disconnect, PPE Cat 3 per CSA
+Z462-24, Vivo-Muerto-Vivo verification, and a back-out bounded by the
+Tiempo de Tolerancia Térmica of approximately 5 minutes** before
+ASHRAE A2 breach. **The LLM author starts already inside the safety
+envelope.**"
 
-[ACTION]  Point at the Knowledge Library panel.
+`[ACTION]` (~3:10) Confirm Operator id input reads `wilmer.angel`.
 
-[SAY]  "And operators upload PDFs — manuals, OEM docs — chunked,
-        indexed in ChromaDB, instantly searchable through Troubleshoot."
+`[ACTION]` Click the **Generate** button.
 
----
+`[HOLD]` **2-3 seconds** for the LLM to respond (or skeleton fallback
+if LM Studio is not reachable).
 
-━━ BEAT 10 · Engineering discipline ━━   ~13:15-14:15
+`[FALLBACK]` If LM Studio is unreachable: the skeleton MOP renders
+with `_TBD_` placeholders. The audit will correctly hard-stop
+because the skeleton lacks LOTO. **Pivot the narrative**: "We see
+the deterministic skeleton fallback when no LLM is wired. Notice the
+audit gate still acts — it would refuse this draft because the
+required terms are absent. This is the gate operating as designed."
+Then jump directly to Beat 3 (the moat is the same story).
 
-[ACTION]  In the terminal: `git log --oneline --decorate -n 15`. Cursor to
-          the `fix(mission-control)` line and the `test(mission-control)`
-          line just above it (newest-first ordering).
+`[HOLD]` Draft renders with the full body. **Verify the verdict pill
+reads APPROVE (green)** + the Sign button is **enabled**.
 
-[SAY]  "Every commit references an ADR or a bug ID. This one —
-        the drill-down deadlock fix — and the one after it, its Vitest
-        chaos-test suite. Two atomic commits, feature and test
-        separated. We don't ship spaghetti history."
+`[ACTION]` (~3:30) **Scroll the rendered draft body slowly** so the
+panel sees the structure: §1 Alcance with **Identificador: chiller_1**
++ **Estado Final Esperado**, §2 with **Vector Mecánico/Térmico**, §3
+with **MCP Agentes Health Check**, §4 with **`[HOLD POINT]` markers**
++ Cuatro Ojos checkboxes, §5 with **parameterized abort triggers**.
 
-[ACTION]  Run `pytest -m "not slow" -q --tb=short` — show the tail.
-          Then `npm test` — show `10 passed`.
+`[SAY]` (~3:30-3:55) "**That is the Universal 5-Point Structure**
+the operator mandated on May 23rd. **Six explicit risk vectors —
+Eléctrico, Mecánico-Térmico, Life Safety, Combustible, Lógico,
+Aguas Arriba-Abajo. MCP agent health check as a precondition. Hold
+points before commands. Parameterized abort triggers — every
+trigger has a number and a unit, never `if something goes wrong`.**
+The deterministic audit just verified all of it. Verdict: APPROVE.
+Operator can sign."
 
-[SAY]  "660-plus backend tests, sub-second aggregate — and now a Vitest
-        frontend harness on top. Every bug in the registry has a
-        status, an effort estimate, and a target sprint. There is no
-        'mostly fixed' at Tier IV. And the whole demo is reproducible —
-        replay_demo.ps1 resets the postgres state in two seconds; the
-        snapshot is in git."
-
----
-
-━━ BEAT 11 · Wrap ━━   ~14:15-14:45
-
-[ACTION]  Navigate back to `/#mission-control`. Hold on the 3D scene.
-
-[SAY]  "To recap. A spatial command surface that drills from 67
-        megawatts to a single rack in one click. Live PUE per phase
-        with a first-law audit-grade cross-check. Failure prediction
-        before alarms fire — three Kalman triggers, three subsystems.
-        A 4-agent panel reasoning in parallel under 15 milliseconds,
-        Safety Officer holding the veto. LOTO validated against six
-        engineering pillars in twelve milliseconds. An audit trail
-        that cannot be silently overwritten. And a UI armored with
-        chaos testing. Standards cited by section — NEC, NFPA, CSA,
-        ASHRAE, IEEE — not paraphrased."
-
-[SAY]  "This is what Tier IV doctrine plus AI-factory speed looks like
-        on a single laptop. I'd be grateful for the chance to bring
-        this discipline to your team."
-
-[ACTION]  3-second hold on the Mission Control scene. Stop recording.
+`[HOLD]` Pause for visual confirmation. **Do not click Sign yet** —
+that's Beat 4.
 
 ---
 
-## Fallback scenarios
+## BEAT 3 — ★ THE MOAT: Audit Refuses (4:00 – 5:00) · [LIVE]
 
-| Symptom | Fix |
-|---|---|
-| Mission Control canvas black / blank | `Ctrl+Shift+R` (stale JS cache — the `?v=` is static) |
-| Drill-down click does nothing | Stale pre-fix JS — hard reload; verify `0d7f2b7` is served |
-| HUD panels stacked in the center | Hard reload — pre-HUD-MODE cached build |
-| Maintenance click bounces to Overview | `Ctrl+Shift+R` (stale JS cache) |
-| KPI / PUE cards show "—" | `curl /api/health` — restart uvicorn if `postgres=down` |
-| Empty WO backlog | Replay not run: `.\scripts\_demo\replay_demo.ps1` |
-| Approve button hangs | `sessionStorage.clear(); location.reload()` in DevTools |
-| Troubleshoot QA timeout | LM Studio offline — check `127.0.0.1:1234/v1/models` |
-| LOTO audit returns 500 | GraphRAG cache cold — first call ~30 s, then <50 ms |
-| Multi-Agent shows "Path unknown" | CMMS asset row not seeded — re-run replay_demo.ps1 |
+`[ACTION]` (~4:00) Position cursor in the Operator context textarea.
 
----
+`[SAY]` (~4:00-4:10) "Now let me show you what happens when an
+operator drifts off the contract."
 
-## Talking points to memorize (do NOT read aloud)
+`[ACTION]` **Edit the context textarea**:
+1. Find the line containing `Vivo-Muerto-Vivo` and **delete the
+   entire phrase** (leave the surrounding text intact).
+2. Find the line containing the back-out trigger `T_suministro > 12
+   °C por más de 45 segundos` and **replace it with** `revertir si
+   algo sale mal` (the textbook vague trigger).
 
-1. "Path C2 — 67 MW, 368 racks. 800 VDC is unipolar, not three-phase."
-2. "One click from the 67-megawatt campus to a single rack."
-3. "Phase 1 PUE 1.32 live, Phase 2 design 1.16 — first-law cross-check."
-4. "Three predictive triggers, three subsystems — flagged before alarms."
-5. "Four agents in parallel, sub-15 ms, Safety Officer holds the veto."
-6. "ADR-006 Deterministic Sandbox: AI drafts, CET approves."
-7. "Six LOTO pillars, each grounded in a specific standard, 12 ms."
-8. "Pure Python on every critical path — no LLM."
-9. "Original CET signature can never be silently overwritten — DC-EPMS-040."
-10. "The drill-down is chaos-tested — watchdog proven under a broken rAF chain."
-11. "Single laptop, no cloud dependency, fully reproducible."
+`[ACTION]` Click **Generate** again.
 
----
+`[HOLD]` **2-3 seconds**. Draft re-renders. **Verdict pill flips from
+APPROVE (green) to HARD_STOP / SAFETY HARD_STOP (red)**. The Sign
+button **disappears**. A findings list renders.
 
-## What this demo proves
+`[ACTION]` **Point at the findings panel** so the panel can read it.
 
-| Skill | Evidence |
-|---|---|
-| **Spatial / HMI design** | B1 Mission Control — 3D campus, floating HUD, one-click drill-down campus→rack |
-| **Architectural thinking** | 8 ADRs with rejected alternatives + rationale |
-| **Standards literacy** | NFPA 70E, NEC 460.6, CSA Z462, IEC 62443, IEEE 519-2014, ASHRAE TC 9.9, NFPA 110-2022, OCP 800 VDC — cited by section |
-| **SRE mindset** | Drill-down deadlock found, root-caused, fixed (decouple + self-healing watchdog), and chaos-tested (rAF stubbed to simulate a broken chain) |
-| **Operational discipline** | 660+ backend tests + Vitest frontend harness, atomic commits, replay script, ADR-006 audit trail |
-| **Safety-critical engineering** | Deterministic LOTO auditor, 12 ms decisions, 4-agent consult + Safety Officer veto, no LLM on critical path |
-| **Physics literacy** | Live PUE per phase + first-law cross-check; 480 VAC trifásico vs 800 VDC unipolar TN-S discipline |
-| **Honest scope reporting** | DC-EPMS bug registry — status, effort, target sprint per bug; in-session catches (DC-EPMS-040, DC-EPMS-MC-001) |
-| **Hyperscale fluency** | 67 MW Path C2, GB200 / GB300 specs, vocabulary discipline |
+`[SAY]` (~4:30-5:00) "**HARD_STOP.** Look at the findings: `missing
+safety verification: include either Vivo-Muerto-Vivo or límite de
+aproximación restringida` and `richer-template REFUSAL: §5 must
+include at least one parameterized abort trigger (number + unit) —
+vague abort criteria are safety-critical and block signing`.
 
-The panel walks away knowing **this person can be trusted to own a Tier IV problem end-to-end.** That's the bar.
+**The Sign button is gone.** Not disabled — gone. The HMI doesn't
+hide the option from the operator; the deterministic gate prevents
+it from existing. **No matter how confident the LLM was in its
+prose, this MOP cannot reach the Forensic Ledger until it satisfies
+the contract.** That is the architectural moat. The audit is **pure
+Python pattern matching** — `audit_procedure_safety` in
+`backend/agents/procedure_architect.py`. **Zero LLM calls in the
+verdict path.** It runs in microseconds and is deterministic by
+construction. **S-DET-01.**"
+
+`[HOLD]` Let the panel read the findings. This is the demo's emotional
+peak. **Do not rush.**
 
 ---
 
-**Locked: 2026-05-16 (v5). Tag the recording session `demo-take-NN` and
-note this file's commit hash. v5 supersedes v4 (commit history).**
+## BEAT 4 — Fix + Maker-Checker + Forensic Ledger (5:00 – 6:00) · [LIVE]
+
+`[ACTION]` (~5:00) Edit the textarea — **restore** both lines you
+deleted in Beat 3 (paste from clipboard if you staged it; otherwise
+re-type approximately).
+
+`[ACTION]` Click **Generate**. **Verdict pill returns to APPROVE.**
+**Sign button reappears.**
+
+`[SAY]` (~5:10-5:20) "Operator fixes the body. Re-generate. Audit
+approves. Sign button is back."
+
+`[ACTION]` (~5:20) Change Operator id input from `wilmer.angel` to
+**`maker.alice`**. Click **Sign**.
+
+`[HOLD]` Response renders. **Verify an orange/red badge appears
+reading "AWAITING SECOND SIGNATURE — Maker: maker.alice"**.
+
+`[SAY]` (~5:30-5:40) "HTTP 202 — awaiting second signature. **MOPs
+require two distinct operators to seal.** This is the **Maker-Checker
+witness gate**, the digital encoding of the **Cuatro Ojos** principle
+that Tier IV mechanical operations have used on paper for decades."
+
+`[ACTION]` (~5:40) Change Operator id input from `maker.alice` to
+**`checker.bob`**. Click **Sign**.
+
+`[HOLD]` Response renders. **Verify the success banner** reads
+something like "Signed to ledger · entry &lt;id&gt; · seq #N" +
+"Maker: maker.alice · Checker: checker.bob".
+
+`[ACTION]` (~5:50) **Switch focus to the terminal window**. Press
+ENTER on the staged command:
+
+```
+curl -s http://127.0.0.1:8080/api/ledger/verify | python -m json.tool
+```
+
+Response renders. **Point at `"divergence_index": null`**.
+
+`[SAY]` (~5:55-6:00) "Sealed. The Forensic Ledger ran a full HMAC
+chain verification — **`divergence_index: null`** means **the entire
+audit trail is cryptographically intact** from genesis to this seal.
+IEC 62443-3-3 SR 6.1 and 6.2 compliant. NIST SP 800-53r5 AU-9 and
+AU-10. **Append-only**, **TimescaleDB-backed**, **DB-side
+immutability triggers**."
+
+`[FALLBACK]` If the ledger is on InMemoryPersistence (migration not
+applied): the verify still works but say: "in production this is
+backed by TimescaleDB hypertable with BEFORE-UPDATE-DELETE-TRUNCATE
+triggers raising exceptions — DB-side immutability." Then continue.
+
+---
+
+## BEAT 5 — Close: Library + GraphRAG + Skills (6:00 – 6:30) · [LIVE]
+
+`[ACTION]` (~6:00) Tab 4 → `#mops`. **Or** switch back to terminal
+and run:
+
+```
+curl -s "http://127.0.0.1:8080/api/procedures/architect/library?source=catalog&limit=5" | python -m json.tool
+```
+
+`[HOLD]` Output shows 5 catalog MOP entries with `audit_verdict:
+"approve"` each.
+
+`[SAY]` (~6:00-6:30) "Closing the loop. The library pre-seeds **23
+canonical MOPs** at boot — UPS bypass, transformer DGA, ATS
+commutation, chiller staging, free cooling, IST full-load test,
+double-block-and-bleed ring isolation. **All audit equals approve**
+under the full contract. **10 GraphRAG knowledge documents**
+indexed — ASHRAE TC 9.9, Uptime Tier IV, OCP cooling environments,
+CTI ATC-105, Eaton SOW R-48, CSA Z462-24, OESC Ontario, the
+NVIDIA 800 VDC architecture whitepaper. **24 explicit skills** in
+the deterministic harness, **9 categories** — routing, AI
+determinism, testing, security, ledger, proposer, commit, runtime,
+**procedure authoring safety**. This is what AI-native edge
+operations looks like when safety is **enforced architecturally**,
+not narrated. **I'm happy to take questions.**"
+
+`[ACTION]` Stop the visual focus. Hands off the keyboard. Open posture
+toward the panel.
+
+---
+
+## Q&A — Anticipated Panel Questions (preview, prep in Phase 4)
+
+The following are the questions the CO+I panel is most likely to
+ask. Tight answers ≤ 30s each. Full prep is Phase 4.
+
+1. **"What stops a malicious operator from editing the audit gate
+   to remove the hard_stop?"** → The audit constants are byte-stable
+   per the test `test_system_prompt_sha256_is_pinned` + the
+   skill-registry `S-DET-01`. Any drift surfaces in CI. Production
+   deployments use commit-signing + git-tag-pinning at the container
+   build layer.
+2. **"How do you handle multi-vendor fleets (your Eaton rule is
+   string-match)?"** → Today: string-match on context. Next sprint:
+   `Asset.manufacturer` schema migration in `cmms_models.py` (TODO
+   marker in code). Then deterministic lookup. The string-match is
+   why it's CAUTION not HARD_STOP — multi-brand reality.
+3. **"What's the latency of the audit gate?"** → Pure Python regex.
+   Microseconds. Zero LLM calls in the verdict path. Demo just
+   proved this — verdict flip was instant.
+4. **"How do you cite GraphRAG in the generated MOPs?"** → The
+   knowledge docs carry `cite: NNN` markers; the LLM author quotes
+   them back when relevant. Operator sees the source.
+5. **"What about Life Safety systems (VESDA, Novec)?"** → Honest
+   answer: not in the canonical body library yet. The richer system
+   prompt names them as vectors, the audit accepts them, but
+   `site_model.yml` doesn't have these assets in the Path C2 spec.
+   Next sprint candidate.
+6. **"Where does Carbon-Grid get its data?"** → Today: deterministic
+   Ontario IESO mock keyed to time-of-day + weekend. `backend/
+   grid_provider.py`, function-as-DI-seam pattern for real IESO API
+   drop-in replacement.
+7. **"How do you scale this to multi-site?"** → Single-laptop today
+   (honest: this is the demonstrable surface). Multi-IBX confederation
+   is V11 design pattern, not implemented. Equinix-style sovereign
+   data + msgpack over private link. Vision Deck #5.
+8. **"Why the byte-pinned system prompt instead of a prompt
+   library?"** → A library is mutable; a byte-pinned prompt has a
+   test gate. Any drift fails CI. Same discipline as configuration
+   versioning in production systems.
+
+---
+
+## Recording Architecture (post-demo if hybrid is enabled)
+
+Beats 0-1 OBS recording (2:00 total):
+- File: `demo_v6_intro.mp4`, H.264, 5-10 Mbps.
+- 3 takes recommended; pick best.
+- Embed in PowerPoint slide as Auto-Play full-screen.
+
+Live segments (Beats 2-5, 4:30 total):
+- No recording during live — too much risk of audio dropout, OBS
+  resource contention with three.js.
+- **Post-demo**: optionally re-shoot Beat 2-5 standalone for a
+  leave-behind reel. Single take with the same fallback flows
+  documented above.
+
+Final leave-behind (post-rehearsal):
+- 6:30 stitched MP4 (Beats 0-1 recorded + Beats 2-5 re-recorded
+  cleanly).
+- Hosted on `claude.ai/code` share OR a private S3 bucket.
+- Link shared with the CO+I panel within 24h of the live demo.
+
+---
+
+## Reality Checks (the operator's CLAUDE.md discipline)
+
+- This demo runs on a **6 GB RTX 3060 laptop**. Every claim above is
+  measurable on this hardware. No cloud sleight-of-hand.
+- **Path C2 vocabulary fence**: `trifásico` applies ONLY to AC
+  upstream of MV Rectifier (Phase 1 480 VAC, Phase 2 35 kVAC). The
+  Phase 2 800 VDC bus is **unipolar TN-S** — saying "800 VDC
+  trifásico" is a credibility-destroying error in front of a CO+I
+  panel. Stay disciplined.
+- **No vaporware**: every screen shown is the live HMI. Every
+  endpoint shown returns real bytes. The library pre-seed of 23
+  catalog MOPs is verifiable by boot log + `curl
+  /api/procedures/architect/library?source=catalog`.
+
+---
+
+## Out-of-scope for this demo (Q&A only)
+
+- LOTO Auditor 6-Pillar (Sprint 5 era — still works but tangential
+  to the Architect story)
+- B1 Mission Control 3D drill-down details (covered in v5)
+- Tech Assist QA + PDF ingest + voice (Sprint 7.1 era)
+- Witness Engine 8-state machine internals (tangential — Maker-
+  Checker is the visible surface)
+- The Optimizer (it's a separate epic; default OFF in this
+  deployment per env-gate)
+- Hermes WebSocket EDA plane (it's running but not visually
+  surfaced in this script)
+
+These are all interesting; they are all out-of-scope for **this
+6:30**. If the panel asks, bridge to them ≤ 30s and pivot back.
+
+---
+
+**Locked: 2026-05-24. Aligned to v0.16.0 "Procedure Architect
+Universal". Next revision: post-rehearsal Phase 2 feedback.**
