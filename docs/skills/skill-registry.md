@@ -585,6 +585,85 @@ encode the contracts the operator pinned on 2026-05-23.
 
 ---
 
+## Category M — Telemetry Wire Schema (Epic 8 -- v1 proto)
+
+### `S-TELEMETRY-01` · Wire-format invariants are pytest-enforced
+
+- **When:** Touching `backend/telemetry_proto/v1/telemetry.proto`, any
+  message it defines, or any future v1.x/v2 schema sibling.
+- **Rule:** The .proto carries the strict-SI unit policy (allowed
+  suffixes only: `_k`, `_pa`, `_m3_per_s`, `_w`, `_v`, `_a`, `_hz`,
+  `_s`, `_ohm`, `_s_per_m`, `_ratio`, `_factor`, `_count`,
+  `_rad_per_s`) and the vocabulary fence (DC unipolar messages MUST
+  NOT carry phase fields). Every measurement message MUST carry a
+  `MeasurementQuality quality = N` field so the Safety Officer
+  (`S-DET-02`) can gate verdicts on sensor health. The
+  `TelemetryEnvelope` declares `Discipline discipline = 1` as field
+  #1 for zero-cost gRPC interceptor routing. No monolithic
+  `UPSStatus` -- the 5-way split (Electrical / Thermal /
+  BatteryHealth / BatteryStringStatus / OperationalMode) is binding
+  per the operator's RFC §10 Q3 answer; re-fusing into a wrapper
+  (`UPSCompositeStatus`, `UPSStatusBundle`, etc.) is forbidden.
+- **Verify:** `tests/test_telemetry_proto_schema.py` exercises 9
+  blocks (~37 tests + 1 protoc skip): file structure (4),
+  vocabulary fence (5), strict SI units (8), quality propagation
+  (1 aggregate over 23 messages), Discipline discriminator (2),
+  PTP timestamps (4), UPS segmentation (4), OCP CDU mapping (7),
+  acceptance (3 incl. orphan-message check + envelope wire-budget
+  ceiling + optional protoc compile). Related:
+  [[S-OCP-CDU-01]], [[S-PTP-01]], [[S-VOCAB-01]], [[S-DET-02]].
+
+### `S-OCP-CDU-01` · OCP CDU Test Methodology alignment
+
+- **When:** Touching mechanical / cooling telemetry messages
+  (`FlowMeasurement`, `PressureDiffMeasurement`,
+  `AbsolutePressureMeasurement`, `FluidChemistryMeasurement`,
+  `FilterDifferentialPressure`, `TemperatureMeasurement`,
+  `PumpStatus`) or the OCP CDU compliance test block.
+- **Rule:** `FlowMeasurement` MUST carry `rack_id` + `cdu_id` for
+  per-rack attribution. `AbsolutePressureMeasurement` exists as a
+  sibling of `PressureDiffMeasurement` -- absolute pressure is
+  REQUIRED at pump suction/discharge for NPSH / cavitation margin
+  computation; the two are NOT a single message.
+  `FluidChemistryMeasurement` declares `conductivity_s_per_m` AND a
+  `double ph` field (operator Q2: corrosion / inhibitor-package
+  monitoring). `FilterDifferentialPressure` declares
+  `delta_p_pa` + a `FilterStage` enum (pre / main / polishing) per
+  operator Q2. `TemperatureMeasurement` MUST carry
+  `approach_to_dewpoint_k` (ATD) as a first-class field; ATD <5 K
+  signals condensation risk on DLC manifolds (ASHRAE TC 9.9 + OCP
+  CDU Test Methodology).
+- **Verify:** `TestOCPCDUMapping` in
+  `tests/test_telemetry_proto_schema.py` covers all 7 invariants.
+  Related: [[S-TELEMETRY-01]], [[S-DET-01]], [[S-SAFETY-01]].
+
+### `S-PTP-01` · Sub-microsecond PTP timestamps on event messages
+
+- **When:** Touching event-flavoured telemetry messages
+  (`SSCBClearingEvent`, `SSCBClearingEventCapture`, `SubMicroSample`,
+  `ATSStateEvent`, `STSAlarmEvent`, `UPSOperationalMode`), or
+  adding any new event message that captures a transient.
+- **Rule:** Every event message MUST carry a `uint64
+  ptp_nanos_since_epoch` field anchoring the event to the PTP
+  grandmaster on the management network (operator RFC §10 Q4
+  confirmed it is physically present). `google.protobuf.Timestamp`
+  is INSUFFICIENT for SSCB events: most client libraries quantise
+  to milliseconds and the 1-100 us clearing window per IEC 60947-2
+  + IEC TR 63282 §5.2 demands sub-microsecond precision.
+  `SSCBClearingEventCapture` (waveform burst) MUST also carry
+  `event_start_ptp_nanos` as an anchor distinct from per-sample
+  timestamps. Periodic (500 ms) telemetry KEEPS
+  `google.protobuf.Timestamp` -- millisecond precision is
+  sufficient at the periodic cadence.
+- **Verify:** `TestPTPTimestamps` in
+  `tests/test_telemetry_proto_schema.py` covers 4 invariants:
+  every event-flavoured message carries the field, the capture
+  anchor field exists, the type is `uint64`, and each
+  `SubMicroSample` declares its own per-sample PTP nanos.
+  Related: [[S-TELEMETRY-01]], [[S-DET-02]].
+
+---
+
 ## Index — quick lookup
 
 | ID | Category | Headline |
@@ -616,6 +695,9 @@ encode the contracts the operator pinned on 2026-05-23.
 | `S-CONTINUITY-01` | Agent Continuity | Long-running agent generations checkpoint pre/post LLM |
 | `S-FEEDBACK-01` | Skill Feedback Audit | Commit citations must reflect skills actually used |
 | `S-PHASE-01` | Phase Discipline | Autonomous flows cannot skip SDD phases |
+| `S-TELEMETRY-01` | Telemetry Schema | Wire-format invariants are pytest-enforced |
+| `S-OCP-CDU-01` | Telemetry Schema | OCP CDU Test Methodology alignment |
+| `S-PTP-01` | Telemetry Schema | Sub-microsecond PTP timestamps on event messages |
 
-**27 skills, 12 categories.** New skills extending this registry must follow
+**30 skills, 13 categories.** New skills extending this registry must follow
 the same template (When / Rule / Verify) and be added to the index above.

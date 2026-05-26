@@ -1,0 +1,556 @@
+// =====================================================================
+// telemetry.proto -- DC-EPMS PRO Telemetry Wire Format v1 (CANONICAL)
+// =====================================================================
+//
+// Status:        APPROVED (operator sign-off 2026-05-26)
+// Spec:          docs/rfc/telemetry_sizing_and_ocp_validation.md
+// Supersedes:    docs/rfc/telemetry_v0.9_DRAFT.proto (historical)
+// Audited by:    tests/test_telemetry_proto_schema.py
+// Skills bound:  S-TELEMETRY-01 (wire-format invariants)
+//                S-OCP-CDU-01   (OCP CDU Test Methodology alignment)
+//                S-PTP-01       (sub-us PTP timestamp policy)
+//                S-VOCAB-01     (800 VDC is unipolar; never trifasico)
+//
+// =====================================================================
+// OPERATOR ANSWERS (RFC §10) INCORPORATED
+// =====================================================================
+//
+// Q1. Sizing scaled to 250-rack Building D target (1 GbE supports it).
+//     New plant total ~6250 channels; sustained ~1.5 Mbps / peak ~18 Mbps.
+// Q2. Fluid chemistry (conductivity + pH) + filter dP added as new
+//     mechanical sub-messages -- corrosion + filter-loading visibility.
+// Q3. UPS split into 5 sub-messages (added UPSBatteryStringStatus for
+//     per-string predictive maintenance).
+// Q4. PTP grandmaster confirmed present on the management network --
+//     sub-us SSCB timestamping is GUARANTEED, not optional.
+// Q5. Decisions A-F approved. STRICT SI UNITS throughout (see below).
+//
+// =====================================================================
+// STRICT SI UNITS POLICY
+// =====================================================================
+//
+// Every numeric measurement field carries a suffix encoding its SI
+// unit by NAME. The schema invariant test
+// (tests/test_telemetry_proto_schema.py::TestStrictSIUnits)
+// enforces this at audit time -- a forbidden suffix fails the pytest run.
+//
+//   Allowed suffix    Unit (SI)            Example field
+//   --------------    -------------------- ---------------------------
+//   _k                Kelvin               temperature_k
+//   _pa               Pascal               gauge_pa, delta_p_pa
+//   _m3_per_s         m^3 / s              flow_m3_per_s
+//   _w                Watt                 active_w, reactive_w
+//   _j                Joule                energy_j (future)
+//   _v                Volt                 v_dc_bus_v, v_ab_v
+//   _a                Ampere               i_dc_bus_a, i_a_a
+//   _hz               Hertz                frequency_hz
+//   _s                second               runtime_s, clearing_time_s
+//   _m                metre                npsh_margin_pa (head -> Pa)
+//   _rad              radian               (future)
+//   _rad_per_s        rad / s              angular_velocity_rad_per_s
+//   _c                Coulomb              (future)
+//   _ohm              Ohm                  impedance_ohm
+//   _s_per_m          Siemens / m          conductivity_s_per_m
+//   _ratio            dimensionless [0..1] soc_ratio, ripple_ratio
+//   _factor           dimensionless        power_factor
+//   _count            integer count        cycle_count
+//
+//   Forbidden (non-SI, prefixed SI, or accepted-non-SI units):
+//     _kpa _mpa _bar           -> use _pa
+//     _celsius _deg_c          -> use _k
+//     _lpm _l_per_s            -> use _m3_per_s
+//     _kw _mw _kva _kvar _mva  -> use _w  (W is SI for all power forms)
+//     _kwh _mwh                -> use _j
+//     _pct _percent            -> use _ratio
+//     _rpm                     -> use _rad_per_s
+//     _min _minute _hour       -> use _s
+//     _mohm _kohm              -> use _ohm
+//     _us_per_cm _ms_per_cm    -> use _s_per_m
+//
+//   Conversion crib for the human reader:
+//     25 deg C   => 298.15 K
+//     100 kPa    => 100000 Pa
+//     100 LPM    => 0.001667 m3/s
+//     500 kW     => 500000 W
+//     2.5 MWh    => 9e9 J
+//     1800 RPM   => 188.5 rad/s
+//     1 uS/cm    => 1e-4 S/m
+//     pH is dimensionless (field name `ph`, no suffix).
+//
+// =====================================================================
+// VOCABULARY FENCE (CRITICAL)
+// =====================================================================
+//
+// "Trifasico" / "three_phase" applies ONLY to AC upstream of the MV
+// Rectifier. The 800 VDC downstream bus is UNIPOLAR TN-S; it has NO
+// phases. Saying "800 VDC trifasico" is a credibility-destroying
+// error in CO+I panel review.
+//
+// The schema MAKES THE ERROR STRUCTURALLY IMPOSSIBLE:
+//
+//   VoltageReading.oneof topology {
+//     AcThreePhaseVoltage ac_three_phase = 1;  // V_AB / V_BC / V_CA
+//     DcUnipolarVoltage   dc_unipolar    = 2;  // ONE v_dc_bus_v field
+//   }
+//
+// The test TestVocabularyFence asserts DcUnipolarVoltage has NO phase
+// fields. Adding a `v_ab_v` to DcUnipolarVoltage fails CI.
+//
+// =====================================================================
+// SIZING (RFC §1, scaled to 250-rack Building D target per Q1)
+// =====================================================================
+//
+// 250 racks x 23 ch/rack + 501 infrastructure ch = ~6250 plant channels
+// Raw rate:  6250 x 2 Hz                            = 12500 msg/s
+// Send-on-Delta 12x compression                     = ~1042 msg/s sustained
+// Per-msg wire size (incl. gRPC HTTP/2 framing)     = ~180 bytes
+// Sustained bandwidth                               = ~1.5 Mbps
+// Peak bandwidth (SoD collapses during transient)   = ~18 Mbps
+// Sub-us SSCB burst                                 = 6.5 KB per event
+//                                                     (<16 events/month plant-wide)
+//
+// 1 GbE management network utilisation: 0.15% sustained / 1.8% peak.
+//
+// =====================================================================
+
+syntax = "proto3";
+
+package dcepms.telemetry.v1;
+
+import "google/protobuf/timestamp.proto";
+
+
+// ─── ENUMS ─────────────────────────────────────────────────────────────────
+
+enum Discipline {
+  DISCIPLINE_UNSPECIFIED  = 0;
+  DISCIPLINE_ELECTRICAL   = 1;
+  DISCIPLINE_MECHANICAL   = 2;
+  DISCIPLINE_THERMAL      = 3;
+  DISCIPLINE_LIFE_SAFETY  = 4;
+  DISCIPLINE_COMBUSTIBLE  = 5;
+}
+
+enum MeasurementQuality {
+  // Default (treat as INVALID at the consumer).
+  QUALITY_UNSPECIFIED   = 0;
+  // Sensor healthy, Kalman normalized_z < 2.0.
+  QUALITY_GOOD          = 1;
+  // 2.0 <= |z| < 3.0 -- value usable, flag the operator.
+  QUALITY_DEGRADED      = 2;
+  // No update within 3x expected period.
+  QUALITY_STALE         = 3;
+  // Sensor failure / out-of-range / NaN.
+  QUALITY_INVALID       = 4;
+  // Synthetic / test mode (DC_EPMS_USE_SIMULATOR=true).
+  QUALITY_SIMULATED     = 5;
+  // Estimated by upstream fill, not measured.
+  QUALITY_INTERPOLATED  = 6;
+}
+
+enum AcBusSegment {
+  AC_BUS_UNSPECIFIED        = 0;
+  AC_BUS_UTILITY_MV         = 1;   // 35 kVAC upstream into MV Rectifier
+  AC_BUS_PRIMARY_480_A      = 2;   // Phase 1 main switchgear A
+  AC_BUS_PRIMARY_480_B      = 3;   // Phase 1 main switchgear B (2N)
+  AC_BUS_GENERATOR_PARALLEL = 4;   // Tier IV genset paralleling bus
+}
+
+enum AlarmSeverity {
+  ALARM_SEVERITY_UNSPECIFIED = 0;
+  ALARM_INFO                 = 1;
+  ALARM_WARNING              = 2;
+  ALARM_CRITICAL             = 3;
+  ALARM_EMERGENCY            = 4;
+}
+
+enum SCRBoxState {
+  SCR_BOX_UNSPECIFIED = 0;
+  SCR_BOX_HEALTHY     = 1;
+  SCR_BOX_DEGRADED    = 2;
+  SCR_BOX_FAULT       = 3;
+  SCR_BOX_BYPASSED    = 4;
+}
+
+enum ATSPosition {
+  ATS_POSITION_UNSPECIFIED = 0;
+  ATS_POSITION_NORMAL      = 1;
+  ATS_POSITION_EMERGENCY   = 2;
+  ATS_POSITION_OFF         = 3;
+}
+
+enum UPSMode {
+  UPS_MODE_UNSPECIFIED = 0;
+  UPS_MODE_ONLINE      = 1;
+  UPS_MODE_BYPASS      = 2;
+  UPS_MODE_ECO         = 3;
+  UPS_MODE_TEST        = 4;
+  UPS_MODE_OFFLINE     = 5;
+}
+
+enum CoolantLoop {
+  COOLANT_LOOP_UNSPECIFIED = 0;
+  COOLANT_LOOP_PRIMARY     = 1;   // chilled water plant loop
+  COOLANT_LOOP_SECONDARY   = 2;   // DLC loop into rack manifolds
+  COOLANT_LOOP_CONDENSER   = 3;   // condenser water -> cooling tower
+}
+
+enum TempLocation {
+  TEMP_LOCATION_UNSPECIFIED = 0;
+  TEMP_DLC_SUPPLY           = 1;
+  TEMP_DLC_RETURN           = 2;
+  TEMP_RACK_INLET           = 3;
+  TEMP_RACK_OUTLET          = 4;
+  TEMP_CHILLER_LWT          = 5;
+  TEMP_CHILLER_EWT          = 6;
+  TEMP_ECWT                 = 7;   // entering condenser water
+  TEMP_WET_BULB             = 8;
+  TEMP_GPU_TJ_AVG           = 9;
+  TEMP_GPU_TJ_MAX           = 10;
+}
+
+enum PressureLocation {
+  PRESSURE_LOC_UNSPECIFIED    = 0;
+  PRESSURE_LOC_PUMP_SUCTION   = 1;
+  PRESSURE_LOC_PUMP_DISCHARGE = 2;
+  PRESSURE_LOC_CDU_INLET      = 3;
+  PRESSURE_LOC_CDU_OUTLET     = 4;
+  PRESSURE_LOC_RACK_SUPPLY    = 5;
+  PRESSURE_LOC_RACK_RETURN    = 6;
+}
+
+enum FluidCircuit {
+  FLUID_CIRCUIT_UNSPECIFIED = 0;
+  FLUID_CIRCUIT_PRIMARY     = 1;
+  FLUID_CIRCUIT_SECONDARY   = 2;
+  FLUID_CIRCUIT_CONDENSER   = 3;
+}
+
+enum FilterStage {
+  FILTER_STAGE_UNSPECIFIED = 0;
+  FILTER_STAGE_PRE         = 1;   // coarse pre-filter
+  FILTER_STAGE_MAIN        = 2;   // primary particulate filter
+  FILTER_STAGE_POLISHING   = 3;   // sub-micron polishing
+}
+
+
+// ─── TOP-LEVEL ENVELOPE ───────────────────────────────────────────────────
+
+// Every wire message is a TelemetryEnvelope. Field 1 is the Discipline
+// discriminator -- routing layers / gRPC interceptors read varint field
+// 1 once and dispatch to topics without parsing the oneof.
+message TelemetryEnvelope {
+  Discipline discipline                 = 1;
+  uint64     sequence_number            = 2;
+  google.protobuf.Timestamp emitted_at  = 3;
+  string     site_id                    = 4;
+  string     asset_id                   = 5;
+
+  oneof payload {
+    MechanicalReading   mechanical    = 6;
+    ElectricalReading   electrical    = 7;
+    ThermalReading      thermal       = 8;
+    LifeSafetyReading   life_safety   = 9;
+    CombustibleReading  combustible   = 10;
+  }
+
+  KalmanInnovation     innovation     = 11;
+  MeasurementQuality   quality        = 12;
+
+  reserved 13 to 31;  // grow-room for v1.x additions
+}
+
+
+// ─── DISCIPLINE READINGS ──────────────────────────────────────────────────
+
+message ElectricalReading {
+  oneof body {
+    VoltageReading            voltage              = 1;
+    CurrentReading            current              = 2;
+    PowerReading              power                = 3;
+    STSAlarmEvent             sts_alarm            = 4;
+    ATSStateEvent             ats_state            = 5;
+    UPSElectricalStatus       ups_electrical       = 6;
+    UPSThermalStatus          ups_thermal          = 7;
+    UPSBatteryHealth          ups_battery          = 8;
+    UPSBatteryStringStatus    ups_battery_string   = 9;
+    UPSOperationalMode        ups_mode             = 10;
+    SSCBClearingEvent         sscb_event           = 11;
+    SSCBClearingEventCapture  sscb_capture         = 12;
+  }
+}
+
+message MechanicalReading {
+  oneof body {
+    FlowMeasurement              flow                = 1;
+    PressureDiffMeasurement      pressure_dp         = 2;
+    AbsolutePressureMeasurement  pressure_abs        = 3;
+    FluidChemistryMeasurement    chemistry           = 4;
+    FilterDifferentialPressure   filter_dp           = 5;
+    PumpStatus                   pump                = 6;
+  }
+}
+
+message ThermalReading {
+  oneof body {
+    TemperatureMeasurement temperature = 1;
+  }
+}
+
+message LifeSafetyReading {
+  AlarmSeverity      severity   = 1;
+  string             alarm_code = 2;
+  string             alarm_message = 3;
+  MeasurementQuality quality    = 4;
+}
+
+message CombustibleReading {
+  AlarmSeverity      severity                       = 1;
+  string             alarm_code                     = 2;
+  double             lower_explosive_limit_ratio    = 3;  // [0..1] of LEL
+  double             detected_concentration_ratio   = 4;  // [0..1] of LEL
+  MeasurementQuality quality                        = 5;
+}
+
+
+// ─── VOLTAGE (vocabulary fence enforced) ──────────────────────────────────
+
+message VoltageReading {
+  oneof topology {
+    AcThreePhaseVoltage ac_three_phase = 1;
+    DcUnipolarVoltage   dc_unipolar    = 2;
+  }
+}
+
+message AcThreePhaseVoltage {
+  double             v_ab_v       = 1;
+  double             v_bc_v       = 2;
+  double             v_ca_v       = 3;
+  double             frequency_hz = 4;
+  AcBusSegment       bus_segment  = 5;
+  MeasurementQuality quality      = 6;
+}
+
+message DcUnipolarVoltage {
+  // The 800 VDC bus is UNIPOLAR TN-S. NO phase fields by design.
+  double             v_dc_bus_v             = 1;
+  double             ripple_ratio           = 2;
+  double             mv_rectifier_output_v  = 3;
+  MeasurementQuality quality                = 4;
+}
+
+
+// ─── CURRENT (vocabulary fence enforced) ──────────────────────────────────
+
+message CurrentReading {
+  oneof topology {
+    AcThreePhaseCurrent ac_three_phase = 1;
+    DcUnipolarCurrent   dc_unipolar    = 2;
+  }
+}
+
+message AcThreePhaseCurrent {
+  double             i_a_a    = 1;   // RMS current, line a
+  double             i_b_a    = 2;
+  double             i_c_a    = 3;
+  double             i_n_a    = 4;   // neutral; zero in a balanced load
+  MeasurementQuality quality  = 5;
+}
+
+message DcUnipolarCurrent {
+  double             i_dc_bus_a = 1;
+  MeasurementQuality quality    = 2;
+}
+
+
+// ─── POWER ────────────────────────────────────────────────────────────────
+
+message PowerReading {
+  // Active, reactive, and apparent power are dimensionally all V*A = W.
+  // We use the `_w` suffix uniformly per strict SI policy; the field
+  // name carries the semantic role (active / reactive / apparent).
+  double             active_w     = 1;
+  double             reactive_w   = 2;
+  double             apparent_w   = 3;
+  double             power_factor = 4;   // dimensionless, [-1..1]
+  MeasurementQuality quality      = 5;
+}
+
+
+// ─── EVENT MESSAGES (sub-us PTP timestamps) ───────────────────────────────
+
+message STSAlarmEvent {
+  uint64             ptp_nanos_since_epoch = 1;
+  AlarmSeverity      severity              = 2;
+  SCRBoxState        scr_state             = 3;
+  bool               bcms_healthy          = 4;
+  bool               transfer_in_progress  = 5;
+  string             alarm_code            = 6;
+  string             alarm_message         = 7;
+  bool               fiber_optic_link_ok   = 8;
+  string             firmware_version      = 9;
+  MeasurementQuality quality               = 10;
+}
+
+message ATSStateEvent {
+  uint64             ptp_nanos_since_epoch = 1;
+  ATSPosition        position              = 2;
+  bool               transfer_in_progress  = 3;
+  double             transfer_duration_s   = 4;
+  MeasurementQuality quality               = 5;
+}
+
+message SSCBClearingEvent {
+  uint64             ptp_nanos_since_epoch = 1;
+  double             clearing_time_s       = 2;   // 1e-6 .. 1e-4 s
+  double             fault_current_a       = 3;
+  string             breaker_id            = 4;
+  MeasurementQuality quality               = 5;
+}
+
+message SSCBClearingEventCapture {
+  string                  breaker_id              = 1;
+  uint64                  event_start_ptp_nanos   = 2;
+  double                  clearing_time_s         = 3;
+  repeated SubMicroSample samples                 = 4;
+  MeasurementQuality      quality                 = 5;
+}
+
+message SubMicroSample {
+  uint64 ptp_nanos_since_epoch = 1;
+  double voltage_v             = 2;
+  double current_a             = 3;
+  uint32 fault_detect_flags    = 4;
+  uint32 breaker_position      = 5;
+}
+
+
+// ─── UPS (5-way split per operator Q3) ────────────────────────────────────
+
+message UPSElectricalStatus {
+  VoltageReading     voltage       = 1;
+  CurrentReading     current       = 2;
+  PowerReading       power         = 3;
+  double             frequency_hz  = 4;
+  MeasurementQuality quality       = 5;
+}
+
+message UPSThermalStatus {
+  double             battery_temperature_k             = 1;
+  double             inverter_temperature_k            = 2;
+  double             ambient_temperature_k             = 3;
+  double             fan_angular_velocity_rad_per_s    = 4;
+  MeasurementQuality quality                           = 5;
+}
+
+message UPSBatteryHealth {
+  double             soc_ratio                = 1;   // [0..1]
+  double             runtime_s                = 2;   // seconds at present load
+  double             impedance_ohm            = 3;
+  uint32             cycle_count              = 4;
+  double             internal_temperature_k   = 5;
+  MeasurementQuality quality                  = 6;
+}
+
+message UPSBatteryStringStatus {
+  // NEW v1 (operator answer Q3) -- per-string visibility enables
+  // predictive maintenance at sub-bank granularity.
+  string             string_id          = 1;
+  double             string_voltage_v   = 2;
+  double             string_current_a   = 3;
+  double             soc_ratio          = 4;
+  double             impedance_ohm      = 5;
+  double             temperature_k      = 6;
+  MeasurementQuality quality            = 7;
+}
+
+message UPSOperationalMode {
+  uint64                     ptp_nanos_since_epoch = 1;
+  UPSMode                    mode                  = 2;
+  google.protobuf.Timestamp  mode_changed_at       = 3;
+  string                     reason_code           = 4;
+  MeasurementQuality         quality               = 5;
+}
+
+
+// ─── MECHANICAL ───────────────────────────────────────────────────────────
+
+message FlowMeasurement {
+  double             flow_m3_per_s = 1;
+  CoolantLoop        loop          = 2;
+  // OCP CDU per-rack attribution. Empty for non-rack measurements
+  // (e.g. primary chilled-water from chiller to CDU).
+  string             rack_id       = 3;
+  string             cdu_id        = 4;
+  MeasurementQuality quality       = 5;
+}
+
+message PressureDiffMeasurement {
+  double             delta_p_pa      = 1;
+  string             upstream_tag    = 2;
+  string             downstream_tag  = 3;
+  MeasurementQuality quality         = 4;
+}
+
+message AbsolutePressureMeasurement {
+  double             gauge_pa      = 1;   // absolute pressure
+  PressureLocation   location      = 2;
+  string             cdu_id        = 3;
+  string             rack_id       = 4;   // empty for non-rack measurements
+  MeasurementQuality quality       = 5;
+}
+
+message FluidChemistryMeasurement {
+  // NEW v1 (operator Q2) -- panel-grade DLC water chemistry.
+  // Conductivity drift signals ion ingress (corrosion precursor).
+  // pH drift signals biological / chemical degradation of the
+  // inhibitor package.
+  double             conductivity_s_per_m = 1;
+  double             ph                   = 2;   // dimensionless
+  FluidCircuit       circuit              = 3;
+  string             cdu_id               = 4;
+  double             temperature_k        = 5;   // temp-compensated probe
+  MeasurementQuality quality              = 6;
+}
+
+message FilterDifferentialPressure {
+  // NEW v1 (operator Q2) -- filter loading monitoring per stage.
+  // Rising dP across a filter stage signals approaching the
+  // change-out threshold.
+  double             delta_p_pa  = 1;
+  FilterStage        stage       = 2;
+  string             filter_id   = 3;
+  string             cdu_id      = 4;
+  MeasurementQuality quality     = 5;
+}
+
+message TemperatureMeasurement {
+  TempLocation       location               = 1;
+  double             temperature_k          = 2;
+  // ATD (Approach to Dewpoint) is the panel-grade DLC safety metric.
+  // REQUIRED at every TEMP_DLC_SUPPLY location (RFC §3.4).
+  // When the dewpoint is unknown, set quality=QUALITY_INVALID.
+  double             approach_to_dewpoint_k = 3;
+  MeasurementQuality quality                = 4;
+}
+
+message PumpStatus {
+  bool               running                          = 1;
+  double             angular_velocity_rad_per_s       = 2;
+  double             npsh_margin_pa                   = 3;
+  double             vfd_ratio                        = 4;   // [0..1]
+  MeasurementQuality quality                          = 5;
+}
+
+
+// ─── KALMAN INNOVATION ────────────────────────────────────────────────────
+
+// When Send-on-Delta triggers, the simulator emits the Kalman
+// innovation residual alongside the raw value. Steady-state behaviour
+// is fully explained locally; only anomalies traverse the wire.
+message KalmanInnovation {
+  double innovation       = 1;   // y - H*x_hat
+  double innovation_var   = 2;   // S = H*P*H' + R
+  double normalized_z     = 3;   // y / sqrt(S) -- 3-sigma rule
+  bool   is_anomalous     = 4;   // |normalized_z| > ANOMALY_Z_THRESHOLD
+}
