@@ -1,0 +1,319 @@
+// =====================================================================
+// telemetry_v0.9_DRAFT.proto
+// =====================================================================
+// STATUS: HISTORICAL REFERENCE -- NOT THE CANONICAL SCHEMA.
+//
+// This file is the v0.9 draft of the DC-EPMS PRO telemetry wire format,
+// produced in chat on 2026-05-25 as a first proposal. It was archived
+// here (per operator directive 2026-05-26, "Opcion B") because the
+// architect self-critique identified 7 gaps that prevent v0.9 from
+// shipping as the panel-grade v1.
+//
+// DO NOT generate Python stubs from this file. Do not import it in any
+// build target. Its only purpose is to preserve the v0.9 design intent
+// while we resolve the 7 gaps in the companion RFC at
+// docs/rfc/telemetry_sizing_and_ocp_validation.md. The canonical v1
+// schema will live at backend/telemetry_proto/v1/telemetry.proto once
+// the RFC is approved.
+//
+// The 7 gaps (verbatim from the architect critique):
+//
+//   #1 Envelope lacks a Discipline discriminator -- routing layer must
+//      sniff the oneof to choose a topic. A first-class enum is faster
+//      and reviewable.
+//   #2 No MeasurementQuality enum -- every numeric field is implicitly
+//      "trusted". For a Tier IV plant, a sensor health channel must
+//      ride alongside the value.
+//   #3 google.protobuf.Timestamp is millisecond-resolution in practice
+//      (nanos field exists but most clients quantise to ms). SSCB
+//      clearing events at 1..100 us require a dedicated sub-microsecond
+//      timestamp encoding (PTP-aware uint64 nanoseconds, or split
+//      seconds+nanos pair captured from a hardware PTP grand-master).
+//   #4 FlowMeasurement omits rack_id -- OCP CDU Test Methodology
+//      requires per-rack flow attribution.
+//   #5 No AbsolutePressureMeasurement -- only differential dP. OCP CDU
+//      requires both (absolute for cavitation margin / NPSH, dP for
+//      filter loading).
+//   #6 UPSStatus is monolithic -- electrical, thermal, mode, and
+//      battery health are fused into one message. Forces the consumer
+//      to take the whole envelope even when it only cares about SOC.
+//   #7 No bandwidth / throughput sizing document -- the wire format
+//      was designed without a stated target msg/s or MB/s.
+//
+// The RFC resolves all 7 before v1 is written.
+// =====================================================================
+
+syntax = "proto3";
+
+package dcepms.telemetry.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// ---------------------------------------------------------------------
+// ENVELOPE
+// ---------------------------------------------------------------------
+// Every wire message is a TelemetryEnvelope. The oneof payload routes
+// to a discipline-specific reading. A future v1 will hoist a
+// `Discipline discipline = X` field so the routing layer does not need
+// to sniff the oneof tag (Gap #1).
+// ---------------------------------------------------------------------
+message TelemetryEnvelope {
+  uint64 sequence_number             = 1;  // monotonic per (site_id, asset_id)
+  google.protobuf.Timestamp emitted_at = 2;
+  string site_id                     = 3;  // e.g. "a3-alpha-toronto"
+  string asset_id                    = 4;  // canonical asset id from site_model.yml
+
+  oneof payload {
+    MechanicalReading mechanical = 5;
+    ElectricalReading electrical = 6;
+  }
+
+  KalmanInnovation innovation = 7;         // optional -- present only when SoD triggered
+
+  reserved 8 to 15;                        // grow-room for v1 additions
+}
+
+// ---------------------------------------------------------------------
+// ELECTRICAL DISCIPLINE
+// ---------------------------------------------------------------------
+
+message ElectricalReading {
+  oneof body {
+    VoltageReading       voltage       = 1;
+    CurrentReading       current       = 2;
+    PowerReading         power         = 3;
+    STSAlarmEvent        sts_alarm     = 4;
+    ATSStateEvent        ats_state     = 5;
+    UPSStatus            ups_status    = 6;  // MONOLITHIC in v0.9 -- Gap #6
+    SSCBClearingEvent    sscb_event    = 7;
+  }
+}
+
+// CRITICAL: vocabulary fence -- AC schema vs DC schema MUST be
+// structurally distinct. Saying "800 VDC trifasico" is a credibility-
+// destroying error in CO+I panel review. The `oneof topology` makes
+// the mistake structurally impossible.
+message VoltageReading {
+  oneof topology {
+    AcThreePhaseVoltage ac_three_phase = 1;  // Phase 1 480 VAC || Phase 2 35 kVAC upstream
+    DcUnipolarVoltage   dc_unipolar    = 2;  // Phase 2 800 VDC TN-S downstream ONLY
+  }
+}
+
+message AcThreePhaseVoltage {
+  double v_ab_rms       = 1;   // line-to-line, V
+  double v_bc_rms       = 2;
+  double v_ca_rms       = 3;
+  double frequency_hz   = 4;
+  AcBusSegment bus_segment = 5;
+}
+
+message DcUnipolarVoltage {
+  double v_dc_bus           = 1;   // V
+  double ripple_pct         = 2;   // peak-to-peak as % of nominal
+  double mv_rectifier_output_v = 3;
+  // NO phase fields by design -- vocabulary fence.
+}
+
+message CurrentReading {
+  oneof topology {
+    AcThreePhaseCurrent ac_three_phase = 1;
+    DcUnipolarCurrent   dc_unipolar    = 2;
+  }
+}
+
+message AcThreePhaseCurrent {
+  double i_a_rms = 1;
+  double i_b_rms = 2;
+  double i_c_rms = 3;
+  double i_n_rms = 4;          // neutral; 0 in a balanced load
+}
+
+message DcUnipolarCurrent {
+  double i_dc_bus = 1;          // A
+}
+
+message PowerReading {
+  double active_kw     = 1;
+  double reactive_kvar = 2;     // 0 on DC links
+  double apparent_kva  = 3;
+  double power_factor  = 4;     // 1.0 on DC links
+}
+
+// Eaton SOW R-48 contract: STS alarm payload must carry BCMS health,
+// fiber-optic link status, and firmware version for the post-incident
+// review template required by the operator.
+message STSAlarmEvent {
+  AlarmSeverity severity         = 1;
+  SCRBoxState   scr_state        = 2;
+  bool          bcms_healthy     = 3;
+  bool          transfer_in_progress = 4;
+  string        alarm_code       = 5;
+  string        alarm_message    = 6;
+  bool          fiber_optic_link_ok = 7;
+  string        firmware_version = 8;
+}
+
+message ATSStateEvent {
+  ATSPosition position           = 1;   // normal / emergency / off
+  bool        transfer_in_progress = 2;
+  double      transfer_duration_ms = 3;
+}
+
+// MONOLITHIC -- v0.9 Gap #6. v1 will split into UPSElectricalStatus /
+// UPSThermalStatus / UPSOperationalMode / UPSBatteryHealth.
+message UPSStatus {
+  UPSMode  mode                  = 1;
+  double   soc_pct               = 2;
+  double   runtime_min           = 3;
+  double   battery_temp_c        = 4;
+  double   inverter_temp_c       = 5;
+  double   battery_impedance_mohm = 6;
+  uint32   cycle_count           = 7;
+}
+
+// SSCB clearing event -- Phase 2 only. IEC 60947-2 + IEC TR 63282 sec
+// 5.2 specify 1..100 us clearing window. Sub-microsecond resolution is
+// REQUIRED for v1 (Gap #3). google.protobuf.Timestamp is insufficient
+// in practice because most client libraries quantise to milliseconds.
+message SSCBClearingEvent {
+  double  clearing_time_us = 1;
+  double  fault_current_ka = 2;
+  string  breaker_id       = 3;
+  // v1 will add: uint64 ptp_nanos_since_epoch (sub-us PTP-grandmaster).
+}
+
+// ---------------------------------------------------------------------
+// MECHANICAL DISCIPLINE
+// ---------------------------------------------------------------------
+
+message MechanicalReading {
+  oneof body {
+    FlowMeasurement         flow         = 1;
+    PressureDiffMeasurement pressure_dp  = 2;
+    TemperatureMeasurement  temperature  = 3;
+    PumpStatus              pump         = 4;
+  }
+}
+
+// Gap #4: no rack_id. OCP CDU Test Methodology requires per-rack
+// attribution. v1 will add `string rack_id = N`.
+message FlowMeasurement {
+  double flow_lpm        = 1;     // litres per minute
+  CoolantLoop loop       = 2;     // primary chilled || secondary DLC
+  // v1: + string rack_id;
+}
+
+// Gap #5: no AbsolutePressureMeasurement counterpart -- only dP.
+message PressureDiffMeasurement {
+  double delta_p_kpa     = 1;
+  string upstream_tag    = 2;
+  string downstream_tag  = 3;
+}
+
+message TemperatureMeasurement {
+  TempLocation location  = 1;     // dlc_supply / dlc_return / rack_inlet / chiller_lwt / ecwt / wet_bulb / gpu_tj_avg / gpu_tj_max
+  double temperature_c   = 2;
+  double approach_to_dewpoint_k = 3;  // ATD -- panel-grade DLC metric;
+                                       // 0 means at-risk of condensation
+}
+
+message PumpStatus {
+  bool   running                 = 1;
+  double rpm                     = 2;
+  double npsh_margin_m           = 3;   // net positive suction head margin
+  uint32 vfd_pct                 = 4;   // 0..100
+}
+
+// ---------------------------------------------------------------------
+// KALMAN INNOVATION
+// ---------------------------------------------------------------------
+// When Send-on-Delta triggers, the simulator emits the Kalman
+// innovation residual alongside the raw value. Steady-state behaviour
+// is fully explained locally -- only anomalies traverse the wire.
+message KalmanInnovation {
+  double innovation       = 1;    // y - H*x_hat
+  double innovation_var   = 2;    // S = H*P*H' + R
+  double normalized_z     = 3;    // y / sqrt(S) -- 3-sigma rule
+  bool   is_anomalous     = 4;    // |normalized_z| > ANOMALY_Z_THRESHOLD
+}
+
+// ---------------------------------------------------------------------
+// ENUMS (11 total)
+// ---------------------------------------------------------------------
+
+enum Discipline {
+  DISCIPLINE_UNSPECIFIED = 0;
+  DISCIPLINE_ELECTRICAL  = 1;
+  DISCIPLINE_MECHANICAL  = 2;
+  DISCIPLINE_THERMAL     = 3;
+  DISCIPLINE_LIFE_SAFETY = 4;
+}
+
+enum AcBusSegment {
+  AC_BUS_UNSPECIFIED       = 0;
+  AC_BUS_UTILITY_MV        = 1;   // 35 kVAC upstream into MV Rectifier
+  AC_BUS_PRIMARY_480_A     = 2;   // Phase 1 main switchgear A
+  AC_BUS_PRIMARY_480_B     = 3;   // Phase 1 main switchgear B (2N)
+  AC_BUS_GENERATOR_PARALLEL = 4;  // Tier IV genset paralleling bus
+}
+
+enum AlarmSeverity {
+  ALARM_SEVERITY_UNSPECIFIED = 0;
+  ALARM_INFO                  = 1;
+  ALARM_WARNING               = 2;
+  ALARM_CRITICAL              = 3;
+  ALARM_EMERGENCY             = 4;
+}
+
+enum SCRBoxState {
+  SCR_BOX_UNSPECIFIED = 0;
+  SCR_BOX_HEALTHY     = 1;
+  SCR_BOX_DEGRADED    = 2;
+  SCR_BOX_FAULT       = 3;
+  SCR_BOX_BYPASSED    = 4;
+}
+
+enum ATSPosition {
+  ATS_POSITION_UNSPECIFIED = 0;
+  ATS_POSITION_NORMAL      = 1;
+  ATS_POSITION_EMERGENCY   = 2;
+  ATS_POSITION_OFF         = 3;
+}
+
+enum UPSMode {
+  UPS_MODE_UNSPECIFIED = 0;
+  UPS_MODE_ONLINE      = 1;
+  UPS_MODE_BYPASS      = 2;
+  UPS_MODE_ECO         = 3;
+  UPS_MODE_TEST        = 4;
+  UPS_MODE_OFFLINE     = 5;
+}
+
+enum CoolantLoop {
+  COOLANT_LOOP_UNSPECIFIED = 0;
+  COOLANT_LOOP_PRIMARY     = 1;   // chilled water -> chiller plant
+  COOLANT_LOOP_SECONDARY   = 2;   // DLC loop -> rack manifold
+  COOLANT_LOOP_CONDENSER   = 3;   // condenser water -> cooling tower
+}
+
+enum TempLocation {
+  TEMP_LOCATION_UNSPECIFIED = 0;
+  TEMP_DLC_SUPPLY           = 1;
+  TEMP_DLC_RETURN           = 2;
+  TEMP_RACK_INLET           = 3;
+  TEMP_CHILLER_LWT          = 4;
+  TEMP_ECWT                 = 5;   // entering condenser water
+  TEMP_WET_BULB             = 6;
+  TEMP_GPU_TJ_AVG           = 7;
+  TEMP_GPU_TJ_MAX           = 8;
+}
+
+// Placeholder enums -- v1 will populate them properly.
+enum DummyA { DUMMY_A_UNSPECIFIED = 0; }
+enum DummyB { DUMMY_B_UNSPECIFIED = 0; }
+enum DummyC { DUMMY_C_UNSPECIFIED = 0; }
+
+// =====================================================================
+// END v0.9 DRAFT
+// =====================================================================
