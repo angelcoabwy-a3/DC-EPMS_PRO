@@ -1024,6 +1024,107 @@ async def telemetry_stream(request: Request):
 
 
 # ==============================================================
+#  Telemetry proto SSE endpoint (Epic 8)
+# ==============================================================
+@app.get("/api/telemetry/stream/proto")
+async def telemetry_stream_proto(request: Request):
+    """SSE: strict-SI v1 proto envelopes (Epic 8).
+
+    Parallel to /api/telemetry/stream (which emits JSON in engineering
+    units for the existing HMI). This endpoint runs the same simulator
+    + pipeline path, then pushes each tick through the proto adapter
+    and emits a JSON envelope carrying base64-encoded
+    TelemetryEnvelope wire bytes:
+
+        data: {"schema": "telemetry_envelopes_v1",
+               "envelopes": ["<base64>", ...],
+               "anomaly_count_60min": N, "ts": <unix>}
+
+    The site_id is read from the `DC_EPMS_SITE_ID` env var (defaulting
+    to "a3-alpha-toronto"). Consumers MUST gate decoding on the
+    `schema` field for forward-compat.
+
+    Returns HTTP 503 when DC_EPMS_USE_SIMULATOR != 1 -- the proto
+    endpoint has no legacy DB fallback (engineering-unit DB rows do
+    not carry the per-channel Kalman state needed to derive
+    MeasurementQuality, and the v1 wire format requires it).
+    """
+    use_simulator = os.environ.get("DC_EPMS_USE_SIMULATOR", "1").strip() == "1"
+    if not use_simulator:
+        return JSONResponse(
+            {
+                "error": "proto stream requires simulator mode "
+                         "(set DC_EPMS_USE_SIMULATOR=1)",
+            },
+            status_code=503,
+        )
+
+    site_id = os.environ.get("DC_EPMS_SITE_ID", "a3-alpha-toronto")
+
+    try:
+        from site_model import get_site_model as _sm_get
+        from telemetry_pipeline import get_pipeline
+        from telemetry_simulator import get_simulator
+
+        from backend.telemetry_proto_stream import proto_tick_payload
+        sim = get_simulator(_sm_get())
+        pipeline = get_pipeline(dt_seconds=1.0)
+        log.info(
+            "[telemetry/stream/proto] proto SSE active: site_id=%s, "
+            "%d components, %d channels",
+            site_id, sim.component_count, sim.channel_count,
+        )
+    except Exception as e:
+        log.error("[telemetry/stream/proto] init failed: %s", e)
+        return JSONResponse(
+            {"error": f"proto stream init failed: {str(e)[:200]}"},
+            status_code=503,
+        )
+
+    async def gen() -> AsyncIterator[str]:
+        seq = 0
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                window = sim.get_window(dt_seconds=1.0, n_samples=5)
+                channels = pipeline.compute(window)
+                payload = proto_tick_payload(
+                    payload=channels,
+                    window=window,
+                    anomaly_count_60min=pipeline.count_anomalies_60min(),
+                    site_id=site_id,
+                    sequence_start=seq,
+                )
+                # Advance the seq anchor by a wide fixed step per tick.
+                # The adapter assigns seq, seq+1, ... within a tick;
+                # the step (10_000) is far larger than the per-tick
+                # envelope count (~6250 channels at 250-rack scale per
+                # RFC sec 1.3), so seq stays monotonic without
+                # re-parsing the JSON.
+                seq += 10_000
+                yield f"data: {payload}\n\n"
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+                break
+            except Exception as e:
+                log.warning("[telemetry/stream/proto] tick error: %s", e)
+                yield (
+                    f"data: {json.dumps({'schema': 'error', 'error': str(e)[:200], 'ts': time.time()})}\n\n"
+                )
+            await asyncio.sleep(5)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+# ==============================================================
 #  Incidents endpoints
 # ==============================================================
 @app.post("/api/incidents")
