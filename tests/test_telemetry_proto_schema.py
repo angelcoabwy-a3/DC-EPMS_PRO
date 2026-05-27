@@ -519,11 +519,19 @@ class TestSchemaAcceptance:
 
     def test_proto_compiles_via_grpc_tools_if_available(self, tmp_path):
         protoc = pytest.importorskip("grpc_tools.protoc")
+        import grpc_tools  # type: ignore[import-not-found]
+
+        # grpc_tools.protoc.main(...) does NOT auto-include the
+        # bundled well-known types path the way `python -m
+        # grpc_tools.protoc` does -- we replicate that injection here
+        # so `import "google/protobuf/timestamp.proto"` resolves.
+        proto_include = str(Path(grpc_tools.__file__).parent / "_proto")
         src_dir = PROTO_PATH.parent
         out_dir = tmp_path / "out"
         out_dir.mkdir()
         rc = protoc.main([
             "grpc_tools.protoc",
+            f"-I{proto_include}",
             f"--proto_path={src_dir}",
             f"--python_out={out_dir}",
             str(PROTO_PATH),
