@@ -1124,6 +1124,11 @@ async def agent_health() -> dict:
         }
 
 
-@router.on_event("shutdown")
-async def _shutdown() -> None:
+async def close() -> None:
+    """Release the FacilityCoPilot's underlying httpx client.
+
+    Called from backend.main.lifespan on shutdown. Replaces the
+    earlier ``@router.on_event("shutdown")`` decorator (deprecated
+    in FastAPI 0.110+ and removed from starlette 1.x's Router).
+    """
     await _copilot.close()

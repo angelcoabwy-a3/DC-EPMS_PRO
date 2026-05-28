@@ -52,6 +52,14 @@ classifiers = [
 dependencies = [
   # Web framework
   "fastapi==0.115.0",
+  # FastAPI 0.115 calls starlette.routing.Router(on_startup=, on_shutdown=).
+  # starlette 1.0 dropped both kwargs (replaced by lifespan), so the
+  # transitive resolver pulling starlette 1.x breaks boot at FastAPI()
+  # construction. The fastapi 0.115 contract is starlette>=0.37.2,<0.39.0.
+  # sse-starlette 3.x in turn demands starlette>=0.49.1 -- pin to <3.0
+  # so the transitive resolver does not yank starlette back up.
+  "starlette>=0.37.2,<0.39.0",
+  "sse-starlette>=2.0,<3.0",
   "uvicorn[standard]==0.32.0",
   "pydantic==2.9.2",
   "httpx==0.27.2",
@@ -185,6 +193,12 @@ extend-exclude = [
   ".pytest_cache",
   "__pycache__",
   "logs",
+
+  # Generated protobuf stubs (Epic 8 telemetry v1). These files are
+  # produced by `protoc --python_out=...` and rewritten on regeneration;
+  # linting them is meaningless. Covers *_pb2.py + *_pb2_grpc.py.
+  "backend/telemetry_proto/**/*_pb2.py",
+  "backend/telemetry_proto/**/*_pb2_grpc.py",
 
   # Physics duplicates (MD5-identical, deletion pending)
   "backend/physics/physics_it_thermal.py",
@@ -385,14 +399,6 @@ filterwarnings = [
   "ignore::DeprecationWarning:langgraph.*",
   "ignore::DeprecationWarning:nemoguardrails.*",
   "ignore::DeprecationWarning:pydantic.*",
-  # FastAPI on_event() is deprecated in favour of lifespan handlers;
-  # backend.agent_copilot still uses the older shape and the warning
-  # fires at module-import time (cannot be silenced per-test). It is
-  # raised via typing_extensions.@deprecated with stacklevel set so
-  # the attribution lands on backend.agent_copilot. Migration to
-  # lifespan is tracked separately (out of scope for the Gentle IA
-  # Agent Harness sprints).
-  "ignore::DeprecationWarning:backend.agent_copilot",
   # Windows + Starlette TestClient + ProactorEventLoop: well-known
   # ResourceWarning leak (httpx self-pipe sockets, ProactorEventLoop
   # del). Surfaces as PytestUnraisableExceptionWarning during the GC
