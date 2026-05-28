@@ -39,3 +39,53 @@ if (typeof globalThis.requestAnimationFrame !== 'function') {
     globalThis.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 16);
     globalThis.cancelAnimationFrame = (id) => clearTimeout(id);
 }
+
+// Epic 10 -- Node 22+ ships an experimental localStorage global that
+// requires `--localstorage-file=<path>` to work; without it,
+// localStorage.setItem is missing. happy-dom's window.localStorage IS
+// a working in-memory implementation -- we force-bind it as the
+// global so calls written as plain `localStorage.setItem(...)`
+// (the way browser code is written) work in the test env. Use a
+// pure in-memory polyfill if window.localStorage is also missing so
+// the test does not silently use a stub.
+function _makeMemoryStorage() {
+    let store = new Map();
+    return {
+        setItem(k, v) { store.set(String(k), String(v)); },
+        getItem(k) { return store.has(String(k)) ? store.get(String(k)) : null; },
+        removeItem(k) { store.delete(String(k)); },
+        clear() { store = new Map(); },
+        key(i) { return Array.from(store.keys())[i] || null; },
+        get length() { return store.size; },
+    };
+}
+
+function _installStorage(name) {
+    let target = null;
+    try {
+        if (typeof window !== 'undefined' && window[name]
+            && typeof window[name].setItem === 'function') {
+            target = window[name];
+        }
+    } catch (_e) { /* fall through to polyfill */ }
+    if (!target) target = _makeMemoryStorage();
+    try {
+        Object.defineProperty(globalThis, name, {
+            configurable: true,
+            writable: true,
+            value: target,
+        });
+    } catch (_e) {
+        // If we cannot redefine, mutate the existing object's methods.
+        const existing = globalThis[name];
+        if (existing) {
+            existing.setItem = target.setItem.bind(target);
+            existing.getItem = target.getItem.bind(target);
+            existing.removeItem = target.removeItem.bind(target);
+            existing.clear = target.clear.bind(target);
+        }
+    }
+}
+
+_installStorage('localStorage');
+_installStorage('sessionStorage');

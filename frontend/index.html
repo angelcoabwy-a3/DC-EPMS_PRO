@@ -1852,6 +1852,29 @@
                  frontend/assets/js/views/procedures.js. -->
             <div class="view" id="view-procedures-architect" hidden></div>
 
+            <!-- ══════════ View: Login (Epic 10 -- IAM gate) ══════════════
+                 The login surface is mounted permanently; the auth
+                 gate in main.js shows it when no valid JWT is in
+                 localStorage and hides every other view. Form fields
+                 wired by frontend/assets/js/views/login.js. -->
+            <div class="view" id="view-login" hidden>
+                <div class="view-hdr">
+                    <h2>Sign in -- DC-EPMS PRO</h2>
+                    <div class="view-sub">JWT-gated IAM (Epic 10). Demo users: operator / technician / safety_a / safety_b / manager.</div>
+                </div>
+                <div data-login-form style="max-width:360px;display:flex;flex-direction:column;gap:12px;margin-top:18px;">
+                    <label>Username
+                        <input id="login-username" type="text" autocomplete="username" style="width:100%;padding:8px;">
+                    </label>
+                    <label>Password
+                        <input id="login-password" type="password" autocomplete="current-password" style="width:100%;padding:8px;">
+                    </label>
+                    <button data-login-submit type="button" style="padding:10px;">Sign in</button>
+                    <div data-login-error style="display:none;color:#c00;"></div>
+                    <div data-login-banner style="color:#080;"></div>
+                </div>
+            </div>
+
             <!-- ══════════ View: Quantum (Epic 9 -- BB84 simulator) ══════
                  Educational BB84 telemetry. Polls /api/qkd/status; the
                  view is rendered by frontend/assets/js/views/quantum.js.

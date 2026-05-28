@@ -54,6 +54,8 @@ import { initOverviewView } from './views/overview.js';
 import { initOptimizerView } from './views/optimizer.js';
 import { initProceduresView } from './views/procedures.js';
 import { initQuantumView } from './views/quantum.js';
+import { initLoginView, showLoginView, hideLoginView } from './views/login.js';
+import { hasValidToken, getClaims, onAuthChange } from './core/auth.js';
 import { initBootstrap } from './core/bootstrap.js';
 
 // Telemetry engine flag. core/telemetry_engine.js owns the SSE; this
@@ -128,9 +130,43 @@ initProceduresView();
 // current QBER + pool depth so the eavesdropper-injection drill is
 // visually demonstrable. structured render path -> escapeHTML only.
 initQuantumView();
+// Epic 10 — IAM login view. Wired BEFORE bootstrap so the form is
+// listening for clicks even before auth has been granted. The auth
+// gate below decides whether to show login or run the full app.
+initLoginView();
 // Router glue — T2.1 Vector 4c: the app.js IIFE residual, promoted to
 // core/bootstrap.js. app.js is now DELETED — Epic T2.1 closed.
 initBootstrap();
+
+// Epic 10 -- Auth gate. If no valid JWT in localStorage, hide every
+// view except #view-login and the sidebar nav. On successful login
+// the dc-epms-auth-granted event fires from views/login.js -- we
+// hide the login form + un-hide the default view. On 401 in any
+// authFetch, core/api_client.js dispatches dc-epms-auth-required
+// which routes back to the login surface.
+function _applyAuthGate() {
+    if (hasValidToken()) {
+        hideLoginView();
+        const claims = getClaims();
+        const banner = document.querySelector('[data-login-banner]');
+        if (banner && claims) {
+            banner.textContent = (claims.username || '?') + ' (' + (claims.role || '') + ')';
+        }
+    } else {
+        showLoginView();
+    }
+}
+
+window.addEventListener('dc-epms-auth-granted', () => {
+    _applyAuthGate();
+});
+window.addEventListener('dc-epms-auth-required', () => {
+    _applyAuthGate();
+});
+onAuthChange(() => _applyAuthGate());
+
+// Boot-time apply.
+_applyAuthGate();
 
 // Project Hermes EDA — T3.1: route cmms_alerts + agent_consensus streams
 // into reactive state + decoupled DOM events for the HMI.
