@@ -140,6 +140,7 @@
                 <div class="nav-item" data-route="copilot"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="bot"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></span>Facility Co-Pilot</div>
                 <div class="nav-item" data-route="optimizer"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="gauge"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg></span>Optimizer</div>
                 <div class="nav-item" data-route="procedures-architect"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="scroll-text"><path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/></svg></span>Procedure Architect</div>
+                <div class="nav-item" data-route="quantum"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="atom"><circle cx="12" cy="12" r="1"/><path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z"/><path d="M15.7 15.7c4.52-4.54 6.54-9.87 4.5-11.9-2.03-2.04-7.36-.02-11.9 4.5-4.52 4.54-6.54 9.87-4.5 11.9 2.03 2.04 7.36.02 11.9-4.5Z"/></svg></span>Quantum (BB84 sim)</div>
                 <div class="nav-item" data-route="morpheus"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="shield-check"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg></span>Morpheus OT</div>
                 <div class="nav-item" data-route="gemini"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="cpu"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></svg></span>Gemini ER 1.6</div>
                 <div class="nav-item" data-route="omniverse"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="box"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></span>Omniverse 3D</div>
@@ -1850,6 +1851,29 @@
                  Safety Officer audit. Content rendered by
                  frontend/assets/js/views/procedures.js. -->
             <div class="view" id="view-procedures-architect" hidden></div>
+
+            <!-- ══════════ View: Quantum (Epic 9 -- BB84 simulator) ══════
+                 Educational BB84 telemetry. Polls /api/qkd/status; the
+                 view is rendered by frontend/assets/js/views/quantum.js.
+                 NOT a real QKD link -- see backend/crypto/bb84_core.py
+                 for the explicit limitations. -->
+            <div class="view" id="view-quantum" hidden>
+                <div class="view-hdr">
+                    <h2>Quantum Telemetry — BB84 educational simulator</h2>
+                    <div class="view-sub" data-qkd-framing>Loading…</div>
+                </div>
+                <div class="qkd-qber-wrap" style="margin:12px 0;">
+                    <span data-qkd-qber-badge class="qkd-qber-badge" data-state="unknown">QBER: —</span>
+                </div>
+                <div class="qkd-stats" data-qkd-pool style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;margin-bottom:18px;"></div>
+                <h3 style="margin-top:18px;">Recent BB84 batches</h3>
+                <table class="qkd-audit-table" style="width:100%;border-collapse:collapse;">
+                    <thead>
+                        <tr><th>Time</th><th>Decision</th><th>QBER</th><th>Fingerprint</th><th>Reason</th></tr>
+                    </thead>
+                    <tbody data-qkd-audit></tbody>
+                </table>
+            </div>
 
             <!-- ══════════ View: Maintenance (Sprint 6 Fase 5) ══════════
                  CMMS Core v1.0 operator interface. Two-column layout:

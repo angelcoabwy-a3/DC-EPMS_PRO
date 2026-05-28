@@ -260,17 +260,85 @@ async def lifespan(app: FastAPI):
                 log.warning("[BOOT] ledger table probe failed: %s — falling back", e)
         if _ledger_persistence is None:
             _ledger_persistence = InMemoryPersistence()
-        app.state.forensic_ledger = ForensicLedger(_ledger_persistence)
+
+        # Epic 9 -- educational BB84 QKD pool. Constructed BEFORE the
+        # ledger so we can pass it as qkd_provider. Eavesdrop disabled
+        # by default; set DC_EPMS_QKD_EAVESDROP=1 to simulate the
+        # ~25% QBER signature on every batch (demo + audit drill).
+        _qkd_service = None
+        try:
+            from backend.services.qkd_service import (
+                QKDService,
+                periodic_replenish_sync,
+            )
+            _qkd_eve = os.environ.get("DC_EPMS_QKD_EAVESDROP", "0") == "1"
+            _qkd_service = QKDService(
+                base_seed=int(
+                    os.environ.get("DC_EPMS_QKD_BASE_SEED", "0xDCEB910E"),
+                    0,
+                ),
+                eavesdrop=_qkd_eve,
+                seed_eve=int(os.environ.get("DC_EPMS_QKD_SEED_EVE", "1")),
+            )
+            # Prime the pool synchronously so the first ledger entry
+            # that needs a key sees one (no first-request stall).
+            _admit, _reject = _qkd_service.replenish(8)
+            log.info(
+                "[BOOT] QKDService primed (eavesdrop=%s, admitted=%d, "
+                "rejected=%d, depth=%d)",
+                _qkd_eve, _admit, _reject,
+                _qkd_service.stats().pool_depth,
+            )
+            app.state.qkd_service = _qkd_service
+
+            # Periodic top-up coroutine -- runs every 30 s.
+            async def _qkd_topup_loop() -> None:
+                while True:
+                    try:
+                        await asyncio.sleep(30.0)
+                        await asyncio.to_thread(
+                            periodic_replenish_sync,
+                            _qkd_service,
+                            target_depth=16,
+                            batch_size=4,
+                        )
+                    except asyncio.CancelledError:
+                        return
+                    except Exception as exc:
+                        log.warning(
+                            "[qkd] periodic top-up errored: %r -- "
+                            "will retry next interval",
+                            exc,
+                        )
+
+            app.state.qkd_topup_task = asyncio.create_task(
+                _qkd_topup_loop(), name="qkd-topup",
+            )
+        except Exception as e:
+            log.warning(
+                "[BOOT] QKDService init failed (continuing key-less): %s",
+                e,
+            )
+            app.state.qkd_service = None
+            app.state.qkd_topup_task = None
+
+        app.state.forensic_ledger = ForensicLedger(
+            _ledger_persistence, qkd_provider=_qkd_service,
+        )
         app.state.forensic_ledger_loop = asyncio.get_running_loop()
         log.info(
-            "[BOOT] ForensicLedger ready (key_version=%d, persistence=%s)",
+            "[BOOT] ForensicLedger ready (key_version=%d, persistence=%s, "
+            "qkd=%s)",
             app.state.forensic_ledger.current_key_version,
             type(_ledger_persistence).__name__,
+            "wired" if _qkd_service is not None else "none",
         )
     except Exception as e:
         log.error("[BOOT] ForensicLedger init failed: %s", e, exc_info=True)
         app.state.forensic_ledger = None
         app.state.forensic_ledger_loop = None
+        app.state.qkd_service = None
+        app.state.qkd_topup_task = None
 
     # Commit 5 -- pre-seed Architect library from docs/operaciones/mops/.
     # Independent of the ledger; logs but never raises (best-effort).
@@ -670,6 +738,31 @@ async def lifespan(app: FastAPI):
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await _mcp_task
         log.info("[SHUTDOWN] MCP probe task cancelled cleanly")
+
+    # Epic 9 -- cancel the QKD pool top-up loop.
+    _qkd_task = getattr(app.state, "qkd_topup_task", None)
+    if _qkd_task is not None:
+        _qkd_task.cancel()
+        import contextlib
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await _qkd_task
+        log.info("[SHUTDOWN] QKD top-up task cancelled cleanly")
+
+    # Close the FacilityCoPilot httpx client. Replaces the legacy
+    # @router.on_event("shutdown") decorator in agent_copilot.py
+    # (deprecated by FastAPI 0.110+, removed by starlette 1.x).
+    try:
+        import importlib
+
+        _copilot_mod = importlib.import_module("agent_copilot")
+        _close = getattr(_copilot_mod, "close", None)
+        if _close is not None:
+            await _close()
+            log.info("[SHUTDOWN] FacilityCoPilot httpx client closed")
+    except ImportError:
+        pass
+    except Exception as exc:
+        log.warning("[SHUTDOWN] FacilityCoPilot close failed: %r", exc)
 
     # Stop the Optimizer asyncio task first so it doesn't see a
     # half-torn-down DB pool. Safe no-op when 2.B is not running.
@@ -2662,6 +2755,33 @@ async def verify_ledger_chain(request: Request):
             "total_entries": await ledger.count(),
         }
     return {"verified": True, "total_entries": await ledger.count()}
+
+
+@app.get("/api/qkd/status")
+async def get_qkd_status(request: Request, audit_limit: int = 16):
+    """Epic 9 -- QKD pool status + recent audit window.
+
+    Returns the QKDService stats (QBER, pool depth, totals) plus the
+    last ``audit_limit`` entries from the accept/reject log. The
+    response is safe for the HMI to render directly: every string is
+    a fingerprint (16 hex chars) or a controlled enum -- no
+    operator-supplied content, no LLM-authored prose. Frontend MUST
+    still escape on render per S-SEC-01 (defence in depth).
+
+    Returns HTTP 503 when the service was not booted (e.g. import
+    failure during lifespan). Returns 400 when audit_limit is
+    negative; otherwise 200 with the payload (which may be empty
+    when the pool is fresh).
+    """
+    from backend.services.qkd_service import build_status_payload
+    svc = getattr(request.app.state, "qkd_service", None)
+    try:
+        return build_status_payload(svc, audit_limit=audit_limit)
+    except ValueError as exc:
+        msg = str(exc)
+        if msg.startswith("svc:"):
+            raise HTTPException(503, msg[5:].strip()) from exc
+        raise HTTPException(400, msg) from exc
 
 
 @app.get("/api/bms/audit")

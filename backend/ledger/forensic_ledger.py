@@ -445,6 +445,26 @@ def _row_to_entry(row: Any) -> LedgerEntry:
 
 
 # ─── ForensicLedger ───────────────────────────────────────────────────
+@runtime_checkable
+class QKDLedgerConsumer(Protocol):
+    """Minimal seam the ForensicLedger uses to consult a QKD pool.
+
+    Implemented by :class:`backend.services.qkd_service.QKDService` --
+    pulled out as a Protocol here to keep the ledger import-light
+    (no dependency on the simulator package at ledger import time)
+    and to make injection in tests trivial.
+
+    The return shape is the JSON-safe dict embedded in the entry
+    payload at key ``"qkd"``:
+        {"fingerprint": str, "n_bits": int,
+         "qber_at_issue": float, "generated_at": "<iso8601>"}
+    None signals "pool empty, append a key-less entry" -- the chain
+    MUST keep ticking even when QKD context is unavailable.
+    """
+
+    def consume_for_ledger(self) -> dict[str, float | int | str] | None: ...
+
+
 class ForensicLedger:
     """The orchestrator. Holds the HMAC key + key_version + persistence.
 
@@ -460,6 +480,22 @@ class ForensicLedger:
     sequence order. Returns ``None`` on success; raises
     ``LedgerChainBrokenError`` with the divergence index on the first
     failure.
+
+    QKD provenance (Epic 9 -- educational)
+    --------------------------------------
+    When constructed with a ``qkd_provider``, the ledger consults it on
+    every append whose payload carries a ``proposal_id`` (i.e. every
+    AI-originated write per S-PROPOSER-01). The consumed key's
+    fingerprint + QBER + generation timestamp are embedded into the
+    payload at key ``"qkd"`` BEFORE the HMAC is computed -- so QKD
+    presence is HMAC-chained and tamper-evident. The HMAC key itself
+    is unchanged: ``verify_chain()`` works identically with or without
+    a provider. When the pool is empty, the append proceeds key-less
+    (chain ticks forward; payload omits the ``"qkd"`` field).
+
+    Framing note: this records QKD *provenance*, it does not derive
+    cryptographic strength from BB84 -- see ``backend/crypto/bb84_core``
+    for the simulator's explicit limitations.
     """
 
     def __init__(
@@ -468,6 +504,7 @@ class ForensicLedger:
         *,
         key: bytes | None = None,
         key_version: int | None = None,
+        qkd_provider: QKDLedgerConsumer | None = None,
     ) -> None:
         # Key resolution: explicit > env var > ephemeral.
         if key is not None:
@@ -478,12 +515,18 @@ class ForensicLedger:
             self._keys = {resolved_version: resolved_key}
             self._current_key_version = resolved_version
         self._persistence = persistence
+        self._qkd_provider = qkd_provider
         self._append_lock = asyncio.Lock()
         log.info(
-            "ForensicLedger ready (key_version=%d, persistence=%s)",
+            "ForensicLedger ready (key_version=%d, persistence=%s, qkd=%s)",
             self._current_key_version,
             type(persistence).__name__,
+            "wired" if qkd_provider is not None else "none",
         )
+
+    @property
+    def qkd_provider(self) -> QKDLedgerConsumer | None:
+        return self._qkd_provider
 
     @property
     def current_key_version(self) -> int:
@@ -510,9 +553,33 @@ class ForensicLedger:
             raise ValueError("actor must be non-empty")
         if not action:
             raise ValueError("action must be non-empty")
+
+        # ── QKD provenance (Epic 9) ──
+        # AI-originated writes carry a proposal_id (S-PROPOSER-01).
+        # Consume one BB84-simulated key per such entry; embed the
+        # fingerprint into the payload BEFORE canonicalisation so the
+        # chain HMAC covers it. Pool-empty -> proceed key-less; the
+        # chain MUST not stall on QKD unavailability.
+        augmented_payload = dict(payload)
+        if (
+            self._qkd_provider is not None
+            and augmented_payload.get("proposal_id")
+        ):
+            try:
+                qkd_view = self._qkd_provider.consume_for_ledger()
+            except Exception as exc:
+                log.warning(
+                    "[ledger] qkd_provider raised on consume: %r -- "
+                    "proceeding key-less",
+                    exc,
+                )
+                qkd_view = None
+            if qkd_view is not None:
+                augmented_payload["qkd"] = qkd_view
+
         # Refuse non-JSON-serialisable payloads early — catches mistakes
         # at the call site instead of during verify_chain().
-        canon_payload = _canonical_json(payload)
+        canon_payload = _canonical_json(augmented_payload)
 
         async with self._append_lock:
             last = await self._persistence.fetch_last()
@@ -537,7 +604,7 @@ class ForensicLedger:
                 ts=ts,
                 actor=actor,
                 action=action,
-                payload=dict(payload),
+                payload=augmented_payload,
                 prev_hash=prev_hash,
                 entry_hmac=entry_hmac,
                 key_version=self._current_key_version,
