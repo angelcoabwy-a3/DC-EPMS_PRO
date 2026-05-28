@@ -15,10 +15,10 @@ DC-EPMS PRO simulates **A3-Alpha Toronto Area** under **Path C2** (sealed 2026-0
 
 **🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in CO+I panel review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
 
-## 📊 CURRENT STATE (synced 2026-05-27 — Epic 8 telemetry v1 closed)
+## 📊 CURRENT STATE (synced 2026-05-27 — Epic 9 BB84 QKD closed)
 
 ```
-HEAD:  6290652 (origin/master). Stable baseline = v0.13.0 "Proactive Edge"
+HEAD:  948f33c (master, local). Stable baseline = v0.13.0 "Proactive Edge"
        (2026-05-19). Post-v0.17.0 work delivered:
        * Epic 1: full 4-agent fleet LLM-augmented + multi-agent façade.
        * Epic 2 (v0.13.0): "The Optimizer" proactive edge-agent (2.A-2.E).
@@ -32,19 +32,26 @@ HEAD:  6290652 (origin/master). Stable baseline = v0.13.0 "Proactive Edge"
        * v0.17.0: Life Safety + Combustible asset categories (6 new MOPs).
        * Gentle IA Bloque 4 cerrado: H13 Apply Continuity (5e35dfc),
          H16 Skill Resolution Feedback (8682fdf), H06 Phase DAG (1b26786).
-       * Epic 8 (this session, 7 commits): canonical v1 telemetry.proto +
-         schema invariant tests (37) + generated Python stubs +
-         pipeline-to-proto adapter (34 tests) + SSE endpoint
-         /api/telemetry/stream/proto (12 tests). Live smoke: 243 envelopes/tick
-         decoded clean, vocab fence preserved through wire, ~93 Kbps wire util
-         at dev scale.
+       * Epic 8 (7 commits): canonical v1 telemetry.proto + schema invariant
+         tests (37) + generated Python stubs + pipeline-to-proto adapter
+         (34 tests) + SSE endpoint /api/telemetry/stream/proto (12 tests).
+         Live smoke: 243 envelopes/tick decoded clean, vocab fence preserved
+         through wire, ~93 Kbps wire util at dev scale.
+       * Epic 9 (2 commits): BB84 educational QKD simulator + Forensic Ledger
+         provenance + HMI. 28ca649 chore boot-stability (starlette<0.39 pin
+         to match FastAPI 0.115, agent_copilot lifespan migration, protobuf
+         excluded from ruff). 948f33c feat: backend/crypto/bb84_core.py +
+         backend/services/qkd_service.py + ForensicLedger qkd_provider
+         protocol + /api/qkd/status endpoint + frontend views/quantum.js
+         (QBER badge, pool stats, audit table). Honest framing preserved
+         throughout (educational simulator, not a real quantum channel).
 
-Tests:   backend 1288 passed (Epic 8 +71) — full pytest ~50s, 0 fail.
-         frontend 313 vitest passed.
+Tests:   backend 1349 passed (Epic 9 +61) — full pytest ~82s, 0 fail.
+         frontend 334 vitest passed (Epic 9 +21).
          GraphRAG: 10 knowledge documents at boot.
          Architect library: 23 catalog MOPs pre-seeded, all audit=APPROVE.
          Skills registry: 30 explicit skills across 13 categories.
-         ruff: 0 violations in backend/.
+         ruff: 0 violations in backend/ (generated protobuf excluded).
 
 Perf baseline (AMD Ryzen + Win11):
   Numba JIT cold compile     : 4.8 ms
@@ -76,7 +83,9 @@ backend/                     FastAPI + asyncpg — ~50 endpoints
   telemetry_proto/v1/        Epic 8 canonical wire format (.proto + _pb2)
   telemetry_proto_adapter.py Epic 8 pipeline → strict-SI envelopes
   telemetry_proto_stream.py  Epic 8 SSE encoder
-  ledger/                    Epic 4 Forensic Ledger
+  ledger/                    Epic 4 Forensic Ledger (Epic 9: qkd_provider seam)
+  crypto/                    Epic 9 BB84 educational QKD simulator
+  services/                  Epic 9 QKDService pool + status payload helper
   optimizer*.py              Epic 2 Optimizer + approve/reject routes
   graphrag_*.py / rag_service.py / knowledge_graph.py
   database.py / bms_connector.py / metrics_router.py
@@ -115,6 +124,7 @@ docs/
 - **CMMS**: `/api/cmms/draft`, `/api/cmms/drafts/{id}`, `/api/cmms/approve/{id}` (SME_L6 RBAC).
 - **Witness**: `/api/witness/sign`, `/api/witness/drafts`.
 - **Ledger**: `/api/ledger/entries`, `/api/ledger/verify`, `/api/bms/write` (chained), `/api/bms/revert/{id}`.
+- **QKD (Epic 9, educational)**: `/api/qkd/status` (pool depth + QBER + recent audit; HMI surface in `views/quantum.js`).
 - **Optimizer**: queue + `/api/optimizer/approve|reject` (SME_L6 RBAC).
 - **Agent Copilot**: `/agent/stream` (SSE).
 - **Hermes EDA**: `/api/hermes` (WebSocket, multiplexed: telemetry + alerts + consensus).
@@ -143,7 +153,7 @@ docs/
 
 **V9 scope is feature-complete** (tags `v0.5.0` → `v0.10.13` + Epics 1-6 + 8 + v0.17.0). Live backlog: `docs/ROADMAP-V11.md` (v11.7).
 
-Delivered headline tracks: Sprint 5 telemetry+Kalman, Sprint 5.5b PUE physics, Sprint 6 CMMS Core, Sprint 7.1 Tech Assist, Sprint 9.1 predictive WO, Sprint 10.1 multi-agent + Safety Officer veto, HMI Tier A/B/C polish, B1 Mission Control (three.js), 2.5D isometric SLD + DAG engine, SCADA asset panel, ProcedureGenerator (dual-graph taxonomy, micro-LOTO, hyperscale RBAC), Hermes WS EDA plane, CET-gated edge healing, Optimizer (Epic 2), Capacity Planner + Carbon/Grid (Epic 3), Forensic Ledger + Proposer-chain (Epic 4), Procedure Architect catalog + richer-template (Epic 6), Gentle IA Bloque 4 (H06/H13/H16), Epic 8 telemetry v1 wire format.
+Delivered headline tracks: Sprint 5 telemetry+Kalman, Sprint 5.5b PUE physics, Sprint 6 CMMS Core, Sprint 7.1 Tech Assist, Sprint 9.1 predictive WO, Sprint 10.1 multi-agent + Safety Officer veto, HMI Tier A/B/C polish, B1 Mission Control (three.js), 2.5D isometric SLD + DAG engine, SCADA asset panel, ProcedureGenerator (dual-graph taxonomy, micro-LOTO, hyperscale RBAC), Hermes WS EDA plane, CET-gated edge healing, Optimizer (Epic 2), Capacity Planner + Carbon/Grid (Epic 3), Forensic Ledger + Proposer-chain (Epic 4), Procedure Architect catalog + richer-template (Epic 6), Gentle IA Bloque 4 (H06/H13/H16), Epic 8 telemetry v1 wire format, Epic 9 BB84 educational QKD + Ledger provenance seam.
 
 **Deferred → V11**: DPO edge-healing revival, Alarm Storm Mitigation (Bayesian correlation), EOP Abort <100 ms (async event bus), demo recording + DEMO_SCRIPT v5.
 
@@ -264,35 +274,35 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
   - `docs/skills/agent-harness-registry.md` — 30-harness Gentle IA master registry. **Bloque 4 cerrado completo** (H06/H13/H16 all OPERATIVO). Implementations: `backend/phase_dag.py` + `backend/agent_continuity.py` + `backend/skill_audit.py`.
 - **Audit CLI**: `python -m backend.skill_audit --since HEAD~N` prints per-commit CLEAN / GAPS / UNKNOWNS reports against the registry.
 
-## ⏸ PAUSE_STATE (last updated 2026-05-27 — Epic 8 telemetry v1 closed + SSE endpoint live)
+## ⏸ PAUSE_STATE (last updated 2026-05-27 — Epic 9 BB84 QKD closed; Epic 10 IAM RBAC in flight)
 
-> No active pause. Epic 8 ships 7 commits to `origin/master`:
-> `60a243f` RFC + sizing + OCP CDU validation,
-> `f6c79e4` canonical v1 `telemetry.proto` (30 messages, 12 enums, strict SI, vocab fence structural),
-> `cb5e4e5` 37 schema invariant tests,
-> `c02f3e9` generated Python stubs + worktree-aware orchestrator,
-> `db096a1` pipeline → strict-SI adapter (34 tests),
-> `6290652` SSE endpoint `/api/telemetry/stream/proto`.
+> Epic 9 closed on local `master` via 2 atomic commits:
+> `28ca649` chore: boot stability (starlette<0.39 pin + agent_copilot lifespan + protobuf ruff exclude),
+> `948f33c` feat(epic9): BB84 educational QKD simulator + Forensic Ledger qkd_provider + HMI.
+>
+> NOT pushed to `origin/master` yet (operator must trigger).
+>
+> Epic 10 (Quantum UI + IAM RBAC) in flight on `worktree-epic10-quantum-iam`.
 
 ### State at sync time
 
-- `origin/master` at `6290652`. Main repo local master fast-forwarded.
-- Pytest floor: **1288 backend / 313 vitest** (Epic 8 +71).
-- Ruff: 0 violations in `backend/`.
+- `master` (local) at `948f33c`. `origin/master` still at `6290652` (push pending).
+- Pytest floor: **1349 backend / 334 vitest** (Epic 9 +61 backend, +21 vitest).
+- Ruff: 0 violations on changed files. Generated protobuf (`*_pb2.py`, `*_pb2_grpc.py`) excluded.
 - Skills: 30 / 13 categories. Harnesses: H06+H13+H16 all OPERATIVO.
-- Backend smoke (2026-05-27): `/api/telemetry/stream/proto` live — 243 envelopes/tick, strict-SI conversions verified (C→K, GPM→m³/s, pct→ratio), vocab fence preserved through base64+JSON wire (`DcUnipolarVoltage` absent on 3-phase asset), 93 Kbps utilization at dev scale (70 components / 270 channels). 89% conversion rate (27 channels are unknown metrics correctly skipped by the v1.0 adapter classifier).
+- Boot smoke (post-starlette-pin): `backend.main` imports cleanly, `/api/qkd/status` registered, lifespan QKD prime succeeds (8 admitted, 0 rejected, depth=8 at boot).
+- Honest framing: Epic 9 is an EDUCATIONAL BB84 simulator. Keys carry `random.Random` entropy, not physical quantum entropy. Ledger HMAC chain is unchanged -- QKD fingerprint is HMAC-chained as audit provenance only.
 
-### Open architectural decisions (Epic 9 candidates)
+### Open architectural decisions
 
-- gRPC service shim (`service TelemetryIngest { rpc Stream(...) returns (stream TelemetryEnvelope) }`).
-- MCP resource exposure of the proto stream.
-- Frontend proto-aware HMI surface (the existing Activity Strip stays on JSON).
+- Epic 10 (in flight): backend IAM (4 roles: L1_OPERATOR / L2_TECHNICIAN / SAFETY_OFFICER / FACILITY_MANAGER), JWT auth, Maker-Checker dual-signature enforcement on procedure sign, frontend login + auth gate, QBER-gated signing.
+- Deferred from Epic 8: gRPC service shim, MCP resource exposure of the proto stream, frontend proto-aware HMI surface.
 
 ### Resumption protocol (next session entry)
 
 1. Run `IMMEDIATE NEXT STEPS` checklist.
 2. Read `docs/ROADMAP-V11.md` for live backlog.
-3. Verify boot log shows `[graphrag] loaded 10 knowledge documents` + `[BOOT] Architect library pre-seeded with 23 catalog MOP(s)`.
+3. Verify boot log shows `[graphrag] loaded 10 knowledge documents` + `[BOOT] Architect library pre-seeded with 23 catalog MOP(s)` + `[BOOT] QKDService primed`.
 4. Wait for Wilmer's explicit GO before any new work.
 
 ## 🚨 DO NOT TOUCH
