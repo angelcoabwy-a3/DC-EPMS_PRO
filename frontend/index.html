@@ -1852,6 +1852,15 @@
                  frontend/assets/js/views/procedures.js. -->
             <div class="view" id="view-procedures-architect" hidden></div>
 
+            <!-- ══════════ Epic 10 -- global QKD signing-gate banner ═════
+                 Populated by frontend/assets/js/core/qkd_gate.js when
+                 last QBER >= 11%. Hidden by default. Stays in DOM
+                 across all views so the warning is unmistakable. -->
+            <div data-qkd-gate-banner class="qkd-gate-banner"
+                 hidden role="alert"
+                 style="position:sticky;top:0;z-index:9999;background:#7a0000;color:#fff;padding:10px 16px;border-bottom:2px solid #c00;">
+            </div>
+
             <!-- ══════════ View: Login (Epic 10 -- IAM gate) ══════════════
                  The login surface is mounted permanently; the auth
                  gate in main.js shows it when no valid JWT is in

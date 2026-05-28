@@ -37,6 +37,7 @@
 
 import { registerRoute } from '../core/router.js';
 import { escapeHTML, sanitizeHTML } from '../core/sanitize.js';
+import { isSigningEnabled, getQkdGateState } from '../core/qkd_gate.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -1086,6 +1087,25 @@ async function _submitSign(draftId) {
         `.proc-sign-result[data-draft-id="${CSS.escape(draftId)}"]`,
     );
     if (!slot) return;
+    // Epic 10 Batch 4 -- QKD gate. When the BB84 simulator surfaces
+    // an above-threshold QBER (last_qber >= 11%), the global signing
+    // gate is CLOSED and the Sign action refuses before it even
+    // touches the network. The server re-checks via its own
+    // mechanisms; this client gate is the explicit "Enlace
+    // Interceptado" UX banner the operator was promised.
+    if (!isSigningEnabled()) {
+        const gate = getQkdGateState();
+        const qberPct = (gate.qber !== null && gate.qber !== undefined)
+            ? (gate.qber * 100).toFixed(2) + '%' : 'unknown';
+        slot.innerHTML = sanitizeHTML(
+            '<div class="proc-sign-fail">Firma Deshabilitada: Enlace '
+            + 'Interceptado (QBER ' + escapeHTML(qberPct)
+            + ' >= 11.0%). El pool QKD debe recuperarse antes de '
+            + 'firmar este draft.</div>',
+        );
+        return;
+    }
+
     // Phase 2 staleness gate: refuse to sign when the textarea has
     // drifted since the last generate. The server re-audits on /sign
     // and would also refuse a hard_stop, but this client-side block

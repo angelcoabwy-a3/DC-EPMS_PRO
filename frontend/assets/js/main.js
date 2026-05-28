@@ -56,6 +56,7 @@ import { initProceduresView } from './views/procedures.js';
 import { initQuantumView } from './views/quantum.js';
 import { initLoginView, showLoginView, hideLoginView } from './views/login.js';
 import { hasValidToken, getClaims, onAuthChange } from './core/auth.js';
+import { startQkdGate } from './core/qkd_gate.js';
 import { initBootstrap } from './core/bootstrap.js';
 
 // Telemetry engine flag. core/telemetry_engine.js owns the SSE; this
@@ -167,6 +168,14 @@ onAuthChange(() => _applyAuthGate());
 
 // Boot-time apply.
 _applyAuthGate();
+
+// Epic 10 Batch 4 -- start polling /api/qkd/status. When QBER
+// crosses the threshold (default 11%), body.qkd-gate-closed is
+// applied + the global banner appears + downstream sign actions
+// refuse to dispatch. The poll continues even when the login view
+// is shown (cheap; surfaces the warning the moment operators sign
+// in).
+startQkdGate();
 
 // Project Hermes EDA — T3.1: route cmms_alerts + agent_consensus streams
 // into reactive state + decoupled DOM events for the HMI.
