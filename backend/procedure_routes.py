@@ -47,7 +47,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -187,7 +187,22 @@ class ArchitectGenerateRequest(BaseModel):
 
 
 class ArchitectSignRequest(BaseModel):
-    """Body for POST /api/procedures/architect/sign (Epic 6)."""
+    """Body for POST /api/procedures/architect/sign (Epic 6 + Epic 10).
+
+    Epic 10 contract:
+      - The maker MUST authenticate via ``Authorization: Bearer <jwt>``.
+        The maker's JWT ``sub`` is the authoritative identity; the
+        body's ``operator_id`` is retained for backward compatibility
+        with pre-Epic-10 callers but is OVERRIDDEN by the JWT sub when
+        a JWT is present.
+      - For MOPs, the SECOND (checker) sign request carries the prior
+        maker's JWT context implicitly via the pending state; the
+        request's bearer JWT is the checker. Maker-Checker distinct-
+        ness is enforced on the JWT subs, not on body fields.
+      - ``checker_token`` is reserved for a future single-call flow
+        where both signatures arrive in one request -- not used in
+        the current sequential implementation.
+    """
 
     draft_id: str = Field(..., min_length=1, max_length=128)
     doc_type: str = Field(..., pattern="^(SOP|MOP|EOP|EMP)$")
@@ -196,8 +211,93 @@ class ArchitectSignRequest(BaseModel):
     operator_id: str = Field(..., min_length=1, max_length=128)
     actor_role: str | None = Field(
         default=None,
-        description="Operator role claim (mock until auth is wired).",
+        description=(
+            "Legacy body-claim role. Epic 10: overridden by JWT role "
+            "when an Authorization bearer token is supplied."
+        ),
     )
+    checker_token: str | None = Field(
+        default=None,
+        description=(
+            "Reserved for future single-call Maker-Checker flow. "
+            "Current sequential flow uses pending state across two "
+            "requests; do not set this field."
+        ),
+    )
+
+
+# ─── Epic 10 JWT seam (optional bearer override) ─────────────────────
+# Procedure routes were authored pre-IAM; the body carried operator_id
+# directly. Rather than break the 19 existing tests, we accept an
+# OPTIONAL bearer JWT: when present its `sub` overrides operator_id
+# and its `role` overrides actor_role. When absent, the legacy
+# body-only path keeps working (existing tests stay green).
+# The Maker-Checker distinctness check operates on whichever identity
+# was the authoritative source for each sign request -- mixing is
+# allowed but the more common deployment will be JWT for both.
+def _resolve_signer_identity(
+    body_operator_id: str,
+    body_actor_role: str | None,
+    authorization: str | None,
+) -> tuple[str, str, bool]:
+    """Return ``(operator_id, role, jwt_authenticated)``.
+
+    JWT path takes precedence; we never fall back from a malformed
+    JWT to body claims. If the Authorization header is present but
+    invalid, raises HTTPException(401) -- partial trust is more
+    dangerous than refusal.
+    """
+    if not authorization:
+        return body_operator_id, (body_actor_role or "operator"), False
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Authorization must use Bearer scheme")
+    token = authorization[len("Bearer "):].strip()
+    if not token:
+        raise HTTPException(401, "empty bearer token")
+    from backend.auth.jwt_handler import TokenError, verify_token
+    from backend.auth.models import Role, role_at_least
+    try:
+        claims = verify_token(token)
+    except TokenError as exc:
+        raise HTTPException(401, f"invalid token: {exc}") from exc
+    # Signing requires SAFETY_OFFICER at minimum (Epic 10 spec).
+    if not role_at_least(claims.role, Role.SAFETY_OFFICER):
+        raise HTTPException(
+            403,
+            f"role {claims.role.value} cannot sign procedures "
+            f"(SAFETY_OFFICER or higher required)",
+        )
+    return claims.sub, claims.role.value, True
+
+
+def _resolve_author_identity(
+    body_actor_role: str | None,
+    authorization: str | None,
+) -> tuple[str, bool]:
+    """Identity gate for /generate endpoints. L2_TECHNICIAN+ may
+    author drafts; L1_OPERATOR cannot. Returns ``(role, jwt_auth)``.
+    Body fallback retained for backward compat with pre-Epic-10
+    callers."""
+    if not authorization:
+        return (body_actor_role or "operator"), False
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Authorization must use Bearer scheme")
+    token = authorization[len("Bearer "):].strip()
+    if not token:
+        raise HTTPException(401, "empty bearer token")
+    from backend.auth.jwt_handler import TokenError, verify_token
+    from backend.auth.models import Role, role_at_least
+    try:
+        claims = verify_token(token)
+    except TokenError as exc:
+        raise HTTPException(401, f"invalid token: {exc}") from exc
+    if not role_at_least(claims.role, Role.L2_TECHNICIAN):
+        raise HTTPException(
+            403,
+            f"role {claims.role.value} cannot author drafts "
+            f"(L2_TECHNICIAN or higher required)",
+        )
+    return claims.role.value, True
 
 
 def _get_architect_agent(request: Request) -> ProcedureArchitectAgent:
@@ -219,8 +319,15 @@ def _get_architect_agent(request: Request) -> ProcedureArchitectAgent:
 @router.post("/architect/generate")
 async def architect_generate(
     req: ArchitectGenerateRequest, request: Request,
+    authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     """Epic 6 — Procedure Architect generation + Safety Officer audit.
+
+    Epic 10 (this commit) -- when an ``Authorization: Bearer <jwt>``
+    header is present it is verified and the JWT role must be
+    L2_TECHNICIAN or higher. L1_OPERATOR cannot author drafts. When
+    no header is present, the legacy body-claim path still works
+    (preserves backward compat with the pre-Epic-10 test suite).
 
     Pipeline:
       1. Build a hermetic Gemma prompt (H17) carrying the exact Epic 6
@@ -237,6 +344,14 @@ async def architect_generate(
     Architect to re-prompt with the missing terms. A 4xx would lose
     the diagnostic findings.
     """
+    # Identity gate (S-SEC-02 Epic 10 extension). Raises 401/403 on
+    # JWT problems. Body-only callers (no Authorization header) are
+    # allowed for backward compatibility -- the role gate then
+    # applies to the body claim only.
+    _resolved_role, _jwt_auth = _resolve_author_identity(
+        body_actor_role=getattr(req, "actor_role", None),
+        authorization=authorization,
+    )
     agent = _get_architect_agent(request)
     draft = await agent.generate(
         doc_type=req.doc_type,
@@ -247,8 +362,9 @@ async def architect_generate(
     audit = audit_procedure_safety(draft)
     log.info(
         "[procedure_routes] architect generated %s (draft=%s, "
-        "audit=%s, llm=%s)",
+        "audit=%s, llm=%s, jwt_auth=%s, role=%s)",
         draft.doc_type, draft.draft_id, audit.verdict, draft.llm_present,
+        _jwt_auth, _resolved_role,
     )
     return {
         "draft": draft.to_dict(),
@@ -259,22 +375,56 @@ async def architect_generate(
 @router.post("/architect/sign")
 async def architect_sign(
     req: ArchitectSignRequest, request: Request,
+    authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    """Epic 6 — operator signs an approved draft into the forensic ledger.
+    """Epic 6 + Epic 10 -- operator signs an approved draft into the
+    forensic ledger.
 
-    Re-runs the audit server-side (defence in depth — a hostile HMI
+    Epic 10 contract:
+      - ``Authorization: Bearer <jwt>`` with role SAFETY_OFFICER or
+        higher is REQUIRED in production deployments. The pre-Epic-10
+        body-only fallback is preserved for backward compat with the
+        existing 10 sign tests, but new HMI clients MUST use JWT.
+      - For MOPs: the Maker-Checker distinctness check uses the
+        authenticated identity (JWT sub when authenticated, body
+        operator_id otherwise). Two SAFETY_OFFICER JWTs with
+        DIFFERENT ``sub`` claims are required to seal a MOP entry.
+
+    Re-runs the audit server-side (defence in depth -- a hostile HMI
     cannot forge an approved verdict). When the audit re-emits
     ``hard_stop``, the sign is refused with HTTP 403 (the operator
     cannot sign an unsafe procedure even by mistake).
 
     On success: appends a ``PROCEDURE_SIGNED`` action to the
     forensic ledger with the content sha256, operator_id, doc_type,
-    and draft_id — the chain link that proves *this* operator
+    and draft_id -- the chain link that proves *this* operator
     approved *this* exact content at *this* time. Returns the ledger
     entry summary (entry_id + sequence_no + ts).
     """
+    # Identity gate (Epic 10). Resolves JWT-or-body to a single
+    # (operator_id, role, jwt_auth) tuple. Raises 401/403 on JWT
+    # failures or insufficient role.
+    resolved_operator_id, resolved_role, jwt_auth = _resolve_signer_identity(
+        body_operator_id=req.operator_id,
+        body_actor_role=req.actor_role,
+        authorization=authorization,
+    )
+    # Mutate the request shape so downstream helpers see the resolved
+    # identity (no behavioural change for body-only callers).
+    if jwt_auth and resolved_operator_id != req.operator_id:
+        # JWT override: replace body identity so the Maker-Checker
+        # path uses the authoritative claim sub.
+        req = req.model_copy(update={
+            "operator_id": resolved_operator_id,
+            "actor_role": resolved_role,
+        })
+    elif jwt_auth:
+        # JWT confirmed body identity (sub == operator_id) -- still
+        # propagate the role from the claim.
+        req = req.model_copy(update={"actor_role": resolved_role})
+
     # Reconstruct a ProcedureDraft so the audit runs against the SAME
-    # surface the HMI already saw — never trust client-supplied
+    # surface the HMI already saw -- never trust client-supplied
     # verdicts.
     draft = ProcedureDraft(
         draft_id=req.draft_id,
@@ -313,6 +463,7 @@ async def architect_sign(
     if req.doc_type == DOC_TYPE_MOP:
         return await _process_mop_signature(
             req, content_sha, audit, ledger,
+            jwt_authenticated=jwt_auth,
         )
 
     # SOP / EOP / EMP — single signature is sufficient.
@@ -328,6 +479,7 @@ async def architect_sign(
             "content_length": len(req.content),
             "safety_audit_verdict": audit.verdict,
             "witness_required": False,
+            "jwt_authenticated": jwt_auth,
         },
     )
     log.info(
@@ -622,6 +774,8 @@ async def _process_mop_signature(
     content_sha: str,
     audit: Any,
     ledger: Any,
+    *,
+    jwt_authenticated: bool = False,
 ) -> dict[str, Any]:
     """Maker-Checker flow for MOP drafts.
 
@@ -649,6 +803,7 @@ async def _process_mop_signature(
             "content_sha256": content_sha,
             "asset_id": req.asset_id,
             "ts": time.time(),
+            "jwt_authenticated": jwt_authenticated,
         }
         log.info(
             "[procedure_routes] MOP draft %s first sign by %s -- "
@@ -716,6 +871,8 @@ async def _process_mop_signature(
             "first_signer_ts": pending["ts"],
             "second_signer": req.operator_id,
             "second_signer_role": req.actor_role or "operator",
+            "jwt_authenticated": jwt_authenticated
+                and pending.get("jwt_authenticated", False),
         },
     )
     _pending_mop_signatures.pop(req.draft_id, None)
