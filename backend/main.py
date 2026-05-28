@@ -340,6 +340,22 @@ async def lifespan(app: FastAPI):
         app.state.qkd_service = None
         app.state.qkd_topup_task = None
 
+    # Epic 10 -- IAM user store (in-memory MVP). Seeded with one
+    # user per role plus a second SAFETY_OFFICER so the Maker-
+    # Checker dual-signature flow has two distinct user_ids at
+    # boot. Production deployments replace seed_demo_users() with
+    # a real provisioning flow against an OIDC/LDAP backend.
+    try:
+        from backend.auth.jwt_handler import seed_demo_users
+        app.state.user_store = seed_demo_users()
+        log.info(
+            "[BOOT] IAM user store seeded with %d demo users",
+            len(app.state.user_store.all_users()),
+        )
+    except Exception as e:
+        log.error("[BOOT] IAM user store init failed: %s", e, exc_info=True)
+        app.state.user_store = None
+
     # Commit 5 -- pre-seed Architect library from docs/operaciones/mops/.
     # Independent of the ledger; logs but never raises (best-effort).
     try:
@@ -2755,6 +2771,57 @@ async def verify_ledger_chain(request: Request):
             "total_entries": await ledger.count(),
         }
     return {"verified": True, "total_entries": await ledger.count()}
+
+
+@app.post("/api/auth/login")
+async def post_auth_login(request: Request):
+    """Epic 10 -- IAM login. Validates username + password against
+    the in-memory user store, returns a signed JWT on success.
+
+    Request body (JSON): {"username": str, "password": str}
+    Response 200:
+        {"access_token": str, "token_type": "bearer",
+         "expires_in": int, "user_id": str, "username": str,
+         "role": str}
+    HTTP 401: invalid credentials (no information leak: the same
+    response covers "username unknown" and "wrong password").
+    HTTP 503: user store unavailable (lifespan init failure).
+    """
+    from backend.auth.jwt_handler import LoginError, login
+    store = getattr(request.app.state, "user_store", None)
+    if store is None:
+        raise HTTPException(503, "user store not initialised")
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, "request body must be JSON") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(400, "request body must be a JSON object")
+    username = body.get("username") or ""
+    password = body.get("password") or ""
+    try:
+        return login(store, username=username, password=password)
+    except LoginError as exc:
+        raise HTTPException(401, str(exc)) from exc
+
+
+@app.get("/api/auth/whoami")
+async def get_auth_whoami(request: Request):
+    """Epic 10 -- IAM identity probe. Verifies the bearer token on
+    the request and returns the decoded claims. Used by the frontend
+    auth gate to confirm a stored token is still valid (and refresh
+    UI state on session resume).
+    """
+    from backend.auth.dependencies import get_current_user
+    auth = request.headers.get("Authorization")
+    claims = await get_current_user(authorization=auth)
+    return {
+        "user_id": claims.sub,
+        "username": claims.username,
+        "role": claims.role.value,
+        "iat": claims.iat,
+        "exp": claims.exp,
+    }
 
 
 @app.get("/api/qkd/status")
