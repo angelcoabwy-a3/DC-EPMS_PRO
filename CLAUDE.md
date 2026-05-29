@@ -15,11 +15,11 @@ DC-EPMS PRO simulates **A3-Alpha Toronto Area** under **Path C2** (sealed 2026-0
 
 **🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in CO+I panel review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
 
-## 📊 CURRENT STATE (synced 2026-05-27 — Epic 9 BB84 QKD closed)
+## 📊 CURRENT STATE (synced 2026-05-28 — Epic 10 IAM/RBAC closed + verified)
 
 ```
-HEAD:  948f33c (master, local). Stable baseline = v0.13.0 "Proactive Edge"
-       (2026-05-19). Post-v0.17.0 work delivered:
+HEAD:  b186bb3 (master, pushed to origin/master). Stable baseline =
+       v0.13.0 "Proactive Edge" (2026-05-19). Post-v0.17.0 work delivered:
        * Epic 1: full 4-agent fleet LLM-augmented + multi-agent façade.
        * Epic 2 (v0.13.0): "The Optimizer" proactive edge-agent (2.A-2.E).
        * Epic 3 (3.A + 3.C): Capacity Planner + Carbon/Grid agents → 6-agent fleet.
@@ -45,9 +45,18 @@ HEAD:  948f33c (master, local). Stable baseline = v0.13.0 "Proactive Edge"
          protocol + /api/qkd/status endpoint + frontend views/quantum.js
          (QBER badge, pool stats, audit table). Honest framing preserved
          throughout (educational simulator, not a real quantum channel).
+       * Epic 10 (4 commits): backend IAM core (4 roles L1_OPERATOR /
+         L2_TECHNICIAN / SAFETY_OFFICER / FACILITY_MANAGER, stateless JWT
+         HS256, PBKDF2-SHA256 pwd hashing, login endpoint) 5a8252e;
+         Maker-Checker dual-JWT enforcement on procedure sign (distinct
+         SAFETY_OFFICER subs + content-sha gate, 409/403) a68381e; frontend
+         login + auth gate + API middleware 58f648a; QKD-gated signing UI
+         (blocks firmas when QBER >= 11%) b186bb3. Backward-compatible with
+         the pre-Epic-10 body-only sign path. Pushed to origin/master.
 
-Tests:   backend 1349 passed (Epic 9 +61) — full pytest ~82s, 0 fail.
-         frontend 334 vitest passed (Epic 9 +21).
+Tests:   backend 1409 passed (Epic 10 +60; incl. 7 PG integration) —
+         full pytest ~62s, 0 fail, 5 deselected (slow/FAISS AVX2).
+         frontend 368 vitest passed (Epic 10 +34, 23 files).
          GraphRAG: 10 knowledge documents at boot.
          Architect library: 23 catalog MOPs pre-seeded, all audit=APPROVE.
          Skills registry: 30 explicit skills across 13 categories.
@@ -148,6 +157,7 @@ docs/
 - **DC-EPMS-029c** (LOW) — `physics_engine.validate_site()` SHI rollup insensitive to some LOTO types (chiller / cooling_tower / chw_pump / RPP). simulate_loto output is structurally correct; only the SHI delta is unreactive. UPS + CDU scenarios DO produce SHI delta, sufficient for demo. Resolution: tune `physics_engine` module thresholds (2-3h surgical). Target: V10 / dedicated bite.
 - **E2E audit WARNING-tier findings** in `docs/audit/E2E_Security_Orphan_Audit.md` — the 3 CRITICAL RBAC findings closed in `b34efb1`; WARNINGs remain open.
 - **TODO(asset-manufacturer-migration)**: S-VENDOR-EATON-01 string-matches context for "eaton" today. Next sprint should add `Asset.manufacturer` to `backend/cmms_models.py` for deterministic lookup. Tracked in `backend/agents/procedure_architect.py`.
+- **DC-EPMS-036** (RESOLVED 2026-05-28) — venv contamination. An uncommitted langchain-1.x / crewai / instructor experiment (parallel to the still-uncommitted `package.json` JS deps `@anthropic-ai/sdk` + `@langchain/anthropic` + `langchain`) pip-installed `langchain-core 1.4.0` **violating the pyproject pin `<0.3.0`**, which dragged in `chromadb 1.1.1` + `transformers 4.57.6` and downgraded `protobuf` to 5.29.6. Two failures resulted: (a) Epic 8 proto stubs (gencode 6.31.1) refused to import under protobuf 5.29.6; (b) `from transformers import GPT2TokenizerFast` (via nemoguardrails + incompatible langchain-core) hung past the 30 s `pytest-timeout`. **Fix**: forensic backup (`pip freeze` + `chroma_db/` copy → `logs/env-rollback-20260528-210919/`), `pip install -e .[all]` to restore pyproject baseline (chromadb 0.5.18, langchain-core 0.2.43, pydantic 2.9.2), uninstall orphans (crewai*, instructor, langchain-anthropic, langchain-protocol), bump `protobuf` to 6.33.6 (resolver floated otel up to 1.42.1). `pyproject` now pins `protobuf>=6.31.1,<7` to prevent recurrence. `pip check` clean; suite restored to 1409/368. **Still open**: the `package.json` JS deps remain uncommitted — operator must decide commit-with-purpose vs revert.
 
 ## 🗺️ ROADMAP
 
@@ -255,7 +265,7 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 
 ## 🎯 IMMEDIATE NEXT STEPS (when resuming)
 
-1. **Verify state**: `git log --oneline -n 6` (HEAD must be `6290652` or descendant). `git status` (only `.claude/` + `logs/` untracked).
+1. **Verify state**: `git log --oneline -n 6` (HEAD must be `b186bb3` or descendant). `git status` (expect `.claude/` + `logs/` untracked, plus the still-uncommitted `package.json`/`package-lock.json` JS-deps experiment per DC-EPMS-036).
 2. **Bring up the stack**:
    - `docker start epms-db` → wait for `docker inspect --format "{{.State.Health.Status}}" epms-db` = `healthy`.
    - `python backend\main.py` (native, :8080) — confirm `curl http://127.0.0.1:8080/api/health` reports `postgres: up` / `database: dcepms`. If `down`, see DC-EPMS-DB-001.
@@ -274,28 +284,32 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
   - `docs/skills/agent-harness-registry.md` — 30-harness Gentle IA master registry. **Bloque 4 cerrado completo** (H06/H13/H16 all OPERATIVO). Implementations: `backend/phase_dag.py` + `backend/agent_continuity.py` + `backend/skill_audit.py`.
 - **Audit CLI**: `python -m backend.skill_audit --since HEAD~N` prints per-commit CLEAN / GAPS / UNKNOWNS reports against the registry.
 
-## ⏸ PAUSE_STATE (last updated 2026-05-27 — Epic 9 BB84 QKD closed; Epic 10 IAM RBAC in flight)
+## ⏸ PAUSE_STATE (last updated 2026-05-28 — Epic 10 IAM/RBAC closed + verified; venv contamination remediated)
 
-> Epic 9 closed on local `master` via 2 atomic commits:
-> `28ca649` chore: boot stability (starlette<0.39 pin + agent_copilot lifespan + protobuf ruff exclude),
-> `948f33c` feat(epic9): BB84 educational QKD simulator + Forensic Ledger qkd_provider + HMI.
+> Epic 10 closed on `master` via 4 atomic commits, **pushed to origin/master**:
+> `5a8252e` backend IAM core (roles + JWT + login),
+> `a68381e` Maker-Checker dual-JWT on procedure sign,
+> `58f648a` frontend login + auth gate + API middleware,
+> `b186bb3` QKD-gated signing UI (block firmas when QBER >= 11%).
 >
-> NOT pushed to `origin/master` yet (operator must trigger).
->
-> Epic 10 (Quantum UI + IAM RBAC) in flight on `worktree-epic10-quantum-iam`.
+> Verified green after a full venv-contamination remediation (DC-EPMS-036):
+> backend **1409 passed / 0 skipped / 5 deselected** (62 s, epms-db healthy),
+> frontend **368 vitest passed**, `pip check` clean.
 
 ### State at sync time
 
-- `master` (local) at `948f33c`. `origin/master` still at `6290652` (push pending).
-- Pytest floor: **1349 backend / 334 vitest** (Epic 9 +61 backend, +21 vitest).
-- Ruff: 0 violations on changed files. Generated protobuf (`*_pb2.py`, `*_pb2_grpc.py`) excluded.
+- `master` at `b186bb3` == `origin/master` (Epic 10 pushed).
+- Pytest floor: **1409 backend / 368 vitest** (Epic 10 +60 backend, +34 vitest).
+- Env: venv restored to pyproject baseline (chromadb 0.5.18, langchain-core 0.2.43, pydantic 2.9.2); `protobuf` bumped to 6.33.6 + pinned `>=6.31.1,<7` in pyproject; otel floated to 1.42.1; orphan experiment pkgs (crewai*, instructor, langchain-anthropic, langchain-protocol) uninstalled. Forensic backup at `logs/env-rollback-20260528-210919/`.
+- Rust toolchain INSTALLED (rustup 1.29 / rustc+cargo 1.96, host x86_64-pc-windows-msvc, linker via VS Build Tools 2026). `edge/gateway-rs/` scaffolded + builds + 2 tests green (tokio + nalgebra wired; rmodbus + tonic declared, phase 2).
+- Ruff: generated protobuf (`*_pb2.py`, `*_pb2_grpc.py`) excluded.
 - Skills: 30 / 13 categories. Harnesses: H06+H13+H16 all OPERATIVO.
-- Boot smoke (post-starlette-pin): `backend.main` imports cleanly, `/api/qkd/status` registered, lifespan QKD prime succeeds (8 admitted, 0 rejected, depth=8 at boot).
-- Honest framing: Epic 9 is an EDUCATIONAL BB84 simulator. Keys carry `random.Random` entropy, not physical quantum entropy. Ledger HMAC chain is unchanged -- QKD fingerprint is HMAC-chained as audit provenance only.
+- Honest framing: Epic 9 BB84 remains an EDUCATIONAL simulator (random.Random entropy). Epic 10 JWT uses an ephemeral dev secret unless `DC_EPMS_JWT_SECRET` is set; in-memory user store is a demo MVP (production = Argon2id/OIDC + backing DB) — flagged in-code.
 
-### Open architectural decisions
+### Open architectural decisions / loose ends
 
-- Epic 10 (in flight): backend IAM (4 roles: L1_OPERATOR / L2_TECHNICIAN / SAFETY_OFFICER / FACILITY_MANAGER), JWT auth, Maker-Checker dual-signature enforcement on procedure sign, frontend login + auth gate, QBER-gated signing.
+- **`package.json` JS deps uncommitted** (`@anthropic-ai/sdk`, `@langchain/anthropic`, `langchain`) — operator must decide commit-with-purpose vs revert. Same experiment that caused DC-EPMS-036.
+- **`edge/` polyglot monorepo IN FLIGHT** — gateway-rs scaffold done; PENDING the A3 manifest (`edge/CLAUDE.md`: 6-feature holographic vector + early-transcendentals control rules — operator to provide spec), the Swift stub (`edge/node-swift/`), and the proto-fence wiring (tonic -> existing v1 .proto, no backend changes).
 - Deferred from Epic 8: gRPC service shim, MCP resource exposure of the proto stream, frontend proto-aware HMI surface.
 
 ### Resumption protocol (next session entry)
