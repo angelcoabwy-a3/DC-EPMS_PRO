@@ -77,6 +77,15 @@ dependencies = [
   # because backend/physics_engine.py uses them in base config too (SHI calc).
   "numpy>=1.26,<3.0",
   "scipy>=1.13,<2.0",
+
+  # Wire format (Epic 8 telemetry v1). The committed *_pb2.py stubs are
+  # gencode 6.31.1 (grpcio-tools 1.80), so the runtime MUST be >=6.31.1 or
+  # the stubs refuse to import (runtime_version.VersionError). Pinning here
+  # forces the resolver to float opentelemetry-proto up to a protobuf-6
+  # compatible release (1.42.x) instead of capping protobuf <6 via the old
+  # otel 1.34.x stack. Guards against the venv-contamination drift that
+  # silently downgraded protobuf to 5.29.6 (DC-EPMS-036, 2026-05-28).
+  "protobuf>=6.31.1,<7",
 ]
 
 # ── Optional dependency extras ────────────────────────────────────────────────
