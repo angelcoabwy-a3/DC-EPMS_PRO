@@ -104,7 +104,14 @@ describe('T2.1 Phase 2b — views/cooling.js buildCoolingSld()', () => {
         renderCoolingSld();
         const svg = document.querySelector('#view-cooling .pid-svg');
         expect(svg.innerHTML).toContain('data-node="chiller_1"');
-        expect(svg.getAttribute('viewBox')).toBe('0 0 1040 620');
+        // Batch 2: canvas grew to host the shared kit legend.
+        expect(svg.getAttribute('viewBox')).toBe('0 0 1040 740');
+    });
+
+    it('mounts the shared kit legend (one visual language)', () => {
+        const svg = buildCoolingSld();
+        expect(svg).toContain('dk-legend');
+        expect(svg).toContain('800 VDC unipolar TN-S');
     });
 });
 
@@ -168,7 +175,7 @@ describe('T2.1 Phase 2c — views/cooling.js L3 control plane', () => {
         expect(document.querySelector('.pwr-modal-result').className).toContain('is-denied');
     });
 
-    it('What-If mode marks a sandbox and a node-click toggles a local fault', () => {
+    it('What-If mode marks a sandbox and a node-click trips the DAG node', () => {
         mountView();
         renderCoolingSld();
         setMode('whatif');
@@ -179,6 +186,39 @@ describe('T2.1 Phase 2c — views/cooling.js L3 control plane', () => {
         onCoolClick({ target: node });
         expect(node.querySelector('.pid-symbol').getAttribute('data-sev'))
             .toBe('critical');
+    });
+
+    it('What-If is a real cascade: tripping one chiller degrades its N+1 peer', () => {
+        mountView();
+        renderCoolingSld();
+        setMode('whatif');
+        const ch1 = document.querySelector('.cool-node[data-node="chiller_1"]');
+        onCoolClick({ target: ch1 });
+        // The surviving peer reports consumed redundancy…
+        const ch2sym = document.querySelector(
+            '.cool-node[data-node="chiller_2"] .pid-symbol');
+        expect(ch2sym.getAttribute('data-sev')).toBe('warning');
+        // …while the load is still served (N+1 did its job).
+        const hallSym = document.querySelector(
+            '.cool-node[data-node="data_hall"] .pid-symbol');
+        expect(hallSym.getAttribute('data-sev')).toBe('ok');
+    });
+
+    it('What-If cascade reaches the hall when BOTH chillers are tripped', () => {
+        mountView();
+        renderCoolingSld();
+        setMode('whatif');
+        onCoolClick({ target: document.querySelector('.cool-node[data-node="chiller_1"]') });
+        onCoolClick({ target: document.querySelector('.cool-node[data-node="chiller_2"]') });
+        const hallSym = document.querySelector(
+            '.cool-node[data-node="data_hall"] .pid-symbol');
+        expect(hallSym.getAttribute('data-sev')).toBe('critical');
+        // Returning to LIVE clears the simulated trips.
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true, status: 200, json: async () => ({ hld_nodes: {} }),
+        })));
+        setMode('live');
+        expect(hallSym.getAttribute('data-sev')).toBe('ok');
     });
 
     it('updateSparklines accumulates Kalman ticks onto the cooling sparklines', () => {

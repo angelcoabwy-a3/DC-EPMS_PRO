@@ -63,64 +63,75 @@ export function orthoPath(points) {
     return points.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
 }
 
-/** Orthogonal connector element. cls examples: 'pf-a', 'cool-supply'. */
-export function wire(points, cls) {
-    return `<path class="pf-wire ${cls}" d="${orthoPath(points)}"/>`;
+/** Orthogonal connector element. cls examples: 'pf-a', 'cool-supply'.
+ *  base defaults to the SLD wire class; P&ID views pass 'cool-pipe'. */
+export function wire(points, cls, base = 'pf-wire') {
+    return `<path class="${base} ${cls}" d="${orthoPath(points)}"/>`;
 }
 
 // ─── Symbol library ────────────────────────────────────────────────
-// Every symbol carries class="pf-sym pid-symbol" + data-sev="ok" so
-// the existing severity binders and CSS keep working unchanged.
-const _S = 'class="pf-sym pid-symbol" data-sev="ok"';
+// Every symbol carries the pid-symbol class + data-sev="ok" so the
+// severity binders and CSS keep working unchanged. The base class is
+// caller-overridable: the Power SLD uses 'pf-sym pid-symbol', the
+// Cooling P&ID uses 'pid-symbol cool-sym' (its CSS hook order).
+const DEFAULT_SYM_CLASS = 'pf-sym pid-symbol';
 
 const _SYMBOLS = {
-    xfmr: (x, y) =>
-        `<circle ${_S} cx="${x}" cy="${y - 8}" r="14"/>`
-        + `<circle ${_S} cx="${x}" cy="${y + 8}" r="14"/>`,
-    genset: (x, y) =>
-        `<circle ${_S} cx="${x}" cy="${y}" r="23"/>`
+    xfmr: (x, y, S) =>
+        `<circle ${S} cx="${x}" cy="${y - 8}" r="14"/>`
+        + `<circle ${S} cx="${x}" cy="${y + 8}" r="14"/>`,
+    genset: (x, y, S) =>
+        `<circle ${S} cx="${x}" cy="${y}" r="23"/>`
         + `<text class="pf-glyph" x="${x}" y="${y + 6}">G</text>`,
-    parbus: (x, y) =>
-        `<rect class="pf-sym pid-symbol pf-bus" data-sev="ok" x="${x - 52}" y="${y - 5}" width="104" height="10" rx="2"/>`,
-    pump: (x, y) =>
-        `<circle ${_S} cx="${x}" cy="${y}" r="21"/>`
+    parbus: (x, y, S, cls) =>
+        `<rect class="${cls} pf-bus" data-sev="ok" x="${x - 52}" y="${y - 5}" width="104" height="10" rx="2"/>`,
+    pump: (x, y, S) =>
+        `<circle ${S} cx="${x}" cy="${y}" r="21"/>`
         + `<path class="cool-glyph" d="M${x - 9} ${y} L${x + 8} ${y - 8} L${x + 8} ${y + 8} Z"/>`,
-    tower: (x, y) =>
-        `<rect ${_S} x="${x - 42}" y="${y - 32}" width="84" height="64" rx="3"/>`
+    tower: (x, y, S) =>
+        `<rect ${S} x="${x - 42}" y="${y - 32}" width="84" height="64" rx="3"/>`
         + `<path class="cool-fin" d="M${x - 30} ${y - 14} H${x + 30} `
         + `M${x - 30} ${y + 2} H${x + 30} M${x - 30} ${y + 18} H${x + 30}"/>`,
+    chiller: (x, y, S) =>
+        `<rect ${S} x="${x - 40}" y="${y - 23}" width="80" height="46" rx="2.5"/>`,
     // Phase 2 — MV Rectifier: the AC/DC conversion boundary. The
     // diagonal divider + AC/DC glyphs are the IEC-style converter mark.
-    rectifier: (x, y) =>
-        `<rect ${_S} x="${x - 40}" y="${y - 28}" width="80" height="56" rx="2.5"/>`
+    rectifier: (x, y, S) =>
+        `<rect ${S} x="${x - 40}" y="${y - 28}" width="80" height="56" rx="2.5"/>`
         + `<line class="pf-conv-divider" x1="${x - 40}" y1="${y + 28}" x2="${x + 40}" y2="${y - 28}"/>`
         + `<text class="pf-glyph pf-glyph-sm" x="${x - 22}" y="${y - 8}">AC</text>`
         + `<text class="pf-glyph pf-glyph-sm" x="${x + 22}" y="${y + 16}">DC</text>`,
     // Phase 2 — SSCB: solid-state circuit breaker (1-100 us clearing).
-    sscb: (x, y) =>
-        `<rect ${_S} x="${x - 26}" y="${y - 23}" width="52" height="46" rx="2.5"/>`
+    sscb: (x, y, S) =>
+        `<rect ${S} x="${x - 26}" y="${y - 23}" width="52" height="46" rx="2.5"/>`
         + `<path class="pf-glyph-stroke" d="M${x - 10} ${y + 12} L${x + 10} ${y - 12}"/>`
         + `<path class="pf-glyph-stroke" d="M${x - 10} ${y - 4} L${x - 2} ${y - 4}"/>`,
     // Phase 2 — 800 VDC unipolar bus bar (wider than the AC parbus).
-    dcbus: (x, y) =>
-        `<rect class="pf-sym pid-symbol pf-bus pf-bus-dc" data-sev="ok" x="${x - 120}" y="${y - 6}" width="240" height="12" rx="2"/>`,
+    dcbus: (x, y, S, cls) =>
+        `<rect class="${cls} pf-bus pf-bus-dc" data-sev="ok" x="${x - 120}" y="${y - 6}" width="240" height="12" rx="2"/>`,
     // Phase 2 — BESS: container + cell-stack glyph.
-    bess: (x, y) =>
-        `<rect ${_S} x="${x - 40}" y="${y - 23}" width="80" height="46" rx="2.5"/>`
+    bess: (x, y, S) =>
+        `<rect ${S} x="${x - 40}" y="${y - 23}" width="80" height="46" rx="2.5"/>`
         + `<path class="pf-glyph-stroke" d="M${x - 22} ${y - 8} h14 M${x - 15} ${y - 15} v14 `
         + `M${x + 8} ${y - 8} h14"/>`,
-    hall: (x, y) =>
-        `<rect ${_S} x="${x - 50}" y="${y - 29}" width="100" height="58" rx="2.5"/>`,
-    crah: (x, y) =>
-        `<rect ${_S} x="${x - 28}" y="${y - 17}" width="56" height="34" rx="2.5"/>`,
+    hall: (x, y, S) =>
+        `<rect ${S} x="${x - 50}" y="${y - 29}" width="100" height="58" rx="2.5"/>`,
+    crah: (x, y, S) =>
+        `<rect ${S} x="${x - 28}" y="${y - 17}" width="56" height="34" rx="2.5"/>`,
     // Default equipment box (util / ats / ups / batt / rpp / cdu ...).
-    box: (x, y) =>
-        `<rect ${_S} x="${x - 40}" y="${y - 23}" width="80" height="46" rx="2.5"/>`,
+    box: (x, y, S) =>
+        `<rect ${S} x="${x - 40}" y="${y - 23}" width="80" height="46" rx="2.5"/>`,
 };
 
-/** SVG markup for one equipment symbol. Unknown types -> box. */
-export function symbol(type, x, y) {
-    return (_SYMBOLS[type] || _SYMBOLS.box)(x, y);
+/**
+ * SVG markup for one equipment symbol. Unknown types -> box.
+ * opts.cls overrides the base class list (e.g. 'pid-symbol cool-sym'
+ * for the Cooling P&ID CSS hooks); data-sev="ok" is always stamped.
+ */
+export function symbol(type, x, y, opts = {}) {
+    const cls = opts.cls || DEFAULT_SYM_CLASS;
+    const S = `class="${cls}" data-sev="ok"`;
+    return (_SYMBOLS[type] || _SYMBOLS.box)(x, y, S, cls);
 }
 
 /** Symbol types rendered by a dedicated builder (legend/testing aid). */
