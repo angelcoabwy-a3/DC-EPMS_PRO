@@ -60,8 +60,8 @@ HEAD:  9abd84a (master, LOCAL — origin/master at f3a3d06, push pending
 Tests:   backend 1409 passed (Epic 10 +60; incl. 7 PG integration) —
          full pytest ~62s, 0 fail, 5 deselected (slow/FAISS AVX2).
          frontend 368 vitest passed (Epic 10 +34, 23 files).
-         GraphRAG: 10 knowledge documents at boot.
-         Architect library: 23 catalog MOPs pre-seeded, all audit=APPROVE.
+         GraphRAG: 12 knowledge documents at boot.
+         Architect library: 29 catalog MOPs pre-seeded, all audit=APPROVE.
          Skills registry: 30 explicit skills across 13 categories.
          ruff: 0 violations in backend/ (generated protobuf excluded).
 
@@ -320,7 +320,7 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 
 1. Run `IMMEDIATE NEXT STEPS` checklist.
 2. Read `docs/ROADMAP-V11.md` for live backlog.
-3. Verify boot log shows `[graphrag] loaded 10 knowledge documents` + `[BOOT] Architect library pre-seeded with 23 catalog MOP(s)` + `[BOOT] QKDService primed`.
+3. Verify boot log shows `[graphrag] loaded 12 knowledge documents` + `[BOOT] Architect library pre-seeded with 29 catalog MOP(s)` + `[BOOT] QKDService primed`.
 4. Wait for Wilmer's explicit GO before any new work.
 
 ## 🚨 DO NOT TOUCH
