@@ -323,8 +323,10 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 > (VFI-SS-111) with internal power-path mimic, ATS/XFMR/batt sections,
 > Phase 2 spec sheets (`asset_engineering.js` + asset panel wiring).
 > Preview tool: `node scripts/preview_diagrams.mjs` -> logs/diagram_preview.html.
-> Pending from the original plan: Mission Control breadcrumb (deferred —
-> superseded in priority by the engineering-detail pivot Wilmer requested).
+> Mission Control breadcrumb DELIVERED (0cc7d5e): drill-down trail
+> surviving navigation + Building D retargeted to the Power SLD with
+> mv_rect_d pre-selected (scene -> SLD -> Phase 2 spec sheet in one
+> click). The Diagram Rebuild plan is 100% closed; vitest floor 453.
 
 > Epic 10 closed on `master` via 4 atomic commits, **pushed to origin/master**:
 > `5a8252e` backend IAM core (roles + JWT + login),
