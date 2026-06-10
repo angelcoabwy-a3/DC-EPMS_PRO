@@ -664,6 +664,34 @@ encode the contracts the operator pinned on 2026-05-23.
 
 ---
 
+## Category N — Diagram Kit (ADR-012)
+
+### `S-DIAGRAM-01` · All engineering diagrams ride the kit + registry
+
+- **When:** Creating or modifying any HMI view that renders an
+  engineering diagram (SLD, P&ID, HLD, topology graph) or binds
+  Kalman channels to diagram nodes.
+- **Rule:** Symbols and connectors MUST come from
+  `core/diagram_kit.js` (`symbol()` / `wire()` — `orthoPath()` throws
+  on diagonal segments, so spaghetti is unrepresentable). Asset
+  identity and channel ownership MUST resolve through
+  `core/node_registry.js` (`matchesChannel()` prefix discipline —
+  never substring `.includes()`). Severity colors come from the
+  `--dk-sev-*` CSS tokens; every diagram mounts the shared kit
+  legend. Local What-If sandboxes use the DAG engines
+  (`power_grid.js` / `cooling_grid.js`); backend physics What-If
+  stays on `/api/topology/whatif`. No hand-authored static diagram
+  SVG may be added to `index.html`. The vocabulary fence
+  (S-VOCAB-01) applies to RENDERED labels: a vitest must assert that
+  "VDC" never sits adjacent to a phase word in generated markup.
+- **Verify:** the view imports `diagram_kit` + `node_registry`; its
+  test file asserts orthogonality on generated paths, data-binder
+  hooks, and the markup-level vocabulary fence. Reference:
+  `docs/adr/ADR-012-diagram-kit-node-registry.md`.
+  Related: [[S-VOCAB-01]], [[S-SEC-01]], [[S-TEST-02]].
+
+---
+
 ## Index — quick lookup
 
 | ID | Category | Headline |
@@ -698,6 +726,7 @@ encode the contracts the operator pinned on 2026-05-23.
 | `S-TELEMETRY-01` | Telemetry Schema | Wire-format invariants are pytest-enforced |
 | `S-OCP-CDU-01` | Telemetry Schema | OCP CDU Test Methodology alignment |
 | `S-PTP-01` | Telemetry Schema | Sub-microsecond PTP timestamps on event messages |
+| `S-DIAGRAM-01` | Diagram Kit | All engineering diagrams ride diagram_kit + node_registry (ADR-012) |
 
-**30 skills, 13 categories.** New skills extending this registry must follow
+**31 skills, 14 categories.** New skills extending this registry must follow
 the same template (When / Rule / Verify) and be added to the index above.
