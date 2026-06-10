@@ -26,8 +26,9 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import * as THREE from '/assets/vendor/three.module.min.js';
-import { subscribe } from '../core/state.js';
+import { subscribe, setState } from '../core/state.js';
 import { registerRoute } from '../core/router.js';
+import { escapeHTML } from '../core/sanitize.js';
 
 const API_BASE = '';
 
@@ -163,7 +164,7 @@ function _buildScene(width, height) {
     });
     const buildingD = new THREE.Mesh(dGeo, dMat);
     buildingD.position.set(0, 9, 22);
-    buildingD.userData = { id: 'building_d', displayName: 'Building D · design Q2 2026', clickable: true };
+    buildingD.userData = { id: 'building_d', displayName: 'Building D · 800 VDC unipolar TN-S · design Q2 2026', clickable: true };
     scene.add(buildingD);
     const dEdges = new THREE.LineSegments(
         new THREE.EdgesGeometry(dGeo),
@@ -306,8 +307,7 @@ function _bindOverlayCards() {
                 const route = DRILL_TARGETS[b.id];
                 if (!route) return;
                 console.log('[mission_control] keyboard drill → %s → %s', b.id, route);
-                _setStatus(`drilling: ${b.id} → ${route}`, 'ok');
-                _navigateTo(route);
+                _drillTo(b.id, route);
                 if (b.mesh) _animateDrillDown(b.mesh);
             });
         }
@@ -757,11 +757,19 @@ function _onPointerLeave() {
 }
 
 // ─── Click → drill-down ─────────────────────────────────────────
+// Batch 6: building_d now drills into the Power SLD, where its
+// Phase 2 800 VDC unipolar TN-S branch lives (was tech-assist).
 const DRILL_TARGETS = {
     yard:        'site_topology',
     building_a:  'rack-heatmap',
     building_b:  'rack-heatmap',
-    building_d:  'tech-assist',
+    building_d:  'power',
+};
+
+const ROUTE_LABELS = {
+    'site_topology': 'Site Topology',
+    'rack-heatmap': 'Rack Heatmap',
+    'power': 'Power & UPS SLD',
 };
 
 function _navigateTo(route) {
@@ -771,6 +779,53 @@ function _navigateTo(route) {
         return;
     }
     navItem.click();
+}
+
+// ─── Breadcrumb (Batch 6) ────────────────────────────────────────
+// Drill-down trail that SURVIVES the navigation: it lives on
+// document.body, not inside #view-mission-control. The first
+// segment is a button back to Mission Control; any MANUAL nav-item
+// click breaks the trail and dismisses it (wired in init via a
+// delegated listener — note _drillTo shows the crumb AFTER its own
+// _navigateTo click, so programmatic drills never self-dismiss).
+function _hideBreadcrumb() {
+    const el = document.getElementById('mc-breadcrumb');
+    if (el) el.setAttribute('hidden', '');
+}
+
+function _showBreadcrumb(buildingId, route) {
+    let el = document.getElementById('mc-breadcrumb');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'mc-breadcrumb';
+        el.className = 'mc-breadcrumb';
+        document.body.appendChild(el);
+        el.addEventListener('click', (e) => {
+            if (e.target.closest('[data-mc-home]')) {
+                _hideBreadcrumb();
+                _navigateTo('mission-control');
+            }
+        });
+    }
+    const b = _buildings.find((x) => x.id === buildingId);
+    const building = escapeHTML((b && b.displayName) ? b.displayName.split('·')[0].trim() : buildingId);
+    const target = escapeHTML(ROUTE_LABELS[route] || route);
+    el.innerHTML =
+        `<button type="button" class="mc-crumb mc-crumb-home" data-mc-home="1">🛰 Mission Control</button>`
+        + `<span class="mc-crumb-sep">▸</span><span class="mc-crumb">${building}</span>`
+        + `<span class="mc-crumb-sep">▸</span><span class="mc-crumb mc-crumb-here">${target}</span>`;
+    el.removeAttribute('hidden');
+}
+
+// One drill path for mouse + keyboard: navigate, then leave the
+// trail. Building D additionally pre-selects its MV Rectifier so the
+// Power view opens with the Phase 2 spec sheet in the asset panel.
+function _drillTo(buildingId, route) {
+    if (!route) return;
+    _setStatus(`drilling: ${buildingId} → ${route}`, 'ok');
+    if (buildingId === 'building_d') setState('selectedAsset', 'mv_rect_d');
+    _navigateTo(route);
+    _showBreadcrumb(buildingId, route);
 }
 
 // Cosmetic camera zoom ONLY. Navigation is decoupled — it already fired
@@ -850,11 +905,10 @@ function _onClick(e) {
     const id = hit.userData?.id;
     const route = DRILL_TARGETS[id];
     console.log('[mission_control] click → %s → %s', id, route || '(no drill target)');
-    _setStatus(`drilling: ${id} → ${route}`, 'ok');
     if (!route) return;
     // Navigate FIRST — immediate, synchronous, unconditional. The drill-down
     // must succeed even if the zoom animation never runs or is interrupted.
-    _navigateTo(route);
+    _drillTo(id, route);
     // Camera zoom is now pure fire-and-forget eye-candy, fully decoupled.
     _animateDrillDown(hit);
 }
@@ -979,6 +1033,12 @@ export function initMissionControlView() {
         return;
     }
     _wireRouting();
+    // Batch 6: a MANUAL sidebar navigation breaks the drill-down trail
+    // and dismisses the breadcrumb. _drillTo shows the crumb AFTER its
+    // own programmatic nav-item click, so drills never self-dismiss.
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('.nav-item')) _hideBreadcrumb();
+    });
     _initialized = true;
     console.log('[mission_control] view ready (B1 production · Tesla Megapack)');
 }
@@ -1000,8 +1060,12 @@ export const __mc_test__ = {
     onPointerMove:    _onPointerMove,
     animateDrillDown: _animateDrillDown,
     navigateTo:       _navigateTo,
+    drillTo:          _drillTo,
+    showBreadcrumb:   _showBreadcrumb,
+    hideBreadcrumb:   _hideBreadcrumb,
     stop:             _stop,
     DRILL_TARGETS,
+    ROUTE_LABELS,
 
     // _transitioning flag — read / force
     getTransitioning: () => _transitioning,

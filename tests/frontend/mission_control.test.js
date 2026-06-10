@@ -199,7 +199,79 @@ describe('T2.4 Bite 2 — drill-down logic (DC-EPMS-MC-001)', () => {
             yard:       'site_topology',
             building_a: 'rack-heatmap',
             building_b: 'rack-heatmap',
-            building_d: 'tech-assist',
+            // B6: Building D drills into the Power SLD, where its
+            // Phase 2 800 VDC branch lives (was tech-assist).
+            building_d: 'power',
         });
+    });
+});
+
+// ════════════════════════════════════════════════════════════════
+//  B6 — drill-down breadcrumb (Mission Control ▸ Building ▸ View)
+// ════════════════════════════════════════════════════════════════
+describe('B6 — mission_control breadcrumb', () => {
+    afterEach(async () => {
+        document.getElementById('mc-breadcrumb')?.remove();
+        document.body.innerHTML = '';
+        const { setState } = await import('/assets/js/core/state.js');
+        setState('selectedAsset', null);
+    });
+
+    it('drillTo leaves a 3-segment trail that survives the navigation', () => {
+        document.body.innerHTML =
+            '<button class="nav-item" data-route="rack-heatmap"></button>';
+        __mc_test__.injectScene({ buildings: [
+            { id: 'building_a', displayName: 'Building A · A3-Alpha · Path C2' },
+        ] });
+        __mc_test__.drillTo('building_a', 'rack-heatmap');
+        const crumb = document.getElementById('mc-breadcrumb');
+        expect(crumb).not.toBeNull();
+        expect(crumb.hasAttribute('hidden')).toBe(false);
+        expect(crumb.textContent).toContain('Mission Control');
+        expect(crumb.textContent).toContain('Building A');
+        expect(crumb.textContent).toContain('Rack Heatmap');
+    });
+
+    it('the home segment navigates back to mission-control and dismisses', () => {
+        let homeClicks = 0;
+        document.body.innerHTML =
+            '<button class="nav-item" data-route="site_topology"></button>'
+            + '<button class="nav-item" data-route="mission-control"></button>';
+        document.querySelector('[data-route="mission-control"]')
+            .addEventListener('click', () => { homeClicks += 1; });
+        __mc_test__.injectScene({ buildings: [
+            { id: 'yard', displayName: 'Yard · A3-Alpha · Path C2' },
+        ] });
+        __mc_test__.drillTo('yard', 'site_topology');
+        document.querySelector('#mc-breadcrumb [data-mc-home]').click();
+        expect(homeClicks).toBe(1);
+        expect(document.getElementById('mc-breadcrumb').hasAttribute('hidden'))
+            .toBe(true);
+    });
+
+    it('Building D drill pre-selects the MV Rectifier Phase 2 spec sheet', async () => {
+        const { getState } = await import('/assets/js/core/state.js');
+        document.body.innerHTML =
+            '<button class="nav-item" data-route="power"></button>';
+        __mc_test__.injectScene({ buildings: [
+            { id: 'building_d', displayName: 'Building D · 800 VDC unipolar TN-S · design Q2 2026' },
+        ] });
+        __mc_test__.drillTo('building_d', 'power');
+        expect(getState('selectedAsset')).toBe('mv_rect_d');
+        const crumb = document.getElementById('mc-breadcrumb');
+        expect(crumb.textContent).toContain('Building D');
+        expect(crumb.textContent).toContain('Power & UPS SLD');
+    });
+
+    it('breadcrumb segments are escaped (S-SEC-01)', () => {
+        __mc_test__.injectScene({ buildings: [
+            { id: 'building_a', displayName: '<img onerror=x> · evil' },
+        ] });
+        document.body.innerHTML =
+            '<button class="nav-item" data-route="rack-heatmap"></button>';
+        __mc_test__.drillTo('building_a', 'rack-heatmap');
+        const crumb = document.getElementById('mc-breadcrumb');
+        expect(crumb.innerHTML).not.toContain('<img');
+        expect(crumb.innerHTML).toContain('&lt;img');
     });
 });
