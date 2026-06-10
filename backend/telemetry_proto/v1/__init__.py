@@ -23,8 +23,8 @@ which is the canonical import path.
 """
 from __future__ import annotations
 
-try:
+import contextlib
+
+# If the stub has not been generated yet, run the orchestrator.
+with contextlib.suppress(ImportError):
     from . import telemetry_pb2  # noqa: F401  (re-export)
-except ImportError:
-    # The stub has not been generated yet -- run the orchestrator.
-    pass
