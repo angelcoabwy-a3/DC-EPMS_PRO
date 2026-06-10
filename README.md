@@ -8,7 +8,7 @@ Deployed at **A3-Alpha Toronto Area** (Tier IV 2N, 40 MW,
 
 **Version 1.0** — includes Sovereign Operator features (dual utility 2N,
 What-If simulation, AI Mission Control) and MCP server for Claude Desktop
-integration. See `DEMO_SCRIPT.md` for the Microsoft CO+I demo flow.
+integration. See `docs/DEMO_SCRIPT.md` for the Microsoft CO+I demo flow.
 
 ---
 

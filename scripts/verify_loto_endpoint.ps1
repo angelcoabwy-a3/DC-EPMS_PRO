@@ -262,7 +262,7 @@ Write-Host ("=" * 70) -ForegroundColor $(if ($failures -eq 0) { 'Green' } else {
 Write-Host ""
 
 if ($failures -eq 0) {
-    Write-Host "  Next: record the demo video! See DEMO_SCRIPT.md" -ForegroundColor Cyan
+    Write-Host "  Next: record the demo video! See docs/DEMO_SCRIPT.md" -ForegroundColor Cyan
 } else {
     Write-Host "  Next steps:" -ForegroundColor Cyan
     Write-Host "    - If 503: run apply_main_py_activation.ps1"

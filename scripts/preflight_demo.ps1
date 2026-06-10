@@ -1,5 +1,5 @@
 # =====================================================================
-# DC-EPMS PRO -- Pre-Flight Demo Verifier (DEMO_SCRIPT.md v6 companion)
+# DC-EPMS PRO -- Pre-Flight Demo Verifier (docs/DEMO_SCRIPT.md v6 companion)
 #
 # Idempotent stack-readiness check before the CO+I demo. Run 15 min
 # before the panel. Refuses to declare GREEN if ANY check fails.
@@ -65,7 +65,7 @@ function Test-Final {
         Write-Host ""
         Write-Host "Next: hard-reload browser (Ctrl+Shift+R) on tabs 1-4"
         Write-Host "      pre-stage terminal with /api/ledger/verify command"
-        Write-Host "      review DEMO_SCRIPT.md beats 0-5"
+        Write-Host "      review docs/DEMO_SCRIPT.md beats 0-5"
         exit 0
     } else {
         Write-Host "  $($failed.Count) CHECK(S) FAILED -- do NOT demo" -ForegroundColor Red
