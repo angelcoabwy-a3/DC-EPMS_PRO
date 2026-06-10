@@ -15,13 +15,21 @@ DC-EPMS PRO simulates **A3-Alpha Toronto Area** under **Path C2** (sealed 2026-0
 
 **🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in CO+I panel review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
 
-## 📊 CURRENT STATE (synced 2026-06-10 — repo hygiene session; Epic 10 IAM/RBAC closed + verified)
+## 📊 CURRENT STATE (synced 2026-06-10 — Diagram Rebuild B0-B6 closed; repo hygiene done; Epic 10 verified)
 
 ```
-HEAD:  9abd84a (master, LOCAL — origin/master at f3a3d06, push pending
-       operator). 2026-06-10 hygiene: ruff gate fix (acf00b9), root
-       batch-era artifacts archived + gitignore hardening (ca31e09),
-       BMO demo runbooks committed (9abd84a). Stable baseline =
+HEAD:  Diagram Rebuild closure (master == origin/master). 2026-06-10
+       sessions: (a) repo hygiene -- ruff gate fix acf00b9, root
+       batch-era artifacts archived ca31e09, BMO runbooks 9abd84a,
+       doc-syncs 585763f/1859aee/bf16ca1; (b) DIAGRAM REBUILD
+       Batches 0-5: shared diagram kit + canonical node registry
+       0b3726f, Power SLD + Phase 2 800 VDC branch 9b99b18, Cooling
+       P&ID + availability DAG b9787db, registry-driven HLD (static
+       SVG retired, 480VDC vocab fix) de00cc2, site-graph live
+       severity + SLD cross-link 84c1336, Power & UPS engineering
+       detail (NFPA 110 genset sequence, IEC 62040-3 UPS modes)
+       66d9eb2; (c) Batch 6 closure: ADR-012 + S-DIAGRAM-01 +
+       preview tool. Stable baseline =
        v0.13.0 "Proactive Edge" (2026-05-19). Post-v0.17.0 work delivered:
        * Epic 1: full 4-agent fleet LLM-augmented + multi-agent façade.
        * Epic 2 (v0.13.0): "The Optimizer" proactive edge-agent (2.A-2.E).
@@ -59,10 +67,13 @@ HEAD:  9abd84a (master, LOCAL — origin/master at f3a3d06, push pending
 
 Tests:   backend 1409 passed (Epic 10 +60; incl. 7 PG integration) —
          full pytest ~62s, 0 fail, 5 deselected (slow/FAISS AVX2).
-         frontend 368 vitest passed (Epic 10 +34, 23 files).
+         frontend 449 vitest passed across 28 files (Diagram Rebuild
+         +81: kit/registry 22, cooling DAG 11, HLD 8, site graph 9,
+         power_grid + engineering 21, Phase 2 SLD 10).
          GraphRAG: 12 knowledge documents at boot.
          Architect library: 29 catalog MOPs pre-seeded, all audit=APPROVE.
-         Skills registry: 30 explicit skills across 13 categories.
+         Skills registry: 31 explicit skills across 14 categories
+         (S-DIAGRAM-01 added per ADR-012).
          ruff: 0 violations in backend/ (generated protobuf excluded).
 
 Perf baseline (AMD Ryzen + Win11):
@@ -104,9 +115,14 @@ backend/                     FastAPI + asyncpg — ~50 endpoints
   migrations/                SQL migrations (apply with psql + restart)
   hal/                       Cummins, ASCO, Russelectric adapters
   mcp_server.py              Claude Desktop stdio subprocess
-frontend/                    Fully modular ES (T2.1 closed)
+frontend/                    Fully modular ES (T2.1 closed; Diagram Rebuild 2026-06-10)
   index.html + assets/js/main.js  single ES-module entry
   assets/js/core/            router, bootstrap, telemetry_engine, hermes_events, ...
+    diagram_kit.js           ADR-012 shared symbols/wires/legend/severity (orthoPath throws on diagonals)
+    node_registry.js         ADR-012 canonical asset identity (SLD<->topo<->graph<->Kalman prefixes)
+    power_grid.js            electrical DAG (NFPA 110 genset sequence, IEC 62040-3 UPS modes)
+    cooling_grid.js          hydraulic availability DAG (N+1/2N peer degradation)
+    asset_engineering.js     per-asset engineering sections (UPS mimic, genset phase strip, ...)
   assets/js/views/           12 views (overview, mission_control, copilot, bms, loto, ...)
 config/
   site_model.yml             110 components, 91 locations
@@ -117,7 +133,7 @@ config/
 data/chroma_db/              20-doc 4-tier ChromaDB corpus
 tests/                       1288 backend tests + 313 frontend vitest
 docs/
-  adr/                       ADRs (MADR format; ADR-010 dual-graph taxonomy, ADR-011 ledger)
+  adr/                       ADRs (MADR format; ADR-011 ledger, ADR-012 diagram kit + node registry)
   ROADMAP-V11.md             live backlog (v11.7, 2026-05-19)
   rfc/                       telemetry v0.9 historical + v1 sizing+OCP RFC (Epic 8)
   skills/skill-registry.md   30 skills across 13 categories
@@ -268,7 +284,7 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 
 ## 🎯 IMMEDIATE NEXT STEPS (when resuming)
 
-1. **Verify state**: `git log --oneline -n 6` (HEAD must be `9abd84a` or descendant). `git status` (expect a clean tree — `.ai/`, `logs/`, `.claude/settings.local.json` are gitignored since the 2026-06-10 hygiene session; the DC-EPMS-036 `package.json` experiment was reverted and committed in f3a3d06).
+1. **Verify state**: `git log --oneline -n 6` (HEAD must be `66d9eb2` or descendant — Diagram Rebuild B5). `git status` (expect a clean tree — `.ai/`, `logs/`, `.claude/settings.local.json` are gitignored since the 2026-06-10 hygiene session).
 2. **Bring up the stack**:
    - `docker start epms-db` → wait for `docker inspect --format "{{.State.Health.Status}}" epms-db` = `healthy`.
    - `python backend\main.py` (native, :8080) — confirm `curl http://127.0.0.1:8080/api/health` reports `postgres: up` / `database: dcepms`. If `down`, see DC-EPMS-DB-001.
@@ -283,11 +299,32 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 - **RUNTIME CONSTRAINT — `S-RUNTIME-01`.** The Python backend does NOT hot-reload. After any backend / agent-wiring change, the active process MUST be restarted and the `[BOOT]` log signature in `logs/epms_pro.log` verified alongside `/api/health` before conducting smoke tests — to prevent stale-code false positives (the post-Epic-1 smoke surfaced exactly this failure mode: PID 46172 ran a pre-T3.3 module for 2+ days while unit tests + frontend smoke all passed, silently returning empty narratives).
 - **Companion files (binding)**:
   - `docs/engram/main-context.md` — architectural state snapshot.
-  - `docs/skills/skill-registry.md` — 30 skills across 13 categories. Latest additions (Epic 8): `S-TELEMETRY-01` (wire-format invariants), `S-OCP-CDU-01` (OCP CDU mapping), `S-PTP-01` (sub-µs PTP timestamps).
+  - `docs/skills/skill-registry.md` — 31 skills across 14 categories. Latest addition (Diagram Rebuild): `S-DIAGRAM-01` (all engineering diagrams ride `diagram_kit` + `node_registry`, ADR-012); prior (Epic 8): `S-TELEMETRY-01`, `S-OCP-CDU-01`, `S-PTP-01`.
   - `docs/skills/agent-harness-registry.md` — 30-harness Gentle IA master registry. **Bloque 4 cerrado completo** (H06/H13/H16 all OPERATIVO). Implementations: `backend/phase_dag.py` + `backend/agent_continuity.py` + `backend/skill_audit.py`.
 - **Audit CLI**: `python -m backend.skill_audit --since HEAD~N` prints per-commit CLEAN / GAPS / UNKNOWNS reports against the registry.
 
-## ⏸ PAUSE_STATE (last updated 2026-06-10 — repo hygiene session; Epic 10 closed; venv contamination remediated)
+## ⏸ PAUSE_STATE (last updated 2026-06-10 — Diagram Rebuild Batches 0-6 closed + pushed; repo hygiene done)
+
+> **Diagram Rebuild (2026-06-10)** — the 5 diagram views now share ONE
+> visual language + ONE asset identity (ADR-012, skill S-DIAGRAM-01):
+> `core/diagram_kit.js` (orthogonal-by-construction symbols/wires/legend,
+> unified --dk-sev-* severity tokens, RBAC modal factory) +
+> `core/node_registry.js` (canonical id <-> topo key <-> graph id <->
+> Kalman channel prefixes, grounded on the live backend). Power SLD
+> gained the Phase 2 Building D branch with the AC/DC fence DRAWN
+> (35 kV 3-phase AC -> MV Rectifier -> 800 VDC UNIPOLAR TN-S -> SSCB ->
+> BESS/RPP, dashed DESIGN, non-operable). Cooling What-If became a real
+> availability DAG (`cooling_grid.js`, N+1 peer degradation). The 18 KB
+> static HLD SVG was retired (registry-generated; "480VDC" vocab error
+> eradicated; 8 s poll -> Hermes). Site graph gained live severity +
+> "Open in Power SLD / Cooling P&ID" cross-links. Power & UPS gained
+> engineering detail: genset NFPA 110 sequence (STANDBY->CRANKING->
+> RUNNING->ON LOAD->COOLDOWN) in power_grid.js, UPS IEC 62040-3 modes
+> (VFI-SS-111) with internal power-path mimic, ATS/XFMR/batt sections,
+> Phase 2 spec sheets (`asset_engineering.js` + asset panel wiring).
+> Preview tool: `node scripts/preview_diagrams.mjs` -> logs/diagram_preview.html.
+> Pending from the original plan: Mission Control breadcrumb (deferred —
+> superseded in priority by the engineering-detail pivot Wilmer requested).
 
 > Epic 10 closed on `master` via 4 atomic commits, **pushed to origin/master**:
 > `5a8252e` backend IAM core (roles + JWT + login),
@@ -301,12 +338,12 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 
 ### State at sync time
 
-- `master` at `9abd84a` (2026-06-10 hygiene session, 4 local commits ahead of `origin/master` = `f3a3d06`; push pending operator).
-- Pytest floor: **1409 backend / 368 vitest** (Epic 10 +60 backend, +34 vitest).
+- `master` == `origin/master` (hygiene + Diagram Rebuild B0-B5 pushed; B6 closure commits push at session end).
+- Test floors: **1409 backend pytest / 449 vitest across 28 files** (Diagram Rebuild +81 vitest; backend untouched this session).
 - Env: venv restored to pyproject baseline (chromadb 0.5.18, langchain-core 0.2.43, pydantic 2.9.2); `protobuf` bumped to 6.33.6 + pinned `>=6.31.1,<7` in pyproject; otel floated to 1.42.1; orphan experiment pkgs (crewai*, instructor, langchain-anthropic, langchain-protocol) uninstalled. Forensic backup at `logs/env-rollback-20260528-210919/`.
 - Rust toolchain INSTALLED (rustup 1.29 / rustc+cargo 1.96, host x86_64-pc-windows-msvc, linker via VS Build Tools 2026). `edge/gateway-rs/` scaffolded + builds + 2 tests green (tokio + nalgebra wired; rmodbus + tonic declared, phase 2).
 - Ruff: generated protobuf (`*_pb2.py`, `*_pb2_grpc.py`) excluded.
-- Skills: 30 / 13 categories. Harnesses: H06+H13+H16 all OPERATIVO.
+- Skills: 31 / 14 categories (S-DIAGRAM-01 new, ADR-012). Harnesses: H06+H13+H16 all OPERATIVO.
 - Honest framing: Epic 9 BB84 remains an EDUCATIONAL simulator (random.Random entropy). Epic 10 JWT uses an ephemeral dev secret unless `DC_EPMS_JWT_SECRET` is set; in-memory user store is a demo MVP (production = Argon2id/OIDC + backing DB) — flagged in-code.
 
 ### Open architectural decisions / loose ends
