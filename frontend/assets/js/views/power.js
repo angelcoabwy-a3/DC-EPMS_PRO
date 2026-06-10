@@ -29,7 +29,7 @@
 
 import { registerRoute } from '../core/router.js';
 import { onHermesStream, getTopologyState, writeBmsTag } from '../services/api.js';
-import { subscribe } from '../core/state.js';
+import { subscribe, setState } from '../core/state.js';
 import { toggleTrip, restoreAll } from '../core/power_grid.js';
 import { escapeHTML } from '../core/sanitize.js';
 import {
@@ -469,10 +469,14 @@ function _onFlatClick(e) {
         toggleTrip(id);
         return;
     }
-    // Live mode: only breakers are operable, via the actuation modal.
+    // Live mode: breakers actuate via the modal; every other node
+    // opens the engineering detail panel (Batch 5 — the flat SLD is
+    // finally wired to the SCADA asset panel).
     if (node.dataset.breaker) {
         const label = node.querySelector('.pf-name');
         _openBreakerModal(id, label ? label.textContent : id);
+    } else {
+        setState('selectedAsset', id);
     }
 }
 

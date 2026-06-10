@@ -8180,3 +8180,69 @@ body {
     50% { filter: drop-shadow(0 0 13px var(--dk-sev-critical)); }
 }
 .topo-graph-detail-sld { margin-top: 8px; width: 100%; }
+
+/* ════════════════════════════════════════════════════════════════
+   Batch 5 — per-asset ENGINEERING DETAIL sections (asset panel).
+   UPS IEC 62040-3 mode chips + power-path mimic, genset NFPA 110
+   phase strip, ATS position, thermal/SOC bars, Ph2 design badge.
+   ════════════════════════════════════════════════════════════════ */
+.eng-section { margin: 10px 0 4px; padding: 8px 0; border-top: 1px solid #1C2128; }
+.eng-origin { font-size: 9.5px; color: #5d6f7e; font-style: italic; margin-top: 6px; }
+.eng-warn { font-size: 11px; color: var(--dk-sev-warning); margin-top: 4px; }
+
+/* Mode chips (UPS) */
+.eng-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.eng-chip { font-size: 9px; letter-spacing: .06em; padding: 2px 6px; border-radius: 3px;
+            border: 1px solid #2A3038; color: #8fa3b8; }
+.eng-chip-active { border-color: var(--dk-sev-ok); color: var(--dk-sev-ok);
+                   background: rgba(39,196,111,.08); }
+.eng-chip-dim { opacity: .45; }
+
+/* UPS internal mimic */
+.eng-mimic { width: 100%; max-width: 300px; display: block; margin: 6px 0; }
+.eng-wire { stroke: #2A3038; stroke-width: 2; fill: none; }
+.eng-wire.eng-on { stroke: var(--dk-sev-ok); }
+.eng-box { fill: #11161c; stroke: #2A3038; stroke-width: 1.4; }
+.eng-box.eng-on { stroke: var(--dk-sev-ok); }
+.eng-dclink { fill: #1a2230; }
+.eng-batt { fill: #16130a; }
+.eng-ssm { fill: #11161c; }
+.eng-txt { fill: #9fb6c6; font-size: 9px; text-anchor: middle; }
+.eng-lbl { fill: #5d6f7e; font-size: 8px; text-anchor: middle; }
+.eng-bypass-rail { stroke-dasharray: 5 4; }
+
+/* Genset NFPA 110 phase strip */
+.eng-phasestrip { display: flex; align-items: center; flex-wrap: wrap; gap: 3px; margin: 6px 0; }
+.eng-phase { font-size: 9px; letter-spacing: .05em; padding: 2px 5px; border-radius: 3px;
+             border: 1px solid #2A3038; color: #5d6f7e; }
+.eng-phase-active { border-color: var(--dk-sev-warning); color: var(--dk-sev-warning);
+                    background: rgba(251,140,0,.1); }
+.eng-phase-arrow { color: #2A3038; font-size: 9px; }
+
+/* Readout grid */
+.eng-readouts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 6px 0; }
+.eng-readout { display: flex; flex-direction: column; font-size: 9px; color: #5d6f7e; }
+.eng-readout strong { font-size: 12px; color: #c7d6e2; font-variant-numeric: tabular-nums; }
+
+/* Bars (SOC / thermal / loading) */
+.eng-bar-row { display: flex; align-items: center; gap: 6px; margin: 5px 0; font-size: 10px; }
+.eng-bar-lbl { color: #8fa3b8; width: 52px; }
+.eng-bar-track { flex: 1; height: 7px; background: #0B0D10; border-radius: 3px; overflow: hidden; }
+.eng-bar-fill { display: block; height: 100%; border-radius: 3px; }
+.eng-bar-fill.eng-tone-ok { background: var(--dk-sev-ok); }
+.eng-bar-fill.eng-tone-warn { background: var(--dk-sev-warning); }
+.eng-bar-fill.eng-tone-crit { background: var(--dk-sev-critical); }
+.eng-bar-val { color: #c7d6e2; min-width: 70px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ATS position mimic */
+.eng-ats { display: flex; align-items: center; gap: 6px; margin: 6px 0; font-size: 10px; }
+.eng-ats-src { padding: 3px 7px; border: 1px solid #2A3038; border-radius: 3px; color: #5d6f7e; }
+.eng-ats-src.eng-on { border-color: var(--dk-sev-ok); color: var(--dk-sev-ok); }
+.eng-ats-sw { color: #8fa3b8; }
+.eng-ats-sw.eng-ats-gap { color: var(--dk-sev-warning); }
+
+/* Phase 2 design assets */
+.eng-design-badge { font-size: 9px; letter-spacing: .1em; color: #0B0D10;
+                    background: var(--dk-dc); border-radius: 3px; padding: 3px 7px;
+                    display: inline-block; margin-bottom: 6px; }
+.eng-design-body { font-size: 11px; color: #9fb6c6; margin: 4px 0; }

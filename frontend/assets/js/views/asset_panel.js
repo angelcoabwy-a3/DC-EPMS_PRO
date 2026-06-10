@@ -38,6 +38,7 @@
 import { getState, setState, subscribe } from '../core/state.js';
 import { getAssetMeta } from '../core/asset_metadata.js';
 import { getGridState } from '../core/power_grid.js';
+import { engineeringSection } from '../core/asset_engineering.js';
 import { playClick } from '../core/sound.js';
 
 const TREND_LEN = 60;          // samples
@@ -117,7 +118,12 @@ function _renderAssetDetail(id) {
     const node = grid[id];
     if (!meta) return _renderOverview();
 
-    const stateBadge = _stateBadge(node);
+    // Phase 2 design assets carry no live state — say so, honestly.
+    const stateBadge = meta.design
+        ? '<span class="sld-state-badge sld-tone-info">DESIGN · PH2</span>'
+        : _stateBadge(node);
+    // Batch 5: per-type engineering detail (UPS modes, NFPA 110, ...)
+    const engineering = engineeringSection(id, grid, meta);
     const detailRows = (meta.details || []).map(d =>
         `<div class="sld-info-row"><span>${d.k}</span><span>${d.v}</span></div>`
     ).join('');
@@ -133,6 +139,8 @@ function _renderAssetDetail(id) {
           <div class="sld-info-rating">${meta.rating}</div>
         </div>
         <div class="sld-info-state">${stateBadge}</div>
+
+        <div class="sld-info-eng" id="sld-info-eng">${engineering}</div>
 
         <div class="sld-info-spark">
           <div class="sld-info-spark-hdr">
@@ -361,12 +369,14 @@ export function initAssetPanel() {
         if (!id) {
             _render();
         } else {
-            // Surgically update only the state badge (avoid destroying sparkline)
+            // Surgically update the state badge + engineering section
+            // (avoid destroying the sparkline chart)
+            const grid = getGridState() || {};
+            const meta = getAssetMeta(id);
             const badge = _panelEl?.querySelector('.sld-info-state');
-            if (badge) {
-                const grid = getGridState() || {};
-                badge.innerHTML = _stateBadge(grid[id]);
-            }
+            if (badge && !meta?.design) badge.innerHTML = _stateBadge(grid[id]);
+            const eng = _panelEl?.querySelector('#sld-info-eng');
+            if (eng) eng.innerHTML = engineeringSection(id, grid, meta);
         }
     });
     _render();

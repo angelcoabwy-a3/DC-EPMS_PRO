@@ -284,6 +284,95 @@ export const ASSET_METADATA = {
     }
 });
 
+// ─── Phase 2 — Building D (Path C2 DESIGN, target Q2 2026) ────────
+// design:true => the info panel shows a DESIGN badge instead of live
+// state, and asset_engineering renders the spec-sheet section.
+// Vocabulary fence (S-VOCAB-01): the DC side is UNIPOLAR TN-S —
+// phase vocabulary ends at the MV Rectifier input terminals.
+Object.assign(ASSET_METADATA, {
+    util_d: {
+        type: 'Utility Feed (Ph2 design)', design: true,
+        label: 'Utility D · 35 kV',
+        model: 'Hydro One MV Feed — Building D',
+        rating: '35 kV three-phase AC · design intake',
+        sparkline: { unit: 'MW', baseline: 0, range: 0, color: '#8fa3b8' },
+        details: [
+            { k: 'Voltage Class', v: '35 kV three-phase AC' },
+            { k: 'Role', v: 'Last point of phase vocabulary (AC side)' },
+            { k: 'Status', v: 'DESIGN — not energized' },
+        ],
+        manuals: [],
+    },
+    mv_rect_d: {
+        type: 'MV Rectifier (Ph2 design)', design: true,
+        label: 'MV Rectifier D',
+        model: 'MV solid-state rectifier block',
+        rating: '35 kVAC in → 800 VDC out · AC/DC boundary',
+        sparkline: { unit: 'MW', baseline: 0, range: 0, color: '#8fa3b8' },
+        details: [
+            { k: 'Input', v: '35 kV 3-phase AC' },
+            { k: 'Output', v: '800 VDC unipolar TN-S' },
+            { k: 'Role', v: 'THE vocabulary fence — no phases downstream' },
+        ],
+        manuals: [],
+    },
+    sscb_d: {
+        type: 'Solid-State Circuit Breaker (Ph2 design)', design: true,
+        label: 'SSCB D-01',
+        model: 'SiC solid-state breaker',
+        rating: '800 VDC · 1-100 µs clearing · IEC 60947-2',
+        sparkline: { unit: 'A', baseline: 0, range: 0, color: '#8fa3b8' },
+        details: [
+            { k: 'Clearing', v: '1-100 µs (vs ~50 ms electromechanical)' },
+            { k: 'Standard', v: 'IEC 60947-2' },
+            { k: 'Arc', v: 'None — no moving parts' },
+        ],
+        manuals: [],
+    },
+    dc_bus_d: {
+        type: 'DC Bus (Ph2 design)', design: true,
+        label: '800 VDC Bus D',
+        model: 'Main DC buswork — Building D',
+        rating: '800 VDC · unipolar TN-S earthing',
+        sparkline: { unit: 'V', baseline: 0, range: 0, color: '#8fa3b8' },
+        details: [
+            { k: 'Topology', v: 'Unipolar TN-S (single pole, earthed neutral)' },
+            { k: 'Phases', v: 'NONE — a DC bus has no phases' },
+        ],
+        manuals: [],
+    },
+    bess_d: {
+        type: 'Battery Energy Storage (Ph2 design)', design: true,
+        label: 'BESS D-01',
+        model: 'LFP container on DC bus',
+        rating: '2.5 MWh · bidirectional charge/discharge',
+        sparkline: { unit: '%', baseline: 0, range: 0, color: '#8fa3b8' },
+        details: [
+            { k: 'Capacity', v: '2.5 MWh' },
+            { k: 'Role', v: 'Ride-through + peak shaving on the DC bus' },
+        ],
+        manuals: [],
+    },
+    rpp_d1: {
+        type: 'DC Remote Power Panel (Ph2 design)', design: true,
+        label: 'RPP D1',
+        model: '800 VDC distribution panel',
+        rating: '800 VDC · GB300 NVL144 racks @ 200 kW',
+        sparkline: { unit: 'kW', baseline: 0, range: 0, color: '#8fa3b8' },
+        details: [{ k: 'Load', v: 'GB300 NVL144 · 200 kW/rack (design)' }],
+        manuals: [],
+    },
+    rpp_d2: {
+        type: 'DC Remote Power Panel (Ph2 design)', design: true,
+        label: 'RPP D2',
+        model: '800 VDC distribution panel',
+        rating: '800 VDC · GB300 NVL144 racks @ 200 kW',
+        sparkline: { unit: 'kW', baseline: 0, range: 0, color: '#8fa3b8' },
+        details: [{ k: 'Load', v: 'GB300 NVL144 · 200 kW/rack (design)' }],
+        manuals: [],
+    },
+});
+
 export function getAssetMeta(id) {
     return ASSET_METADATA[id] || null;
 }

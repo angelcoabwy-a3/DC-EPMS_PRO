@@ -85,7 +85,13 @@ const TOPO_ORDER = [
 let _grid = null;
 let _atsTransferTimers = { ats_a: null, ats_b: null };
 let _battDecayTimers   = { batt_a: null, batt_b: null };
+let _gensetTimers      = { genset_a: null, genset_b: null };
 let _propagateScheduled = false;
+
+// NFPA 110 Type 10 genset sequence, fast-forwarded for the sim:
+// nameplate is 10 s start; we crank 0.8 s inside the ATS 2 s gap.
+const GENSET_CRANK_MS = 800;
+const GENSET_COOLDOWN_MS = 1200;
 
 // ─── Initial state ────────────────────────────────────────────────
 
@@ -104,6 +110,11 @@ function _initGrid() {
             ats_pos: t.type === 'ats' ? 'primary' : null,
             transferring: false,    // ats only
             running: false,         // genset only
+            // genset NFPA 110 sequence: standby|cranking|running|cooldown
+            state: t.type === 'genset' ? 'standby' : null,
+            // ups IEC 62040-3 operating mode (derived in propagate):
+            // double_conversion (VFI-SS-111) | battery | off
+            mode: t.type === 'ups' ? 'off' : null,
             energized_by: null,     // 'util' | 'genset' | 'battery' | null
         };
     }
@@ -132,6 +143,7 @@ function _propagate() {
         else if (t.type === 'genset') {
             n.alive = !!n.running;
             n.energized_by = n.alive ? 'genset' : null;
+            if (n.tripped) n.state = 'standby';
         }
         else if (t.type === 'batt') {
             n.alive = n.soc > 0;
@@ -169,15 +181,19 @@ function _propagate() {
                 n.alive = true;
                 n.on_battery = false;
                 n.energized_by = ats.energized_by;
+                // IEC 62040-3 VFI-SS-111: normal path is AC->DC->AC.
+                n.mode = 'double_conversion';
             } else if (batt && batt.alive) {
                 // UPS holdup — output stays alive on battery
                 n.alive = true;
                 n.on_battery = true;
                 n.energized_by = 'battery';
+                n.mode = 'battery';
             } else {
                 n.alive = false;
                 n.on_battery = false;
                 n.energized_by = null;
+                n.mode = 'off';
             }
         }
         else {
@@ -222,12 +238,15 @@ function _maybeTriggerTransfers() {
         const primary = _grid[t.primary];
         const secondary = _grid[t.secondary];
 
-        // Primary lost while running on primary -> kick off transfer
+        // Primary lost while running on primary -> kick off transfer.
+        // The genset runs its NFPA 110 start sequence INSIDE the ATS
+        // gap: STANDBY -> CRANKING (0.8 s sim / 10 s nameplate) ->
+        // RUNNING, then the ATS closes onto it at the 2 s mark.
         if (ats.ats_pos === 'primary' && !primary.alive && !ats.transferring) {
             ats.transferring = true;
             ats.alive = false;
             ats.energized_by = null;
-            _grid[t.secondary].running = true;  // start genset
+            _startGenset(t.secondary);
 
             if (_atsTransferTimers[atsId]) clearTimeout(_atsTransferTimers[atsId]);
             _atsTransferTimers[atsId] = setTimeout(() => {
@@ -237,19 +256,54 @@ function _maybeTriggerTransfers() {
                 _propagate();
             }, 2000);
         }
-        // Primary restored while on secondary -> back-transfer
+        // Primary restored while on secondary -> back-transfer; the
+        // genset runs unloaded COOLDOWN before returning to STANDBY.
         else if (ats.ats_pos === 'secondary' && primary.alive && !ats.transferring) {
             ats.transferring = true;
             if (_atsTransferTimers[atsId]) clearTimeout(_atsTransferTimers[atsId]);
             _atsTransferTimers[atsId] = setTimeout(() => {
                 ats.transferring = false;
                 ats.ats_pos = 'primary';
-                _grid[t.secondary].running = false;  // stop genset
+                _stopGenset(t.secondary);
                 _atsTransferTimers[atsId] = null;
                 _propagate();
             }, 1500);
         }
     }
+}
+
+// ─── Genset NFPA 110 start/stop sequence ───────────────────────────
+
+function _startGenset(gensetId) {
+    const gen = _grid[gensetId];
+    if (!gen || gen.tripped || gen.state === 'running' || gen.state === 'cranking') return;
+    if (_gensetTimers[gensetId]) clearTimeout(_gensetTimers[gensetId]);
+    gen.state = 'cranking';
+    gen.running = false;
+    _gensetTimers[gensetId] = setTimeout(() => {
+        if (!_grid || !_grid[gensetId]) return;
+        const g = _grid[gensetId];
+        if (!g.tripped && g.state === 'cranking') {
+            g.state = 'running';
+            g.running = true;
+        }
+        _gensetTimers[gensetId] = null;
+        _propagate();
+    }, GENSET_CRANK_MS);
+}
+
+function _stopGenset(gensetId) {
+    const gen = _grid[gensetId];
+    if (!gen) return;
+    if (_gensetTimers[gensetId]) clearTimeout(_gensetTimers[gensetId]);
+    gen.running = false;
+    gen.state = 'cooldown';
+    _gensetTimers[gensetId] = setTimeout(() => {
+        if (!_grid || !_grid[gensetId]) return;
+        if (_grid[gensetId].state === 'cooldown') _grid[gensetId].state = 'standby';
+        _gensetTimers[gensetId] = null;
+        _propagate();
+    }, GENSET_COOLDOWN_MS);
 }
 
 // ─── UPS battery decay (1% per second while on battery) ───────────
@@ -321,14 +375,20 @@ export function restoreAll() {
             _battDecayTimers[k] = null;
         }
     }
+    for (const k of Object.keys(_gensetTimers)) {
+        if (_gensetTimers[k]) {
+            clearTimeout(_gensetTimers[k]);
+            _gensetTimers[k] = null;
+        }
+    }
     for (const id of Object.keys(_grid)) {
         const n = _grid[id];
         n.tripped = false;
         n.transferring = false;
         if (n.type === 'batt')   { n.soc = 100;       n.alive = true;  }
-        if (n.type === 'genset') { n.running = false; n.alive = false; }
+        if (n.type === 'genset') { n.running = false; n.alive = false; n.state = 'standby'; }
         if (n.type === 'ats')    { n.ats_pos = 'primary'; }
-        if (n.type === 'ups')    { n.on_battery = false; }
+        if (n.type === 'ups')    { n.on_battery = false; n.mode = 'double_conversion'; }
     }
     console.log('[power_grid] RESTORE ALL');
     _propagate();

@@ -325,6 +325,18 @@ describe('L3-1 — views/power.js breaker actuation', () => {
         expect(document.getElementById('pwr-breaker-modal')).toBeNull();
     });
 
+    it('B5: a live-mode click on a non-breaker selects it for the asset panel', async () => {
+        const { getState, setState } = await import('/assets/js/core/state.js');
+        document.body.innerHTML = '<div id="view-power"><svg class="pid-svg"></svg></div>';
+        renderFlatSld();
+        onFlatClick({ target: document.querySelector('.pf-node[data-sld-node="ups_a"]') });
+        expect(getState('selectedAsset')).toBe('ups_a');
+        // Phase 2 design nodes open the panel too (DESIGN spec sheet).
+        onFlatClick({ target: document.querySelector('.pf-node[data-sld-node="mv_rect_d"]') });
+        expect(getState('selectedAsset')).toBe('mv_rect_d');
+        setState('selectedAsset', null);
+    });
+
     it('submitBreakerCommand POSTs to /api/bms/write with the actor_role claim', async () => {
         const spy = vi.fn(async () => ({
             ok: true, status: 200,
