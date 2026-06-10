@@ -1,22 +1,28 @@
 /* ════════════════════════════════════════════════════════════════
  * DC-EPMS PRO — views/power.js
- * ROADMAP V11 T2.1 — Power & UPS SLD view extracted from app.js.
+ * Diagram Rebuild Batch 1 — Power & UPS SLD on the shared diagram
+ * kit (core/diagram_kit.js) + canonical node registry
+ * (core/node_registry.js).
  *
- * Behaviour-preserving migration of the Power Single-Line-Diagram
- * data-binder out of the monolithic app.js IIFE. The 2.5D isometric
- * rendering ENGINE (core/power_sld.js, power_grid.js, power_cam.js,
- * views/power_ups_iso.js) is intentionally untouched — this module
- * owns only the *data plane*:
+ * What changed vs the T2.1 generation:
+ *   - Symbols, orthogonal wires, sparklines and the actuation modal
+ *     now come from the shared kit — one visual language across the
+ *     SLD views, no private copies to drift.
+ *   - Node identity (SLD id <-> topology key <-> channel prefixes)
+ *     comes from the registry; Kalman channel ownership is by
+ *     prefix discipline, not substring matching.
+ *   - NEW: Phase 2 branch — Building D (Path C2, design target
+ *     Q2 2026): 35 kV 3-phase AC -> MV RECTIFIER -> [AC/DC FENCE]
+ *     -> SSCB (IEC 60947-2) -> 800 VDC UNIPOLAR TN-S bus -> BESS
+ *     2.5 MWh + RPP D1/D2 -> GB300 NVL144 racks. The vocabulary
+ *     fence (S-VOCAB-01) is drawn: "3-phase" exists ONLY upstream
+ *     of the rectifier; the DC side is labeled UNIPOLAR TN-S.
+ *     Rendered dashed/dimmed — it is a DESIGN, not deployed plant,
+ *     and its nodes are NOT operable (no breaker control plane).
  *
- *   - registerRoute('power', …) hands navigation to core/router.js.
- *   - getTopologyState() (services/api.js) fetches the physics-
- *     validated /api/topology/state rollup ONCE on view activation —
- *     the baseline node severity, metrics, ΣP balance, redundancy.
- *   - The legacy 5 s setInterval poll is ERADICATED. Live reactivity
- *     is now driven by the Project Hermes `telemetry` stream: every
- *     1 Hz frame maps the live Kalman channel Z-scores onto per-node
- *     severity (`data-sev`) on the iso blocks — "live Kalman into the
- *     DAG nodes".
+ * Data plane unchanged: /api/topology/state once per activation +
+ * live severity from the Hermes telemetry stream. L3 control plane
+ * (breaker actuation, What-If DAG sandbox) unchanged.
  *
  * Test surface: __power_test__ exposes the pure mapping helpers.
  * ════════════════════════════════════════════════════════════════ */
@@ -25,42 +31,26 @@ import { registerRoute } from '../core/router.js';
 import { onHermesStream, getTopologyState, writeBmsTag } from '../services/api.js';
 import { subscribe } from '../core/state.js';
 import { toggleTrip, restoreAll } from '../core/power_grid.js';
+import { escapeHTML } from '../core/sanitize.js';
+import {
+    severityFromChannels, symbol, wire, sparkPoints, sparkPolyline,
+    createSparkTracker, createActuationModal, legend, DEFAULT_LEGEND,
+} from '../core/diagram_kit.js';
+import {
+    sldToTopoMap, channelPrefixesFor, matchesChannel, nodesWhere,
+} from '../core/node_registry.js';
 
 let _initialized = false;
 let _unsubTelemetry = null;
 let _mode = 'live';   // 'live' | 'whatif' — set by the Phase 2 sandbox toggle
 
-// SLD-node-id -> /api/topology/state hld_nodes key.
-const _NODE_MAP = {
-    util_a: 'utility_north', util_b: 'utility_south',
-    xfmr_a: 'xfmr_a', xfmr_b: 'xfmr_b',
-    ups_a: 'ups_a', ups_b: 'ups_b',
-    batt_a: 'ups_a', batt_b: 'ups_b',
-    rpp_a1: 'rpp_a1', rpp_a2: 'rpp_a2', rpp_b1: 'rpp_b1', rpp_b2: 'rpp_b2',
-    busway_a: 'busway_a', busway_b: 'busway_b',
-};
+// SLD-node-id -> /api/topology/state hld_nodes key (registry-derived).
+const _NODE_MAP = sldToTopoMap();
 
-// ─── Helpers ───────────────────────────────────────────────────────
-function _setMetric(key, value) {
-    // Updates BOTH surfaces — the iso block metric span and the flat
-    // SVG <text> — wherever the metric key appears.
-    document.querySelectorAll(`[data-sld-metric="${key}"]`)
-        .forEach((el) => { el.textContent = value; });
-}
-
-/**
- * Derive a coarse SCADA severity from a set of Kalman channel fields.
- * Pure — exposed for tests. is_anomalous -> critical; |max_z|>=2 ->
- * warning; otherwise ok.
- */
-function _severityFromChannels(fieldsList) {
-    let sev = 'ok';
-    for (const f of fieldsList) {
-        if (!f) continue;
-        if (f.is_anomalous) return 'critical';
-        if (Math.abs(Number(f.max_z) || 0) >= 2) sev = 'warning';
-    }
-    return sev;
+// ─── Channel ownership (registry prefix discipline) ────────────────
+function _channelMatcher(nodeId, channelId) {
+    const prefixes = channelPrefixesFor(nodeId);
+    return matchesChannel(channelId, prefixes.length ? prefixes : [nodeId]);
 }
 
 // ─── Topology data plane (port of the legacy applyPowerSld) ────────
@@ -183,6 +173,13 @@ function _applyTopology(data) {
     }
 }
 
+function _setMetric(key, value) {
+    // Updates BOTH surfaces — the iso block metric span and the flat
+    // SVG <text> — wherever the metric key appears.
+    document.querySelectorAll(`[data-sld-metric="${key}"]`)
+        .forEach((el) => { el.textContent = value; });
+}
+
 // ─── Live Kalman -> per-node severity (Hermes telemetry plane) ─────
 function _applyTelemetry(channels) {
     if (!channels || typeof channels !== 'object') return;
@@ -193,10 +190,10 @@ function _applyTelemetry(channels) {
         const nodeId = (block.dataset.sldNode || '').toLowerCase();
         if (!nodeId) return;
         const matched = channelIds
-            .filter((c) => c.toLowerCase().includes(nodeId))
+            .filter((c) => _channelMatcher(nodeId, c))
             .map((c) => channels[c]);
         if (matched.length === 0) return;
-        block.dataset.sev = _severityFromChannels(matched);
+        block.dataset.sev = severityFromChannels(matched);
     });
 }
 
@@ -220,129 +217,58 @@ function _onTelemetryFrame(payload) {
     }
 }
 
-// ════════════════════════════════════════════════════════════════
-//  PHASE 3 — inline micro-trend sparklines (visual data density)
-//
-//  Critical nodes (Utility / UPS / Genset) get a tiny SVG <polyline>
-//  trend of the last 20 Kalman ticks, rendered below the instantaneous
-//  telemetry numbers — hyperscale data density at a glance.
-// ════════════════════════════════════════════════════════════════
-function _siteMeanZ(channels) {
-    const ids = channels ? Object.keys(channels) : [];
-    if (!ids.length) return 0;
-    let sum = 0;
-    for (const c of ids) sum += Math.abs(Number(channels[c].mean_z) || 0);
-    return sum / ids.length;
-}
-
-/** Map a value buffer to an SVG polyline `points` string within a box. */
-function _sparkPoints(values, sx, sy, sw, sh) {
-    if (!values || values.length < 2) return '';
-    const lo = Math.min(...values);
-    const span = (Math.max(...values) - lo) || 1;
-    const step = sw / (values.length - 1);
-    return values.map((v, i) => {
-        const px = sx + i * step;
-        // sy is the box centre; high value -> top of the box.
-        const py = sy - ((v - lo) / span - 0.5) * sh;
-        return `${px.toFixed(1)},${py.toFixed(1)}`;
-    }).join(' ');
-}
-
-/** Push one Kalman tick per critical node and redraw its sparkline. */
+// ─── Micro-trend sparklines (shared kit tracker) ───────────────────
+const _SPARK_NODES = new Set([
+    'util_a', 'util_b', 'ups_a', 'ups_b', 'genset_a', 'genset_b',
+]);
+const _sparkTracker = createSparkTracker({
+    rootSelector: '#view-power .pid-svg',
+    nodes: _SPARK_NODES,
+    ticks: 20,
+});
 function _updateSparklines(channels) {
-    const ids = channels ? Object.keys(channels) : [];
-    const siteAvg = _siteMeanZ(channels);
-    _SPARK_NODES.forEach((nodeId) => {
-        const poly = document.querySelector(
-            `#view-power .pid-svg [data-spark="${nodeId}"]`);
-        if (!poly) return;
-        const matched = ids.filter((c) => c.toLowerCase().includes(nodeId.toLowerCase()));
-        const v = matched.length
-            ? matched.reduce((s, c) => s + Math.abs(Number(channels[c].mean_z) || 0), 0)
-              / matched.length
-            : siteAvg;
-        const hist = _history[nodeId] || (_history[nodeId] = []);
-        hist.push(v);
-        if (hist.length > _SPARK_TICKS) hist.shift();
-        poly.setAttribute('points', _sparkPoints(
-            hist, Number(poly.dataset.sx), Number(poly.dataset.sy),
-            Number(poly.dataset.sw), Number(poly.dataset.sh)));
-    });
+    _sparkTracker.update(channels, _channelMatcher);
 }
 
 // ════════════════════════════════════════════════════════════════
-//  FLAT view — programmatic orthogonal SCADA SLD (T2.1 reinvention)
-//
-//  Replaces the hand-authored static SVG that had "diagonal spaghetti"
-//  routing + misaligned tiers. Built by construction so the defects
-//  cannot recur: 5 strict tier columns at FIXED x (grid-aligned), one
-//  horizontal spine per 2N path, and every connector a pure 90° run
-//  (H or V only — no diagonals). Node labels sit in reserved zones
-//  above / below the symbol band; spine lines pass behind the symbol,
-//  never through text. Mimics an ETAP / AutoCAD 2D single-line.
+//  FLAT view — orthogonal SCADA SLD, generated from the registry
+//  via the shared diagram kit. 5 strict tier columns at FIXED x,
+//  one horizontal spine per 2N path, every connector a pure 90°
+//  run (kit-enforced: orthoPath throws on diagonals). Below the
+//  Phase 1 plant, the Phase 2 (Building D) design branch with the
+//  AC/DC vocabulary fence drawn explicitly.
 // ════════════════════════════════════════════════════════════════
 const _FLAT = {
     tierX: { util: 150, xfmr: 268, gen: 392, ats: 602, ups: 820, pdu: 1052 },
     spineY: { A: 232, B: 540 },
-    SVG_NS: 'http://www.w3.org/2000/svg',
+    phase2: { spineY: 880, headerY: 766, dividerY: 726, fenceX: 484 },
+    viewBox: '0 0 1200 1080',
 };
 
 // Node types that are operable breakers — clickable in the control plane.
 const _BREAKER_TYPES = new Set(['ats', 'rpp']);
 
-// Critical nodes that carry an inline micro-trend sparkline.
-const _SPARK_NODES = new Set([
-    'util_a', 'util_b', 'ups_a', 'ups_b', 'genset_a', 'genset_b',
-]);
-const _SPARK_TICKS = 20;   // rolling window — last 20 Kalman ticks
-const _history = {};       // nodeId -> number[] rolling buffer of mean_z
-
-// One equipment node: IEEE-ish symbol + name (above) + metric (below).
-function _flatNode(id, type, label, x, y, metrics) {
+// One equipment node: kit symbol + name (above) + metric (below).
+// opts.breaker=false suppresses the control plane (Phase 2 design
+// nodes are NOT operable — there is no deployed plant behind them).
+function _flatNode(id, type, label, x, y, metrics, opts = {}) {
     const m = metrics
         .map((mm, i) => `<text class="pf-metric" data-sld-metric="${mm.key}" `
-            + `x="${x}" y="${y + 40 + i * 13}">${mm.text}</text>`).join('');
-    let sym;
-    if (type === 'xfmr') {
-        sym = `<circle class="pf-sym pid-symbol" data-sev="ok" cx="${x}" cy="${y - 8}" r="14"/>`
-            + `<circle class="pf-sym pid-symbol" data-sev="ok" cx="${x}" cy="${y + 8}" r="14"/>`;
-    } else if (type === 'genset') {
-        sym = `<circle class="pf-sym pid-symbol" data-sev="ok" cx="${x}" cy="${y}" r="23"/>`
-            + `<text class="pf-glyph" x="${x}" y="${y + 6}">G</text>`;
-    } else if (type === 'parbus') {
-        sym = `<rect class="pf-sym pid-symbol pf-bus" data-sev="ok" x="${x - 52}" y="${y - 5}" `
-            + `width="104" height="10" rx="2"/>`;
-    } else {
-        sym = `<rect class="pf-sym pid-symbol" data-sev="ok" x="${x - 40}" y="${y - 23}" `
-            + `width="80" height="46" rx="2.5"/>`;
-    }
-    const isBreaker = _BREAKER_TYPES.has(type);
+            + `x="${x}" y="${y + 40 + i * 13}">${escapeHTML(mm.text)}</text>`).join('');
+    const isBreaker = _BREAKER_TYPES.has(type) && opts.breaker !== false;
     const breakerAttr = isBreaker
         ? ' data-breaker="1" tabindex="0" role="button"' : '';
-    // Phase 3: critical nodes carry an inline micro-trend sparkline,
-    // drawn below the telemetry numbers. The box geometry is stamped on
-    // the <polyline> so _updateSparklines can plot into it.
     let spark = '';
     if (_SPARK_NODES.has(id)) {
         const sy = y + 40 + metrics.length * 13 + 10;
-        spark = `<polyline class="pf-spark" data-spark="${id}" `
-            + `data-sx="${x - 26}" data-sy="${sy}" data-sw="52" data-sh="12" `
-            + `points=""/>`;
+        spark = sparkPolyline(id, x - 26, sy);
     }
     return `<g class="sld-node pf-node${isBreaker ? ' pf-breaker' : ''}" `
         + `data-sld-node="${id}"${breakerAttr}>`
-        + sym
-        + `<text class="pf-name" x="${x}" y="${y - 34}">${label}</text>`
+        + symbol(type, x, y)
+        + `<text class="pf-name" x="${x}" y="${y - 34}">${escapeHTML(label)}</text>`
         + m + spark
         + `</g>`;
-}
-
-// Orthogonal connector — accepts a list of [x,y] waypoints; the caller
-// supplies only axis-aligned points so the path is 90° by construction.
-function _flatWire(points, cls) {
-    const d = points.map((p, i) => (i === 0 ? 'M' : 'L') + p[0] + ' ' + p[1]).join(' ');
-    return `<path class="pf-wire ${cls}" d="${d}"/>`;
 }
 
 function _flatPath(suffix, S, energized) {
@@ -353,13 +279,13 @@ function _flatPath(suffix, S, energized) {
     const battY = S + 96;
     // ── orthogonal wiring (spine + branches) ──
     const wires = [
-        _flatWire([[T.util + 40, S], [T.ats - 40, S]], cls),          // utility spine -> ATS
-        _flatWire([[T.gen, genY + 23], [T.gen, busY - 5]], cls),       // genset -> paralleling bus
-        _flatWire([[T.gen, busY + 5], [T.gen, S]], 'pf-cold'),         // bus -> spine (standby)
-        _flatWire([[T.ats + 40, S], [T.ups - 40, S]], cls),            // ATS -> UPS
-        _flatWire([[T.ups - 40, S], [T.ups + 40, S]], cls),            // through UPS
-        _flatWire([[T.ups + 40, S], [T.pdu - 40, S]], cls),            // UPS -> PDU
-        _flatWire([[T.ups, battY - 23], [T.ups, S + 23]], cls),        // battery -> UPS
+        wire([[T.util + 40, S], [T.ats - 40, S]], cls),          // utility spine -> ATS
+        wire([[T.gen, genY + 23], [T.gen, busY - 5]], cls),       // genset -> paralleling bus
+        wire([[T.gen, busY + 5], [T.gen, S]], 'pf-cold'),         // bus -> spine (standby)
+        wire([[T.ats + 40, S], [T.ups - 40, S]], cls),            // ATS -> UPS
+        wire([[T.ups - 40, S], [T.ups + 40, S]], cls),            // through UPS
+        wire([[T.ups + 40, S], [T.pdu - 40, S]], cls),            // UPS -> PDU
+        wire([[T.ups, battY - 23], [T.ups, S + 23]], cls),        // battery -> UPS
     ].join('');
     // ── nodes ──
     const nodes = [
@@ -385,7 +311,82 @@ function _flatPath(suffix, S, energized) {
     return `<g class="pf-pathgroup">${wires}${nodes}</g>`;
 }
 
-/** Build the full flat-SLD SVG inner markup from the 5-tier topology. */
+/**
+ * Phase 2 — Building D (Path C2 design). Mirrors the live backend
+ * graph: utility_feed_d -> mv_rectifier_d -> sscb_d_01 ->
+ * main_bus_dc_d -> { bess_d_01 (bidirectional), rpp_d_01/02 }.
+ *
+ * The AC/DC FENCE is drawn at the rectifier output: 3-phase
+ * vocabulary exists ONLY left of the fence; right of it the bus is
+ * 800 VDC UNIPOLAR TN-S (S-VOCAB-01 — no phases on a DC bus).
+ */
+function _flatPhase2() {
+    const T = _FLAT.tierX;
+    const P = _FLAT.phase2;
+    const S = P.spineY;
+    const F = P.fenceX;
+    const busHalf = 120;            // dcbus symbol half-width
+    const bessY = S + 108;
+    const rppD1Y = S - 44;
+    const rppD2Y = S + 44;
+
+    const header =
+        `<line class="pf-section-divider" x1="24" y1="${P.dividerY}" x2="1176" y2="${P.dividerY}"/>`
+        + `<text class="pf-section-title" x="150" y="${P.headerY}">`
+        + `PHASE 2 — BUILDING D · PATH C2 (DESIGN · TARGET Q2 2026)</text>`;
+
+    // The vocabulary fence: AC world | DC world.
+    const fence =
+        `<line class="pf-fence" x1="${F}" y1="${P.headerY + 14}" x2="${F}" y2="${S + 178}"/>`
+        + `<text class="pf-fence-label" x="${F - 12}" y="${P.headerY + 34}" `
+        + `text-anchor="end">3-PHASE AC · 35 kV</text>`
+        + `<text class="pf-fence-label pf-fence-label-dc" x="${F + 12}" y="${P.headerY + 34}">`
+        + `800 VDC · UNIPOLAR TN-S</text>`;
+
+    // ── orthogonal wiring (kit-enforced 90°) ──
+    const wires = [
+        // 35 kV AC feed -> MV Rectifier (AC side)
+        wire([[T.util + 40, S], [T.gen - 40, S]], 'pf-ac'),
+        // MV Rectifier -> SSCB (DC side starts at the rectifier output)
+        wire([[T.gen + 40, S], [T.ats - 26, S]], 'pf-dc'),
+        // SSCB -> 800 VDC bus
+        wire([[T.ats + 26, S], [T.ups - busHalf, S]], 'pf-dc'),
+        // bus <-> BESS (bidirectional: charge / discharge)
+        wire([[T.ups, S + 6], [T.ups, bessY - 23]], 'pf-dc'),
+        // bus -> RPP D1 / D2
+        wire([[T.ups + busHalf, S], [T.pdu - 76, S], [T.pdu - 76, rppD1Y], [T.pdu - 40, rppD1Y]], 'pf-dc'),
+        wire([[T.pdu - 76, S], [T.pdu - 76, rppD2Y], [T.pdu - 40, rppD2Y]], 'pf-dc'),
+    ].join('');
+
+    // ── nodes (design — not operable: breaker:false) ──
+    const nodes = [
+        _flatNode('util_d', 'util', 'UTILITY D · 35 kV AC', T.util, S,
+            [{ key: 'util_d-kv', text: '35.0 kV' }, { key: 'util_d-kw', text: '— kW' }],
+            { breaker: false }),
+        _flatNode('mv_rect_d', 'rectifier', 'MV RECTIFIER', T.gen, S,
+            [{ key: 'mv_rect_d-load', text: '— MW' }], { breaker: false }),
+        _flatNode('sscb_d', 'sscb', 'SSCB · IEC 60947-2', T.ats, S,
+            [{ key: 'sscb_d-state', text: 'CLOSED' },
+             { key: 'sscb_d-clear', text: '1-100 µs clearing' }], { breaker: false }),
+        _flatNode('dc_bus_d', 'dcbus', '800 VDC BUS · UNIPOLAR TN-S', T.ups, S,
+            [{ key: 'dc_bus_d-v', text: '800 VDC' }], { breaker: false }),
+        _flatNode('bess_d', 'bess', 'BESS 2.5 MWh', T.ups, bessY,
+            [{ key: 'bess_d-soc', text: 'SOC — %' }], { breaker: false }),
+        _flatNode('rpp_d1', 'rpp', 'RPP D1', T.pdu, rppD1Y,
+            [{ key: 'rpp_d1-kw', text: '— kW' }], { breaker: false }),
+        _flatNode('rpp_d2', 'rpp', 'RPP D2', T.pdu, rppD2Y,
+            [{ key: 'rpp_d2-kw', text: '— kW' }], { breaker: false }),
+    ].join('');
+
+    const caption =
+        `<text class="pf-caption" x="${T.pdu}" y="${S + 124}">→ GB300 NVL144 · 250 racks @ 200 kW (design)</text>`
+        + `<text class="pf-caption" x="${T.ups}" y="${bessY + 44}">charge / discharge</text>`;
+
+    return `<g class="pf-pathgroup pf-phase2" data-phase="2">`
+        + header + fence + wires + nodes + caption + `</g>`;
+}
+
+/** Build the full flat-SLD SVG inner markup from the tiered topology. */
 function _buildFlatMarkup() {
     const T = _FLAT.tierX;
     const tierLabels = [
@@ -403,133 +404,57 @@ function _buildFlatMarkup() {
     return rails
         + _flatPath('a', _FLAT.spineY.A, 'pf-a')
         + _flatPath('b', _FLAT.spineY.B, 'pf-b')
-        + tie;
+        + tie
+        + _flatPhase2()
+        + legend(DEFAULT_LEGEND, 16, 96);
 }
 
 /** Render the orthogonal flat SLD into the legacy .pid-svg container. */
 function _renderFlatSld() {
     const svg = document.querySelector('#view-power .pid-svg');
     if (!svg) return;
-    svg.setAttribute('viewBox', '0 0 1200 720');
+    svg.setAttribute('viewBox', _FLAT.viewBox);
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.classList.add('pf-svg');
     svg.innerHTML = _buildFlatMarkup();
 }
 
 // ════════════════════════════════════════════════════════════════
-//  PHASE 1 — interactive control plane (breaker actuation)
+//  L3 Phase 1 — interactive control plane (breaker actuation)
 //
-//  Breaker nodes (ATS / RPP) are clickable. A confirmation modal POSTs
-//  an OPEN/CLOSE command to /api/bms/write, sending the actor_role
-//  claim so the SME_L6 RBAC gate (F3-2) is enforced and visibly
-//  surfaced — a sub-SME_L6 role yields an in-modal "RBAC DENIED".
+//  Breaker nodes (ATS / RPP, Phase 1 only) are clickable. The shared
+//  kit modal POSTs an OPEN/CLOSE command to /api/bms/write with the
+//  actor_role claim so the SME_L6 RBAC gate (F3-2) is enforced and
+//  visibly surfaced — a sub-SME_L6 role yields "RBAC DENIED".
 // ════════════════════════════════════════════════════════════════
-let _modalCmd = null;   // currently-selected OPEN | CLOSE
+const _breakerModal = createActuationModal({
+    modalId: 'pwr-breaker-modal',
+    titleId: 'pwr-modal-title',
+    roleSelectId: 'pwr-modal-role',
+    icon: '&#9889;',
+    title: 'Breaker Control',
+    targetLabel: 'Target breaker:',
+    commands: [
+        { cmd: 'OPEN', label: 'OPEN BREAKER' },
+        { cmd: 'CLOSE', label: 'CLOSE BREAKER' },
+    ],
+    onSubmit: (nodeId, cmd, actorRole) => _submitBreakerCommand(nodeId, cmd, actorRole),
+});
 
-function _closeBreakerModal() {
-    const modal = document.getElementById('pwr-breaker-modal');
-    if (modal) modal.hidden = true;
-}
-
-function _ensureBreakerModal() {
-    let modal = document.getElementById('pwr-breaker-modal');
-    if (modal) return modal;
-    modal = document.createElement('div');
-    modal.id = 'pwr-breaker-modal';
-    modal.className = 'pwr-modal-overlay';
-    modal.hidden = true;
-    modal.innerHTML = `
-        <div class="pwr-modal" role="dialog" aria-modal="true" aria-labelledby="pwr-modal-title">
-            <div class="pwr-modal-hdr">
-                <span class="pwr-modal-icon">&#9889;</span>
-                <h3 id="pwr-modal-title">Breaker Control</h3>
-            </div>
-            <div class="pwr-modal-body">
-                <p class="pwr-modal-target">Target breaker:
-                    <strong data-field="target">&mdash;</strong></p>
-                <label class="pwr-modal-lbl">Command</label>
-                <div class="pwr-modal-cmds">
-                    <button type="button" class="pwr-cmd-btn" data-cmd="OPEN">OPEN BREAKER</button>
-                    <button type="button" class="pwr-cmd-btn" data-cmd="CLOSE">CLOSE BREAKER</button>
-                </div>
-                <label class="pwr-modal-lbl" for="pwr-modal-role">Actor role (RBAC claim)</label>
-                <select id="pwr-modal-role" class="pwr-modal-select">
-                    <option value="TECH_L4">TECH_L4</option>
-                    <option value="SENIOR_TECH_L5">SENIOR_TECH_L5</option>
-                    <option value="SME_L6" selected>SME_L6</option>
-                </select>
-                <div class="pwr-modal-result" data-field="result"></div>
-            </div>
-            <div class="pwr-modal-foot">
-                <button type="button" class="btn btn-secondary" data-act="cancel">Cancel</button>
-                <button type="button" class="btn" data-act="confirm" disabled>Confirm actuation</button>
-            </div>
-        </div>`;
-    document.body.appendChild(modal);
-
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal || e.target.dataset.act === 'cancel') {
-            _closeBreakerModal();
-            return;
-        }
-        const cmdBtn = e.target.closest('.pwr-cmd-btn');
-        if (cmdBtn) {
-            _modalCmd = cmdBtn.dataset.cmd;
-            modal.querySelectorAll('.pwr-cmd-btn').forEach((b) =>
-                b.classList.toggle('is-sel', b === cmdBtn));
-            modal.querySelector('[data-act="confirm"]').disabled = false;
-            return;
-        }
-        if (e.target.dataset.act === 'confirm') {
-            _submitBreakerCommand(
-                modal.dataset.nodeId, _modalCmd,
-                modal.querySelector('#pwr-modal-role').value,
-            );
-        }
-    });
-    return modal;
-}
-
-function _openBreakerModal(nodeId, label) {
-    const modal = _ensureBreakerModal();
-    _modalCmd = null;
-    modal.dataset.nodeId = nodeId;
-    modal.querySelector('[data-field="target"]').textContent = label || nodeId;
-    const result = modal.querySelector('[data-field="result"]');
-    result.textContent = '';
-    result.className = 'pwr-modal-result';
-    modal.querySelectorAll('.pwr-cmd-btn').forEach((b) => b.classList.remove('is-sel'));
-    modal.querySelector('[data-act="confirm"]').disabled = true;
-    modal.hidden = false;
-}
+function _openBreakerModal(nodeId, label) { _breakerModal.open(nodeId, label); }
 
 async function _submitBreakerCommand(nodeId, cmd, actorRole) {
-    const modal = document.getElementById('pwr-breaker-modal');
-    if (!modal || !cmd) return;
-    const result = modal.querySelector('[data-field="result"]');
-    result.className = 'pwr-modal-result is-pending';
-    result.textContent = 'Issuing command to BMS control surface…';
-
-    // Phase 1: real ISA-95 BMS tag id from config/bms_tags.yml
+    if (!document.getElementById('pwr-breaker-modal') || !cmd) return;
+    _breakerModal.showPending();
+    // Real ISA-95 BMS tag id from config/bms_tags.yml
     // (PWR.<NODE>.BREAKER, writable BO) — so the write returns HTTP 200.
-    const { ok, status, data } = await writeBmsTag({
+    const outcome = await writeBmsTag({
         tag_id: `PWR.${nodeId.toUpperCase()}.BREAKER`,
         value: cmd,
         user: 'power-sld-operator',
         actor_role: actorRole,
     });
-    if (status === 403) {
-        result.className = 'pwr-modal-result is-denied';
-        result.textContent = `RBAC DENIED — ${data.detail || 'SME_L6 required for BMS write'}`;
-        return;
-    }
-    if (!ok) {
-        result.className = 'pwr-modal-result is-err';
-        result.textContent = `Command rejected — ${data.detail || ('HTTP ' + status)}`;
-        return;
-    }
-    result.className = 'pwr-modal-result is-ok';
-    result.textContent = `✓ ${cmd} accepted — ${data.message || nodeId}`;
+    _breakerModal.showResult(outcome, cmd, nodeId);
 }
 
 /** Flat-SVG click delegation — routes a node click by current mode. */
@@ -552,7 +477,7 @@ function _onFlatClick(e) {
 }
 
 // ════════════════════════════════════════════════════════════════
-//  PHASE 2 — predictive What-If simulation sandbox
+//  L3 Phase 2 — predictive What-If simulation sandbox
 //
 //  A LIVE <-> WHAT-IF toggle. In WHAT-IF the SLD disconnects from the
 //  Hermes telemetry feed (frozen state), the view gains a hazard-stripe
@@ -621,8 +546,8 @@ export function initPowerView() {
         return;
     }
     registerRoute('power', { viewId: 'view-power', activate: _activate });
-    // T2.1 reinvention: render the orthogonal flat SLD into .pid-svg,
-    // replacing the hand-authored static SVG (spaghetti routing).
+    // Batch 1: render the registry-driven orthogonal SLD (Phase 1 2N
+    // paths + Phase 2 Building D design branch) into .pid-svg.
     _renderFlatSld();
     // L3 Phase 1: breaker nodes are interactive actuators. Delegated on
     // the .pid-svg element so it survives _renderFlatSld() re-renders.
@@ -636,17 +561,18 @@ export function initPowerView() {
     // 5 s setInterval poll is eradicated.
     _unsubTelemetry = onHermesStream('telemetry', _onTelemetryFrame);
     _initialized = true;
-    console.log('[power] view ready (Tier IV SLD — T2.1 ES module, Hermes-bound)');
+    console.log('[power] view ready (Tier IV SLD — diagram-kit rebuild, Hermes-bound)');
 }
 
 // ─── Test surface ──────────────────────────────────────────────────
 export const __power_test__ = {
     nodeMap: _NODE_MAP,
-    severityFromChannels: _severityFromChannels,
+    severityFromChannels,
     applyTopology: _applyTopology,
     applyTelemetry: _applyTelemetry,
     onTelemetryFrame: _onTelemetryFrame,
     buildFlatMarkup: _buildFlatMarkup,
+    buildPhase2Markup: _flatPhase2,
     renderFlatSld: _renderFlatSld,
     openBreakerModal: _openBreakerModal,
     submitBreakerCommand: _submitBreakerCommand,
@@ -655,14 +581,15 @@ export const __power_test__ = {
     getMode: () => _mode,
     buildModeToggle: _buildModeToggle,
     applyGrid: _applyGrid,
-    sparkPoints: _sparkPoints,
+    sparkPoints,
     updateSparklines: _updateSparklines,
+    channelMatcher: _channelMatcher,
     reset: () => {
         _initialized = false;
         _mode = 'live';
         if (_unsubTelemetry) { _unsubTelemetry(); _unsubTelemetry = null; }
         const modal = document.getElementById('pwr-breaker-modal');
         if (modal) modal.remove();
-        for (const k of Object.keys(_history)) delete _history[k];
+        _sparkTracker.reset();
     },
 };

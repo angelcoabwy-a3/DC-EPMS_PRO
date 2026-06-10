@@ -201,7 +201,8 @@ describe('T2.1 — views/power.js buildFlatMarkup() orthogonal SLD', () => {
         renderFlatSld();
         const svg = document.querySelector('#view-power .pid-svg');
         expect(svg.innerHTML).toContain('data-sld-node="ups_a"');
-        expect(svg.getAttribute('viewBox')).toBe('0 0 1200 720');
+        // Batch 1: canvas grew to host the Phase 2 Building D branch.
+        expect(svg.getAttribute('viewBox')).toBe('0 0 1200 1080');
     });
 
     it('tags ATS + RPP nodes as operable breakers', () => {
@@ -210,6 +211,77 @@ describe('T2.1 — views/power.js buildFlatMarkup() orthogonal SLD', () => {
         expect(svg).toMatch(/data-sld-node="rpp_a1"[^>]*data-breaker="1"/);
         // utility is NOT a breaker
         expect(svg).not.toMatch(/data-sld-node="util_a"[^>]*data-breaker/);
+    });
+
+    it('mounts the shared kit legend (one visual language)', () => {
+        const svg = buildFlatMarkup();
+        expect(svg).toContain('dk-legend');
+        expect(svg).toContain('800 VDC unipolar TN-S');
+    });
+});
+
+// ════════════════════════════════════════════════════════════════
+//  views/power.js — Batch 1: Phase 2 Building D branch (Path C2)
+//
+//  35 kV 3-phase AC -> MV RECTIFIER -> [fence] -> SSCB -> 800 VDC
+//  UNIPOLAR TN-S bus -> BESS + RPP D1/D2. Vocabulary fence
+//  (S-VOCAB-01) asserted at markup level: the panel-grade error
+//  "800 VDC trifásico" is structurally unrepresentable.
+// ════════════════════════════════════════════════════════════════
+describe('B1 — views/power.js Phase 2 Building D branch', () => {
+    const { buildFlatMarkup, buildPhase2Markup } = __power_test__;
+
+    it('emits the full Building D chain mirrored from the site graph', () => {
+        const svg = buildFlatMarkup();
+        for (const id of [
+            'util_d', 'mv_rect_d', 'sscb_d', 'dc_bus_d', 'bess_d',
+            'rpp_d1', 'rpp_d2',
+        ]) {
+            expect(svg).toContain(`data-sld-node="${id}"`);
+        }
+    });
+
+    it('marks the branch as Phase 2 design (data-phase, dashed group)', () => {
+        const svg = buildFlatMarkup();
+        expect(svg).toMatch(/class="pf-pathgroup pf-phase2" data-phase="2"/);
+        expect(svg).toContain('DESIGN · TARGET Q2 2026');
+    });
+
+    it('draws the AC/DC vocabulary fence with both side labels', () => {
+        const p2 = buildPhase2Markup();
+        expect(p2).toContain('class="pf-fence"');
+        expect(p2).toContain('3-PHASE AC · 35 kV');
+        expect(p2).toContain('800 VDC · UNIPOLAR TN-S');
+    });
+
+    it('S-VOCAB-01 — "VDC" is never adjacent to a phase word', () => {
+        const svg = buildFlatMarkup();
+        // Within any single text run, VDC must not be followed by a
+        // phase qualifier — "800 VDC trifásico" is the credibility-
+        // destroying error the schema fence exists to prevent.
+        expect(svg).not.toMatch(/VDC[^<]{0,60}(trif|three-phase|3-phase)/i);
+        expect(svg).toContain('UNIPOLAR TN-S');
+    });
+
+    it('keeps AC-side and DC-side wires semantically distinct', () => {
+        const p2 = buildPhase2Markup();
+        expect(p2).toContain('pf-wire pf-ac');
+        expect(p2).toContain('pf-wire pf-dc');
+        // Exactly one AC wire: the 35 kV feed into the rectifier.
+        expect([...p2.matchAll(/pf-wire pf-ac/g)]).toHaveLength(1);
+    });
+
+    it('Phase 2 design nodes are NOT operable (no breaker control plane)', () => {
+        const p2 = buildPhase2Markup();
+        expect(p2).not.toContain('data-breaker');
+    });
+
+    it('states the SSCB clearing class and the BESS capacity honestly', () => {
+        const p2 = buildPhase2Markup();
+        expect(p2).toContain('IEC 60947-2');
+        expect(p2).toContain('1-100 µs clearing');
+        expect(p2).toContain('BESS 2.5 MWh');
+        expect(p2).toContain('GB300 NVL144 · 250 racks @ 200 kW (design)');
     });
 });
 
