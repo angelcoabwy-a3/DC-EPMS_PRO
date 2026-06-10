@@ -8112,3 +8112,55 @@ body {
     opacity: 0.85;
     filter: drop-shadow(0 0 2px rgba(34, 211, 238, 0.55));
 }
+
+/* ════════════════════════════════════════════════════════════════
+   DIAGRAM KIT (Rebuild Batch 0) — unified severity tokens, shared
+   legend, Phase 2 (Building D, 800 VDC unipolar TN-S) styles.
+   One palette for every engineering diagram; the per-view hex drift
+   (#ffb020 vs #FB8C00, #ff4d4d vs #E53935) is retired here.
+   ════════════════════════════════════════════════════════════════ */
+:root {
+    --dk-sev-ok: #27c46f;
+    --dk-sev-warning: #FB8C00;
+    --dk-sev-critical: #E53935;
+    --dk-ac: #62b0ff;
+    --dk-dc: #ffd54f;
+    --dk-muted: #8fa3b8;
+}
+
+/* Unify the SLD/P&ID symbol severity strokes onto the tokens. */
+.pf-sym[data-sev="warning"], .cool-sym[data-sev="warning"] { stroke: var(--dk-sev-warning); }
+.pf-sym[data-sev="critical"], .cool-sym[data-sev="critical"] { stroke: var(--dk-sev-critical); }
+.pid-symbol[data-sev="warning"] { color: var(--dk-sev-warning); }
+.pid-symbol[data-sev="critical"] { color: var(--dk-sev-critical); }
+
+/* Kit glyphs (rectifier AC/DC mark, SSCB strokes, BESS cells). */
+.pf-glyph-sm { font-size: 11px; fill: #9fb6c6; text-anchor: middle; }
+.pf-glyph-stroke { stroke: #9fb6c6; stroke-width: 2; fill: none; }
+.pf-conv-divider { stroke: #3d4c5a; stroke-width: 1.5; }
+
+/* Phase 2 design branch: dashed + dimmed = not deployed plant. */
+.pf-phase2 .pf-sym { stroke-dasharray: 5 3; opacity: .88; }
+.pf-phase2 .pf-name, .pf-phase2 .pf-metric { opacity: .85; }
+.pf-bus-dc { fill: #4a3c14; stroke: var(--dk-dc); }
+
+/* AC / DC wire semantics (Phase 2 branch). */
+.pf-wire.pf-ac { stroke: var(--dk-ac); }
+.pf-wire.pf-dc { stroke: var(--dk-dc); }
+
+/* The vocabulary fence: AC world | DC world. */
+.pf-fence { stroke: var(--dk-muted); stroke-width: 1.5; stroke-dasharray: 7 5; opacity: .8; }
+.pf-fence-label { fill: #c7d6e2; font-size: 12px; letter-spacing: .08em; }
+.pf-fence-label-dc { fill: var(--dk-dc); }
+.pf-section-divider { stroke: #22303c; stroke-width: 1; }
+.pf-section-title { fill: var(--dk-muted); font-size: 13px; letter-spacing: .14em; }
+.pf-caption { fill: #7e93a5; font-size: 11px; font-style: italic; text-anchor: middle; }
+
+/* Shared diagram legend (mounted by every kit-driven view). */
+.dk-legend-text { fill: #9fb6c6; font-size: 11px; }
+.dk-swatch-ok { fill: var(--dk-sev-ok); }
+.dk-swatch-warning { fill: var(--dk-sev-warning); }
+.dk-swatch-critical { fill: var(--dk-sev-critical); }
+.dk-swatch-ac { fill: var(--dk-ac); }
+.dk-swatch-dc { fill: var(--dk-dc); }
+.dk-swatch-standby { fill: #3d4c5a; }
