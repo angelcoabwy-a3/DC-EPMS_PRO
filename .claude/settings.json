@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git tag:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote:*)",
+      "Bash(git show:*)",
+      "Bash(git ls-files:*)",
+      "Bash(pytest:*)",
+      "Bash(python -c:*)",
+      "Bash(python -m:*)",
+      "Bash(python --version:*)",
+      "Bash(pip list:*)",
+      "Bash(pip show:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker compose ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(curl http://127.0.0.1:8080/api/health)",
+      "Bash(curl http://127.0.0.1:8080/api/site/health)",
+      "Bash(curl http://127.0.0.1:8080/api/loto/health)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(wc:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Read(**)",
+      "Glob(**)",
+      "Grep(**)"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push:*)",
+      "Bash(git push --force:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker rmi:*)",
+      "Bash(docker volume rm:*)",
+      "Bash(docker system prune:*)"
+    ],
+    "ask": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git tag -a:*)",
+      "Bash(git checkout:*)",
+      "Bash(git reset:*)",
+      "Bash(uvicorn:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker start:*)",
+      "Bash(docker compose up:*)",
+      "Bash(docker compose down:*)",
+      "Bash(pip install:*)",
+      "Bash(pip uninstall:*)",
+      "Bash(npm:*)",
+      "Bash(yarn:*)",
+      "Edit(**)",
+      "Write(**)",
+      "Bash(python:*)",
+      "Bash(powershell:*)",
+      "Bash(pwsh:*)"
+    ]
+  },
+  "env": {
+    "PYTHONIOENCODING": "utf-8",
+    "PYTHONUNBUFFERED": "1"
+  }
+}
