@@ -15,10 +15,13 @@ DC-EPMS PRO simulates **A3-Alpha Toronto Area** under **Path C2** (sealed 2026-0
 
 **🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in CO+I panel review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
 
-## 📊 CURRENT STATE (synced 2026-05-28 — Epic 10 IAM/RBAC closed + verified)
+## 📊 CURRENT STATE (synced 2026-06-10 — repo hygiene session; Epic 10 IAM/RBAC closed + verified)
 
 ```
-HEAD:  b186bb3 (master, pushed to origin/master). Stable baseline =
+HEAD:  9abd84a (master, LOCAL — origin/master at f3a3d06, push pending
+       operator). 2026-06-10 hygiene: ruff gate fix (acf00b9), root
+       batch-era artifacts archived + gitignore hardening (ca31e09),
+       BMO demo runbooks committed (9abd84a). Stable baseline =
        v0.13.0 "Proactive Edge" (2026-05-19). Post-v0.17.0 work delivered:
        * Epic 1: full 4-agent fleet LLM-augmented + multi-agent façade.
        * Epic 2 (v0.13.0): "The Optimizer" proactive edge-agent (2.A-2.E).
@@ -265,7 +268,7 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 
 ## 🎯 IMMEDIATE NEXT STEPS (when resuming)
 
-1. **Verify state**: `git log --oneline -n 6` (HEAD must be `b186bb3` or descendant). `git status` (expect `.claude/` + `logs/` untracked, plus the still-uncommitted `package.json`/`package-lock.json` JS-deps experiment per DC-EPMS-036).
+1. **Verify state**: `git log --oneline -n 6` (HEAD must be `9abd84a` or descendant). `git status` (expect a clean tree — `.ai/`, `logs/`, `.claude/settings.local.json` are gitignored since the 2026-06-10 hygiene session; the DC-EPMS-036 `package.json` experiment was reverted and committed in f3a3d06).
 2. **Bring up the stack**:
    - `docker start epms-db` → wait for `docker inspect --format "{{.State.Health.Status}}" epms-db` = `healthy`.
    - `python backend\main.py` (native, :8080) — confirm `curl http://127.0.0.1:8080/api/health` reports `postgres: up` / `database: dcepms`. If `down`, see DC-EPMS-DB-001.
@@ -284,7 +287,7 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
   - `docs/skills/agent-harness-registry.md` — 30-harness Gentle IA master registry. **Bloque 4 cerrado completo** (H06/H13/H16 all OPERATIVO). Implementations: `backend/phase_dag.py` + `backend/agent_continuity.py` + `backend/skill_audit.py`.
 - **Audit CLI**: `python -m backend.skill_audit --since HEAD~N` prints per-commit CLEAN / GAPS / UNKNOWNS reports against the registry.
 
-## ⏸ PAUSE_STATE (last updated 2026-05-28 — Epic 10 IAM/RBAC closed + verified; venv contamination remediated)
+## ⏸ PAUSE_STATE (last updated 2026-06-10 — repo hygiene session; Epic 10 closed; venv contamination remediated)
 
 > Epic 10 closed on `master` via 4 atomic commits, **pushed to origin/master**:
 > `5a8252e` backend IAM core (roles + JWT + login),
@@ -298,7 +301,7 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 
 ### State at sync time
 
-- `master` at `b186bb3` == `origin/master` (Epic 10 pushed).
+- `master` at `9abd84a` (2026-06-10 hygiene session, 4 local commits ahead of `origin/master` = `f3a3d06`; push pending operator).
 - Pytest floor: **1409 backend / 368 vitest** (Epic 10 +60 backend, +34 vitest).
 - Env: venv restored to pyproject baseline (chromadb 0.5.18, langchain-core 0.2.43, pydantic 2.9.2); `protobuf` bumped to 6.33.6 + pinned `>=6.31.1,<7` in pyproject; otel floated to 1.42.1; orphan experiment pkgs (crewai*, instructor, langchain-anthropic, langchain-protocol) uninstalled. Forensic backup at `logs/env-rollback-20260528-210919/`.
 - Rust toolchain INSTALLED (rustup 1.29 / rustc+cargo 1.96, host x86_64-pc-windows-msvc, linker via VS Build Tools 2026). `edge/gateway-rs/` scaffolded + builds + 2 tests green (tokio + nalgebra wired; rmodbus + tonic declared, phase 2).
@@ -308,7 +311,8 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 
 ### Open architectural decisions / loose ends
 
-- **`package.json` JS deps uncommitted** (`@anthropic-ai/sdk`, `@langchain/anthropic`, `langchain`) — operator must decide commit-with-purpose vs revert. Same experiment that caused DC-EPMS-036.
+- ~~`package.json` JS deps uncommitted~~ — CLOSED: reverted to the vitest-only harness and committed in `f3a3d06` (DC-EPMS-036 fully closed).
+- **2026-06-10 hygiene session note**: the formerly-tracked forensic tarball `pre_recovery_batch3_5_20260506_223123.tar.gz` is now UNtracked (moved to `scripts/_archive/root_batch_era/` on disk, covered by the new `pre_recovery_*.tar.gz` ignore — consistent with the original "forensic tarballs are not versioned" design). 54 untracked root logs/.bak files relocated to `logs/root-archive-202605/`. Empty `scripts_archivesesion_sprint5/` (DC-EPMS-035 backslash-collapse residue) removed.
 - **`edge/` polyglot monorepo IN FLIGHT** — gateway-rs scaffold done; PENDING the A3 manifest (`edge/CLAUDE.md`: 6-feature holographic vector + early-transcendentals control rules — operator to provide spec), the Swift stub (`edge/node-swift/`), and the proto-fence wiring (tonic -> existing v1 .proto, no backend changes).
 - Deferred from Epic 8: gRPC service shim, MCP resource exposure of the proto stream, frontend proto-aware HMI surface.
 
