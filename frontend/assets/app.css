@@ -8169,3 +8169,14 @@ body {
 .topo-design-rect { stroke-dasharray: 6 4; opacity: .7; }
 .topo-node-design .topo-node-title { letter-spacing: .08em; }
 .topo-node-design { opacity: .85; }
+
+/* Batch 4 — live Hermes severity on the force-directed site graph. */
+.topo-node.topo-gsev-warning { filter: drop-shadow(0 0 5px var(--dk-sev-warning)); }
+.topo-node.topo-gsev-critical {
+    filter: drop-shadow(0 0 7px var(--dk-sev-critical));
+    animation: dk-crit-pulse 1.2s ease-in-out infinite;
+}
+@keyframes dk-crit-pulse {
+    50% { filter: drop-shadow(0 0 13px var(--dk-sev-critical)); }
+}
+.topo-graph-detail-sld { margin-top: 8px; width: 100%; }

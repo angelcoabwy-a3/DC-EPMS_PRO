@@ -24,7 +24,10 @@
  * nav-item click here and run our own initialization.
  * ════════════════════════════════════════════════════════════════ */
 
-import { registerRoute } from '../core/router.js';
+import { registerRoute, navigateTo } from '../core/router.js';
+import { onHermesStream } from '../services/api.js';
+import { severityFromChannels } from '../core/diagram_kit.js';
+import { nodeForGraphId, matchesChannel } from '../core/node_registry.js';
 
 const API_BASE = '';
 
@@ -77,6 +80,10 @@ let _viewBox = { w: 1100, h: 620 };
 let _searchTerm = '';
 let _pathColorOn = false;
 let _pathByNode = new Map();      // node_id -> 'A' | 'B' | 'AB' | undefined
+
+// Batch 4: live severity from the Hermes telemetry stream
+let _unsubTelemetry = null;
+const _sevById = new Map();       // graph node_id -> 'ok'|'warning'|'critical'
 
 // ─── HTML escape (defense-in-depth) ──────────────────────────────
 function _esc(s) {
@@ -279,12 +286,59 @@ function _renderNodes() {
         }
         const label = n.id.length > 14 ? n.id.slice(0, 13) + '…' : n.id;
         const labelY = r + 11;
-        return `<g class="${klass}" transform="translate(${n.x},${n.y})"
+        // Batch 4: live Hermes severity rides as a glow class so it
+        // survives re-renders without fighting the inline type styles.
+        const sev = _sevById.get(n.id);
+        const sevClass = (sev && sev !== 'ok') ? ` topo-gsev-${sev}` : '';
+        return `<g class="${klass}${sevClass}" transform="translate(${n.x},${n.y})"
                    data-id="${_esc(n.id)}" data-type="${_esc(n.type)}">
                     ${shape}
                     <text class="topo-node-label" x="0" y="${labelY}" text-anchor="middle">${_esc(label)}</text>
                 </g>`;
     }).join('');
+}
+
+// ─── Batch 4: live severity from the Hermes telemetry stream ─────
+// Kalman channels resolve to graph nodes through the canonical
+// registry (graph id -> channel prefixes); nodes without a registry
+// entry fall back to their own id as prefix. DOM is patched in
+// place — no full re-render per frame.
+function _applyTelemetry(channels) {
+    if (!channels || typeof channels !== 'object') return;
+    const ids = Object.keys(channels);
+    if (!ids.length) return;
+    for (const n of _data.nodes) {
+        const entry = nodeForGraphId(n.id);
+        const prefixes = entry?.channels?.length ? entry.channels : [n.id];
+        const matched = ids.filter((c) => matchesChannel(c, prefixes))
+            .map((c) => channels[c]);
+        if (!matched.length) continue;
+        const sev = severityFromChannels(matched);
+        if (_sevById.get(n.id) === sev) continue;
+        _sevById.set(n.id, sev);
+        const el = document.querySelector(
+            `#topo-graph-nodes .topo-node[data-id="${CSS.escape(n.id)}"]`);
+        if (el) {
+            el.classList.toggle('topo-gsev-warning', sev === 'warning');
+            el.classList.toggle('topo-gsev-critical', sev === 'critical');
+        }
+    }
+}
+
+function _onTelemetryFrame(payload) {
+    if (payload && payload.channels) _applyTelemetry(payload.channels);
+}
+
+// ─── Batch 4: registry-resolved cross-link into the SLD views ────
+// The identity registry is what makes this possible at all — the
+// same asset finally has ONE identity across the five diagram views.
+function _sldTargetFor(graphId) {
+    const entry = nodeForGraphId(graphId);
+    if (!entry) return null;
+    if (entry.chain === 'power') return { route: 'power', label: 'Open in Power SLD' };
+    if (entry.chain === 'cooling') return { route: 'cooling', label: 'Open in Cooling P&ID' };
+    if (entry.chain === 'it') return { route: 'topology', label: 'Open in Facility Topology' };
+    return null;
 }
 
 function _render() {
@@ -317,6 +371,19 @@ function _renderDetail() {
     const impact = _impactSet(n.id, _activeChain);
     document.getElementById('topo-graph-detail-impact').textContent =
         impact.size > 0 ? `${impact.size} downstream component(s)` : 'no downstream feed';
+    // Batch 4: cross-link into the diagram view that owns this asset.
+    const sldBtn = document.getElementById('topo-graph-detail-open-sld');
+    if (sldBtn) {
+        const target = _sldTargetFor(n.id);
+        if (target) {
+            sldBtn.hidden = false;
+            sldBtn.textContent = target.label;
+            sldBtn.dataset.route = target.route;
+        } else {
+            sldBtn.hidden = true;
+            delete sldBtn.dataset.route;
+        }
+    }
 }
 
 // ─── Pan/zoom + interactions ─────────────────────────────────────
@@ -500,6 +567,12 @@ function _wireEvents() {
     // Tier A+ / A1'
     document.getElementById('topo-graph-search')?.addEventListener('input', _onSearchInput);
     document.getElementById('topo-path-color-toggle')?.addEventListener('click', _onPathColorToggle);
+
+    // Batch 4: cross-link button -> the SLD view owning the asset.
+    document.getElementById('topo-graph-detail-open-sld')?.addEventListener('click', (e) => {
+        const route = e.currentTarget.dataset.route;
+        if (route) navigateTo(route);
+    });
 }
 
 // LOTO-pattern: legacy router has site_topology branch but doesn't
@@ -528,6 +601,38 @@ export function initSiteTopologyView() {
     _wireEvents();
     _wireRouting();
     _setSvgViewBox();
+    // Batch 4: the structural map is no longer dead — live severity
+    // glows arrive on the Hermes telemetry stream.
+    _unsubTelemetry = onHermesStream('telemetry', _onTelemetryFrame);
     _initialized = true;
-    console.log('[site_topology] ready (force-directed graph)');
+    console.log('[site_topology] ready (force-directed graph, Hermes-bound)');
 }
+
+// ─── Test surface ──────────────────────────────────────────────────
+export const __site_topology_test__ = {
+    applyTelemetry: _applyTelemetry,
+    onTelemetryFrame: _onTelemetryFrame,
+    sldTargetFor: _sldTargetFor,
+    renderDetail: _renderDetail,
+    renderNodes: _renderNodes,
+    impactSet: _impactSet,
+    computePathClassification: _computePathClassification,
+    setData: (nodes, edges) => {
+        _data.nodes = nodes;
+        _data.edges = edges;
+        _byId = new Map(nodes.map((n) => [n.id, n]));
+    },
+    select: (id) => { _selectedId = id; },
+    reset: () => {
+        _initialized = false;
+        _data.nodes = [];
+        _data.edges = [];
+        _byId = new Map();
+        _selectedId = null;
+        _searchTerm = '';
+        _pathColorOn = false;
+        _pathByNode.clear();
+        _sevById.clear();
+        if (_unsubTelemetry) { _unsubTelemetry(); _unsubTelemetry = null; }
+    },
+};
