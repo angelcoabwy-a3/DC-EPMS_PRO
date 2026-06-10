@@ -8164,3 +8164,8 @@ body {
 .dk-swatch-ac { fill: var(--dk-ac); }
 .dk-swatch-dc { fill: var(--dk-dc); }
 .dk-swatch-standby { fill: #3d4c5a; }
+
+/* Batch 3 — Building D design marker on the HLD canvas. */
+.topo-design-rect { stroke-dasharray: 6 4; opacity: .7; }
+.topo-node-design .topo-node-title { letter-spacing: .08em; }
+.topo-node-design { opacity: .85; }

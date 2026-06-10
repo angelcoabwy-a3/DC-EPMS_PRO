@@ -92,8 +92,11 @@ const ENTRIES = [
 // ─── Indexes (built once) ──────────────────────────────────────────
 const _byId = new Map(ENTRIES.map((e) => [e.id, e]));
 const _byGraph = new Map();
+const _byTopo = new Map();
 for (const e of ENTRIES) {
     for (const g of e.graph) _byGraph.set(g, e);
+    // First entry wins for shared topo keys (batt_a aliases ups_a).
+    if (e.topo && !_byTopo.has(e.topo)) _byTopo.set(e.topo, e);
 }
 
 // ─── Lookups ───────────────────────────────────────────────────────
@@ -104,6 +107,9 @@ export function topoKeyFor(id) { return _byId.get(id)?.topo ?? null; }
 
 /** /api/site/graph node id -> canonical entry (or null). */
 export function nodeForGraphId(graphId) { return _byGraph.get(graphId) || null; }
+
+/** /api/topology/state hld key -> canonical entry (or null). */
+export function nodeForTopoKey(topoKey) { return _byTopo.get(topoKey) || null; }
 
 /** All entries for a phase / chain (both optional). */
 export function nodesWhere({ phase, chain } = {}) {
