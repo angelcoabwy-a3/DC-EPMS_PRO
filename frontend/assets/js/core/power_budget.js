@@ -98,6 +98,22 @@ export function gensetFarmSizing(overrides = {}) {
     };
 }
 
+/**
+ * Per-unit farm roster derived from the sizing — the single source the
+ * SLD level-of-detail rendering draws from. State is the DESIGN
+ * baseline (all STANDBY): live per-unit NFPA 110 states arrive with
+ * the Phase 2 design-sim telemetry channels (backend grounding batch).
+ * @returns {Array<{id: string, ratedMw: number, state: string}>}
+ */
+export function farmUnits(overrides = {}) {
+    const s = gensetFarmSizing(overrides);
+    return Array.from({ length: s.installed }, (_, i) => ({
+        id: 'G' + String(i + 1).padStart(2, '0'),
+        ratedMw: s.unitMw,
+        state: 'STANDBY',
+    }));
+}
+
 /** One-line budget caption for the diagrams (single source). */
 export function budgetCaption(overrides = {}) {
     const b = phase2Budget(overrides);

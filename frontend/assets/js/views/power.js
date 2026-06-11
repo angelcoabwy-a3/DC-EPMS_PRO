@@ -44,7 +44,7 @@ import { createN1Overlay } from '../core/n1_overlay.js';
 import {
     startRecording, snapshotAt, range as recorderRange,
 } from '../core/flight_recorder.js';
-import { budgetCaption, gensetFarmSizing } from '../core/power_budget.js';
+import { budgetCaption, gensetFarmSizing, farmUnits } from '../core/power_budget.js';
 
 let _initialized = false;
 let _unsubTelemetry = null;
@@ -405,72 +405,54 @@ function _flatPhase2() {
  * >50 MW cannot be one prime mover: N+2 farm of 3.2 MW MV units on
  * 13.8 kV paralleling switchgear (ANSI 25 sync, dead-bus black
  * start), stepped UP to 35 kV before joining the rectifier's AC
- * side (never tie 13.8 kV to a 35 kV bus directly). Three units
- * drawn; sizing comes from core/power_budget.js — one source of
- * truth, printed in the caption.
+ * side (never tie 13.8 kV to a 35 kV bus directly).
+ *
+ * LEVEL OF DETAIL (SLD Reengineering Batch B): at fit-width 22 mini
+ * circles are decorative noise — the farm collapses to ONE honest
+ * switchgear-lineup block (count + rating + N+2 + state summary,
+ * every number from core/power_budget.js). Clicking the block
+ * focuses the viewBox onto the farm and expands it into per-unit
+ * switchgear cubicles: ANSI 52 breaker, generator glyph, unit id,
+ * rating, NFPA 110 state strip — one cubicle per INSTALLED unit, so
+ * the drawing still cannot lie about capacity.
  */
-function _flatGensetFarm() {
-    const F = _FLAT.farm;
-    const S = _FLAT.phase2.spineY;
-    const sizing = gensetFarmSizing();
+let _farmLod = 0;   // 0 = collapsed lineup block | 1 = per-unit focus
 
-    // EVERY installed unit is drawn (operator call: "ve por la fase
-    // 2"). The count is sizing.installed — change the budget and the
-    // drawing resizes itself; the diagram cannot lie about capacity.
-    const busL = 86;
-    const busR = 1114;
-    const n = sizing.installed;
-    const step = (busR - busL - 28) / (n - 1);
-    const genXs = Array.from({ length: n }, (_, i) => busL + 14 + i * step);
+// Focused viewBox: the farm band only (budget block through captions).
+const _FARM_FOCUS_VIEWBOX = '40 988 1140 264';
 
-    // 52 = ANSI device number for the power circuit breaker. At farm
-    // density the per-unit 52s are compact marks; the bus tie keeps
-    // the labeled glyph.
-    const breaker52 = (x, y, labeled) =>
-        `<rect class="pf-sym pid-symbol" data-sev="ok" x="${x - (labeled ? 13 : 6)}" y="${y - (labeled ? 11 : 6)}" `
+const _FARM_GEOM = { busL: 86, busR: 1114 };
+
+// 52 = ANSI device number for the power circuit breaker. At farm
+// density the per-unit 52s are compact marks; the bus tie keeps the
+// labeled glyph.
+function _breaker52(x, y, labeled) {
+    return `<rect class="pf-sym pid-symbol" data-sev="ok" x="${x - (labeled ? 13 : 6)}" y="${y - (labeled ? 11 : 6)}" `
         + `width="${labeled ? 26 : 12}" height="${labeled ? 22 : 12}" rx="2"/>`
         + (labeled ? `<text class="pf-glyph pf-glyph-sm" x="${x}" y="${y + 4}">52</text>` : '');
+}
 
-    const gens = genXs.map((xRaw, i) => {
-        const x = Number(xRaw.toFixed(1));
-        return `<g class="sld-node pf-node pf-farm-unit" data-sld-node="gen_farm_d">`
-            + `<circle class="pf-sym pid-symbol" data-sev="ok" cx="${x}" cy="${F.genY}" r="13"/>`
-            + `<text class="pf-glyph pf-glyph-sm" x="${x}" y="${F.genY + 4}">G</text>`
-            + `<text class="pf-farm-idx" x="${x}" y="${F.genY + 28}">G${String(i + 1).padStart(2, '0')}</text>`
-            + `</g>`
-            + breaker52(x, F.genY - 32, false);
-    }).join('');
-
-    const wires = [
-        // every unit -> its 52 mark -> MV bus
-        ...genXs.map((xRaw) => {
-            const x = Number(xRaw.toFixed(1));
-            return wire([[x, F.genY - 13], [x, F.genY - 26]], 'pf-ac')
-                + wire([[x, F.genY - 38], [x, F.busY + 6]], 'pf-ac');
-        }),
-        // MV bus -> bus 52 -> step-up xfmr -> tie into the AC side
-        wire([[F.tieX, F.busY - 6], [F.tieX, F.busY - 36]], 'pf-ac'),
-        wire([[F.tieX, F.busY - 58], [F.tieX, S + 96]], 'pf-ac'),
-        wire([[F.tieX, S + 52], [F.tieX, S]], 'pf-ac'),
-    ].join('');
-
-    const farm =
-        `<g class="sld-node pf-node" data-sld-node="mv_bus_d">`
-        + `<rect class="pf-sym pid-symbol pf-bus" data-sev="ok" x="${busL}" y="${F.busY - 6}" width="${busR - busL}" height="12" rx="2"/>`
-        + `<text class="pf-name" x="${(busL + busR) / 2}" y="${F.busY - 16}">MV PARALLELING BUS · 13.8 kV · ANSI 25 sync · dead-bus black start · 52 per unit</text>`
-        + `</g>`
-        + breaker52(F.tieX, F.busY - 47, true)
+// The MV-bus tie chain is identical at both LODs: bus -> labeled 52
+// -> step-up xfmr -> the rectifier's 35 kV AC side (S-VOCAB-01: the
+// farm is AC plant; it never touches the DC fence).
+function _farmTie() {
+    const F = _FLAT.farm;
+    const S = _FLAT.phase2.spineY;
+    const wires =
+        wire([[F.tieX, F.busY - 6], [F.tieX, F.busY - 36]], 'pf-ac')
+        + wire([[F.tieX, F.busY - 58], [F.tieX, S + 96]], 'pf-ac')
+        + wire([[F.tieX, S + 52], [F.tieX, S]], 'pf-ac');
+    return wires
+        + _breaker52(F.tieX, F.busY - 47, true)
         + `<g class="sld-node pf-node" data-sld-node="stepup_d">`
         + symbol('xfmr', F.tieX, S + 74)
         + `<text class="pf-name" x="${F.tieX + 118}" y="${S + 72}">STEP-UP 13.8→35 kV</text>`
         + `</g>`;
+}
 
-    const sizingTxt = `${sizing.installed} × ${sizing.unitMw} MW`
-        + ` (${sizing.required} required + ${sizing.redundancy} = N+${sizing.redundancy})`
-        + ` · farm ${sizing.farmMw.toFixed(1)} MW`;
-    // Power budget block — every number from core/power_budget.js;
-    // wrapped at the separators so the line fits the canvas. Sits
-    // ABOVE the full-width bus.
+// Shared budget caption block (printed at both LODs — single source).
+function _farmBudgetBlock() {
+    const F = _FLAT.farm;
     const parts = budgetCaption().split(' · ');
     const budgetLines = [];
     for (let i = 0; i < parts.length; i += 3) {
@@ -478,12 +460,115 @@ function _flatGensetFarm() {
     }
     const budgetTxt = budgetLines.map((line, i) =>
         `<text class="pf-caption pf-budget" x="560" y="${F.busY - 94 + i * 16}">${escapeHTML(line)}</text>`).join('');
-    const captions =
-        `<text class="pf-section-title" x="${busL}" y="${F.genY + 52}">GENSET FARM · BUILDING D STANDBY (DESIGN) — ${escapeHTML(sizingTxt)}</text>`
-        + `<text class="pf-section-title" x="560" y="${F.busY - 112}">POWER BUDGET · 50 MW IT (DESIGN)</text>`
+    return `<text class="pf-section-title" x="560" y="${F.busY - 112}">POWER BUDGET · 50 MW IT (DESIGN)</text>`
         + budgetTxt;
+}
 
-    return `<g data-farm="1">${wires}${gens}${farm}${captions}</g>`;
+function _farmSizingTxt(sizing) {
+    return `${sizing.installed} × ${sizing.unitMw} MW`
+        + ` (${sizing.required} required + ${sizing.redundancy} = N+${sizing.redundancy})`
+        + ` · farm ${sizing.farmMw.toFixed(1)} MW`;
+}
+
+// ── LOD 0: the honest lineup block ──────────────────────────────
+function _farmCollapsed(sizing, units) {
+    const F = _FLAT.farm;
+    const { busL, busR } = _FARM_GEOM;
+    const n = sizing.installed;
+    const top = F.busY - 6;
+    const h = 96;
+
+    // Cubicle tick marks along the top edge — the block reads as a
+    // switchgear lineup of n cubicles, not an anonymous box.
+    const pitch = (busR - busL) / n;
+    const ticks = Array.from({ length: n - 1 }, (_, i) =>
+        `<line class="pf-farm-sep" x1="${(busL + (i + 1) * pitch).toFixed(1)}" y1="${top}" `
+        + `x2="${(busL + (i + 1) * pitch).toFixed(1)}" y2="${top + 14}"/>`).join('');
+
+    const standby = units.filter((u) => u.state === 'STANDBY').length;
+    return `<g class="sld-node pf-node pf-farm-block" data-sld-node="gen_farm_d" `
+        + `data-farm-toggle="1" data-farm-lod="0" role="button" tabindex="0">`
+        + `<rect class="pf-sym pid-symbol pf-farm-lineup" data-sev="ok" `
+        + `x="${busL}" y="${top}" width="${busR - busL}" height="${h}" rx="3"/>`
+        + ticks
+        + `<text class="pf-farm-title" x="${(busL + busR) / 2}" y="${top + 32}" text-anchor="middle">`
+        + `GENSET FARM · BUILDING D STANDBY (DESIGN) — ${escapeHTML(_farmSizingTxt(sizing))}</text>`
+        + `<text class="pf-farm-sub" x="${(busL + busR) / 2}" y="${top + 52}" text-anchor="middle">`
+        + `13.8 kV MV PARALLELING LINEUP · ANSI 25 sync · dead-bus black start · 52 per unit</text>`
+        + `<text class="pf-farm-summary" x="${(busL + busR) / 2}" y="${top + 72}" text-anchor="middle">`
+        + `UNIT STATES: ${standby} × STANDBY (design baseline — no live farm telemetry yet)</text>`
+        + `<text class="pf-farm-hint" x="${(busL + busR) / 2}" y="${top + 88}" text-anchor="middle">`
+        + `[ click to expand the lineup ]</text>`
+        + `</g>`;
+}
+
+// ── LOD 1: per-unit switchgear cubicles ─────────────────────────
+function _farmExpanded(sizing, units) {
+    const F = _FLAT.farm;
+    const { busL, busR } = _FARM_GEOM;
+    const n = sizing.installed;
+    const step = (busR - busL - 28) / (n - 1);
+    const cubW = Math.min(42, step - 4);
+
+    const bus =
+        `<g class="sld-node pf-node" data-sld-node="mv_bus_d">`
+        + `<rect class="pf-sym pid-symbol pf-bus" data-sev="ok" x="${busL}" y="${F.busY - 6}" width="${busR - busL}" height="12" rx="2"/>`
+        + `<text class="pf-name" x="${(busL + busR) / 2}" y="${F.busY - 16}">MV PARALLELING BUS · 13.8 kV · ANSI 25 sync · dead-bus black start · 52 per unit</text>`
+        + `</g>`;
+
+    const cubicles = units.map((u, i) => {
+        const x = Number((busL + 14 + i * step).toFixed(1));
+        const cl = x - cubW / 2;
+        const ct = F.busY + 16;
+        return wire([[x, F.busY + 6], [x, ct]], 'pf-ac')
+            + `<g class="sld-node pf-node pf-farm-cubicle" data-sld-node="gen_farm_d" `
+            + `data-farm-unit="${escapeHTML(u.id)}" data-state="${escapeHTML(u.state)}">`
+            + `<rect class="pf-sym pid-symbol pf-cub" data-sev="ok" x="${cl}" y="${ct}" width="${cubW}" height="96" rx="2"/>`
+            + _breaker52(x, ct + 14, false)
+            + `<circle class="pf-sym pid-symbol" data-sev="ok" cx="${x}" cy="${ct + 44}" r="13"/>`
+            + `<text class="pf-glyph pf-glyph-sm" x="${x}" y="${ct + 48}">G</text>`
+            + `<text class="pf-farm-idx" x="${x}" y="${ct + 72}">${escapeHTML(u.id)}</text>`
+            + `<text class="pf-farm-rating" x="${x}" y="${ct + 84}">${u.ratedMw} MW</text>`
+            + `<rect class="pf-farm-strip pf-state-${u.state.toLowerCase()}" x="${cl}" y="${ct + 88}" width="${cubW}" height="5"/>`
+            + `</g>`;
+    }).join('');
+
+    const back =
+        `<g class="pf-farm-back" data-farm-back="1" role="button" tabindex="0">`
+        + `<rect x="48" y="996" width="110" height="24" rx="3"/>`
+        + `<text x="103" y="1012" text-anchor="middle">&lt; FULL SLD</text>`
+        + `</g>`;
+
+    const captions =
+        `<text class="pf-section-title" x="${busL}" y="${F.busY + 130}">`
+        + `GENSET FARM · BUILDING D STANDBY (DESIGN) — ${escapeHTML(_farmSizingTxt(sizing))}</text>`
+        + `<text class="pf-caption" x="${(busL + busR) / 2}" y="${F.busY + 146}">`
+        + `NFPA 110 TYPE 10 sequence per unit: STANDBY → CRANKING → RUNNING → ON LOAD → COOLDOWN</text>`;
+
+    return back + bus + cubicles + captions;
+}
+
+function _flatGensetFarm() {
+    const sizing = gensetFarmSizing();
+    const units = farmUnits();
+    const body = (_farmLod === 1)
+        ? _farmExpanded(sizing, units)
+        : _farmCollapsed(sizing, units);
+    return `<g data-farm="1" data-farm-lod="${_farmLod}">${_farmTie()}${body}${_farmBudgetBlock()}</g>`;
+}
+
+/**
+ * LOD switch — re-renders the SLD (diagrams are pure functions of
+ * state) and drives the viewBox: full canvas at LOD 0, farm band at
+ * LOD 1. Severity repaints on the next Hermes frame / topology tick.
+ */
+function _setFarmLod(lod) {
+    _farmLod = (lod === 1) ? 1 : 0;
+    const svg = document.querySelector('#view-power .pid-svg');
+    if (!svg) return;
+    svg.innerHTML = _buildFlatMarkup();
+    svg.setAttribute('viewBox', _farmLod === 1 ? _FARM_FOCUS_VIEWBOX : _FLAT.viewBox);
+    if (_initialized) _refresh();
 }
 
 /** Build the full flat-SLD SVG inner markup from the tiered topology. */
@@ -559,6 +644,16 @@ async function _submitBreakerCommand(nodeId, cmd, actorRole) {
 
 /** Flat-SVG click delegation — routes a node click by current mode. */
 function _onFlatClick(e) {
+    // Farm level-of-detail gestures take precedence in every mode —
+    // they change what is drawn, never what is energized.
+    if (e.target.closest && e.target.closest('[data-farm-toggle]')) {
+        _setFarmLod(1);
+        return;
+    }
+    if (e.target.closest && e.target.closest('[data-farm-back]')) {
+        _setFarmLod(0);
+        return;
+    }
     const node = e.target.closest('.pf-node');
     if (!node) return;
     const id = node.dataset.sldNode;
@@ -877,6 +972,9 @@ export const __power_test__ = {
     setN1: _setN1,
     n1Overlay: _n1Overlay,
     setReplay: _setReplay,
+    setFarmLod: _setFarmLod,
+    getFarmLod: () => _farmLod,
+    farmFocusViewBox: _FARM_FOCUS_VIEWBOX,
     scrubTo: _scrubTo,
     buildReplayToggle: _buildReplayToggle,
     loadLedgerMarkers: _loadLedgerMarkers,
@@ -887,6 +985,7 @@ export const __power_test__ = {
     reset: () => {
         _initialized = false;
         _mode = 'live';
+        _farmLod = 0;
         if (_unsubTelemetry) { _unsubTelemetry(); _unsubTelemetry = null; }
         const modal = document.getElementById('pwr-breaker-modal');
         if (modal) modal.remove();

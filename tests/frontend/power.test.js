@@ -277,13 +277,10 @@ describe('B1 — views/power.js Phase 2 Building D branch', () => {
         expect(p2).toContain('pf-wire pf-ac');
         expect(p2).toContain('pf-wire pf-dc');
         // Every AC wire lives upstream of the rectifier: the 35 kV
-        // feed + the genset-farm MV runs (50 MW track). The DC side
-        // never grows AC wires.
+        // feed + the farm tie chain (LOD 0 collapses the per-unit
+        // runs into the lineup block). The DC side never grows AC.
         const acCount = [...p2.matchAll(/pf-wire pf-ac/g)].length;
-        expect(acCount).toBeGreaterThanOrEqual(10);   // feed + 9 farm runs
-        // No AC wire may appear inside the farm-to-bus DC section…
-        // (structural: the farm group carries only pf-ac, the bus
-        // branch wires after the rectifier only pf-dc — spot check:)
+        expect(acCount).toBeGreaterThanOrEqual(4);   // feed + 3-run tie chain
         expect(p2).not.toMatch(/pf-wire pf-dc[^>]*d="[^"]*M14 /);
     });
 
@@ -300,27 +297,38 @@ describe('B1 — views/power.js Phase 2 Building D branch', () => {
         expect(p2).toContain('GB300 NVL144 · 250 racks @ 200 kW (design)');
     });
 
-    it('50MW: draws EVERY farm unit with MV discipline (13.8 kV, 52s, step-up)', async () => {
+    it('50MW: expanded LOD draws EVERY farm unit as a switchgear cubicle', async () => {
         const { gensetFarmSizing } = await import('/assets/js/core/power_budget.js');
+        const { setFarmLod, reset } = __power_test__;
         const sizing = gensetFarmSizing();
-        const p2 = buildPhase2Markup();
-        expect(p2).toContain('data-farm="1"');
-        // The drawing cannot lie about capacity: one node per
-        // INSTALLED unit, count straight from the budget model.
-        expect([...p2.matchAll(/data-sld-node="gen_farm_d"/g)])
-            .toHaveLength(sizing.installed);
-        expect([...p2.matchAll(/class="pf-farm-idx"/g)])
-            .toHaveLength(sizing.installed);
-        expect(p2).toContain('G01');
-        expect(p2).toContain('G' + String(sizing.installed));
-        expect(p2).toContain('MV PARALLELING BUS · 13.8 kV · ANSI 25 sync');
-        // The labeled ANSI 52 glyph sits on the bus tie.
-        expect([...p2.matchAll(/>52</g)].length).toBeGreaterThanOrEqual(1);
-        // Voltage discipline: 13.8 kV steps UP before joining 35 kV.
-        expect(p2).toContain('data-sld-node="stepup_d"');
-        expect(p2).toContain('STEP-UP 13.8→35 kV');
-        // Sizing printed from power_budget (single source).
-        expect(p2).toMatch(/\d+ × 3\.2 MW \(\d+ required \+ 2 = N\+2\)/);
+        try {
+            setFarmLod(1);
+            const p2 = buildPhase2Markup();
+            expect(p2).toContain('data-farm="1"');
+            // The drawing cannot lie about capacity: one CUBICLE per
+            // INSTALLED unit, count straight from the budget model.
+            expect([...p2.matchAll(/data-farm-unit="/g)])
+                .toHaveLength(sizing.installed);
+            expect([...p2.matchAll(/class="pf-farm-idx"/g)])
+                .toHaveLength(sizing.installed);
+            expect(p2).toContain('G01');
+            expect(p2).toContain('G' + String(sizing.installed));
+            expect(p2).toContain('MV PARALLELING BUS · 13.8 kV · ANSI 25 sync');
+            // The labeled ANSI 52 glyph sits on the bus tie.
+            expect([...p2.matchAll(/>52</g)].length).toBeGreaterThanOrEqual(1);
+            // Voltage discipline: 13.8 kV steps UP before joining 35 kV.
+            expect(p2).toContain('data-sld-node="stepup_d"');
+            expect(p2).toContain('STEP-UP 13.8→35 kV');
+            // Sizing printed from power_budget (single source).
+            expect(p2).toMatch(/\d+ × 3\.2 MW \(\d+ required \+ 2 = N\+2\)/);
+            // NFPA 110 per-unit sequence is stated, and each cubicle
+            // carries its design-baseline state.
+            expect(p2).toContain('NFPA 110 TYPE 10 sequence per unit');
+            expect([...p2.matchAll(/data-state="STANDBY"/g)])
+                .toHaveLength(sizing.installed);
+        } finally {
+            reset();
+        }
     });
 
     it('50MW: prints the power budget block (PUE + every component)', () => {
@@ -329,6 +337,91 @@ describe('B1 — views/power.js Phase 2 Building D branch', () => {
         expect(p2).toContain('IT 50.0 MW');
         expect(p2).toContain('chillers');
         expect(p2).toMatch(/PUE 1\.\d{2}/);
+    });
+});
+
+// ════════════════════════════════════════════════════════════════
+//  views/power.js — Batch B (SLD Reengineering): farm level-of-detail
+//
+//  At fit-width the farm is ONE honest lineup block (operator
+//  verdict: 22 mini circles were decorative noise). Click focuses
+//  the viewBox and expands per-unit switchgear cubicles.
+// ════════════════════════════════════════════════════════════════
+describe('SLD-R2 — genset farm level-of-detail', () => {
+    const { buildPhase2Markup, renderFlatSld, setFarmLod, getFarmLod,
+        farmFocusViewBox, onFlatClick, reset } = __power_test__;
+
+    afterEach(() => {
+        document.body.innerHTML = '';
+        reset();
+    });
+
+    it('defaults to LOD 0: one lineup block, zero per-unit cubicles', () => {
+        const p2 = buildPhase2Markup();
+        expect(p2).toContain('data-farm-lod="0"');
+        expect(p2).toContain('data-farm-toggle="1"');
+        expect(p2).not.toContain('data-farm-unit=');
+        // The block is honest about count, rating, redundancy + the
+        // fact that per-unit states are design-only today.
+        expect(p2).toMatch(/\d+ × 3\.2 MW \(\d+ required \+ 2 = N\+2\)/);
+        expect(p2).toContain('design baseline — no live farm telemetry yet');
+        expect(p2).toContain('[ click to expand the lineup ]');
+    });
+
+    it('LOD 0 keeps the tie chain: bus 52 -> step-up -> 35 kV AC side', () => {
+        const p2 = buildPhase2Markup();
+        expect(p2).toContain('data-sld-node="stepup_d"');
+        expect(p2).toContain('STEP-UP 13.8→35 kV');
+        expect([...p2.matchAll(/>52</g)].length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('a click on the lineup block expands to LOD 1 and focuses the viewBox', () => {
+        document.body.innerHTML = '<div id="view-power"><svg class="pid-svg"></svg></div>';
+        renderFlatSld();
+        const block = document.querySelector('[data-farm-toggle]');
+        expect(block).not.toBeNull();
+        onFlatClick({ target: block });
+        expect(getFarmLod()).toBe(1);
+        const svg = document.querySelector('#view-power .pid-svg');
+        expect(svg.getAttribute('viewBox')).toBe(farmFocusViewBox);
+        expect(svg.innerHTML).toContain('data-farm-unit="G01"');
+        expect(svg.querySelectorAll('[data-farm-unit]').length).toBeGreaterThan(20);
+    });
+
+    it('the back affordance returns to LOD 0 and restores the full canvas', () => {
+        document.body.innerHTML = '<div id="view-power"><svg class="pid-svg"></svg></div>';
+        renderFlatSld();
+        onFlatClick({ target: document.querySelector('[data-farm-toggle]') });
+        const back = document.querySelector('[data-farm-back]');
+        expect(back).not.toBeNull();
+        onFlatClick({ target: back });
+        expect(getFarmLod()).toBe(0);
+        const svg = document.querySelector('#view-power .pid-svg');
+        expect(svg.getAttribute('viewBox')).toBe('0 0 1200 1260');
+        expect(svg.innerHTML).toContain('data-farm-toggle="1"');
+    });
+
+    it('LOD 1 wires stay strictly orthogonal (kit discipline holds)', () => {
+        setFarmLod(1);
+        const p2 = buildPhase2Markup();
+        const ds = [...p2.matchAll(/<path class="pf-wire[^"]*" d="([^"]+)"/g)]
+            .map((m) => m[1]);
+        expect(ds.length).toBeGreaterThan(20);   // 22 drops + tie + branch
+        for (const d of ds) {
+            const pts = d.trim().split(/[ML]\s*/).filter(Boolean)
+                .map((p) => p.trim().split(/\s+/).map(Number));
+            for (let i = 1; i < pts.length; i += 1) {
+                expect(pts[i - 1][0] === pts[i][0] || pts[i - 1][1] === pts[i][1]).toBe(true);
+            }
+        }
+    });
+
+    it('S-VOCAB-01 holds at both LODs (farm is AC plant, no VDC adjacency)', () => {
+        for (const lod of [0, 1]) {
+            setFarmLod(lod);
+            const p2 = buildPhase2Markup();
+            expect(p2).not.toMatch(/VDC[^<]{0,60}(trif|three-phase|3-phase)/i);
+        }
     });
 });
 

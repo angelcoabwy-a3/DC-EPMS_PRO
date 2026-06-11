@@ -8314,5 +8314,24 @@ rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
 /* 50 MW track — power budget caption is left-anchored multi-line. */
 .pf-budget { text-anchor: start; }
 
-/* 50 MW farm: full unit row — compact index labels under each gen. */
-.pf-farm-idx { font-size: 8px; fill: #5d6f7e; text-anchor: middle; }
+/* ── 50 MW farm LOD (SLD Reengineering Batch B) ──────────────────
+   LOD 0: one honest switchgear-lineup block at fit-width.
+   LOD 1: viewBox-focused per-unit cubicles (52 + gen + state strip). */
+.pf-farm-lineup { fill: #10161f; }
+.pf-farm-sep { stroke: #22303c; stroke-width: 1; }
+.pf-farm-title { fill: #c7d6e2; font-size: 14px; font-weight: 700; letter-spacing: .08em; }
+.pf-farm-sub { fill: #8ba3c4; font-size: 11px; letter-spacing: .06em; }
+.pf-farm-summary { fill: #9fb6c6; font-size: 12px; font-family: var(--font-mono, monospace); }
+.pf-farm-hint { fill: #5d6f7e; font-size: 10px; font-style: italic; }
+.pf-farm-block:hover .pf-farm-lineup { stroke: #2ff5a8; cursor: pointer; }
+.pf-farm-cubicle .pf-cub { fill: #0d131c; }
+.pf-farm-idx { font-size: 11px; font-weight: 700; fill: #cfe0f5; text-anchor: middle; }
+.pf-farm-rating { font-size: 9px; fill: #8ba3c4; text-anchor: middle; }
+.pf-farm-strip { opacity: .9; }
+.pf-state-standby { fill: #4a5a6a; }
+.pf-state-cranking, .pf-state-running { fill: var(--dk-sev-warning); }
+.pf-state-on_load { fill: var(--dk-sev-ok); }
+.pf-state-fault { fill: var(--dk-sev-critical); }
+.pf-farm-back rect { fill: #131b26; stroke: #2ff5a8; stroke-width: 1; }
+.pf-farm-back text { fill: #2ff5a8; font-size: 12px; font-family: var(--font-mono, monospace); }
+.pf-farm-back:hover rect { fill: #1b2736; cursor: pointer; }
