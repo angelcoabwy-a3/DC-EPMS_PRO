@@ -76,18 +76,20 @@ describe('T2.1 — views/power.js severityFromChannels()', () => {
 //  views/power.js — _applyTelemetry (live Kalman -> DAG nodes)
 // ════════════════════════════════════════════════════════════════
 describe('T2.1 — views/power.js applyTelemetry()', () => {
-    function mountIso() {
+    // SLD Reengineering 2026-06-11: the iso stage is retired — live
+    // Kalman severity paints the flat-SLD .pf-node groups directly.
+    function mountFlat() {
         document.body.innerHTML = `
-            <div id="view-power">
-                <div class="sld-iso-block" data-sld-node="ups_a"></div>
-                <div class="sld-iso-block" data-sld-node="ups_b"></div>
-                <div class="sld-iso-block" data-sld-node="util_a"></div>
-            </div>`;
+            <div id="view-power"><svg class="pid-svg">
+                <g class="sld-node pf-node" data-sld-node="ups_a"><rect class="pf-sym pid-symbol"/></g>
+                <g class="sld-node pf-node" data-sld-node="ups_b"><rect class="pf-sym pid-symbol"/></g>
+                <g class="sld-node pf-node" data-sld-node="util_a"><rect class="pf-sym pid-symbol"/></g>
+            </svg></div>`;
     }
     afterEach(() => { document.body.innerHTML = ''; });
 
-    it('maps an anomalous Kalman channel onto its node as data-sev=critical', () => {
-        mountIso();
+    it('maps an anomalous Kalman channel onto its flat node as data-sev=critical', () => {
+        mountFlat();
         applyTelemetry({
             'ups_a_soc': { is_anomalous: true, max_z: 4.1 },
             'ups_b_soc': { is_anomalous: false, max_z: 0.4 },
@@ -96,26 +98,33 @@ describe('T2.1 — views/power.js applyTelemetry()', () => {
         expect(document.querySelector('[data-sld-node="ups_b"]').dataset.sev).toBe('ok');
     });
 
+    it('propagates the severity onto the node symbol stroke (.pid-symbol)', () => {
+        mountFlat();
+        applyTelemetry({ 'ups_a_soc': { is_anomalous: true, max_z: 4.1 } });
+        expect(document.querySelector('[data-sld-node="ups_a"] .pid-symbol')
+            .getAttribute('data-sev')).toBe('critical');
+    });
+
     it('maps an elevated z-score onto its node as data-sev=warning', () => {
-        mountIso();
+        mountFlat();
         applyTelemetry({ 'ups_b_soc': { is_anomalous: false, max_z: 2.7 } });
         expect(document.querySelector('[data-sld-node="ups_b"]').dataset.sev).toBe('warning');
     });
 
     it('leaves nodes with no matching channel untouched', () => {
-        mountIso();
+        mountFlat();
         applyTelemetry({ 'ups_a_soc': { is_anomalous: true } });
         expect(document.querySelector('[data-sld-node="util_a"]').dataset.sev).toBeUndefined();
     });
 
     it('is a safe no-op on an empty / missing payload', () => {
-        mountIso();
+        mountFlat();
         expect(() => applyTelemetry(null)).not.toThrow();
         expect(() => applyTelemetry({})).not.toThrow();
     });
 
     it('onTelemetryFrame routes a Hermes frame channels block through', () => {
-        mountIso();
+        mountFlat();
         onTelemetryFrame({ schema: 'channel_innovations', channels: {
             'ups_a_soc': { is_anomalous: true },
         } });
@@ -324,6 +333,57 @@ describe('B1 — views/power.js Phase 2 Building D branch', () => {
 });
 
 // ════════════════════════════════════════════════════════════════
+//  views/power.js — SLD-R1: the DEFAULT surface carries everything
+//
+//  Regression fence for the "green tests != operator sees it" class:
+//  the iso stage silently hid the Phase 2 / 50 MW work behind a
+//  toggle. With the iso layer retired, these tests assert against
+//  the surface the operator ACTUALLY lands on after initPowerView().
+// ════════════════════════════════════════════════════════════════
+describe('SLD-R1 — default visible surface after initPowerView()', () => {
+    afterEach(async () => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+        document.body.innerHTML = '';
+        __power_test__.reset();
+    });
+
+    async function bootView() {
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: true, status: 200, json: async () => ({ hld_nodes: {} }),
+        })));
+        document.body.innerHTML =
+            '<div id="view-power"><div class="pid-action-bar"></div>'
+            + '<svg class="pid-svg"></svg></div>';
+        const { initPowerView } = await import('/assets/js/views/power.js');
+        initPowerView();
+    }
+
+    it('the genset farm + Phase 2 branch render on the default surface', async () => {
+        await bootView();
+        const svg = document.querySelector('#view-power .pid-svg');
+        expect(svg.innerHTML).toContain('data-farm="1"');
+        expect(svg.innerHTML).toContain('PHASE 2 — BUILDING D');
+        expect(svg.innerHTML).toContain('POWER BUDGET · 50 MW IT (DESIGN)');
+    });
+
+    it('no surviving code path hides the flat SLD (.sld-legacy-hidden is dead)', async () => {
+        await bootView();
+        const svg = document.querySelector('#view-power .pid-svg');
+        expect(svg.classList.contains('sld-legacy-hidden')).toBe(false);
+        // The class must not be reachable from any live module: the
+        // only writer was the retired power_cam/power_ups_iso pair.
+        expect(document.querySelectorAll('.sld-legacy-hidden')).toHaveLength(0);
+    });
+
+    it('registers the power route declaratively (S-ROUTE-01)', async () => {
+        await bootView();
+        const { isRegistered } = await import('/assets/js/core/router.js');
+        expect(isRegistered('power')).toBe(true);
+    });
+});
+
+// ════════════════════════════════════════════════════════════════
 //  views/power.js — L3 Phase 1: breaker actuation control plane
 // ════════════════════════════════════════════════════════════════
 describe('L3-1 — views/power.js breaker actuation', () => {
@@ -473,8 +533,8 @@ describe('L3-2 — views/power.js What-If sandbox', () => {
 
     it('onTelemetryFrame is a no-op while in the What-If sandbox (feed disconnected)', () => {
         mountView();
-        document.querySelector('#view-power').insertAdjacentHTML(
-            'beforeend', '<div class="sld-iso-block" data-sld-node="ups_a"></div>');
+        document.querySelector('#view-power .pid-svg').innerHTML =
+            '<g class="sld-node pf-node" data-sld-node="ups_a"><rect class="pid-symbol"/></g>';
         buildModeToggle();
         setMode('whatif');
         onTelemetryFrame({ channels: { 'ups_a_soc': { is_anomalous: true } } });

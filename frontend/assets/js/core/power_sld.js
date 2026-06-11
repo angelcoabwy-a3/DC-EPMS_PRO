@@ -128,9 +128,8 @@ let _btnReset = null;
 let _statusEl = null;
 
 // ─── Apply state to the SLD DOM ───────────────────────────────────
-// Uses querySelectorAll so iso-blocks (HTML divs in views/power_ups_iso.js)
-// AND legacy SVG <g class="sld-node"> stay in sync, regardless of which
-// layer is currently visible.
+// Uses querySelectorAll so every surface carrying the node id stays in
+// sync (post-iso-retirement: the flat SLD is the only Power surface).
 function _applyNodeState(nodeId, state) {
     // state is one of: 'energized-a' | 'energized-b' | 'battery' |
     //                  'cold' | 'fault' | 'nominal' | 'transferring'
@@ -190,9 +189,8 @@ function _applyNominalState() {
 // asset panel, not the click itself. This frees the primary
 // gesture for inspection without forcing a route change.
 //
-// Shift-click is intercepted upstream by power_ups_iso.js for TRIP
-// (returns early there). The TRIP pip click also stops propagation
-// so we never reach this handler for those gestures.
+// Shift-click was the retired iso layer's TRIP gesture — kept as a
+// guard so a stray shift-click never mis-selects.
 function _onSldClick(e) {
     if (e.shiftKey) return;
     if (e.target && e.target.closest && e.target.closest('.iso-trip-pip')) return;
@@ -282,8 +280,7 @@ function _wireEvents() {
     _btnSim?.addEventListener('click', _runSimulation);
     _btnReset?.addEventListener('click', _resetSimulation);
 
-    // Make the entire SLD canvas a click delegator for nodes (covers both
-    // legacy SVG and the iso-block layer rendered by power_ups_iso.js).
+    // Make the entire SLD canvas a click delegator for nodes.
     const canvas = document.querySelector('#view-power .pid-canvas');
     canvas?.addEventListener('click', _onSldClick);
 

@@ -180,26 +180,31 @@ function _applyTopology(data) {
 }
 
 function _setMetric(key, value) {
-    // Updates BOTH surfaces — the iso block metric span and the flat
-    // SVG <text> — wherever the metric key appears.
+    // Updates the flat-SVG <text> wherever the metric key appears.
     document.querySelectorAll(`[data-sld-metric="${key}"]`)
         .forEach((el) => { el.textContent = value; });
 }
 
 // ─── Live Kalman -> per-node severity (Hermes telemetry plane) ─────
+// SLD Reengineering 2026-06-11: the iso stage is retired — live Kalman
+// severity now paints the flat-SLD nodes directly (it previously only
+// painted the iso blocks, leaving the canonical surface blind).
 function _applyTelemetry(channels) {
     if (!channels || typeof channels !== 'object') return;
     const channelIds = Object.keys(channels);
     if (channelIds.length === 0) return;
 
-    document.querySelectorAll('#view-power .sld-iso-block').forEach((block) => {
-        const nodeId = (block.dataset.sldNode || '').toLowerCase();
+    document.querySelectorAll('#view-power .pid-svg .pf-node').forEach((node) => {
+        const nodeId = (node.dataset.sldNode || '').toLowerCase();
         if (!nodeId) return;
         const matched = channelIds
             .filter((c) => _channelMatcher(nodeId, c))
             .map((c) => channels[c]);
         if (matched.length === 0) return;
-        block.dataset.sev = severityFromChannels(matched);
+        const sev = severityFromChannels(matched);
+        node.dataset.sev = sev;
+        node.querySelectorAll('.pid-symbol')
+            .forEach((s) => s.setAttribute('data-sev', sev));
     });
 }
 

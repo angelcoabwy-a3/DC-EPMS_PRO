@@ -17,7 +17,7 @@
  *     - Battery: alive while SOC > 0 AND not tripped.
  *
  *   No external libs. State published via state.js's setState('grid', ...).
- *   Subscribers (power_ups_iso.js) re-render CSS classes on change.
+ *   Subscribers (views/power.js flat SLD) re-render on change.
  *
  *   Ref: IEEE 446 (emergency power), IEC 62040-3 (UPS classification),
  *        NFPA 110 Type 10 (10s genset start).

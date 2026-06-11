@@ -3,10 +3,9 @@
  * Forensic Replay (R2) — ring buffer + replay integration on the
  * Power SLD, ledger markers with their HMAC chain prefix.
  *
- * Selector note: after renderFlatSld() the document contains BOTH
- * the SVG <g data-sld-node="ups_a"> and the iso-block fixture —
- * assertions must qualify .sld-iso-block or they read the wrong
- * element (severity lives on different surfaces per layer).
+ * Selector note (SLD Reengineering 2026-06-11): the iso stage is
+ * retired — replay severity is asserted on the flat-SLD .pf-node,
+ * the one and only Power surface.
  * ════════════════════════════════════════════════════════════════ */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
@@ -23,8 +22,8 @@ afterEach(() => {
     document.body.innerHTML = '';
 });
 
-const isoUps = () =>
-    document.querySelector('.sld-iso-block[data-sld-node="ups_a"]');
+const flatUps = () =>
+    document.querySelector('.pf-node[data-sld-node="ups_a"]');
 
 // ════════════════════════════════════════════════════════════════
 //  Ring buffer (pure)
@@ -70,8 +69,7 @@ describe('R2 — replay mode on the Power SLD', () => {
     function mountView() {
         document.body.innerHTML =
             '<div id="view-power"><div class="pid-action-bar"></div>'
-            + '<svg class="pid-svg"></svg>'
-            + '<div class="sld-iso-block" data-sld-node="ups_a"></div></div>';
+            + '<svg class="pid-svg"></svg></div>';
         renderFlatSld();
         buildModeToggle();
         buildReplayToggle();
@@ -98,13 +96,13 @@ describe('R2 — replay mode on the Power SLD', () => {
         expect(bar.textContent).toContain('session only');   // honest scope
 
         scrubTo(1200);   // inside the anomalous window
-        expect(isoUps().dataset.sev).toBe('critical');
+        expect(flatUps().dataset.sev).toBe('critical');
         scrubTo(5000);   // quiet again
-        expect(isoUps().dataset.sev).toBe('ok');
+        expect(flatUps().dataset.sev).toBe('ok');
 
         // The live feed must NOT repaint the diagram while replaying.
         onTelemetryFrame({ channels: { ups_a_soc: { is_anomalous: true } } });
-        expect(isoUps().dataset.sev).toBe('ok');
+        expect(flatUps().dataset.sev).toBe('ok');
     });
 
     it('exiting replay returns to live and hides the bar', () => {

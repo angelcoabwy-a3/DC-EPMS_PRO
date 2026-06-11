@@ -924,30 +924,9 @@
                     </span>
                 </div>
 
-                <!-- Camera controls (v0.10.8) — bounded iso navigation -->
-                <div class="sld-cam-bar" id="sld-cam-bar">
-                    <button id="cam-mode-toggle" class="btn btn-secondary btn-sm cam-btn" type="button" title="Toggle 2.5D iso ↔ flat schematic SVG (key: F)">View: ISO</button>
-                    <span class="cam-group" title="Zoom — scroll wheel on canvas, or +/− keys, or these buttons">
-                        <span class="cam-label">ZOOM</span>
-                        <button id="cam-zoom-out" class="btn btn-secondary btn-sm cam-btn cam-icon" type="button" title="Zoom out (key: -)">−</button>
-                        <span id="cam-zoom-val" class="cam-readout">1.0×</span>
-                        <button id="cam-zoom-in" class="btn btn-secondary btn-sm cam-btn cam-icon" type="button" title="Zoom in (key: +)">+</button>
-                    </span>
-                    <span class="cam-group" title="Pitch — vertical tilt of the iso plane (key: . / ,)">
-                        <span class="cam-label">PITCH</span>
-                        <button id="cam-pitch-down" class="btn btn-secondary btn-sm cam-btn cam-icon" type="button" title="More vertical (less tilt) — key ,">↑</button>
-                        <span id="cam-pitch-val" class="cam-readout">55°</span>
-                        <button id="cam-pitch-up" class="btn btn-secondary btn-sm cam-btn cam-icon" type="button" title="More horizontal (more tilt) — key .">↓</button>
-                    </span>
-                    <span class="cam-group" title="Yaw — rotate around the vertical axis (key: [ / ])">
-                        <span class="cam-label">YAW</span>
-                        <button id="cam-yaw-left" class="btn btn-secondary btn-sm cam-btn cam-icon" type="button" title="Rotate left — key [">⟲</button>
-                        <span id="cam-yaw-val" class="cam-readout">-30°</span>
-                        <button id="cam-yaw-right" class="btn btn-secondary btn-sm cam-btn cam-icon" type="button" title="Rotate right — key ]">⟳</button>
-                    </span>
-                    <button id="cam-reset" class="btn btn-secondary btn-sm cam-btn" type="button" title="Reset camera to default iso angle (key: 0)">⌂ Reset View</button>
-                    <span class="cam-hint">drag to pan · scroll to zoom · arrows to nudge · 0 reset · F flat</span>
-                </div>
+                <!-- SLD Reengineering 2026-06-11: the iso camera bar is
+                     retired with the 2.5D stage. The flat registry-driven
+                     SLD (views/power.js) is the only Power surface. -->
 
                 <div class="pid-canvas">
                     <svg viewBox="0 0 1200 720" xmlns="http://www.w3.org/2000/svg" class="pid-svg">

@@ -37,9 +37,7 @@ import { initRackHeatmapView } from './views/rack_heatmap.js';
 import { initMissionControlView } from './views/mission_control.js';
 import { initTechAssistView } from './views/tech_assist.js';
 import { initMultiAgentView } from './views/multi_agent.js';
-import { initPowerUpsIso } from './views/power_ups_iso.js';
 import { initPowerGrid } from './core/power_grid.js';
-import { initPowerCam } from './core/power_cam.js';
 import { initAssetPanel } from './views/asset_panel.js';
 import { initScenariosView } from './views/scenarios.js';
 import { initIncidentsView } from './views/incidents.js';
@@ -88,10 +86,11 @@ initRackHeatmapView();
 initMissionControlView();
 initTechAssistView();
 initMultiAgentView();
-initPowerUpsIso();
-// Camera controls AFTER iso stage is mounted (depends on .sld-iso-stage existing)
-initPowerCam();
-// Contextual asset panel (Phase 4 v0.10.9) — must come after iso so .pid-canvas exists
+// SLD Reengineering 2026-06-11: the 2.5D iso stage (power_ups_iso.js +
+// power_cam.js) is RETIRED. The registry-driven flat SLD (views/power.js,
+// ADR-012 diagram kit) is the one and only Power & UPS surface — the iso
+// layer was Phase-1-only and silently hid the Phase 2 / 50 MW work.
+// Contextual asset panel (Phase 4 v0.10.9) — .pid-canvas is static markup
 initAssetPanel();
 // Failure-scenario simulator — T2.1: first IIFE view extracted to an ES module
 initScenariosView();
