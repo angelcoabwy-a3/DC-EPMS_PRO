@@ -306,7 +306,27 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
   - `docs/skills/agent-harness-registry.md` — 30-harness Gentle IA master registry. **Bloque 4 cerrado completo** (H06/H13/H16 all OPERATIVO). Implementations: `backend/phase_dag.py` + `backend/agent_continuity.py` + `backend/skill_audit.py`.
 - **Audit CLI**: `python -m backend.skill_audit --since HEAD~N` prints per-commit CLEAN / GAPS / UNKNOWNS reports against the registry.
 
-## ⏸ PAUSE_STATE (last updated 2026-06-10 — Diagram Rebuild Batches 0-6 closed + pushed; repo hygiene done)
+## ⏸ PAUSE_STATE (last updated 2026-06-10 EOD — 50 MW track shipped; SLD VISUAL REENGINEERING pending operator acceptance)
+
+> **🔴 NEXT SESSION ENTRY POINT — SLD visual reengineering.** The 50 MW
+> track is functionally complete and pushed (9bd3079: 22 farm units
+> drawn, count bound to gensetFarmSizing(), 490 vitest green), BUT the
+> operator's visual acceptance FAILED: "no veo las miniaturas en las
+> gráficas, hay que darle realismo y sentido". Honest report: this is
+> the THIRD time this session that green tests != operator sees it
+> (module cache, preview viewBox clip, now this). Tomorrow:
+> 1. FIRST diagnose what Wilmer actually renders: which page (preview
+>    file / innovation_demo / live HMI), screenshot-level comparison.
+>    Candidate causes: zoom level makes r=13 minis subpixel; svg
+>    max-width scaling crushes the 1200x1260 canvas; CSS for
+>    .pf-farm-idx/.pf-glyph-sm too small at fit-width.
+> 2. THEN the real ask: REINGENIERIA for realism + sense — likely a
+>    dedicated Generation view or an SLD zoom/pan + level-of-detail
+>    (farm collapses to a block at fit-width, expands on zoom), proper
+>    switchgear lineup drawing (breaker cubicles), per-unit state.
+>    Consider extending /run verification: render screenshots before
+>    declaring visual work done (Playwright P2 from the gap analysis).
+> Wait for Wilmer's GO on the chosen approach before coding.
 
 > **Diagram Rebuild (2026-06-10)** — the 5 diagram views now share ONE
 > visual language + ONE asset identity (ADR-012, skill S-DIAGRAM-01):
