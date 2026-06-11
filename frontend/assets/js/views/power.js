@@ -39,6 +39,8 @@ import {
 import {
     sldToTopoMap, channelPrefixesFor, matchesChannel, nodesWhere,
 } from '../core/node_registry.js';
+import { n1Power } from '../core/contingency.js';
+import { createN1Overlay } from '../core/n1_overlay.js';
 
 let _initialized = false;
 let _unsubTelemetry = null;
@@ -491,6 +493,9 @@ function _onFlatClick(e) {
 // ════════════════════════════════════════════════════════════════
 function _setMode(mode) {
     _mode = (mode === 'whatif') ? 'whatif' : 'live';
+    // Entering the sandbox retires the N-1 shadow (it assumes the
+    // intact topology the sandbox is about to mutate).
+    if (_mode === 'whatif') _setN1(false);
     const view = document.getElementById('view-power');
     if (view) view.classList.toggle('pwr-whatif', _mode === 'whatif');
     const btn = document.getElementById('pwr-mode-toggle');
@@ -520,6 +525,51 @@ function _buildModeToggle() {
     btn.addEventListener('click', () => _setMode(_mode === 'live' ? 'whatif' : 'live'));
     const bar = view.querySelector('.pid-action-bar') || view;
     bar.insertBefore(btn, bar.firstChild);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  N-1 SHADOW (innovation track) — the blast radius, always visible
+//
+//  Pure steady-state contingency over the same DAG topology: every
+//  node carries its sustained single-failure consequence as a badge
+//  (lost / degraded / absorbed; battery holdup honestly excluded),
+//  hover lights the victims. Disabled inside the What-If sandbox —
+//  the sandbox mutates the topology state the shadow assumes intact.
+// ════════════════════════════════════════════════════════════════
+const _n1Overlay = createN1Overlay({
+    rootSelector: '#view-power .pid-svg',
+    nodeSelector: '.pf-node',
+    idAttr: 'sldNode',
+    nameSelector: '.pf-name',
+    analysisFn: n1Power,
+});
+
+function _setN1(on) {
+    if (on && _mode === 'whatif') return;   // sandbox excludes the shadow
+    if (on) _n1Overlay.attach(); else _n1Overlay.detach();
+    const btn = document.getElementById('pwr-n1-toggle');
+    if (btn) {
+        btn.dataset.on = on ? '1' : '0';
+        btn.classList.toggle('is-on', on);
+    }
+}
+
+function _buildN1Toggle() {
+    if (document.getElementById('pwr-n1-toggle')) return;
+    const view = document.getElementById('view-power');
+    if (!view) return;
+    const btn = document.createElement('button');
+    btn.id = 'pwr-n1-toggle';
+    btn.type = 'button';
+    btn.className = 'pwr-mode-toggle pwr-n1-toggle';
+    btn.dataset.on = '0';
+    btn.textContent = '◬ N-1 SHADOW';
+    btn.title = 'Sustained single-failure contingency painted on the SLD '
+        + '(structural availability; battery holdup excluded)';
+    btn.addEventListener('click', () => _setN1(btn.dataset.on !== '1'));
+    const bar = view.querySelector('.pid-action-bar') || view;
+    const modeBtn = document.getElementById('pwr-mode-toggle');
+    bar.insertBefore(btn, modeBtn ? modeBtn.nextSibling : bar.firstChild);
 }
 
 /** Render the local DAG grid state (the fault cascade) onto the flat SLD. */
@@ -560,6 +610,7 @@ export function initPowerView() {
     // L3 Phase 2: LIVE <-> WHAT-IF toggle + flat-SLD render of the local
     // DAG fault-cascade (the sandbox's simulated faults become visible).
     _buildModeToggle();
+    _buildN1Toggle();
     subscribe('grid', _applyGrid);
     // T3.1: live severity from the Hermes telemetry stream — the legacy
     // 5 s setInterval poll is eradicated.
@@ -584,6 +635,9 @@ export const __power_test__ = {
     setMode: _setMode,
     getMode: () => _mode,
     buildModeToggle: _buildModeToggle,
+    buildN1Toggle: _buildN1Toggle,
+    setN1: _setN1,
+    n1Overlay: _n1Overlay,
     applyGrid: _applyGrid,
     sparkPoints,
     updateSparklines: _updateSparklines,
@@ -594,6 +648,7 @@ export const __power_test__ = {
         if (_unsubTelemetry) { _unsubTelemetry(); _unsubTelemetry = null; }
         const modal = document.getElementById('pwr-breaker-modal');
         if (modal) modal.remove();
+        _n1Overlay.detach();
         _sparkTracker.reset();
     },
 };

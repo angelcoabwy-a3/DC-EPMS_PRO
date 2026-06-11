@@ -8263,3 +8263,13 @@ body {
 }
 .mc-crumb-home:hover { text-decoration: underline; }
 .mc-crumb-sep { color: #3d4c5a; }
+
+/* N-1 Shadow (innovation track) — contingency badges + victim glow. */
+.dk-n1-badge { font-size: 9px; letter-spacing: .05em; text-anchor: middle;
+               fill: var(--dk-muted); paint-order: stroke; stroke: #0B0D10; stroke-width: 3px; }
+.dk-n1-badge[data-tone="ok"] { fill: var(--dk-sev-ok); opacity: .65; }
+.dk-n1-badge[data-tone="warning"] { fill: var(--dk-sev-warning); }
+.dk-n1-badge[data-tone="critical"] { fill: var(--dk-sev-critical); font-weight: 700; }
+.dk-n1-victim { filter: drop-shadow(0 0 7px var(--dk-sev-critical)); }
+.dk-n1-deg { filter: drop-shadow(0 0 6px var(--dk-sev-warning)); }
+.pwr-n1-toggle.is-on { border-color: var(--dk-dc); color: var(--dk-dc); }

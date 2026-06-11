@@ -33,6 +33,8 @@ import { channelPrefixesFor, matchesChannel } from '../core/node_registry.js';
 import {
     initCoolingGrid, toggleTrip, restoreAll, getGridState,
 } from '../core/cooling_grid.js';
+import { n1Cooling } from '../core/contingency.js';
+import { createN1Overlay } from '../core/n1_overlay.js';
 
 let _initialized = false;
 let _mode = 'live';            // 'live' | 'whatif'
@@ -324,9 +326,47 @@ function _onCoolClick(e) {
     }
 }
 
+// ── N-1 Shadow (shared overlay; see views/power.js rationale) ──
+const _n1Overlay = createN1Overlay({
+    rootSelector: '#view-cooling .pid-svg',
+    nodeSelector: '.cool-node',
+    idAttr: 'node',
+    nameSelector: '.cool-name',
+    analysisFn: n1Cooling,
+});
+
+function _setN1(on) {
+    if (on && _mode === 'whatif') return;
+    if (on) _n1Overlay.attach(); else _n1Overlay.detach();
+    const btn = document.getElementById('cool-n1-toggle');
+    if (btn) {
+        btn.dataset.on = on ? '1' : '0';
+        btn.classList.toggle('is-on', on);
+    }
+}
+
+function _buildN1Toggle() {
+    if (document.getElementById('cool-n1-toggle')) return;
+    const view = document.getElementById('view-cooling');
+    if (!view) return;
+    const btn = document.createElement('button');
+    btn.id = 'cool-n1-toggle';
+    btn.type = 'button';
+    btn.className = 'pwr-mode-toggle pwr-n1-toggle';
+    btn.dataset.on = '0';
+    btn.textContent = '◬ N-1 SHADOW';
+    btn.title = 'Sustained single-failure contingency painted on the P&ID '
+        + '(availability semantics; not thermodynamics)';
+    btn.addEventListener('click', () => _setN1(btn.dataset.on !== '1'));
+    const bar = view.querySelector('.pid-action-bar') || view;
+    const modeBtn = document.getElementById('cool-mode-toggle');
+    bar.insertBefore(btn, modeBtn ? modeBtn.nextSibling : bar.firstChild);
+}
+
 // ── What-If sandbox toggle ──
 function _setMode(mode) {
     _mode = (mode === 'whatif') ? 'whatif' : 'live';
+    if (_mode === 'whatif') _setN1(false);   // shadow assumes intact topology
     const view = document.getElementById('view-cooling');
     if (view) view.classList.toggle('cool-whatif', _mode === 'whatif');
     const btn = document.getElementById('cool-mode-toggle');
@@ -405,6 +445,7 @@ export function initCoolingView() {
     const svg = document.querySelector('#view-cooling .pid-svg');
     if (svg) svg.addEventListener('click', _onCoolClick);
     _buildModeToggle();
+    _buildN1Toggle();
     initCoolingGrid();
     subscribe('coolgrid', _applyGrid);
     _unsubTelemetry = onHermesStream('telemetry', _onTelemetryFrame);
@@ -425,6 +466,9 @@ export const __cooling_test__ = {
     setMode: _setMode,
     getMode: () => _mode,
     buildModeToggle: _buildModeToggle,
+    buildN1Toggle: _buildN1Toggle,
+    setN1: _setN1,
+    n1Overlay: _n1Overlay,
     updateSparklines: _updateSparklines,
     channelMatcher: _channelMatcher,
     reset: () => {
@@ -433,6 +477,7 @@ export const __cooling_test__ = {
         if (_unsubTelemetry) { _unsubTelemetry(); _unsubTelemetry = null; }
         const modal = document.getElementById('cool-pump-modal');
         if (modal) modal.remove();
+        _n1Overlay.detach();
         if (getGridState()) restoreAll();
         _sparkTracker.reset();
     },
