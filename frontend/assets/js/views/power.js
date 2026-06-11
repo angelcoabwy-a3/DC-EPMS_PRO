@@ -842,6 +842,7 @@ export const __power_test__ = {
     onTelemetryFrame: _onTelemetryFrame,
     buildFlatMarkup: _buildFlatMarkup,
     buildPhase2Markup: _flatPhase2,
+    flatViewBox: _FLAT.viewBox,
     renderFlatSld: _renderFlatSld,
     openBreakerModal: _openBreakerModal,
     submitBreakerCommand: _submitBreakerCommand,

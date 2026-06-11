@@ -831,6 +831,23 @@ app.add_middleware(
 )
 
 
+# --------------------------------------------------------------
+# Stale-module guard: browsers heuristically cache ES modules and
+# CSS served without Cache-Control, so a hard deploy could leave
+# operators running WEEKS-old frontend code silently (bit this
+# session three times). no-cache forces revalidation on every load
+# -- StaticFiles answers 304 via Last-Modified when unchanged, so
+# the cost is one conditional request per asset, never staleness.
+# --------------------------------------------------------------
+@app.middleware("http")
+async def _no_stale_frontend(request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.startswith("/assets/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # ==============================================================
 #  Helpers
 # ==============================================================

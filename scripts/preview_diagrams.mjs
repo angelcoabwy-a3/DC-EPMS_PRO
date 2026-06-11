@@ -20,6 +20,10 @@ const { __topology_test__ } = await import('../frontend/assets/js/views/topology
 const powerSvg = __power_test__.buildFlatMarkup();
 const coolingSvg = __cooling_test__.buildCoolingSld();
 const hldSvg = __topology_test__.buildHldMarkup();
+// ViewBoxes come from the modules — a hardcoded box CLIPS new content
+// (lesson: the 50 MW genset farm was invisible below y=1080).
+const powerVB = __power_test__.flatViewBox;
+const coolVB = __cooling_test__.coolViewBox;
 
 const page = `<!DOCTYPE html>
 <html lang="es">
@@ -51,13 +55,13 @@ sin telemetría viva, sin login — para eso, el HMI en
 <strong>fence AC/DC rotulado</strong> → SSCB (IEC 60947-2) → bus 800 VDC →
 BESS 2.5 MWh + RPP D1/D2. Punteado = DESIGN (no desplegado). Leyenda compartida
 arriba a la izquierda.</p>
-<svg viewBox="0 0 1200 1080" class="pf-svg pid-svg" xmlns="http://www.w3.org/2000/svg">${powerSvg}</svg>
+<svg viewBox="${powerVB}" class="pf-svg pid-svg" xmlns="http://www.w3.org/2000/svg">${powerSvg}</svg>
 
 <h2>2 · COOLING (DLC) — P&amp;ID ortogonal sobre el kit compartido</h2>
 <p class="note">Mismo lenguaje visual que Power (kit + tokens de severidad
 unificados). En el HMI, el botón WHAT-IF ahora tripea el DAG hidráulico real:
 un chiller → su peer N+1 queda en warning; ambos → CDUs + hall en critical.</p>
-<svg viewBox="0 0 1040 740" class="cool-svg pid-svg" xmlns="http://www.w3.org/2000/svg">${coolingSvg}</svg>
+<svg viewBox="${coolVB}" class="cool-svg pid-svg" xmlns="http://www.w3.org/2000/svg">${coolingSvg}</svg>
 
 <h2>3 · TOPOLOGY (HLD) — system-of-systems generado desde el registry</h2>
 <p class="note">El SVG estático de 18 KB murió. Flujos 100% ortogonales,

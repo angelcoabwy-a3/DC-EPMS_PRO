@@ -457,6 +457,7 @@ export function initCoolingView() {
 export const __cooling_test__ = {
     applyCoolingPid: _applyCoolingPid,
     buildCoolingSld: _buildCoolingSld,
+    coolViewBox: _COOL.viewBox,
     renderCoolingSld: _renderCoolingSld,
     bmsTagFor: _bmsTagFor,
     openPumpModal: _openPumpModal,
