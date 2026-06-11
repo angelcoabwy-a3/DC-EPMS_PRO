@@ -134,8 +134,10 @@ def test_oesc_jurisdiction_ontario(docs):
 def test_graph_has_expected_component_count(graph):
     components = [n for n, d in graph.nodes(data=True) if d.get("kind") == "component"]
     # 91 original + 7 Path D (Phase 2 SLD) + 12 G1 taxonomy slice
-    # (2 system roots + 10 genset/CDU micro-components) = 110.
-    assert len(components) == 110
+    # (2 system roots + 10 genset/CDU micro-components) + 3 Path D
+    # standby generation (50 MW track: gen_farm_d, mv_bus_d,
+    # stepup_xfmr_d) = 113.
+    assert len(components) == 113
 
 
 def test_graph_has_baseline_knowledge_nodes(graph):

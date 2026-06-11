@@ -73,11 +73,12 @@ const ENTRIES = [
     { id: 'rpp_d1',   label: 'RPP D1',               type: 'rpp',      phase: 2, chain: 'power', topo: null, graph: ['rpp_d_01'],       channels: ['rpp_d1'] },
     { id: 'rpp_d2',   label: 'RPP D2',               type: 'rpp',      phase: 2, chain: 'power', topo: null, graph: ['rpp_d_02'],       channels: ['rpp_d2'] },
     // 50 MW track — genset farm (design): MV paralleling at 13.8 kV,
-    // step-up to 35 kV before the rectifier's AC side. Not in the
-    // backend graph yet (design visual; graph wiring is future scope).
-    { id: 'gen_farm_d', label: 'GENSET FARM · 13.8 kV', type: 'genset', phase: 2, chain: 'power', topo: null, graph: [], channels: ['gen_farm'] },
-    { id: 'mv_bus_d',  label: 'MV PARALLELING BUS · 13.8 kV', type: 'parbus', phase: 2, chain: 'power', topo: null, graph: [], channels: [] },
-    { id: 'stepup_d',  label: 'STEP-UP XFMR 13.8→35 kV', type: 'xfmr', phase: 2, chain: 'power', topo: null, graph: [], channels: [] },
+    // step-up to 35 kV before the rectifier's AC side. Grounded on the
+    // backend graph since MVP S2 (site_model.yml Path D standby
+    // generation: gen_farm_d -> mv_bus_d -> stepup_xfmr_d -> rectifier).
+    { id: 'gen_farm_d', label: 'GENSET FARM · 13.8 kV', type: 'genset', phase: 2, chain: 'power', topo: null, graph: ['gen_farm_d'], channels: ['gen_farm_d', 'farm_'] },
+    { id: 'mv_bus_d',  label: 'MV PARALLELING BUS · 13.8 kV', type: 'parbus', phase: 2, chain: 'power', topo: null, graph: ['mv_bus_d'], channels: ['mv_bus_d'] },
+    { id: 'stepup_d',  label: 'STEP-UP XFMR 13.8→35 kV', type: 'xfmr', phase: 2, chain: 'power', topo: null, graph: ['stepup_xfmr_d'], channels: ['stepup_xfmr_d'] },
     { id: 'hall_d',   label: 'GB300 NVL144 · 250 RACKS @ 200 kW', type: 'hall', phase: 2, chain: 'it', topo: null, graph: [], channels: ['hall_d'] },
 
     // ── Cooling chain (Phase 1) ──────────────────────────────────

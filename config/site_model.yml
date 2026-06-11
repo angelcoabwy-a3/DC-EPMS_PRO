@@ -346,6 +346,15 @@ power_chains:
   - {from: main_bus_dc_d,   to: rpp_d_02}
   - {from: bess_d_01,       to: main_bus_dc_d}   # BESS discharges back onto the DC bus
 
+  # ── Path D standby generation (50 MW track — genset farm, design)
+  #    >50 MW cannot be one prime mover: N+2 farm of 3.2 MW MV units on a
+  #    13.8 kV paralleling bus (ANSI 25 sync, dead-bus black start),
+  #    stepped UP to 35 kV before joining the rectifier's AC side — the
+  #    farm is AC plant ONLY; it never touches the 800 VDC fence.
+  - {from: gen_farm_d,      to: mv_bus_d}
+  - {from: mv_bus_d,        to: stepup_xfmr_d}
+  - {from: stepup_xfmr_d,   to: mv_rectifier_d}   # standby alternate onto the 35 kV AC side
+
 
 # ════════════════════════════════════════════════════════════════════════
 #  Cooling chains — DAG of "what cools what"
@@ -561,6 +570,27 @@ components:
     display: "RPP-D2 (Phase 2 / GB300 NVL144 rows)"
     type: rpp
     rated_kw: 2000
+  # 50 MW track — standby genset farm (design). Sizing mirrors the
+  # frontend budget model (core/power_budget.js): 20 required for the
+  # ~62 MW facility total + 2 redundant = 22 x 3.2 MW = 70.4 MW.
+  gen_farm_d:
+    display: "Genset Farm D (22 x 3.2 MW MV standby, 13.8 kV, N+2)"
+    type: genset_farm
+    voltage_kv: 13.8
+    unit_count: 22
+    unit_rated_mw: 3.2
+    redundancy: "N+2"
+    rated_capacity_mw: 70.4
+  mv_bus_d:
+    display: "MV Paralleling Bus D (13.8 kV, ANSI 25 sync, dead-bus black start)"
+    type: mv_bus
+    voltage_kv: 13.8
+  stepup_xfmr_d:
+    display: "Step-Up Transformer D (13.8 -> 35 kV)"
+    type: transformer
+    rated_kva: 70000
+    voltage_kv_primary: 13.8
+    voltage_kv_secondary: 35.0
 
   # ── Cooling
   chiller_1:
