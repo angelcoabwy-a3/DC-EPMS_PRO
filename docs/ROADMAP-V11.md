@@ -1,10 +1,64 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.17 (2026-05-23) — Epic 4 DELIVERED out-of-roadmap · Epic 5 QUEUED (Optimizer HMI v2) · Epic 3.B still deferred
+- **Status**: v11.18 (2026-06-11) — **MVP FINAL PLAN S1-S6 APPROVED** (operator blanket GO) · SLD Reengineering A-C delivered · Epic 5 next after backend grounding · Epic 3.B cut from MVP
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-05-23 (v11.17)
+- **Locked**: 2026-05-10 · **Synced**: 2026-06-11 (v11.18)
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
+- **v11.18 sync (2026-06-11) — THE MVP CUT.** Operator approved the full
+  re-engineering evaluation + MVP-final plan in one blanket GO
+  ("aprobamos todo"). Two parts:
+
+  **(1) SLD Reengineering delivered same session (Batches A-C):**
+  the third "green tests != operator sees it" failure was diagnosed
+  as structural — `#view-power` booted into the 2.5D iso stage
+  (Phase-1-only, zero Phase 2 / 50 MW content) while every Diagram
+  Rebuild feature lived on the hidden flat SLD. `345e098` retired the
+  iso stage + camera (-851 LOC; flat SLD = the ONE Power surface;
+  live Kalman severity retargeted onto it; SLD-R1 default-surface
+  regression fence). `cf0c331` farm level-of-detail (LOD 0 honest
+  lineup block; LOD 1 viewBox-focused per-unit switchgear cubicles
+  with NFPA 110 state strips; `farmUnits()` single source).
+  `a6eecd1` codified `S-VISUAL-01` (visual closure on the DEFAULT
+  rendered surface) + default-first preview tool. vitest 490 -> 500
+  (31 files).
+
+  **(2) MVP FINAL — approved sequence (panel: early August 2026):**
+
+  ```
+  S1  jun 11-17   SLD Reengineering A-C  [DELIVERED 2026-06-11]
+  S2  jun 18-24   Bloque 3 backend grounding: farm + mv_bus_d +
+                  stepup_d into site_model graph; Phase 2 design-sim
+                  telemetry channels (labeled DESIGN); power_grid DAG
+                  + n1Power extended to Building D
+  S3  jun 25-jul 1  Epic 5 Sprints 1+2 (E5.A heartbeat, E5.C 6-agent
+                  breakdown, E5.B approval sidebar, E5.D forensic
+                  trail link) ~21 h
+  S4  jul 2-8     Epic 5 Sprint 3 (E5.F config, E5.G analytics,
+                  E5.E What-If preview) + bug closeout: T1.6,
+                  DC-EPMS-029c, DC-EPMS-TEST-01, E2E WARNING triage
+  S5  jul 9-15    FEATURE FREEZE -> T1.1 Mission Control eyeball
+                  validation, DEMO_SCRIPT v5, replay_demo refresh,
+                  full regression, tag v1.0.0-rc
+  S6  jul 16-22   T1.3 OBS rehearsals x3 + final take + edit;
+                  hardening; tag v1.0.0 MVP (tag-is-not-closure
+                  verified)
+  S7+ jul 23-aug  EXPLICIT BUFFER: interview prep, zero new code,
+                  P0 fixes only
+  ```
+
+  **Executive decisions under the blanket GO:** iso stage RETIRED
+  (not demoted — Mission Control covers the spatial wow); Epic 5
+  COMPLETE (all 3 sprints, E5.E included); **CUT from MVP**: 3.B
+  OT Security/Morpheus, T2.3 Vite+TS (DC-EPMS-036 lesson — toolchain
+  churn weeks before panel), T3.7 Module Federation, T3.8 DPO, T3.2
+  voice-whisper, T3.9 orbit camera, T3.10 PDF, Hermes V1.0
+  confederation. `edge/` polyglot stays OUT unless the operator's A3
+  manifest lands before S3. MVP definition-of-done: one canonical
+  SLD surface with the farm legible + grounded Phase 2 data,
+  6-agent breakdown + forensic trail visible in the Optimizer HMI,
+  suites green with bugs closed-or-adjudicated, DEMO_SCRIPT v5 +
+  recorded OBS take + runbook, tag v1.0.0 on a NEW verified commit.
 - **v11.17 sync (2026-05-23)**: **Epic 5 QUEUED** (Optimizer HMI v2 -- 7 tasks,
   ~35h, observability + multi-agent transparency + Epic 4 wire-up). Also
   retroactively records two events delivered out-of-roadmap since v11.16:

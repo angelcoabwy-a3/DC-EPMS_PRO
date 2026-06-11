@@ -15,11 +15,34 @@ DC-EPMS PRO simulates **A3-Alpha Toronto Area** under **Path C2** (sealed 2026-0
 
 **🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in CO+I panel review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
 
-## 📊 CURRENT STATE (synced 2026-06-10 — Diagram Rebuild B0-B6 closed; repo hygiene done; Epic 10 verified)
+## 📊 CURRENT STATE (synced 2026-06-11 — SLD Reengineering A-C closed; MVP plan S1-S6 approved)
 
 ```
-HEAD:  Diagram Rebuild closure (master == origin/master). 2026-06-10
-       sessions: (a) repo hygiene -- ruff gate fix acf00b9, root
+HEAD:  SLD REENGINEERING A-C (2026-06-11). Root cause of "no veo las
+       miniaturas" was structural: #view-power booted into the 2.5D
+       iso stage, which carried ZERO Phase 2 / 50 MW content.
+       * 345e098 Batch A: iso stage RETIRED (power_ups_iso.js +
+         power_cam.js deleted, -851 LOC). Flat registry-driven SLD =
+         the ONE Power surface; live Kalman severity finally paints
+         it (it previously painted only the iso blocks). SLD-R1
+         regression fence: farm + Phase 2 asserted on the DEFAULT
+         surface after initPowerView().
+       * cf0c331 Batch B: genset farm LEVEL-OF-DETAIL. LOD 0 =
+         honest switchgear-lineup block at fit-width (count/rating/
+         N+2/farm MW from power_budget.js, state summary, expand
+         hint). LOD 1 = click -> viewBox focus + one REAL cubicle
+         per unit (ANSI 52, gen glyph, G01..G22, rating, NFPA 110
+         state strip). farmUnits() roster = single source.
+       * a6eecd1 Batch C: S-VISUAL-01 visual-closure gate (registry
+         32 skills / 15 categories) + preview tool renders the
+         DEFAULT surface first + farm LOD 1 section.
+       MVP PLAN S1-S6 APPROVED (operator: "aprobamos todo") -- see
+       ROADMAP-V11.md v11.18. Decisions: iso retired (not demoted),
+       Epic 5 complete (3 sprints), edge/ OUT of MVP unless the A3
+       manifest lands before S3. NEXT: S2 = Bloque 3 backend
+       grounding (farm into site_model graph + Phase 2 design-sim
+       telemetry channels + DAG/N-1 over Building D).
+       Previous sync 2026-06-10: (a) repo hygiene -- ruff gate fix acf00b9, root
        batch-era artifacts archived ca31e09, BMO runbooks 9abd84a,
        doc-syncs 585763f/1859aee/bf16ca1; (b) DIAGRAM REBUILD
        Batches 0-5: shared diagram kit + canonical node registry
@@ -67,15 +90,16 @@ HEAD:  Diagram Rebuild closure (master == origin/master). 2026-06-10
 
 Tests:   backend 1409 passed (Epic 10 +60; incl. 7 PG integration) —
          full pytest ~62s, 0 fail, 5 deselected (slow/FAISS AVX2).
-         frontend 449 vitest passed across 28 files (Diagram Rebuild
-         +81: kit/registry 22, cooling DAG 11, HLD 8, site graph 9,
-         power_grid + engineering 21, Phase 2 SLD 10).
+         frontend 500 vitest passed across 31 files (Diagram Rebuild
+         +81; 50 MW track -> 490; SLD Reengineering A-C -> 500:
+         SLD-R1 default-surface fence + SLD-R2 farm LOD).
          GraphRAG: 14 knowledge documents at boot (+2 Q-state track:
          galaxy-vx-internal-oneline, genset-farm-mv-paralleling).
          BMS catalog: 62 tags (+10 PWR.UPS_x.Qn_POS breaker positions).
          Architect library: 29 catalog MOPs pre-seeded, all audit=APPROVE.
-         Skills registry: 31 explicit skills across 14 categories
-         (S-DIAGRAM-01 added per ADR-012).
+         Skills registry: 32 explicit skills across 15 categories
+         (S-VISUAL-01 added: visual closure on the DEFAULT rendered
+         surface, never on markup strings alone).
          ruff: 0 violations in backend/ (generated protobuf excluded).
 
 Perf baseline (AMD Ryzen + Win11):
@@ -302,31 +326,40 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 - **RUNTIME CONSTRAINT — `S-RUNTIME-01`.** The Python backend does NOT hot-reload. After any backend / agent-wiring change, the active process MUST be restarted and the `[BOOT]` log signature in `logs/epms_pro.log` verified alongside `/api/health` before conducting smoke tests — to prevent stale-code false positives (the post-Epic-1 smoke surfaced exactly this failure mode: PID 46172 ran a pre-T3.3 module for 2+ days while unit tests + frontend smoke all passed, silently returning empty narratives).
 - **Companion files (binding)**:
   - `docs/engram/main-context.md` — architectural state snapshot.
-  - `docs/skills/skill-registry.md` — 31 skills across 14 categories. Latest addition (Diagram Rebuild): `S-DIAGRAM-01` (all engineering diagrams ride `diagram_kit` + `node_registry`, ADR-012); prior (Epic 8): `S-TELEMETRY-01`, `S-OCP-CDU-01`, `S-PTP-01`.
+  - `docs/skills/skill-registry.md` — 32 skills across 15 categories. Latest addition (SLD Reengineering): `S-VISUAL-01` (visual work closes on the DEFAULT rendered surface — vitest on the activated view + regenerated preview eyeballed, never markup strings alone); prior: `S-DIAGRAM-01` (ADR-012), `S-TELEMETRY-01`, `S-OCP-CDU-01`, `S-PTP-01`.
   - `docs/skills/agent-harness-registry.md` — 30-harness Gentle IA master registry. **Bloque 4 cerrado completo** (H06/H13/H16 all OPERATIVO). Implementations: `backend/phase_dag.py` + `backend/agent_continuity.py` + `backend/skill_audit.py`.
 - **Audit CLI**: `python -m backend.skill_audit --since HEAD~N` prints per-commit CLEAN / GAPS / UNKNOWNS reports against the registry.
 
-## ⏸ PAUSE_STATE (last updated 2026-06-10 EOD — 50 MW track shipped; SLD VISUAL REENGINEERING pending operator acceptance)
+## ⏸ PAUSE_STATE (last updated 2026-06-11 — SLD Reengineering A-C CLOSED; MVP plan S1-S6 approved)
 
-> **🔴 NEXT SESSION ENTRY POINT — SLD visual reengineering.** The 50 MW
-> track is functionally complete and pushed (9bd3079: 22 farm units
-> drawn, count bound to gensetFarmSizing(), 490 vitest green), BUT the
-> operator's visual acceptance FAILED: "no veo las miniaturas en las
-> gráficas, hay que darle realismo y sentido". Honest report: this is
-> the THIRD time this session that green tests != operator sees it
-> (module cache, preview viewBox clip, now this). Tomorrow:
-> 1. FIRST diagnose what Wilmer actually renders: which page (preview
->    file / innovation_demo / live HMI), screenshot-level comparison.
->    Candidate causes: zoom level makes r=13 minis subpixel; svg
->    max-width scaling crushes the 1200x1260 canvas; CSS for
->    .pf-farm-idx/.pf-glyph-sm too small at fit-width.
-> 2. THEN the real ask: REINGENIERIA for realism + sense — likely a
->    dedicated Generation view or an SLD zoom/pan + level-of-detail
->    (farm collapses to a block at fit-width, expands on zoom), proper
->    switchgear lineup drawing (breaker cubicles), per-unit state.
->    Consider extending /run verification: render screenshots before
->    declaring visual work done (Playwright P2 from the gap analysis).
-> Wait for Wilmer's GO on the chosen approach before coding.
+> **✅ SLD REENGINEERING A-C CLOSED (2026-06-11, operator GO "aprobamos
+> todo").** Root cause of "no veo las miniaturas" was NOT the mini
+> size: `power_cam.js` defaulted #view-power to the 2.5D ISO stage,
+> which carried ZERO Phase 2 / 50 MW content — everything new lived on
+> the flat SLD behind `.sld-legacy-hidden`. Delivered:
+> * `345e098` Batch A — iso stage + camera RETIRED (-851 LOC). Flat
+>   SLD = the ONE Power surface. Live Kalman severity retargeted to
+>   `.pf-node` (was painting only the iso blocks). SLD-R1 regression
+>   fence: farm + Phase 2 asserted on the DEFAULT surface.
+> * `cf0c331` Batch B — farm LEVEL-OF-DETAIL: LOD 0 honest lineup
+>   block at fit-width; click -> LOD 1 viewBox focus with one real
+>   switchgear cubicle per unit (52, G01..G22, rating, NFPA 110 state
+>   strip). `farmUnits()` in power_budget.js = single source.
+> * `a6eecd1` Batch C — `S-VISUAL-01` (visual closure on the DEFAULT
+>   rendered surface; registry 32/15) + preview tool default-first +
+>   farm LOD 1 section. `node scripts/preview_diagrams.mjs` -> open
+>   `logs/diagram_preview.html` (secciones 1 y 1b) for acceptance.
+> **PENDING OPERATOR VISUAL ACCEPTANCE** of the preview / live HMI —
+> per S-VISUAL-01 the loop closes when Wilmer SEES it.
+>
+> **🔴 NEXT SESSION ENTRY POINT — MVP S2: Bloque 3 backend grounding.**
+> Per the approved MVP plan (ROADMAP-V11.md v11.18): farm + mv_bus_d +
+> stepup_d into the `site_model.yml` graph; Phase 2 design-sim
+> telemetry channels (clearly labeled DESIGN); extend `power_grid.js`
+> DAG + `n1Power` to Building D so What-If and N-1 Shadow work on
+> Phase 2. Then S3-S4 = Epic 5 (3 sprints, ~35 h). Executive decisions
+> already taken under the blanket GO: iso retired (not demoted), Epic 5
+> complete, edge/ OUT of MVP unless the A3 manifest lands before S3.
 
 > **Diagram Rebuild (2026-06-10)** — the 5 diagram views now share ONE
 > visual language + ONE asset identity (ADR-012, skill S-DIAGRAM-01):
@@ -393,8 +426,8 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 
 ### State at sync time
 
-- `master` == `origin/master` (hygiene + Diagram Rebuild B0-B5 pushed; B6 closure commits push at session end).
-- Test floors: **1409 backend pytest / 449 vitest across 28 files** (Diagram Rebuild +81 vitest; backend untouched this session).
+- SLD Reengineering A-C committed locally (`345e098` / `cf0c331` / `a6eecd1` + doc-sync); push at session end.
+- Test floors: **1409 backend pytest / 500 vitest across 31 files** (SLD Reengineering +10 vitest net of fixture migration; backend untouched this session).
 - Env: venv restored to pyproject baseline (chromadb 0.5.18, langchain-core 0.2.43, pydantic 2.9.2); `protobuf` bumped to 6.33.6 + pinned `>=6.31.1,<7` in pyproject; otel floated to 1.42.1; orphan experiment pkgs (crewai*, instructor, langchain-anthropic, langchain-protocol) uninstalled. Forensic backup at `logs/env-rollback-20260528-210919/`.
 - Rust toolchain INSTALLED (rustup 1.29 / rustc+cargo 1.96, host x86_64-pc-windows-msvc, linker via VS Build Tools 2026). `edge/gateway-rs/` scaffolded + builds + 2 tests green (tokio + nalgebra wired; rmodbus + tonic declared, phase 2).
 - Ruff: generated protobuf (`*_pb2.py`, `*_pb2_grpc.py`) excluded.
