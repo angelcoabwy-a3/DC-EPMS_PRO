@@ -64,6 +64,28 @@ export const TOPOLOGY = {
     ddu_b4:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
     ddu_b5:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
     ddu_b6:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
+
+    // ── Phase 2 — Building D (Path C2 DESIGN, MVP S2) ──────────────
+    // Mirrors site_model.yml Path D: 35 kV AC -> MV Rectifier ->
+    // SSCB -> 800 VDC UNIPOLAR TN-S bus -> {BESS, RPP D1/D2} -> hall.
+    // The genset farm is the standby AC source: 13.8 kV paralleling
+    // bus -> step-up 13.8/35 kV -> the rectifier's AC side. Dead-bus
+    // black start is modeled INSTANT in the sandbox (the real farm
+    // takes ~10 s; design-sim honesty note in the UI).
+    util_d:     { type: 'util',   path: 'D', sources: [],                        targets: ['mv_rect_d'] },
+    gen_farm_d: { type: 'farm',   path: 'D', sources: [],                        targets: ['mv_bus_d'] },
+    mv_bus_d:   { type: 'mvbus',  path: 'D', sources: ['gen_farm_d'],            targets: ['stepup_d'] },
+    stepup_d:   { type: 'xfmr',   path: 'D', sources: ['mv_bus_d'],              targets: ['mv_rect_d'] },
+    mv_rect_d:  { type: 'mvrect', path: 'D', sources: ['util_d', 'stepup_d'],    targets: ['sscb_d'],
+                  primary: 'util_d', secondary: 'stepup_d' },
+    sscb_d:     { type: 'sscb',   path: 'D', sources: ['mv_rect_d'],             targets: ['dc_bus_d'] },
+    dc_bus_d:   { type: 'dcbus',  path: 'D', sources: ['sscb_d'],                targets: ['bess_d', 'rpp_d1', 'rpp_d2'] },
+    // BESS is bus-parallel storage (a load/reserve, never a steady-
+    // state source in this DAG — same finite-holdup rule as batteries).
+    bess_d:     { type: 'bess',   path: 'D', sources: ['dc_bus_d'],              targets: [] },
+    rpp_d1:     { type: 'rpp',    path: 'D', sources: ['dc_bus_d'],              targets: ['hall_d'] },
+    rpp_d2:     { type: 'rpp',    path: 'D', sources: ['dc_bus_d'],              targets: ['hall_d'] },
+    hall_d:     { type: 'hall',   path: 'D', sources: ['rpp_d1', 'rpp_d2'],      targets: [] },
 };
 
 // Topological order — utility roots, then conditional sources, then chain.
@@ -79,6 +101,10 @@ const TOPO_ORDER = [
     // Leaf DDUs propagate from busway alive state
     'ddu_a1', 'ddu_a2', 'ddu_a3', 'ddu_a4', 'ddu_a5', 'ddu_a6',
     'ddu_b1', 'ddu_b2', 'ddu_b3', 'ddu_b4', 'ddu_b5', 'ddu_b6',
+    // Phase 2 Building D — util first so the farm's auto-standby
+    // decision (runs iff the utility feed is dead) sees fresh state.
+    'util_d', 'gen_farm_d', 'mv_bus_d', 'stepup_d', 'mv_rect_d',
+    'sscb_d', 'dc_bus_d', 'bess_d', 'rpp_d1', 'rpp_d2', 'hall_d',
 ];
 
 // Per-node mutable state (engine-private; published via setState)
@@ -111,7 +137,8 @@ function _initGrid() {
             transferring: false,    // ats only
             running: false,         // genset only
             // genset NFPA 110 sequence: standby|cranking|running|cooldown
-            state: t.type === 'genset' ? 'standby' : null,
+            // (the Phase 2 farm reports standby|running — instant in sim)
+            state: (t.type === 'genset' || t.type === 'farm') ? 'standby' : null,
             // ups IEC 62040-3 operating mode (derived in propagate):
             // double_conversion (VFI-SS-111) | battery | off
             mode: t.type === 'ups' ? 'off' : null,
@@ -144,6 +171,32 @@ function _propagate() {
             n.alive = !!n.running;
             n.energized_by = n.alive ? 'genset' : null;
             if (n.tripped) n.state = 'standby';
+        }
+        else if (t.type === 'farm') {
+            // Phase 2 standby farm: auto-runs the moment the Building D
+            // utility feed is dead (dead-bus black start, instant in
+            // the sandbox). util_d is evaluated earlier in TOPO_ORDER.
+            const utilDown = !_grid.util_d.alive;
+            n.running = utilDown;
+            n.alive = utilDown;
+            n.state = utilDown ? 'running' : 'standby';
+            n.energized_by = n.alive ? 'genset' : null;
+        }
+        else if (t.type === 'mvrect') {
+            // 2-input AC-side merge (utility primary / farm secondary).
+            // Solid-state: no ATS-style transfer gap.
+            const prim = _grid[t.primary];
+            const sec = _grid[t.secondary];
+            if (prim.alive) {
+                n.alive = true;
+                n.energized_by = prim.energized_by;
+            } else if (sec.alive) {
+                n.alive = true;
+                n.energized_by = sec.energized_by;   // 'genset'
+            } else {
+                n.alive = false;
+                n.energized_by = null;
+            }
         }
         else if (t.type === 'batt') {
             n.alive = n.soc > 0;
@@ -334,7 +387,9 @@ function _manageBatteryDecay() {
 export function initPowerGrid() {
     _initGrid();
     _propagate();
-    console.log('[power_grid] DAG engine initialized: 18 nodes, 17 edges');
+    const n = Object.keys(TOPOLOGY).length;
+    const e = Object.values(TOPOLOGY).reduce((acc, t) => acc + t.targets.length, 0);
+    console.log(`[power_grid] DAG engine initialized: ${n} nodes, ${e} edges (Phase 1 + Building D design)`);
 }
 
 export function tripNode(id) {
@@ -387,6 +442,7 @@ export function restoreAll() {
         n.transferring = false;
         if (n.type === 'batt')   { n.soc = 100;       n.alive = true;  }
         if (n.type === 'genset') { n.running = false; n.alive = false; n.state = 'standby'; }
+        if (n.type === 'farm')   { n.running = false; n.alive = false; n.state = 'standby'; }
         if (n.type === 'ats')    { n.ats_pos = 'primary'; }
         if (n.type === 'ups')    { n.on_battery = false; n.mode = 'double_conversion'; }
     }

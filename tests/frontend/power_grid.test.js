@@ -23,6 +23,62 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
+describe('S2 — Building D design chain in the DAG (MVP S2-C)', () => {
+    it('baseline: chain D rides the 35 kV utility; the farm is STANDBY on a dead bus', () => {
+        const g = getGridState();
+        expect(g.util_d.alive).toBe(true);
+        expect(g.mv_rect_d.alive).toBe(true);
+        expect(g.dc_bus_d.alive).toBe(true);
+        expect(g.hall_d.alive).toBe(true);
+        expect(g.hall_d.energized_by).toBe('util');
+        expect(g.gen_farm_d.state).toBe('standby');
+        expect(g.gen_farm_d.alive).toBe(false);
+        expect(g.mv_bus_d.alive).toBe(false);   // dead-bus black start doctrine
+    });
+
+    it('utility D loss: the farm auto-runs and the rectifier rides the step-up', () => {
+        tripNode('util_d');
+        const g = getGridState();
+        expect(g.gen_farm_d.state).toBe('running');
+        expect(g.mv_bus_d.alive).toBe(true);
+        expect(g.stepup_d.alive).toBe(true);
+        expect(g.mv_rect_d.alive).toBe(true);
+        expect(g.mv_rect_d.energized_by).toBe('genset');
+        expect(g.hall_d.alive).toBe(true);
+        expect(g.hall_d.energized_by).toBe('genset');
+        // Phase 1 untouched.
+        expect(g.ups_a.on_battery).toBe(false);
+    });
+
+    it('SSCB trip kills the DC side: bus, BESS, RPPs and the hall go dark', () => {
+        tripNode('sscb_d');
+        const g = getGridState();
+        expect(g.dc_bus_d.alive).toBe(false);
+        expect(g.bess_d.alive).toBe(false);
+        expect(g.rpp_d1.alive).toBe(false);
+        expect(g.rpp_d2.alive).toBe(false);
+        expect(g.hall_d.alive).toBe(false);
+        // The AC side upstream of the SSCB stays energized.
+        expect(g.mv_rect_d.alive).toBe(true);
+    });
+
+    it('one RPP trip is absorbed by the 2N pair; both kill the hall', () => {
+        tripNode('rpp_d1');
+        expect(getGridState().hall_d.alive).toBe(true);
+        tripNode('rpp_d2');
+        expect(getGridState().hall_d.alive).toBe(false);
+    });
+
+    it('restoreAll returns the farm to STANDBY and the chain to utility', () => {
+        tripNode('util_d');
+        restoreAll();
+        const g = getGridState();
+        expect(g.gen_farm_d.state).toBe('standby');
+        expect(g.gen_farm_d.running).toBe(false);
+        expect(g.hall_d.energized_by).toBe('util');
+    });
+});
+
 describe('B5 — power_grid genset NFPA 110 sequence', () => {
     it('utility loss starts the sequence: ATS in transfer, genset CRANKING', () => {
         tripNode('util_a');

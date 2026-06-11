@@ -49,13 +49,28 @@ export function steadyStatePower(tripped = new Set()) {
         }
         if (t.type === 'util') {
             alive = true; energizedBy = 'util';
-        } else if (t.type === 'genset') {
-            // Runs iff its ATS will need it (resolved at the ATS below);
-            // provisionally available. Availability != running.
+        } else if (t.type === 'genset' || t.type === 'farm') {
+            // Runs iff its merge point will need it (resolved at the
+            // ATS / MV rectifier below); provisionally available.
+            // Availability != running. The Phase 2 farm follows the
+            // same rule — N+2 standby capacity counts as survival,
+            // DEGRADED (burning diesel, one failure from darkness).
             alive = true; energizedBy = 'genset';
         } else if (t.type === 'batt') {
-            // Finite holdup — NOT steady-state survival.
+            // Finite holdup — NOT steady-state survival. (The Phase 2
+            // BESS is a bus-parallel load in this DAG, never a source,
+            // so the same doctrine holds structurally.)
             alive = false; energizedBy = null;
+        } else if (t.type === 'mvrect') {
+            // Solid-state 2-input AC-side merge: utility primary,
+            // farm-via-step-up secondary. No transfer gap.
+            const primary = out.get(t.primary);
+            const secondary = out.get(t.secondary);
+            if (primary?.alive) {
+                alive = true; energizedBy = primary.energizedBy;
+            } else if (secondary?.alive) {
+                alive = true; energizedBy = secondary.energizedBy;
+            }
         } else if (t.type === 'ats') {
             const primary = out.get(t.primary);
             const secondary = out.get(t.secondary);
@@ -143,7 +158,9 @@ function _diff(baseline, scenario, candidate, isLoad) {
 /** Full power-chain N-1 sweep. Returns Map<candidateId, N1Entry>. */
 export function n1Power() {
     const baseline = steadyStatePower();
-    const isLoad = (id) => TOPOLOGY[id]?.type === 'ddu';   // rack drops
+    // Load = what the operator pays for: Phase 1 rack drops (DDUs)
+    // and the Phase 2 GB300 hall.
+    const isLoad = (id) => TOPOLOGY[id]?.type === 'ddu' || TOPOLOGY[id]?.type === 'hall';
     const result = new Map();
     for (const id of Object.keys(TOPOLOGY)) {
         // Battery is excluded as a candidate: it is already excluded

@@ -52,6 +52,69 @@ describe('N1 — steadyStatePower()', () => {
 });
 
 // ════════════════════════════════════════════════════════════════
+//  Pure evaluator — Phase 2 Building D (MVP S2-C)
+// ════════════════════════════════════════════════════════════════
+describe('S2 — steadyStatePower() over Building D', () => {
+    it('baseline: chain D rides the 35 kV utility, hall energized', () => {
+        const s = steadyStatePower();
+        expect(s.get('mv_rect_d').alive).toBe(true);
+        expect(s.get('mv_rect_d').energizedBy).toBe('util');
+        expect(s.get('hall_d').alive).toBe(true);
+        expect(s.get('hall_d').degraded).toBe(false);
+    });
+
+    it('utility D loss is ABSORBED degraded: the rectifier rides the farm', () => {
+        const s = steadyStatePower(new Set(['util_d']));
+        expect(s.get('mv_rect_d').alive).toBe(true);
+        expect(s.get('mv_rect_d').energizedBy).toBe('genset');
+        expect(s.get('hall_d').alive).toBe(true);
+        expect(s.get('hall_d').degraded).toBe(true);
+        // Phase 1 untouched.
+        expect(s.get('ups_a').degraded).toBe(false);
+    });
+
+    it('SSCB loss kills the DC side — no standby source past the fence', () => {
+        const s = steadyStatePower(new Set(['sscb_d']));
+        expect(s.get('dc_bus_d').alive).toBe(false);
+        expect(s.get('hall_d').alive).toBe(false);
+    });
+
+    it('utility D + farm double loss kills chain D (that is N-2)', () => {
+        const s = steadyStatePower(new Set(['util_d', 'gen_farm_d']));
+        expect(s.get('mv_rect_d').alive).toBe(false);
+        expect(s.get('hall_d').alive).toBe(false);
+    });
+});
+
+describe('S2 — n1Power() badges over Building D', () => {
+    it('util_d contingency is warning: degraded survival on the farm', () => {
+        const e = n1Power().get('util_d');
+        expect(e.tone).toBe('warning');
+        expect(e.lost).not.toContain('hall_d');
+        expect(e.degraded).toContain('hall_d');
+    });
+
+    it('dc_bus_d and sscb_d contingencies are critical: the GB300 hall drops', () => {
+        const r = n1Power();
+        expect(r.get('dc_bus_d').tone).toBe('critical');
+        expect(r.get('dc_bus_d').lost).toContain('hall_d');
+        expect(r.get('sscb_d').tone).toBe('critical');
+    });
+
+    it('one RPP-D contingency is absorbed by the 2N pair', () => {
+        const e = n1Power().get('rpp_d1');
+        expect(e.lost).not.toContain('hall_d');
+        expect(e.tone).not.toBe('critical');
+    });
+
+    it('losing the farm costs standby capacity, never load (warning at most)', () => {
+        const e = n1Power().get('gen_farm_d');
+        expect(e.lost).not.toContain('hall_d');
+        expect(e.tone).not.toBe('critical');
+    });
+});
+
+// ════════════════════════════════════════════════════════════════
 //  Pure evaluator — COOLING
 // ════════════════════════════════════════════════════════════════
 describe('N1 — steadyStateCooling()', () => {
@@ -128,8 +191,12 @@ describe('N1 — overlay on the Power SLD', () => {
         expect(atsBadge.textContent).toMatch(/^N-1:\d+$/);
         const utilBadge = document.querySelector('[data-n1-badge="util_a"]');
         expect(utilBadge.getAttribute('data-tone')).toBe('warning');
-        // Phase 2 design nodes are outside the contingency model: no badge.
-        expect(document.querySelector('[data-n1-badge="mv_rect_d"]')).toBeNull();
+        // MVP S2-C: Building D is INSIDE the contingency model — the
+        // rectifier carries its badge (critical: losing it drops the
+        // GB300 hall; no standby source exists past the AC/DC fence).
+        const rectBadge = document.querySelector('[data-n1-badge="mv_rect_d"]');
+        expect(rectBadge).not.toBeNull();
+        expect(rectBadge.getAttribute('data-tone')).toBe('critical');
     });
 
     it('setN1(false) removes every badge and glow', () => {
