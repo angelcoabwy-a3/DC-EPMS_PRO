@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>DC-EPMS PRO — N-1 Shadow + Forensic Replay (demo de módulos reales)</title>
+<link rel="stylesheet" href="/assets/app.css?v=innov">
+<style>
+  body { background:#0B0D10; color:#c7d6e2; font-family:system-ui,sans-serif;
+         margin:0; padding:24px 32px; }
+  h1 { font-size:18px; letter-spacing:.06em; }
+  h2 { font-size:14px; letter-spacing:.1em; color:#8fa3b8; margin-top:34px;
+       border-bottom:1px solid #22303c; padding-bottom:6px; }
+  .note { font-size:12.5px; color:#7e93a5; max-width:880px; line-height:1.5; }
+  .pid-svg { width:100%; max-width:1240px; height:auto; display:block;
+             background:#0E1318; border:1px solid #1C2128; border-radius:6px; margin-top:10px; }
+  .pid-action-bar { display:flex; gap:8px; margin:10px 0; }
+  .pwr-mode-toggle { background:#11161c; border:1px solid #2A3038; color:#c7d6e2;
+                     border-radius:5px; padding:8px 14px; cursor:pointer; font-size:12px; }
+  .iso-row { display:flex; gap:8px; margin:8px 0; }
+  .sld-iso-block { border:1px solid #2A3038; border-radius:4px; padding:6px 10px;
+                   font-size:11px; color:#8fa3b8; }
+  .sld-iso-block[data-sev="warning"] { border-color:#FB8C00; color:#FB8C00; }
+  .sld-iso-block[data-sev="critical"] { border-color:#E53935; color:#E53935; }
+  #demo-log { margin-top:14px; font-size:11px; color:#5d6f7e; font-family:monospace; white-space:pre-line; }
+</style>
+</head>
+<body>
+<h1>◬ N-1 Shadow &nbsp;·&nbsp; ⏮ Forensic Replay — módulos de producción, sin login</h1>
+<p class="note">Esta página importa <code>views/power.js</code> y <code>views/cooling.js</code>
+reales. El flight recorder viene <strong>pre-cargado con un incidente sintético de 2 minutos</strong>
+(pérdida de UTILITY A → UPS a batería → genset toma la carga → recuperación) y el fetch del
+ledger está interceptado para mostrar 3 acciones DEMO dentro de la ventana — en el HMI real
+los markers salen de <code>/api/ledger/entries</code> con sus HMAC reales.</p>
+
+<div id="view-power">
+  <h2>POWER &amp; UPS — probá los DOS botones</h2>
+  <p class="note">1) <strong>◬ N-1 SHADOW</strong>: badges por nodo (rojo = cargas perdidas ·
+  ámbar ▲ = degradados · verde = absorbido). <strong>Pasá el mouse por ATS-A</strong> (crítico)
+  vs <strong>UTILITY A</strong> (absorbido por genset) y mirá iluminarse a las víctimas.<br>
+  2) <strong>⏮ REPLAY</strong>: arrastrá el slider — el SLD viaja en el tiempo (mirá GENSET A y
+  los chips de abajo cambiar de severidad) y los puntos amarillos son las firmas del ledger:
+  click = saltar a ese instante con su HMAC.</p>
+  <div class="pid-action-bar"></div>
+  <div class="iso-row">
+    <div class="sld-iso-block" data-sld-node="ups_a">UPS A (telemetry)</div>
+    <div class="sld-iso-block" data-sld-node="xfmr_a">XFMR A (telemetry)</div>
+    <div class="sld-iso-block" data-sld-node="busway_a">BUSWAY A (telemetry)</div>
+  </div>
+  <svg class="pid-svg"></svg>
+</div>
+
+<div id="view-cooling">
+  <h2>COOLING (DLC) — N-1 Shadow con semántica N+1</h2>
+  <p class="note">Hover sobre <strong>CHILLER 1</strong>: su peer N+1 se ilumina degradado y el
+  hall sigue OK. Hover sobre <strong>COOLING TOWER</strong>: cadena completa en rojo.</p>
+  <div class="pid-action-bar"></div>
+  <svg class="pid-svg"></svg>
+</div>
+
+<div id="demo-log"></div>
+
+<script type="module">
+const log = (m, isErr) => {
+    const el = document.getElementById('demo-log');
+    el.textContent = `[${new Date().toLocaleTimeString()}] ${isErr ? '❌ ' : ''}${m}\n` + el.textContent;
+};
+window.addEventListener('error', (e) => log(`JS error: ${e.message}`, true));
+window.addEventListener('unhandledrejection', (e) => log(`Promise rejection: ${e.reason}`, true));
+
+try {
+    const power = (await import('/assets/js/views/power.js?v=innov')).__power_test__;
+    const cooling = (await import('/assets/js/views/cooling.js?v=innov')).__cooling_test__;
+    const { record } = await import('/assets/js/core/flight_recorder.js?v=innov');
+
+    // ── Render both diagrams + toggles (production builders) ──
+    power.renderFlatSld();
+    power.buildModeToggle();
+    power.buildN1Toggle();
+    power.buildReplayToggle();
+    cooling.renderCoolingSld();
+    cooling.buildModeToggle();
+    cooling.buildN1Toggle();
+
+    // ── Wire SLD clicks like the real views do ──
+    document.querySelector('#view-power .pid-svg')
+        .addEventListener('click', power.onFlatClick);
+    document.querySelector('#view-cooling .pid-svg')
+        .addEventListener('click', cooling.onCoolClick);
+
+    // ── Synthetic incident -> flight recorder (2 min, 1 Hz) ──
+    const now = Date.now();
+    const t0 = now - 120000;
+    const okGrid = {
+        util_a: { alive: true }, xfmr_a: { alive: true }, ats_a: { alive: true },
+        genset_a: { alive: false }, ups_a: { alive: true }, rpp_a1: { alive: true },
+    };
+    const incidentGrid = {
+        util_a: { tripped: true, alive: false },
+        xfmr_a: { alive: false },
+        ats_a: { alive: true, energized_by: 'genset' },
+        genset_a: { alive: true, energized_by: 'genset' },
+        ups_a: { alive: true, on_battery: false, energized_by: 'genset' },
+        rpp_a1: { alive: true, energized_by: 'genset' },
+    };
+    for (let s = 0; s < 120; s += 1) {
+        const t = t0 + s * 1000;
+        const inIncident = s >= 45 && s < 90;
+        record('telemetry', { channels: {
+            ups_a_soc: inIncident ? { is_anomalous: true, max_z: 4.2 } : { max_z: 0.4 },
+            xfmr_a_winding: (s >= 40 && s < 95) ? { max_z: 2.6 } : { max_z: 0.6 },
+            busway_a_kw: { max_z: 0.3 },
+        } }, t);
+        if (s === 0) record('grid', okGrid, t);
+        if (s === 45) record('grid', incidentGrid, t);
+        if (s === 90) record('grid', okGrid, t);
+    }
+    log('flight recorder pre-cargado: incidente sintetico t+45s..t+90s (UTILITY A -> genset)');
+
+    // ── Intercept ONLY the ledger fetch (demo markers in-window) ──
+    const realFetch = window.fetch.bind(window);
+    window.fetch = (url, opts) => {
+        if (String(url).startsWith('/api/ledger/entries')) {
+            log('fetch ledger interceptado -> 3 acciones DEMO en ventana');
+            return Promise.resolve({
+                ok: true, status: 200,
+                json: async () => ({ entries: [
+                    { sequence_no: 13, ts: new Date(t0 + 50000).toISOString(), actor: 'operator.wilmer',
+                      action: 'BMS_WRITE_BREAKER (DEMO)', entry_hmac_hex: 'a1b2c3d4e5f60718' },
+                    { sequence_no: 14, ts: new Date(t0 + 62000).toISOString(), actor: 'safety_a',
+                      action: 'PROCEDURE_SIGNED (DEMO)', entry_hmac_hex: '4c2cf2cf660049ba' },
+                    { sequence_no: 15, ts: new Date(t0 + 88000).toISOString(), actor: 'checker.safety_b',
+                      action: 'SECOND_SIGNATURE (DEMO)', entry_hmac_hex: '9f8e7d6c5b4a3921' },
+                ] }),
+            });
+        }
+        return realFetch(url, opts);
+    };
+
+    log('demo lista — toca ◬ N-1 SHADOW y ⏮ REPLAY arriba');
+} catch (err) {
+    log(`No pude cargar los modulos: ${err.message} — Ctrl+Shift+R`, true);
+    throw err;
+}
+</script>
+</body>
+</html>
