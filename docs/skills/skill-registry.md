@@ -692,6 +692,35 @@ encode the contracts the operator pinned on 2026-05-23.
 
 ---
 
+## Category O — Visual Closure (SLD Reengineering 2026-06-11)
+
+### `S-VISUAL-01` · Visual work closes on the DEFAULT rendered surface, not on markup strings
+
+- **When:** Any commit that changes what an HMI view DRAWS (new diagram
+  content, layout, level-of-detail, severity paint), before declaring
+  [OK] to the operator.
+- **Rule:** Three failures in one session (stale module cache, preview
+  viewBox clip, iso-stage default) shared ONE mechanism: vitest asserted
+  markup strings while the operator landed on a surface that never
+  rendered them. Before closure:
+  1. A vitest MUST assert the new content against the surface the
+     route's `activate()` actually shows — `init<View>View()` + default
+     DOM state (the SLD-R1 pattern in `tests/frontend/power.test.js`),
+     not only the pure markup builder.
+  2. Regenerate `node scripts/preview_diagrams.mjs` and EYEBALL
+     `logs/diagram_preview.html` (or the live HMI) in the view's
+     DEFAULT state, plus every LOD / mode the change touches. The
+     preview page renders default-first by construction.
+  3. The commit message states which rendered surface was verified
+     (e.g. `visual: verified on diagram_preview LOD 0 + LOD 1`).
+  Playwright screenshot automation is the P2 upgrade; the preview page
+  is the floor. A green markup-string test is NOT visual closure.
+- **Verify:** the SLD-R1 describe block stays green; the preview tool
+  renders every LOD/mode the view exposes; the closing commit message
+  carries the `visual:` line. Related: [[S-DIAGRAM-01]], [[S-TEST-02]].
+
+---
+
 ## Index — quick lookup
 
 | ID | Category | Headline |
@@ -727,6 +756,7 @@ encode the contracts the operator pinned on 2026-05-23.
 | `S-OCP-CDU-01` | Telemetry Schema | OCP CDU Test Methodology alignment |
 | `S-PTP-01` | Telemetry Schema | Sub-microsecond PTP timestamps on event messages |
 | `S-DIAGRAM-01` | Diagram Kit | All engineering diagrams ride diagram_kit + node_registry (ADR-012) |
+| `S-VISUAL-01` | Visual Closure | Visual work closes on the DEFAULT rendered surface, not markup strings |
 
-**31 skills, 14 categories.** New skills extending this registry must follow
+**32 skills, 15 categories.** New skills extending this registry must follow
 the same template (When / Rule / Verify) and be added to the index above.

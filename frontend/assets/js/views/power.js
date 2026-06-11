@@ -564,6 +564,9 @@ function _flatGensetFarm() {
  */
 function _setFarmLod(lod) {
     _farmLod = (lod === 1) ? 1 : 0;
+    // Headless markup consumers (scripts/preview_diagrams.mjs) flip
+    // the LOD state without a DOM — the builders stay pure.
+    if (typeof document === 'undefined') return;
     const svg = document.querySelector('#view-power .pid-svg');
     if (!svg) return;
     svg.innerHTML = _buildFlatMarkup();

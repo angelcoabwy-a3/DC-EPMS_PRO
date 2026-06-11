@@ -17,12 +17,19 @@ const { __power_test__ } = await import('../frontend/assets/js/views/power.js');
 const { __cooling_test__ } = await import('../frontend/assets/js/views/cooling.js');
 const { __topology_test__ } = await import('../frontend/assets/js/views/topology.js');
 
+// S-VISUAL-01: the preview renders the DEFAULT surface state first
+// (LOD 0 — what the operator lands on), then every other LOD the
+// view exposes. Both from the same pure builders vitest exercises.
 const powerSvg = __power_test__.buildFlatMarkup();
+__power_test__.setFarmLod(1);
+const powerFarmSvg = __power_test__.buildFlatMarkup();
+__power_test__.setFarmLod(0);
 const coolingSvg = __cooling_test__.buildCoolingSld();
 const hldSvg = __topology_test__.buildHldMarkup();
 // ViewBoxes come from the modules — a hardcoded box CLIPS new content
 // (lesson: the 50 MW genset farm was invisible below y=1080).
 const powerVB = __power_test__.flatViewBox;
+const farmVB = __power_test__.farmFocusViewBox;
 const coolVB = __cooling_test__.coolViewBox;
 
 const page = `<!DOCTYPE html>
@@ -51,11 +58,21 @@ sin telemetría viva, sin login — para eso, el HMI en
 <a href="http://127.0.0.1:8080/" style="color:#00B8D4">127.0.0.1:8080</a>.</p>
 
 <h2>1 · POWER &amp; UPS — SLD ortogonal + rama FASE 2 (Building D, 800 VDC unipolar TN-S)</h2>
-<p class="note">Mirá la mitad inferior: UTILITY D 35 kV AC → MV RECTIFIER →
-<strong>fence AC/DC rotulado</strong> → SSCB (IEC 60947-2) → bus 800 VDC →
-BESS 2.5 MWh + RPP D1/D2. Punteado = DESIGN (no desplegado). Leyenda compartida
-arriba a la izquierda.</p>
+<p class="note"><strong>Esta es la superficie POR DEFECTO del HMI</strong>
+(el stage iso 2.5D fue retirado — SLD Reengineering Batch A). Mitad inferior:
+UTILITY D 35 kV AC → MV RECTIFIER → <strong>fence AC/DC rotulado</strong> →
+SSCB (IEC 60947-2) → bus 800 VDC → BESS 2.5 MWh + RPP D1/D2. Punteado =
+DESIGN. El genset farm aparece como <strong>bloque lineup colapsado</strong>
+(LOD 0) — honesto en cifras, legible a fit-width.</p>
 <svg viewBox="${powerVB}" class="pf-svg pid-svg" xmlns="http://www.w3.org/2000/svg">${powerSvg}</svg>
+
+<h2>1b · GENSET FARM — LOD 1 (focus por click en el bloque)</h2>
+<p class="note">Lo que el operador ve al hacer click en el lineup: viewBox
+enfocado a la banda del farm, un cubículo de switchgear REAL por unidad
+instalada (52 + glifo G + id + rating + strip de estado NFPA 110), bus de
+paralelismo 13.8 kV, tie 52 → step-up 13.8→35 kV. «&lt; FULL SLD» vuelve al
+canvas completo.</p>
+<svg viewBox="${farmVB}" class="pf-svg pid-svg" xmlns="http://www.w3.org/2000/svg">${powerFarmSvg}</svg>
 
 <h2>2 · COOLING (DLC) — P&amp;ID ortogonal sobre el kit compartido</h2>
 <p class="note">Mismo lenguaje visual que Power (kit + tokens de severidad
@@ -81,4 +98,5 @@ mkdirSync('logs', { recursive: true });
 writeFileSync('logs/diagram_preview.html', page, 'utf8');
 console.log('[preview] logs/diagram_preview.html written ('
     + page.length + ' chars; power=' + powerSvg.length
+    + ', farmLod1=' + powerFarmSvg.length
     + ', cooling=' + coolingSvg.length + ', hld=' + hldSvg.length + ')');
