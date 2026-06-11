@@ -23,6 +23,7 @@ from backend.site_model import SiteModel
 from backend.telemetry_simulator import (
     ANOMALY_PROFILES,
     PHASE1_BASELINES,
+    PHASE2_DESIGN_BASELINES,
     REGION_PROFILES,
     TelemetrySimulator,
     reset_simulator,
@@ -122,6 +123,66 @@ def test_chiller_and_pump_channels_present(sim):
     pump_keys = [k for k in window if k.startswith("chw_pump_") and ":" in k]
     assert len(chiller_keys) >= 6, "expected >=6 chiller channels (3 chillers * 2 metrics)"
     assert len(pump_keys) >= 6, "expected >=6 pump channels (3 pumps * 2 metrics)"
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Phase 2 Building D — DESIGN-sim channels (MVP S2)
+# ─────────────────────────────────────────────────────────────────────
+def test_phase2_design_chain_emits(sim):
+    """The Building D chain emits design-sim channels end to end."""
+    window = sim.get_window(n_samples=1)
+    for ch in (
+        "utility_feed_d:utility_voltage_kv",
+        "mv_rectifier_d:rect_load_mw",
+        "mv_rectifier_d:rect_efficiency_ratio",
+        "sscb_d_01:sscb_junction_T_c",
+        "main_bus_dc_d:voltage_v_dc_bus",
+        "bess_d_01:bess_soc_pct",
+        "gen_farm_d:farm_units_online_count",
+        "gen_farm_d:farm_bus_voltage_kv",
+    ):
+        assert ch in window, f"missing Phase 2 design-sim channel: {ch}"
+
+
+def test_phase2_vocabulary_fence_in_channel_names(sim):
+    """S-VOCAB-01 at the wire: a DC metric NEVER carries a phase suffix,
+    and phase metrics never appear on DC components."""
+    window = sim.get_window(n_samples=1)
+    for ch_id in window:
+        metric = ch_id.split(":", 1)[1]
+        if "dc_bus" in metric or "dc_current" in metric:
+            assert "phase" not in metric, f"DC metric carries a phase word: {ch_id}"
+    # The 800 VDC bus emits ONLY the schema-fenced DC metric.
+    dc_channels = {k for k in window if k.startswith("main_bus_dc_d:")}
+    assert dc_channels == {"main_bus_dc_d:voltage_v_dc_bus"}
+
+
+def test_utility_intakes_baseline_from_component_metadata(sim):
+    """Phase 1 feeds run 27.5 kV; the Phase 2 intake runs 35 kV —
+    one generator, metadata-keyed baselines."""
+    window = sim.get_window(n_samples=20)
+    a = window["utility_feed_a:utility_voltage_kv"]
+    d = window["utility_feed_d:utility_voltage_kv"]
+    assert abs(a.mean() - 27.5) < 0.5, f"Phase 1 feed off-baseline: {a.mean():.2f}"
+    assert abs(d.mean() - 35.0) < 0.5, f"Phase 2 feed off-baseline: {d.mean():.2f}"
+
+
+def test_genset_farm_standby_is_dead_bus(sim):
+    """Design doctrine: the 13.8 kV farm bus is DEAD until called
+    (dead-bus black start) — standby baseline ~0."""
+    window = sim.get_window(n_samples=20)
+    assert abs(window["gen_farm_d:farm_bus_voltage_kv"].mean()) < 0.1
+    assert abs(window["gen_farm_d:farm_units_online_count"].mean()) < 0.3
+
+
+def test_dc_bus_sag_anomaly_drives_design_chain(sim):
+    """The dc_bus_sag profile sags the 800 VDC bus and spikes the
+    rectifier load — the transient the SSCB clearing window bounds."""
+    affected = sim.inject_anomaly("main_bus_dc_d", "dc_bus_sag", duration_samples=40)
+    assert affected == 1   # the bus emits exactly the DC voltage metric
+    window = sim.get_window(n_samples=20)
+    sagged = window["main_bus_dc_d:voltage_v_dc_bus"]
+    assert abs(sagged.mean() - 760.0) < 8.0, f"expected ~760 V sag, got {sagged.mean():.1f}"
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -232,16 +293,17 @@ def test_all_anomaly_profiles_target_known_metrics():
     """Every anomaly profile must reference metrics that exist in baselines.
 
     Genset synchronization metrics live in REGION_PROFILES (multi-region
-    480V/60Hz + 416V/50Hz calibration), not PHASE1_BASELINES — so the
-    known-metric set is the union of both.
+    480V/60Hz + 416V/50Hz calibration); the Building D chain lives in
+    PHASE2_DESIGN_BASELINES (MVP S2 design-sim) — the known-metric set
+    is the union of all three.
     """
     region_metrics = {
         m for profile in REGION_PROFILES.values() for m in profile
     }
-    known = set(PHASE1_BASELINES) | region_metrics
+    known = set(PHASE1_BASELINES) | set(PHASE2_DESIGN_BASELINES) | region_metrics
     for kind, profile in ANOMALY_PROFILES.items():
         for metric in profile:
             assert metric in known, (
-                f"anomaly {kind} targets metric {metric!r} "
-                f"that is not in PHASE1_BASELINES or REGION_PROFILES"
+                f"anomaly {kind} targets metric {metric!r} that is not in "
+                f"PHASE1_BASELINES, PHASE2_DESIGN_BASELINES or REGION_PROFILES"
             )

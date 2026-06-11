@@ -94,6 +94,37 @@ PHASE1_BASELINES: dict[str, tuple[float, float]] = {
 
 
 # ─────────────────────────────────────────────────────────────────────
+#  Path C2 Phase 2 DESIGN-sim baselines (mean, std) — MVP S2
+# ─────────────────────────────────────────────────────────────────────
+# Building D is a DESIGN, not deployed plant. These channels exist so
+# the platform (SLD severity, N-1, Kalman pipeline) can exercise the
+# Phase 2 chain end-to-end; values are design-point synthetics, NOT
+# field telemetry. Vocabulary fence (S-VOCAB-01): the DC bus metric is
+# voltage_v_dc_bus — a DC metric NEVER carries a phase suffix.
+PHASE2_DESIGN_BASELINES: dict[str, tuple[float, float]] = {
+    # MV rectifier (35 kVAC 3-phase in -> 800 VDC unipolar out)
+    "rect_load_mw":           (50.0, 1.2),    # 250 racks x 200 kW design point
+    "rect_efficiency_ratio":  (0.985, 0.002),
+    # Solid-state circuit breaker (IEC 60947-2, 1-100 us clearing)
+    "sscb_junction_T_c":      (55.0, 1.2),
+    # 800 VDC unipolar TN-S main bus — 0.2% ripple class
+    "voltage_v_dc_bus":       (800.0, 1.6),
+    # BESS 2.5 MWh (bus-parallel storage; current swings around zero)
+    "bess_soc_pct":           (85.0, 0.8),
+    "bess_dc_current_a":      (0.0, 12.0),
+    # Genset farm (22 x 3.2 MW standby): dead 13.8 kV bus until called
+    "farm_units_online_count": (0.0, 0.05),
+    "farm_bus_voltage_kv":     (0.0, 0.02),
+}
+
+# Unified lookup for _noise() — Phase 1 field-calibrated + Phase 2 design.
+_ALL_BASELINES: dict[str, tuple[float, float]] = {
+    **PHASE1_BASELINES,
+    **PHASE2_DESIGN_BASELINES,
+}
+
+
+# ─────────────────────────────────────────────────────────────────────
 #  Anomaly profiles — delta_value applied to baseline when active
 # ─────────────────────────────────────────────────────────────────────
 ANOMALY_PROFILES: dict[str, dict[str, float]] = {
@@ -127,6 +158,12 @@ ANOMALY_PROFILES: dict[str, dict[str, float]] = {
         "genset_phase_angle_deg": +8.0,   # nominal 0 deg -> 8 deg, past the 5 deg fault gate
         "genset_freq_hz": +0.35,          # frequency slip accompanies loss of sync
         "genset_breaker_status": -1.0,    # protective SSCB trip on desynchronization
+    },
+    # Phase 2 DESIGN-sim: 800 VDC bus sag under a load transient — the
+    # scenario the SSCB's 1-100 us clearing window exists to bound.
+    "dc_bus_sag": {
+        "voltage_v_dc_bus": -40.0,        # 800 V -> 760 V (5% sag)
+        "rect_load_mw": +5.0,             # the transient that drives it
     },
 }
 
@@ -188,7 +225,7 @@ class _AnomalyState:
 #  Per-component-type generators
 # ─────────────────────────────────────────────────────────────────────
 def _noise(rng: np.random.Generator, key: str, n: int) -> np.ndarray:
-    mean, std = PHASE1_BASELINES[key]
+    mean, std = _ALL_BASELINES[key]
     return rng.normal(loc=mean, scale=std, size=n)
 
 
@@ -256,6 +293,48 @@ def _gen_genset(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[
     }
 
 
+def _gen_utility_intake(comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+    # Baseline from the component's OWN rated voltage: Phase 1 feeds run
+    # 27.5 kV (Toronto Hydro), the Phase 2 Building D intake (DESIGN)
+    # runs 35 kV. 0.5% regulation noise either way.
+    kv = float((comp.metadata or {}).get("voltage_kv", 27.5))
+    return {"utility_voltage_kv": rng.normal(loc=kv, scale=kv * 0.005, size=n)}
+
+
+# ── Phase 2 DESIGN-sim generators (Building D — MVP S2) ─────────────
+def _gen_mv_rectifier(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+    return {
+        "rect_load_mw":          _noise(rng, "rect_load_mw", n),
+        "rect_efficiency_ratio": _noise(rng, "rect_efficiency_ratio", n),
+    }
+
+
+def _gen_sscb(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+    return {"sscb_junction_T_c": _noise(rng, "sscb_junction_T_c", n)}
+
+
+def _gen_dc_bus(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+    # S-VOCAB-01: voltage_v_dc_bus — the schema-fenced DC metric name.
+    return {"voltage_v_dc_bus": _noise(rng, "voltage_v_dc_bus", n)}
+
+
+def _gen_bess(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+    return {
+        "bess_soc_pct":      _noise(rng, "bess_soc_pct", n),
+        "bess_dc_current_a": _noise(rng, "bess_dc_current_a", n),
+    }
+
+
+def _gen_genset_farm(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+    # Standby farm: 13.8 kV paralleling bus is DEAD until called
+    # (dead-bus black start). Aggregate channels only — per-unit
+    # telemetry is future scope past the MVP.
+    return {
+        "farm_units_online_count": _noise(rng, "farm_units_online_count", n),
+        "farm_bus_voltage_kv":     _noise(rng, "farm_bus_voltage_kv", n),
+    }
+
+
 GeneratorFn = Callable[[ComponentInfo, int, np.random.Generator], dict[str, np.ndarray]]
 
 _GENERATORS: dict[str, GeneratorFn] = {
@@ -266,6 +345,14 @@ _GENERATORS: dict[str, GeneratorFn] = {
     "pump":                 _gen_pump,
     "cooling_tower_field":  _gen_cooling_tower_field,
     "genset":               _gen_genset,
+    # Utility intakes (Phase 1 27.5 kV + Phase 2 35 kV, metadata-keyed)
+    "utility_intake":       _gen_utility_intake,
+    # Phase 2 DESIGN-sim (Building D)
+    "mv_rectifier":         _gen_mv_rectifier,
+    "sscb":                 _gen_sscb,
+    "dc_bus":               _gen_dc_bus,
+    "bess":                 _gen_bess,
+    "genset_farm":          _gen_genset_farm,
 }
 
 
@@ -279,6 +366,12 @@ _CHANNELS_PER_TYPE: dict[str, int] = {
     "pump": 2,
     "cooling_tower_field": 2,
     "genset": 5,
+    "utility_intake": 1,
+    "mv_rectifier": 2,
+    "sscb": 1,
+    "dc_bus": 1,
+    "bess": 2,
+    "genset_farm": 2,
 }
 
 
@@ -368,7 +461,7 @@ class TelemetrySimulator:
         kinds (see ANOMALY_PROFILES):
           thermal_runaway, pump_cavitation, phase_imbalance,
           ups_drain, chiller_degraded, cdu_flow_starvation,
-          gen_desync.
+          gen_desync, dc_bus_sag (Phase 2 design-sim).
 
         magnitude scales the profile delta (1.0 = full deviation).
         duration_samples controls persistence in get_window() calls.

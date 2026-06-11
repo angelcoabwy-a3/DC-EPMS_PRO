@@ -187,3 +187,62 @@ channels:
     Q: 0.00001
     sod_threshold_k: 0.5
     rationale: "Generator SSCB status bit. 1.0 = closed/synced to main bus, 0.0 = tripped/open. std=0.02."
+
+  # ── Utility intakes (Phase 1 27.5 kV + Phase 2 35 kV DESIGN) ──────
+  utility_voltage_kv:
+    R: 0.0256
+    Q: 0.0001
+    sod_threshold_k: 0.3
+    rationale: "MV utility intake line voltage, metadata-keyed baseline (27.5 kV Phase 1 / 35 kV Phase 2 DESIGN). 0.5% regulation -> std 0.14-0.18 kV; R from the midpoint (0.16 kV)^2."
+
+  # ── Phase 2 Building D — DESIGN-sim channels (MVP S2) ─────────────
+  # These channels are design-point synthetics for the not-yet-built
+  # Building D chain. Vocabulary fence S-VOCAB-01: voltage_v_dc_bus is
+  # the DC metric — it never carries a phase suffix.
+  rect_load_mw:
+    R: 1.44
+    Q: 0.01
+    sod_threshold_k: 1.0
+    rationale: "DESIGN-sim. MV rectifier throughput at the 50 MW IT design point. std=1.2 MW workload swing."
+
+  rect_efficiency_ratio:
+    R: 0.000004
+    Q: 0.00001
+    sod_threshold_k: 0.2
+    rationale: "DESIGN-sim. Solid-state MV rectifier efficiency, baseline 0.985, std=0.002."
+
+  sscb_junction_T_c:
+    R: 1.44
+    Q: 0.001
+    sod_threshold_k: 1.0
+    rationale: "DESIGN-sim. SSCB semiconductor junction temperature (IEC 60947-2 class device), baseline 55 C, std=1.2 K."
+
+  voltage_v_dc_bus:
+    R: 2.56
+    Q: 0.001
+    sod_threshold_k: 1.0
+    rationale: "DESIGN-sim. 800 VDC unipolar TN-S main bus, 0.2% ripple class -> std=1.6 V. The schema-fenced DC metric (no phases on a DC bus)."
+
+  bess_soc_pct:
+    R: 0.64
+    Q: 0.0005
+    sod_threshold_k: 0.5
+    rationale: "DESIGN-sim. BESS 2.5 MWh state of charge, baseline 85%, std=0.8%."
+
+  bess_dc_current_a:
+    R: 144.0
+    Q: 0.05
+    sod_threshold_k: 10.0
+    rationale: "DESIGN-sim. BESS DC current, swings around 0 A (charge/discharge), std=12 A."
+
+  farm_units_online_count:
+    R: 0.0025
+    Q: 0.00001
+    sod_threshold_k: 0.5
+    rationale: "DESIGN-sim. Genset farm units online (aggregate). Standby baseline 0 — the farm runs only on utility loss. std=0.05."
+
+  farm_bus_voltage_kv:
+    R: 0.0004
+    Q: 0.00001
+    sod_threshold_k: 0.3
+    rationale: "DESIGN-sim. 13.8 kV paralleling bus voltage. Dead bus (0 kV) in standby per dead-bus black-start doctrine. std=0.02 kV."
