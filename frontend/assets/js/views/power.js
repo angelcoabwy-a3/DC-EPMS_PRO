@@ -44,6 +44,7 @@ import { createN1Overlay } from '../core/n1_overlay.js';
 import {
     startRecording, snapshotAt, range as recorderRange,
 } from '../core/flight_recorder.js';
+import { budgetCaption, gensetFarmSizing } from '../core/power_budget.js';
 
 let _initialized = false;
 let _unsubTelemetry = null;
@@ -247,7 +248,9 @@ const _FLAT = {
     tierX: { util: 150, xfmr: 268, gen: 392, ats: 602, ups: 820, pdu: 1052 },
     spineY: { A: 232, B: 540 },
     phase2: { spineY: 880, headerY: 766, dividerY: 726, fenceX: 484 },
-    viewBox: '0 0 1200 1080',
+    // 50 MW track: genset farm row + power-budget caption block.
+    farm: { busY: 1110, genY: 1180, tieX: 304 },
+    viewBox: '0 0 1200 1260',
 };
 
 // Node types that are operable breakers — clickable in the control plane.
@@ -388,7 +391,76 @@ function _flatPhase2() {
         + `<text class="pf-caption" x="${T.ups}" y="${bessY + 44}">charge / discharge</text>`;
 
     return `<g class="pf-pathgroup pf-phase2" data-phase="2">`
-        + header + fence + wires + nodes + caption + `</g>`;
+        + header + fence + wires + nodes + caption
+        + _flatGensetFarm() + `</g>`;
+}
+
+/**
+ * 50 MW track — the standby GENSET FARM for Building D (design).
+ * >50 MW cannot be one prime mover: N+2 farm of 3.2 MW MV units on
+ * 13.8 kV paralleling switchgear (ANSI 25 sync, dead-bus black
+ * start), stepped UP to 35 kV before joining the rectifier's AC
+ * side (never tie 13.8 kV to a 35 kV bus directly). Three units
+ * drawn; sizing comes from core/power_budget.js — one source of
+ * truth, printed in the caption.
+ */
+function _flatGensetFarm() {
+    const F = _FLAT.farm;
+    const S = _FLAT.phase2.spineY;
+    const sizing = gensetFarmSizing();
+    const genXs = [150, 268, 392];
+
+    // 52 = ANSI device number for the power circuit breaker.
+    const breaker52 = (x, y) =>
+        `<rect class="pf-sym pid-symbol" data-sev="ok" x="${x - 13}" y="${y - 11}" width="26" height="22" rx="2"/>`
+        + `<text class="pf-glyph pf-glyph-sm" x="${x}" y="${y + 4}">52</text>`;
+
+    const gens = genXs.map((x, i) =>
+        `<g class="sld-node pf-node" data-sld-node="gen_farm_d">`
+        + symbol('genset', x, F.genY)
+        + `<text class="pf-name" x="${x}" y="${F.genY - 34}">GEN ${i + 1} · 3.2 MW</text>`
+        + `</g>`
+        + breaker52(x, F.genY - 58)).join('');
+
+    const wires = [
+        // gens -> their 52s -> MV bus
+        ...genXs.map((x) => wire([[x, F.genY - 23], [x, F.genY - 47]], 'pf-ac')),
+        ...genXs.map((x) => wire([[x, F.genY - 69], [x, F.busY + 6]], 'pf-ac')),
+        // MV bus -> bus 52 -> step-up xfmr -> tie into the AC side
+        wire([[F.tieX, F.busY - 6], [F.tieX, F.busY - 36]], 'pf-ac'),
+        wire([[F.tieX, F.busY - 58], [F.tieX, S + 96]], 'pf-ac'),
+        wire([[F.tieX, S + 52], [F.tieX, S]], 'pf-ac'),
+    ].join('');
+
+    const farm =
+        `<g class="sld-node pf-node" data-sld-node="mv_bus_d">`
+        + `<rect class="pf-sym pid-symbol pf-bus" data-sev="ok" x="86" y="${F.busY - 6}" width="370" height="12" rx="2"/>`
+        + `<text class="pf-name" x="271" y="${F.busY - 16}">MV PARALLELING BUS · 13.8 kV · ANSI 25 sync · dead-bus black start</text>`
+        + `</g>`
+        + breaker52(F.tieX, F.busY - 47)
+        + `<g class="sld-node pf-node" data-sld-node="stepup_d">`
+        + symbol('xfmr', F.tieX, S + 74)
+        + `<text class="pf-name" x="${F.tieX + 118}" y="${S + 72}">STEP-UP 13.8→35 kV</text>`
+        + `</g>`;
+
+    const sizingTxt = `${sizing.required} + ${sizing.redundancy} = ${sizing.installed}`
+        + ` × ${sizing.unitMw} MW (N+${sizing.redundancy}) · farm ${sizing.farmMw.toFixed(1)} MW`;
+    // Power budget block — every number from core/power_budget.js;
+    // wrapped at the separators so the line fits the canvas.
+    const parts = budgetCaption().split(' · ');
+    const budgetLines = [];
+    for (let i = 0; i < parts.length; i += 3) {
+        budgetLines.push(parts.slice(i, i + 3).join(' · '));
+    }
+    const budgetTxt = budgetLines.map((line, i) =>
+        `<text class="pf-caption pf-budget" x="560" y="${F.busY + 8 + i * 16}">${escapeHTML(line)}</text>`).join('');
+    const captions =
+        `<text class="pf-section-title" x="86" y="${F.genY + 52}">GENSET FARM · BUILDING D STANDBY (DESIGN)</text>`
+        + `<text class="pf-caption" x="271" y="${F.genY + 72}">3 drawn of ${sizingTxt}</text>`
+        + `<text class="pf-section-title" x="560" y="${F.busY - 16}">POWER BUDGET · 50 MW IT (DESIGN)</text>`
+        + budgetTxt;
+
+    return `<g data-farm="1">${wires}${gens}${farm}${captions}</g>`;
 }
 
 /** Build the full flat-SLD SVG inner markup from the tiered topology. */

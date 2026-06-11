@@ -231,6 +231,29 @@ describe('B5 — ATS + battery sections', () => {
     it('unmapped asset types return an empty section', () => {
         expect(engineeringSection('busway_a', {}, {})).toBe('');
     });
+
+    it('50MW: RPP renders the full LV chain (PDU -> K-factor -> whips -> rack PDUs)', () => {
+        const html = engineeringSection('rpp_a1', { rpp_a1: { alive: true } }, {});
+        expect(html).toContain('LV DISTRIBUTION CHAIN');
+        expect(html).toContain('PDU MAIN BKR');
+        expect(html).toContain('K-FACTOR ISOL. XFMR');
+        expect(html).toContain('480 → 415/240 V');
+        expect(html).toContain('SUB-BKR 1');
+        expect(html).toContain('RPP · PANELBOARDS');
+        expect(html).toContain('power whips');
+        expect(html).toContain('RACK PDU A');
+        expect(html).toContain('RACK PDU B');
+        expect(html).toContain('CDU liquid-cooling pumps');
+        // Phase 2 DC RPPs keep their design spec sheet instead.
+        expect(engineeringSection('rpp_d1', null, null)).toContain('DESIGN · PH2');
+    });
+
+    it('50MW: farm design assets get their spec sheets (ANSI 25, step-up rule)', () => {
+        expect(engineeringSection('gen_farm_d', null, null)).toContain('ANSI 25');
+        expect(engineeringSection('mv_bus_d', null, null)).toContain('13.8 kV');
+        expect(engineeringSection('stepup_d', null, null))
+            .toContain('never tie 13.8 kV onto a 35 kV bus');
+    });
 });
 
 // ════════════════════════════════════════════════════════════════

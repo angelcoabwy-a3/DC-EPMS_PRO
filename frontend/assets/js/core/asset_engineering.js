@@ -357,6 +357,48 @@ function _battSection(node) {
     </div>`;
 }
 
+// ── RPP / PDU: the LV distribution chain (UPS -> rack PDUs) ───────
+// Per operator spec: PDU main breaker -> K-factor isolation
+// transformer -> internal bus -> sub-breakers -> sub-feeds -> RPP
+// panelboards -> branch breakers -> power whips -> rack PDUs A/B.
+function _rppSection(node) {
+    const dead = node && (node.tripped || node.alive === false);
+    const on = dead ? '' : ' eng-on';
+    return `<div class="eng-section" data-eng="rpp">
+        <div class="sld-info-eyebrow">LV DISTRIBUTION CHAIN · UPS → RACK</div>
+        <svg class="eng-mimic" viewBox="0 0 320 252" xmlns="http://www.w3.org/2000/svg">
+            <text class="eng-lbl" x="160" y="10">UPS FEED · 480 V AC</text>
+            <path class="eng-wire${on}" d="M160 14 L160 26"/>
+            <rect class="eng-box${on}" x="110" y="26" width="100" height="20" rx="2"/>
+            <text class="eng-txt" x="160" y="40">PDU MAIN BKR</text>
+            <path class="eng-wire${on}" d="M160 46 L160 58"/>
+            <rect class="eng-box${on}" x="86" y="58" width="148" height="26" rx="2"/>
+            <text class="eng-txt" x="160" y="71">K-FACTOR ISOL. XFMR</text>
+            <text class="eng-lbl" x="160" y="81">480 → 415/240 V · harmonics-rated</text>
+            <path class="eng-wire${on}" d="M160 84 L160 96"/>
+            <rect class="eng-box eng-dclink${on}" x="92" y="96" width="136" height="10" rx="2"/>
+            <text class="eng-lbl" x="252" y="105">PDU BUS</text>
+            <path class="eng-wire${on}" d="M112 106 L112 124 M160 106 L160 124 M208 106 L208 124"/>
+            <text class="eng-lbl" x="112" y="120">SUB-BKR 1</text>
+            <text class="eng-lbl" x="208" y="120">SUB-BKR N</text>
+            <text class="eng-lbl" x="268" y="132">sub-feeds</text>
+            <rect class="eng-box${on}" x="86" y="128" width="148" height="24" rx="2"/>
+            <text class="eng-txt" x="160" y="143">RPP · PANELBOARDS</text>
+            <path class="eng-wire${on}" d="M112 152 L112 170 M160 152 L160 170 M208 152 L208 170"/>
+            <text class="eng-lbl" x="112" y="166">BRANCH</text>
+            <text class="eng-lbl" x="208" y="166">BRANCH</text>
+            <text class="eng-lbl" x="264" y="178">power whips</text>
+            <rect class="eng-box${on}" x="74" y="174" width="80" height="24" rx="2"/>
+            <text class="eng-txt" x="114" y="189">RACK PDU A</text>
+            <rect class="eng-box${on}" x="166" y="174" width="80" height="24" rx="2"/>
+            <text class="eng-txt" x="206" y="189">RACK PDU B</text>
+            <text class="eng-lbl" x="160" y="214">dual-cord: servers · switches · CDU liquid-cooling pumps</text>
+            <text class="eng-lbl" x="160" y="230">per-circuit kWh + PF metering · 24 × 30 A branches</text>
+        </svg>
+        ${_origin('Chain is design-static; live load on the node metric · K-factor xfmr absorbs nonlinear-load harmonics')}
+    </div>`;
+}
+
 // ── Phase 2 design assets (not deployed — spec sheet emphasis) ────
 function _designSection(id) {
     const SPECS = {
@@ -367,6 +409,9 @@ function _designSection(id) {
         util_d: ['35 kV INTAKE', '3-phase AC utility feed for Building D (the LAST point where phase vocabulary applies).'],
         rpp_d1: ['DC DISTRIBUTION', '800 VDC RPP feeding GB300 NVL144 racks @ 200 kW.'],
         rpp_d2: ['DC DISTRIBUTION', '800 VDC RPP feeding GB300 NVL144 racks @ 200 kW.'],
+        gen_farm_d: ['GENSET FARM · 13.8 kV', 'N+2 farm of 3.2 MW MV units on paralleling switchgear: ANSI 25 sync check, dead-bus black-start priority, PLC load shedding <100 ms. >50 MW is never one prime mover.'],
+        mv_bus_d: ['MV PARALLELING BUS', '13.8 kV arc-resistant switchgear; every unit closes via its 52 breaker only on ANSI 25 permissive.'],
+        stepup_d: ['STEP-UP 13.8→35 kV', 'Farm voltage matched to the rectifier AC intake — never tie 13.8 kV onto a 35 kV bus directly.'],
     };
     const [title, body] = SPECS[id] || ['PHASE 2 DESIGN', 'Path C2 design scope.'];
     return `<div class="eng-section eng-design" data-eng="design">
@@ -378,7 +423,7 @@ function _designSection(id) {
 }
 
 // ─── Dispatcher ────────────────────────────────────────────────────
-const _P2_IDS = new Set(['util_d', 'mv_rect_d', 'sscb_d', 'dc_bus_d', 'bess_d', 'rpp_d1', 'rpp_d2', 'hall_d']);
+const _P2_IDS = new Set(['util_d', 'mv_rect_d', 'sscb_d', 'dc_bus_d', 'bess_d', 'rpp_d1', 'rpp_d2', 'hall_d', 'gen_farm_d', 'mv_bus_d', 'stepup_d']);
 
 /**
  * Engineering detail markup for one SLD asset.
@@ -403,5 +448,6 @@ export function engineeringSection(id, grid, meta, extras = {}) {
     if (id.startsWith('ats_')) return _atsSection(node);
     if (id.startsWith('xfmr_')) return _xfmrSection(node);
     if (id.startsWith('batt_')) return _battSection(node);
+    if (id.startsWith('rpp_')) return _rppSection(node);
     return '';
 }

@@ -8310,3 +8310,6 @@ rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
 .eng-qalarm { font-size: 10px; color: var(--dk-sev-critical); margin: 4px 0;
               border: 1px solid var(--dk-sev-critical); border-radius: 3px;
               padding: 4px 7px; background: rgba(229,57,53,.07); line-height: 1.4; }
+
+/* 50 MW track — power budget caption is left-anchored multi-line. */
+.pf-budget { text-anchor: start; }

@@ -201,8 +201,8 @@ describe('T2.1 — views/power.js buildFlatMarkup() orthogonal SLD', () => {
         renderFlatSld();
         const svg = document.querySelector('#view-power .pid-svg');
         expect(svg.innerHTML).toContain('data-sld-node="ups_a"');
-        // Batch 1: canvas grew to host the Phase 2 Building D branch.
-        expect(svg.getAttribute('viewBox')).toBe('0 0 1200 1080');
+        // 50 MW track: canvas hosts Phase 2 + the genset farm row.
+        expect(svg.getAttribute('viewBox')).toBe('0 0 1200 1260');
     });
 
     it('tags ATS + RPP nodes as operable breakers', () => {
@@ -267,8 +267,15 @@ describe('B1 — views/power.js Phase 2 Building D branch', () => {
         const p2 = buildPhase2Markup();
         expect(p2).toContain('pf-wire pf-ac');
         expect(p2).toContain('pf-wire pf-dc');
-        // Exactly one AC wire: the 35 kV feed into the rectifier.
-        expect([...p2.matchAll(/pf-wire pf-ac/g)]).toHaveLength(1);
+        // Every AC wire lives upstream of the rectifier: the 35 kV
+        // feed + the genset-farm MV runs (50 MW track). The DC side
+        // never grows AC wires.
+        const acCount = [...p2.matchAll(/pf-wire pf-ac/g)].length;
+        expect(acCount).toBeGreaterThanOrEqual(10);   // feed + 9 farm runs
+        // No AC wire may appear inside the farm-to-bus DC section…
+        // (structural: the farm group carries only pf-ac, the bus
+        // branch wires after the rectifier only pf-dc — spot check:)
+        expect(p2).not.toMatch(/pf-wire pf-dc[^>]*d="[^"]*M14 /);
     });
 
     it('Phase 2 design nodes are NOT operable (no breaker control plane)', () => {
@@ -282,6 +289,28 @@ describe('B1 — views/power.js Phase 2 Building D branch', () => {
         expect(p2).toContain('1-100 µs clearing');
         expect(p2).toContain('BESS 2.5 MWh');
         expect(p2).toContain('GB300 NVL144 · 250 racks @ 200 kW (design)');
+    });
+
+    it('50MW: draws the genset farm with MV discipline (13.8 kV, 52s, step-up)', () => {
+        const p2 = buildPhase2Markup();
+        expect(p2).toContain('data-farm="1"');
+        expect(p2).toContain('data-sld-node="gen_farm_d"');
+        expect(p2).toContain('MV PARALLELING BUS · 13.8 kV · ANSI 25 sync');
+        // ANSI 52 device marks on every unit + the bus tie.
+        expect([...p2.matchAll(/>52</g)].length).toBeGreaterThanOrEqual(4);
+        // Voltage discipline: 13.8 kV steps UP before joining 35 kV.
+        expect(p2).toContain('data-sld-node="stepup_d"');
+        expect(p2).toContain('STEP-UP 13.8→35 kV');
+        // Sizing printed from power_budget (single source).
+        expect(p2).toMatch(/3 drawn of \d+ \+ 2 = \d+ × 3\.2 MW \(N\+2\)/);
+    });
+
+    it('50MW: prints the power budget block (PUE + every component)', () => {
+        const p2 = buildPhase2Markup();
+        expect(p2).toContain('POWER BUDGET · 50 MW IT (DESIGN)');
+        expect(p2).toContain('IT 50.0 MW');
+        expect(p2).toContain('chillers');
+        expect(p2).toMatch(/PUE 1\.\d{2}/);
     });
 });
 
