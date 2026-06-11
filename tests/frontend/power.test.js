@@ -291,18 +291,27 @@ describe('B1 — views/power.js Phase 2 Building D branch', () => {
         expect(p2).toContain('GB300 NVL144 · 250 racks @ 200 kW (design)');
     });
 
-    it('50MW: draws the genset farm with MV discipline (13.8 kV, 52s, step-up)', () => {
+    it('50MW: draws EVERY farm unit with MV discipline (13.8 kV, 52s, step-up)', async () => {
+        const { gensetFarmSizing } = await import('/assets/js/core/power_budget.js');
+        const sizing = gensetFarmSizing();
         const p2 = buildPhase2Markup();
         expect(p2).toContain('data-farm="1"');
-        expect(p2).toContain('data-sld-node="gen_farm_d"');
+        // The drawing cannot lie about capacity: one node per
+        // INSTALLED unit, count straight from the budget model.
+        expect([...p2.matchAll(/data-sld-node="gen_farm_d"/g)])
+            .toHaveLength(sizing.installed);
+        expect([...p2.matchAll(/class="pf-farm-idx"/g)])
+            .toHaveLength(sizing.installed);
+        expect(p2).toContain('G01');
+        expect(p2).toContain('G' + String(sizing.installed));
         expect(p2).toContain('MV PARALLELING BUS · 13.8 kV · ANSI 25 sync');
-        // ANSI 52 device marks on every unit + the bus tie.
-        expect([...p2.matchAll(/>52</g)].length).toBeGreaterThanOrEqual(4);
+        // The labeled ANSI 52 glyph sits on the bus tie.
+        expect([...p2.matchAll(/>52</g)].length).toBeGreaterThanOrEqual(1);
         // Voltage discipline: 13.8 kV steps UP before joining 35 kV.
         expect(p2).toContain('data-sld-node="stepup_d"');
         expect(p2).toContain('STEP-UP 13.8→35 kV');
         // Sizing printed from power_budget (single source).
-        expect(p2).toMatch(/3 drawn of \d+ \+ 2 = \d+ × 3\.2 MW \(N\+2\)/);
+        expect(p2).toMatch(/\d+ × 3\.2 MW \(\d+ required \+ 2 = N\+2\)/);
     });
 
     it('50MW: prints the power budget block (PUE + every component)', () => {

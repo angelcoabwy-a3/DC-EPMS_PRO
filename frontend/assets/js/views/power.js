@@ -408,24 +408,41 @@ function _flatGensetFarm() {
     const F = _FLAT.farm;
     const S = _FLAT.phase2.spineY;
     const sizing = gensetFarmSizing();
-    const genXs = [150, 268, 392];
 
-    // 52 = ANSI device number for the power circuit breaker.
-    const breaker52 = (x, y) =>
-        `<rect class="pf-sym pid-symbol" data-sev="ok" x="${x - 13}" y="${y - 11}" width="26" height="22" rx="2"/>`
-        + `<text class="pf-glyph pf-glyph-sm" x="${x}" y="${y + 4}">52</text>`;
+    // EVERY installed unit is drawn (operator call: "ve por la fase
+    // 2"). The count is sizing.installed — change the budget and the
+    // drawing resizes itself; the diagram cannot lie about capacity.
+    const busL = 86;
+    const busR = 1114;
+    const n = sizing.installed;
+    const step = (busR - busL - 28) / (n - 1);
+    const genXs = Array.from({ length: n }, (_, i) => busL + 14 + i * step);
 
-    const gens = genXs.map((x, i) =>
-        `<g class="sld-node pf-node" data-sld-node="gen_farm_d">`
-        + symbol('genset', x, F.genY)
-        + `<text class="pf-name" x="${x}" y="${F.genY - 34}">GEN ${i + 1} · 3.2 MW</text>`
-        + `</g>`
-        + breaker52(x, F.genY - 58)).join('');
+    // 52 = ANSI device number for the power circuit breaker. At farm
+    // density the per-unit 52s are compact marks; the bus tie keeps
+    // the labeled glyph.
+    const breaker52 = (x, y, labeled) =>
+        `<rect class="pf-sym pid-symbol" data-sev="ok" x="${x - (labeled ? 13 : 6)}" y="${y - (labeled ? 11 : 6)}" `
+        + `width="${labeled ? 26 : 12}" height="${labeled ? 22 : 12}" rx="2"/>`
+        + (labeled ? `<text class="pf-glyph pf-glyph-sm" x="${x}" y="${y + 4}">52</text>` : '');
+
+    const gens = genXs.map((xRaw, i) => {
+        const x = Number(xRaw.toFixed(1));
+        return `<g class="sld-node pf-node pf-farm-unit" data-sld-node="gen_farm_d">`
+            + `<circle class="pf-sym pid-symbol" data-sev="ok" cx="${x}" cy="${F.genY}" r="13"/>`
+            + `<text class="pf-glyph pf-glyph-sm" x="${x}" y="${F.genY + 4}">G</text>`
+            + `<text class="pf-farm-idx" x="${x}" y="${F.genY + 28}">G${String(i + 1).padStart(2, '0')}</text>`
+            + `</g>`
+            + breaker52(x, F.genY - 32, false);
+    }).join('');
 
     const wires = [
-        // gens -> their 52s -> MV bus
-        ...genXs.map((x) => wire([[x, F.genY - 23], [x, F.genY - 47]], 'pf-ac')),
-        ...genXs.map((x) => wire([[x, F.genY - 69], [x, F.busY + 6]], 'pf-ac')),
+        // every unit -> its 52 mark -> MV bus
+        ...genXs.map((xRaw) => {
+            const x = Number(xRaw.toFixed(1));
+            return wire([[x, F.genY - 13], [x, F.genY - 26]], 'pf-ac')
+                + wire([[x, F.genY - 38], [x, F.busY + 6]], 'pf-ac');
+        }),
         // MV bus -> bus 52 -> step-up xfmr -> tie into the AC side
         wire([[F.tieX, F.busY - 6], [F.tieX, F.busY - 36]], 'pf-ac'),
         wire([[F.tieX, F.busY - 58], [F.tieX, S + 96]], 'pf-ac'),
@@ -434,30 +451,31 @@ function _flatGensetFarm() {
 
     const farm =
         `<g class="sld-node pf-node" data-sld-node="mv_bus_d">`
-        + `<rect class="pf-sym pid-symbol pf-bus" data-sev="ok" x="86" y="${F.busY - 6}" width="370" height="12" rx="2"/>`
-        + `<text class="pf-name" x="271" y="${F.busY - 16}">MV PARALLELING BUS · 13.8 kV · ANSI 25 sync · dead-bus black start</text>`
+        + `<rect class="pf-sym pid-symbol pf-bus" data-sev="ok" x="${busL}" y="${F.busY - 6}" width="${busR - busL}" height="12" rx="2"/>`
+        + `<text class="pf-name" x="${(busL + busR) / 2}" y="${F.busY - 16}">MV PARALLELING BUS · 13.8 kV · ANSI 25 sync · dead-bus black start · 52 per unit</text>`
         + `</g>`
-        + breaker52(F.tieX, F.busY - 47)
+        + breaker52(F.tieX, F.busY - 47, true)
         + `<g class="sld-node pf-node" data-sld-node="stepup_d">`
         + symbol('xfmr', F.tieX, S + 74)
         + `<text class="pf-name" x="${F.tieX + 118}" y="${S + 72}">STEP-UP 13.8→35 kV</text>`
         + `</g>`;
 
-    const sizingTxt = `${sizing.required} + ${sizing.redundancy} = ${sizing.installed}`
-        + ` × ${sizing.unitMw} MW (N+${sizing.redundancy}) · farm ${sizing.farmMw.toFixed(1)} MW`;
+    const sizingTxt = `${sizing.installed} × ${sizing.unitMw} MW`
+        + ` (${sizing.required} required + ${sizing.redundancy} = N+${sizing.redundancy})`
+        + ` · farm ${sizing.farmMw.toFixed(1)} MW`;
     // Power budget block — every number from core/power_budget.js;
-    // wrapped at the separators so the line fits the canvas.
+    // wrapped at the separators so the line fits the canvas. Sits
+    // ABOVE the full-width bus.
     const parts = budgetCaption().split(' · ');
     const budgetLines = [];
     for (let i = 0; i < parts.length; i += 3) {
         budgetLines.push(parts.slice(i, i + 3).join(' · '));
     }
     const budgetTxt = budgetLines.map((line, i) =>
-        `<text class="pf-caption pf-budget" x="560" y="${F.busY + 8 + i * 16}">${escapeHTML(line)}</text>`).join('');
+        `<text class="pf-caption pf-budget" x="560" y="${F.busY - 94 + i * 16}">${escapeHTML(line)}</text>`).join('');
     const captions =
-        `<text class="pf-section-title" x="86" y="${F.genY + 52}">GENSET FARM · BUILDING D STANDBY (DESIGN)</text>`
-        + `<text class="pf-caption" x="271" y="${F.genY + 72}">3 drawn of ${sizingTxt}</text>`
-        + `<text class="pf-section-title" x="560" y="${F.busY - 16}">POWER BUDGET · 50 MW IT (DESIGN)</text>`
+        `<text class="pf-section-title" x="${busL}" y="${F.genY + 52}">GENSET FARM · BUILDING D STANDBY (DESIGN) — ${escapeHTML(sizingTxt)}</text>`
+        + `<text class="pf-section-title" x="560" y="${F.busY - 112}">POWER BUDGET · 50 MW IT (DESIGN)</text>`
         + budgetTxt;
 
     return `<g data-farm="1">${wires}${gens}${farm}${captions}</g>`;

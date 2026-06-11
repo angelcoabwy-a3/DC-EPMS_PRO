@@ -8313,3 +8313,6 @@ rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
 
 /* 50 MW track — power budget caption is left-anchored multi-line. */
 .pf-budget { text-anchor: start; }
+
+/* 50 MW farm: full unit row — compact index labels under each gen. */
+.pf-farm-idx { font-size: 8px; fill: #5d6f7e; text-anchor: middle; }
