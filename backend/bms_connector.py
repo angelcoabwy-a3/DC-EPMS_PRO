@@ -252,6 +252,17 @@ class BMSConnector:
         ts = time.time()
         for tag in self.tags.values():
             try:
+                # Operator writes to static-source tags are STICKY: a
+                # successful (RBAC-gated, audited) write must not be
+                # silently reverted by the next refresh cycle — the
+                # source value is only the boot default. Telemetry/
+                # physics-sourced tags always refresh from the plant.
+                if (
+                    tag.last_write_ts > 0
+                    and tag.source.get("type", "static") == "static"
+                ):
+                    tag.last_read_ts = ts
+                    continue
                 value = self._resolve_source(tag.source, telemetry, physics_metrics)
                 # Round numerics for display sanity
                 if isinstance(value, float):

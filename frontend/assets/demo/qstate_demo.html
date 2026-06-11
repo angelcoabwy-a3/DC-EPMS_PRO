@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>DC-EPMS PRO — Q-STATE MISMATCH demo (end-to-end REAL)</title>
+<link rel="stylesheet" href="/assets/app.css?v=qstate">
+<style>
+  body { background:#0B0D10; color:#c7d6e2; font-family:system-ui,sans-serif;
+         margin:0; padding:24px 32px; }
+  h1 { font-size:18px; letter-spacing:.06em; }
+  .note { font-size:12.5px; color:#7e93a5; max-width:860px; line-height:1.5; }
+  .demo-row { display:flex; gap:10px; margin:18px 0; flex-wrap:wrap; }
+  .demo-btn { background:#11161c; border:1px solid #2A3038; color:#c7d6e2;
+              border-radius:5px; padding:10px 16px; cursor:pointer; font-size:13px; }
+  .demo-btn:hover { border-color:#00B8D4; }
+  .demo-btn.danger { border-color:#5c2a28; }
+  .demo-btn.danger:hover { border-color:#E53935; }
+  .demo-btn em { color:#7e93a5; font-style:normal; font-size:11px; display:block; }
+  #panel-host { max-width:480px; background:#0E1318; border:1px solid #1C2128;
+                border-radius:8px; padding:14px 16px; margin-top:10px; }
+  .sld-info-eyebrow { font-size:9px; letter-spacing:.14em; color:#5d6f7e; }
+  #demo-log { margin-top:16px; font-size:11px; color:#5d6f7e; font-family:monospace;
+              white-space:pre-line; max-width:880px; }
+</style>
+</head>
+<body>
+<h1>⚠ Q-STATE MISMATCH — demo end-to-end REAL (sin mocks)</h1>
+<p class="note">Nada está interceptado: los botones hacen el <strong>write BMS real</strong>
+(<code>POST /api/bms/write</code>, claim RBAC SME_L6, auditado) sobre el tag vivo
+<code>PWR.UPS_A.Q3_POS</code>, releen <code>/api/bms/tags</code> y re-renderizan la sección de
+ingeniería de producción (<code>asset_engineering.js</code>). Es exactamente lo que hace el
+panel del Power SLD en el HMI.</p>
+
+<div class="demo-row">
+  <button class="demo-btn" id="btn-read">🔄 Leer Q-states (live)
+    <em>GET /api/bms/tags → parseQTags → render</em></button>
+  <button class="demo-btn danger" id="btn-bridge">⚠ Maniobra errónea: cerrar Q3
+    <em>el técnico deja el MBP puenteado tras el servicio</em></button>
+  <button class="demo-btn" id="btn-restore">✓ Restaurar Q3 = Open
+    <em>lineup nominal de doble conversión</em></button>
+</div>
+
+<div id="panel-host"><span class="note">cargando…</span></div>
+<div id="demo-log"></div>
+
+<script type="module">
+const log = (m, isErr) => {
+    const el = document.getElementById('demo-log');
+    el.textContent = `[${new Date().toLocaleTimeString()}] ${isErr ? '❌ ' : ''}${m}\n` + el.textContent;
+};
+window.addEventListener('error', (e) => log(`JS error: ${e.message}`, true));
+
+try {
+    const { engineeringSection, parseQTags, qMismatches } =
+        await import('/assets/js/core/asset_engineering.js?v=qstate');
+    const { initPowerGrid, getGridState } =
+        await import('/assets/js/core/power_grid.js?v=qstate');
+    initPowerGrid();   // live DAG -> ups_a in double conversion
+
+    async function render() {
+        const r = await fetch('/api/bms/tags?category=PWR');
+        const data = await r.json();
+        const q = parseQTags(data.tags, 'ups_a');
+        document.getElementById('panel-host').innerHTML =
+            engineeringSection('ups_a', getGridState(), {}, { qStates: q });
+        const ms = qMismatches('double_conversion', q);
+        log(ms.length
+            ? `Q-states leidos: ${JSON.stringify(q)} -> ${ms.length} MISMATCH: ${ms.join(' | ')}`
+            : `Q-states leidos: ${JSON.stringify(q)} -> lineup nominal, sin alarmas`);
+    }
+
+    async function writeQ3(value) {
+        const r = await fetch('/api/bms/write', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tag_id: 'PWR.UPS_A.Q3_POS', value,
+                user: 'qstate-demo', actor_role: 'SME_L6',
+            }),
+        });
+        const d = await r.json();
+        if (!r.ok) { log(`write rechazado (HTTP ${r.status}): ${d.detail || ''}`, true); return; }
+        log(`BMS write REAL: ${d.message} (auditado, claim SME_L6)`);
+        await render();
+    }
+
+    document.getElementById('btn-read').addEventListener('click', render);
+    document.getElementById('btn-bridge').addEventListener('click', () => writeQ3('Closed'));
+    document.getElementById('btn-restore').addEventListener('click', () => writeQ3('Open'));
+    await render();
+    log('demo lista — toca "Maniobra errónea: cerrar Q3"');
+} catch (err) {
+    log(`No pude cargar: ${err.message} — Ctrl+Shift+R`, true);
+    throw err;
+}
+</script>
+</body>
+</html>
