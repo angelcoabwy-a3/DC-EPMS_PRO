@@ -70,7 +70,9 @@ Tests:   backend 1409 passed (Epic 10 +60; incl. 7 PG integration) —
          frontend 449 vitest passed across 28 files (Diagram Rebuild
          +81: kit/registry 22, cooling DAG 11, HLD 8, site graph 9,
          power_grid + engineering 21, Phase 2 SLD 10).
-         GraphRAG: 12 knowledge documents at boot.
+         GraphRAG: 14 knowledge documents at boot (+2 Q-state track:
+         galaxy-vx-internal-oneline, genset-farm-mv-paralleling).
+         BMS catalog: 62 tags (+10 PWR.UPS_x.Qn_POS breaker positions).
          Architect library: 29 catalog MOPs pre-seeded, all audit=APPROVE.
          Skills registry: 31 explicit skills across 14 categories
          (S-DIAGRAM-01 added per ADR-012).
@@ -173,6 +175,7 @@ docs/
 
 (Closed bugs are in git history. The full closed list lived in the pre-2026-05-27 CLAUDE.md if needed.)
 
+- **DC-EPMS-TEST-01** (LOW, test hygiene) — `tests/frontend/overview.test.js` leaks an unstubbed relative `fetch` when run in isolation (unhandled `ECONNREFUSED ::1:3000` against happy-dom's default origin). Pre-existing (reproduced on clean HEAD 2026-06-10); all assertions pass. Fix: stub fetch in the overview fixture. Found during the Q-state track.
 - **DC-EPMS-029c** (LOW) — `physics_engine.validate_site()` SHI rollup insensitive to some LOTO types (chiller / cooling_tower / chw_pump / RPP). simulate_loto output is structurally correct; only the SHI delta is unreactive. UPS + CDU scenarios DO produce SHI delta, sufficient for demo. Resolution: tune `physics_engine` module thresholds (2-3h surgical). Target: V10 / dedicated bite.
 - **E2E audit WARNING-tier findings** in `docs/audit/E2E_Security_Orphan_Audit.md` — the 3 CRITICAL RBAC findings closed in `b34efb1`; WARNINGs remain open.
 - **TODO(asset-manufacturer-migration)**: S-VENDOR-EATON-01 string-matches context for "eaton" today. Next sprint should add `Asset.manufacturer` to `backend/cmms_models.py` for deterministic lookup. Tracked in `backend/agents/procedure_architect.py`.
@@ -342,8 +345,21 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 >   any past instant; Forensic Ledger actions ride the timeline as
 >   clickable markers with their HMAC chain prefix. Honest scope:
 >   session-only, not persisted history.
-> Vitest floor **473 / 30 files**. Demo harness: `frontend/assets/
-> demo/breadcrumb_demo.html` (committed as demo-gallery seed).
+> Vitest floor **481 / 30 files**. Demo gallery:
+> `frontend/assets/demo/` (breadcrumb_demo + innovation_demo).
+>
+> **Q-STATE TRACK (2026-06-10, closing batch)** — the Galaxy VX
+> one-line upgraded twice: (a) full Q-breaker discipline a002a55
+> (Q1/Q2/Q3/Q5 glyphs, position != energization, MBP sequence);
+> (b) operator-spec topology + Q-STATE AS BMS TAGS 45c2203: SSM as
+> the common inverter/bypass output junction -> NEW Q4 -> load;
+> 10 writable PWR.UPS_x.Qn_POS tags (62 total); parseQTags +
+> qMismatches turn a wrong lineup into an ALARM ("Q3 reads CLOSED
+> in double conversion -- MBP still bridged?"). Demo maneuver: BMS
+> view -> write PWR.UPS_A.Q3_POS = Closed (SME_L6) -> Power SLD ->
+> click UPS A -> pulsing alarm ring + mismatch banner. Knowledge
+> corpus +2 (5838581): Galaxy internals + farm-scale MV paralleling
+> (ANSI 25, dead-bus, load shedding) -- graphrag boot count now 14.
 
 > Epic 10 closed on `master` via 4 atomic commits, **pushed to origin/master**:
 > `5a8252e` backend IAM core (roles + JWT + login),
@@ -376,7 +392,7 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 
 1. Run `IMMEDIATE NEXT STEPS` checklist.
 2. Read `docs/ROADMAP-V11.md` for live backlog.
-3. Verify boot log shows `[graphrag] loaded 12 knowledge documents` + `[BOOT] Architect library pre-seeded with 29 catalog MOP(s)` + `[BOOT] QKDService primed`.
+3. Verify boot log shows `[graphrag] loaded 14 knowledge documents` + `[BOOT] Architect library pre-seeded with 29 catalog MOP(s)` + `[BOOT] QKDService primed`.
 4. Wait for Wilmer's explicit GO before any new work.
 
 ## 🚨 DO NOT TOUCH
