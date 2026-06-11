@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 
 import {
     upsMode, gensetPhase, runtimeMinutes, battStringVoltage,
-    xfmrLoadingPct, engineeringSection,
+    xfmrLoadingPct, engineeringSection, upsBreakerStates,
 } from '/assets/js/core/asset_engineering.js';
 import { getAssetMeta } from '/assets/js/core/asset_metadata.js';
 
@@ -78,6 +78,50 @@ describe('B5 — UPS engineering section', () => {
         expect(html).toMatch(/eng-chip-active[^>]*data-mode="battery"/);
         expect(html).toContain('eng-batt eng-on');
         expect(html).toContain('42 %');
+    });
+
+    it('Galaxy one-line carries the full Q-breaker discipline (Q1/Q2/Q3/Q5)', () => {
+        const grid = { ups_a: { alive: true, mode: 'double_conversion' }, batt_a: { soc: 100 } };
+        const html = engineeringSection('ups_a', grid, {});
+        for (const q of ['Q1', 'Q2', 'Q3', 'Q5']) {
+            expect(html).toContain(`data-q="${q}"`);
+        }
+        expect(html).toContain('PFC · THDi&lt;3%');
+        expect(html).toContain('SCR · ms transfer');
+        expect(html).toContain('MBP · EXTERNAL PANEL');
+        // MOP switching discipline footer.
+        expect(html).toContain('MBP transfer (MOP-UPS-001)');
+        expect(html).toContain('close Q3');
+        // Honest origin: Q positions are mode-nominal, not telemetry.
+        expect(html).toContain('Q-state telemetry not modeled');
+    });
+
+    it('breaker POSITION is distinct from path ENERGIZATION (battery mode)', () => {
+        const grid = {
+            ups_a: { alive: true, on_battery: true, mode: 'battery' },
+            batt_a: { soc: 60 },
+        };
+        const html = engineeringSection('ups_a', grid, {});
+        // Q1 stays CLOSED — the input is dead, the breaker did not open…
+        expect(html).toMatch(/data-q="Q1" data-pos="closed"/);
+        // …and therefore its glyph is NOT energized.
+        expect(html).not.toMatch(/eng-q eng-on[^>]*data-q="Q1"/);
+        // Q5 carries the discharge: closed AND energized.
+        expect(html).toMatch(/class="eng-q eng-on[^"]*" data-q="Q5" data-pos="closed"/);
+    });
+
+    it('upsBreakerStates: maintenance bypass isolates the UPS (Q3 in, rest out)', () => {
+        expect(upsBreakerStates('maint_bypass')).toEqual(
+            { Q1: 'open', Q2: 'open', Q3: 'closed', Q5: 'open' });
+        expect(upsBreakerStates('double_conversion')).toEqual(
+            { Q1: 'closed', Q2: 'closed', Q3: 'open', Q5: 'closed' });
+        expect(upsBreakerStates('battery').Q1).toBe('closed');
+    });
+
+    it('normal mode shows the battery float-charging trickle via Q5', () => {
+        const grid = { ups_a: { alive: true, mode: 'double_conversion' }, batt_a: { soc: 100 } };
+        const html = engineeringSection('ups_a', grid, {});
+        expect(html).toContain('eng-charge');
     });
 });
 

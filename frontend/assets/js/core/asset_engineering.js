@@ -79,43 +79,106 @@ function _origin(text) {
     return `<div class="eng-origin">${escapeHTML(text)}</div>`;
 }
 
-// ── UPS: IEC 62040-3 modes + internal power-path mimic ────────────
+// ── UPS: Galaxy VX internal one-line + IEC 62040-3 modes ──────────
+// Breaker discipline per the Galaxy switching nomenclature the MOPs
+// use: Q1 rectifier input · Q2 static-bypass input · Q3 maintenance
+// bypass (external MBP panel) · Q5 battery isolation.
 const UPS_MODES = [
-    { id: 'double_conversion', label: 'DOUBLE CONVERSION', cls: 'VFI-SS-111', modeled: true },
-    { id: 'battery', label: 'BATTERY', cls: 'inverter on DC bus', modeled: true },
-    { id: 'static_bypass', label: 'STATIC BYPASS', cls: 'SSM transfer', modeled: false },
+    { id: 'double_conversion', label: 'DOUBLE CONVERSION', cls: 'VFI-SS-111 · Q1 path', modeled: true },
+    { id: 'battery', label: 'BATTERY', cls: 'inverter on DC bus via Q5', modeled: true },
+    { id: 'static_bypass', label: 'STATIC BYPASS', cls: 'SSM (SCR) via Q2 · ms transfer', modeled: false },
     { id: 'econversion', label: 'ECOnversion', cls: 'eco / active filter', modeled: false },
-    { id: 'maint_bypass', label: 'MAINT BYPASS', cls: 'external MBB', modeled: false },
+    { id: 'maint_bypass', label: 'MAINT BYPASS', cls: 'Q3 · external MBP — UPS isolated', modeled: false },
 ];
 
+/**
+ * Galaxy breaker POSITIONS per operating mode. Pure — and distinct
+ * from path energization: in battery mode Q1 stays CLOSED (the
+ * breaker does not open itself; the input is simply dead).
+ */
+export function upsBreakerStates(mode) {
+    if (mode === 'maint_bypass') {
+        // The MBP wraps the UPS; Q1/Q2/Q5 open for safe intervention
+        // (rectifier + inverter + batteries physically isolated).
+        return { Q1: 'open', Q2: 'open', Q3: 'closed', Q5: 'open' };
+    }
+    return { Q1: 'closed', Q2: 'closed', Q3: 'open', Q5: 'closed' };
+}
+
+// Energized path segments per mode. 'charge' = battery float trickle.
+const _UPS_PATHS = {
+    double_conversion: ['in1', 'q1', 'rect', 'dc', 'inv', 'out', 'q5charge'],
+    battery: ['q5', 'batt', 'dc', 'inv', 'out'],
+    static_bypass: ['in2', 'q2', 'ssm', 'out'],
+    maint_bypass: ['mbp', 'q3', 'out'],
+    off: [],
+    unknown: [],
+};
+
 function _upsMimic(mode) {
-    // Active path per mode: double_conversion = IN->RECT->DC->INV->OUT,
-    // battery = BATT->DC->INV->OUT (rectifier dark), off = all dark.
-    const on = (seg) => {
-        if (mode === 'double_conversion') return ['in', 'rect', 'dc', 'inv', 'out'].includes(seg) ? ' eng-on' : '';
-        if (mode === 'battery') return ['batt', 'dc', 'inv', 'out'].includes(seg) ? ' eng-on' : '';
-        return '';
+    const segs = _UPS_PATHS[mode] || [];
+    const lit = (s) => (segs.includes(s) ? ' eng-on' : '');
+    const charge = segs.includes('q5charge') ? ' eng-charge' : '';
+    const Q = upsBreakerStates(mode);
+
+    // Breaker glyph: closed = continuous blade; open = blade swung out.
+    const breaker = (id, x, y, seg) => {
+        const pos = Q[id];
+        const blade = pos === 'closed'
+            ? `<line class="eng-q-blade" x1="${x - 7}" y1="${y}" x2="${x + 7}" y2="${y}"/>`
+            : `<line class="eng-q-blade" x1="${x - 7}" y1="${y}" x2="${x + 4}" y2="${y - 8}"/>`;
+        return `<g class="eng-q${lit(seg)}${seg === 'q5' || seg === 'q5charge' ? charge : ''}" data-q="${id}" data-pos="${pos}">
+            <circle class="eng-q-pole" cx="${x - 7}" cy="${y}" r="1.8"/>
+            <circle class="eng-q-pole" cx="${x + 7}" cy="${y}" r="1.8"/>
+            ${blade}
+            <text class="eng-lbl" x="${x}" y="${y + 12}">${id}</text>
+        </g>`;
     };
-    return `<svg class="eng-mimic" viewBox="0 0 300 130" xmlns="http://www.w3.org/2000/svg">
-        <path class="eng-wire eng-bypass-rail" d="M14 28 L286 28"/>
-        <rect class="eng-box eng-ssm" x="130" y="16" width="40" height="24" rx="2"/>
-        <text class="eng-txt" x="150" y="32">SSM</text>
-        <text class="eng-lbl" x="150" y="10">STATIC BYPASS RAIL</text>
-        <path class="eng-wire${on('in')}" d="M14 70 L62 70"/>
-        <rect class="eng-box${on('rect')}" x="62" y="54" width="44" height="32" rx="2"/>
-        <text class="eng-txt" x="84" y="74">AC→DC</text>
-        <path class="eng-wire${on('dc')}" d="M106 70 L150 70"/>
-        <rect class="eng-box eng-dclink${on('dc')}" x="150" y="64" width="34" height="12" rx="2"/>
-        <text class="eng-lbl" x="167" y="56">DC LINK</text>
-        <path class="eng-wire${on('dc')}" d="M184 70 L196 70"/>
-        <rect class="eng-box${on('inv')}" x="196" y="54" width="44" height="32" rx="2"/>
-        <text class="eng-txt" x="218" y="74">DC→AC</text>
-        <path class="eng-wire${on('out')}" d="M240 70 L286 70"/>
-        <path class="eng-wire${on('batt')}" d="M167 76 L167 102"/>
-        <rect class="eng-box eng-batt${on('batt')}" x="143" y="102" width="48" height="22" rx="2"/>
-        <text class="eng-txt" x="167" y="117">BATT</text>
-        <text class="eng-lbl" x="14" y="84">INPUT</text>
-        <text class="eng-lbl" x="286" y="84" text-anchor="end">OUTPUT</text>
+
+    return `<svg class="eng-mimic" viewBox="0 0 340 206" xmlns="http://www.w3.org/2000/svg">
+        <!-- Q3 maintenance bypass rail (external MBP panel) -->
+        <path class="eng-wire eng-mbp-rail${lit('mbp')}" d="M14 18 L330 18"/>
+        ${breaker('Q3', 172, 18, 'q3')}
+        <text class="eng-lbl" x="14" y="10">MBP · EXTERNAL PANEL</text>
+        <path class="eng-wire eng-mbp-rail${lit('mbp')}" d="M14 18 L14 110"/>
+        <path class="eng-wire eng-mbp-rail${lit('out')}" d="M330 18 L330 110"/>
+
+        <!-- Static bypass rail: INPUT 2 -> Q2 -> SSM (SCR) -> junction -->
+        <path class="eng-wire${lit('in2')}" d="M14 56 L66 56"/>
+        ${breaker('Q2', 80, 56, 'q2')}
+        <path class="eng-wire${lit('q2')}" d="M94 56 L150 56"/>
+        <rect class="eng-box eng-ssm${lit('ssm')}" x="150" y="44" width="44" height="24" rx="2"/>
+        <text class="eng-txt" x="172" y="60">SSM</text>
+        <text class="eng-lbl" x="222" y="48">SCR · ms transfer</text>
+        <path class="eng-wire${lit('ssm')}" d="M194 56 L306 56 L306 110"/>
+
+        <!-- Main path: INPUT 1 -> Q1 -> PFC RECT -> DC BUS -> INV -> out -->
+        <path class="eng-wire${lit('in1')}" d="M14 110 L66 110"/>
+        ${breaker('Q1', 80, 110, 'q1')}
+        <path class="eng-wire${lit('q1')}" d="M94 110 L104 110"/>
+        <rect class="eng-box${lit('rect')}" x="104" y="94" width="50" height="32" rx="2"/>
+        <text class="eng-txt" x="129" y="110">AC→DC</text>
+        <text class="eng-lbl" x="129" y="122">PFC · THDi&lt;3%</text>
+        <path class="eng-wire${lit('dc')}" d="M154 110 L168 110"/>
+        <rect class="eng-box eng-dclink${lit('dc')}" x="168" y="104" width="36" height="12" rx="2"/>
+        <text class="eng-lbl" x="186" y="98">DC BUS</text>
+        <path class="eng-wire${lit('dc')}" d="M204 110 L216 110"/>
+        <rect class="eng-box${lit('inv')}" x="216" y="94" width="50" height="32" rx="2"/>
+        <text class="eng-txt" x="241" y="110">DC→AC</text>
+        <text class="eng-lbl" x="241" y="122">senoidal reg.</text>
+        <path class="eng-wire${lit('out')}" d="M266 110 L330 110"/>
+
+        <!-- Battery branch: DC BUS -> Q5 -> BATT -->
+        <path class="eng-wire${lit('q5')}${charge}" d="M186 116 L186 142"/>
+        ${breaker('Q5', 186, 152, 'q5')}
+        <path class="eng-wire${lit('batt')}${charge}" d="M186 162 L186 172"/>
+        <rect class="eng-box eng-batt${lit('batt')}${charge}" x="160" y="172" width="52" height="24" rx="2"/>
+        <text class="eng-txt" x="186" y="188">BATT</text>
+        <text class="eng-lbl" x="226" y="186">VRLA · Q5 isol.</text>
+
+        <text class="eng-lbl" x="14" y="124">INPUT 1</text>
+        <text class="eng-lbl" x="14" y="70">INPUT 2 (BYP)</text>
+        <text class="eng-lbl" x="330" y="124" text-anchor="end">OUTPUT</text>
     </svg>`;
 }
 
@@ -129,12 +192,17 @@ function _upsSection(node) {
             title="${escapeHTML(m.cls + (m.modeled ? '' : ' — available mode, not modeled in sim'))}"
             data-mode="${m.id}">${escapeHTML(m.label)}</span>`;
     }).join('');
+    // The switching discipline the MOPs encode: transfer to external
+    // maintenance bypass with zero load interruption.
+    const mbpSeq = `<div class="eng-seq"><span class="eng-seq-lbl">MBP transfer (MOP-UPS-001):</span>
+        INV→bypass → close Q3 → open Q2 → open Q1 → open Q5 — load never drops</div>`;
     return `<div class="eng-section" data-eng="ups">
-        <div class="sld-info-eyebrow">OPERATING MODE · IEC 62040-3</div>
+        <div class="sld-info-eyebrow">OPERATING MODE · IEC 62040-3 · GALAXY VX ONE-LINE</div>
         <div class="eng-chips">${chips}</div>
         ${_upsMimic(mode)}
         ${soc != null ? _bar(soc, 'SOC', soc.toFixed(0) + ' %', soc < 30 ? 'crit' : soc < 70 ? 'warn' : 'ok') : ''}
-        ${_origin('Live: mode + path from grid DAG · class VFI-SS-111 per nameplate')}
+        ${mbpSeq}
+        ${_origin('Live: mode + path from grid DAG · breaker POSITIONS are mode-nominal (Q-state telemetry not modeled) · VFI-SS-111 per nameplate')}
     </div>`;
 }
 

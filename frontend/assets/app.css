@@ -8290,3 +8290,15 @@ body {
 .pwr-replay-bar .rp-time { font-size: 12px; color: #c7d6e2; font-variant-numeric: tabular-nums; }
 .pwr-replay-bar .rp-entry { font-size: 10.5px; color: #9fb6c6; font-family: monospace; }
 #view-power.pwr-replay .pid-svg { outline: 1px dashed var(--dk-dc); outline-offset: -1px; }
+
+/* Galaxy VX one-line upgrade — Q-breaker glyphs + MBP rail + charge trickle. */
+.eng-q-pole { fill: #5d6f7e; }
+.eng-q-blade { stroke: #8fa3b8; stroke-width: 2; stroke-linecap: round; }
+.eng-q.eng-on .eng-q-blade { stroke: var(--dk-sev-ok); }
+.eng-q.eng-on .eng-q-pole { fill: var(--dk-sev-ok); }
+.eng-q[data-pos="open"] .eng-q-blade { stroke: var(--dk-sev-warning); }
+.eng-mbp-rail { stroke-dasharray: 5 4; }
+.eng-charge { stroke: #2e7d4f !important; }
+rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
+.eng-seq { font-size: 9.5px; color: #9fb6c6; margin-top: 6px; line-height: 1.45; }
+.eng-seq-lbl { color: var(--dk-dc); letter-spacing: .04em; }
