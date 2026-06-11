@@ -38,7 +38,7 @@
 import { getState, setState, subscribe } from '../core/state.js';
 import { getAssetMeta } from '../core/asset_metadata.js';
 import { getGridState } from '../core/power_grid.js';
-import { engineeringSection } from '../core/asset_engineering.js';
+import { engineeringSection, parseQTags } from '../core/asset_engineering.js';
 import { playClick } from '../core/sound.js';
 
 const TREND_LEN = 60;          // samples
@@ -48,6 +48,30 @@ let _panelEl   = null;
 let _chart     = null;          // Chart.js instance
 let _trendTimer = null;
 let _initialized = false;
+// Q-state track: live breaker positions per UPS (PWR.UPS_x.Qn_POS).
+const _qCache = {};
+
+async function _refreshQStates(id) {
+    if (!id || !id.startsWith('ups_')) return;
+    try {
+        const r = await fetch('/api/bms/tags?category=PWR');
+        if (!r.ok) return;
+        const data = await r.json();
+        const q = parseQTags(data.tags, id);
+        if (q) _qCache[id] = q;
+        // Re-render the engineering section with ACTUAL positions —
+        // only if this asset is still the selection.
+        if (getState('selectedAsset') === id) {
+            const eng = _panelEl?.querySelector('#sld-info-eng');
+            if (eng) {
+                eng.innerHTML = engineeringSection(
+                    id, getGridState() || {}, getAssetMeta(id), { qStates: q });
+            }
+        }
+    } catch (e) {
+        console.warn('[asset_panel] Q-state fetch failed:', e.message);
+    }
+}
 
 // ─── Mount + DOM ──────────────────────────────────────────────────
 
@@ -122,8 +146,10 @@ function _renderAssetDetail(id) {
     const stateBadge = meta.design
         ? '<span class="sld-state-badge sld-tone-info">DESIGN · PH2</span>'
         : _stateBadge(node);
-    // Batch 5: per-type engineering detail (UPS modes, NFPA 110, ...)
-    const engineering = engineeringSection(id, grid, meta);
+    // Per-type engineering detail (UPS modes, NFPA 110, ...). UPS
+    // assets render mode-nominal first; _refreshQStates upgrades the
+    // section with ACTUAL Q positions from the BMS tags.
+    const engineering = engineeringSection(id, grid, meta, { qStates: _qCache[id] || null });
     const detailRows = (meta.details || []).map(d =>
         `<div class="sld-info-row"><span>${d.k}</span><span>${d.v}</span></div>`
     ).join('');
@@ -344,6 +370,7 @@ function _render() {
 
     mount.innerHTML = _renderAssetDetail(id);
     queueMicrotask(() => _mountSparkline(id));
+    _refreshQStates(id);   // async upgrade to live Q positions
 
     // Wire panel-internal interactions
     const close = mount.querySelector('#sld-info-close');
@@ -376,7 +403,10 @@ export function initAssetPanel() {
             const badge = _panelEl?.querySelector('.sld-info-state');
             if (badge && !meta?.design) badge.innerHTML = _stateBadge(grid[id]);
             const eng = _panelEl?.querySelector('#sld-info-eng');
-            if (eng) eng.innerHTML = engineeringSection(id, grid, meta);
+            if (eng) {
+                eng.innerHTML = engineeringSection(
+                    id, grid, meta, { qStates: _qCache[id] || null });
+            }
         }
     });
     _render();

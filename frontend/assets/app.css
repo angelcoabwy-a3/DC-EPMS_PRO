@@ -8302,3 +8302,11 @@ body {
 rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
 .eng-seq { font-size: 9.5px; color: #9fb6c6; margin-top: 6px; line-height: 1.45; }
 .eng-seq-lbl { color: var(--dk-dc); letter-spacing: .04em; }
+
+/* Q-state mismatch alarms (BMS positions vs mode-nominal lineup). */
+.eng-q-alarm-ring { fill: none; stroke: var(--dk-sev-critical); stroke-width: 1.5;
+                    stroke-dasharray: 3 2; animation: dk-crit-pulse 1.2s ease-in-out infinite; }
+.eng-q-mismatch .eng-q-blade { stroke: var(--dk-sev-critical); }
+.eng-qalarm { font-size: 10px; color: var(--dk-sev-critical); margin: 4px 0;
+              border: 1px solid var(--dk-sev-critical); border-radius: 3px;
+              padding: 4px 7px; background: rgba(229,57,53,.07); line-height: 1.4; }

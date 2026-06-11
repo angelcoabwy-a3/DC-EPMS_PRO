@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import {
     upsMode, gensetPhase, runtimeMinutes, battStringVoltage,
     xfmrLoadingPct, engineeringSection, upsBreakerStates,
+    parseQTags, qMismatches,
 } from '/assets/js/core/asset_engineering.js';
 import { getAssetMeta } from '/assets/js/core/asset_metadata.js';
 
@@ -80,20 +81,23 @@ describe('B5 — UPS engineering section', () => {
         expect(html).toContain('42 %');
     });
 
-    it('Galaxy one-line carries the full Q-breaker discipline (Q1/Q2/Q3/Q5)', () => {
+    it('Galaxy one-line carries the full Q-breaker discipline (Q1..Q5)', () => {
         const grid = { ups_a: { alive: true, mode: 'double_conversion' }, batt_a: { soc: 100 } };
         const html = engineeringSection('ups_a', grid, {});
-        for (const q of ['Q1', 'Q2', 'Q3', 'Q5']) {
+        for (const q of ['Q1', 'Q2', 'Q3', 'Q4', 'Q5']) {
             expect(html).toContain(`data-q="${q}"`);
         }
-        expect(html).toContain('PFC · THDi&lt;3%');
-        expect(html).toContain('SCR · ms transfer');
-        expect(html).toContain('MBP · EXTERNAL PANEL');
-        // MOP switching discipline footer.
+        expect(html).toContain('IGBT · THDi&lt;3%');
+        expect(html).toContain('SCR antiparalelo · 0 ms');
+        expect(html).toContain('PWM · ±1%');
+        expect(html).toContain('MBP · EXTERNAL PANEL · Castell interlock');
+        // The SSM is the common output junction (inverter + bypass legs).
+        expect(html).toContain('>SSM<');
+        // MOP switching discipline footer incl. the Q4 step.
         expect(html).toContain('MBP transfer (MOP-UPS-001)');
-        expect(html).toContain('close Q3');
-        // Honest origin: Q positions are mode-nominal, not telemetry.
-        expect(html).toContain('Q-state telemetry not modeled');
+        expect(html).toContain('close Q3 → open Q4');
+        // Honest origin: without BMS tags, positions are mode-nominal.
+        expect(html).toContain('Q-state tags unavailable');
     });
 
     it('breaker POSITION is distinct from path ENERGIZATION (battery mode)', () => {
@@ -112,9 +116,9 @@ describe('B5 — UPS engineering section', () => {
 
     it('upsBreakerStates: maintenance bypass isolates the UPS (Q3 in, rest out)', () => {
         expect(upsBreakerStates('maint_bypass')).toEqual(
-            { Q1: 'open', Q2: 'open', Q3: 'closed', Q5: 'open' });
+            { Q1: 'open', Q2: 'open', Q3: 'closed', Q4: 'open', Q5: 'open' });
         expect(upsBreakerStates('double_conversion')).toEqual(
-            { Q1: 'closed', Q2: 'closed', Q3: 'open', Q5: 'closed' });
+            { Q1: 'closed', Q2: 'closed', Q3: 'open', Q4: 'closed', Q5: 'closed' });
         expect(upsBreakerStates('battery').Q1).toBe('closed');
     });
 
@@ -122,6 +126,64 @@ describe('B5 — UPS engineering section', () => {
         const grid = { ups_a: { alive: true, mode: 'double_conversion' }, batt_a: { soc: 100 } };
         const html = engineeringSection('ups_a', grid, {});
         expect(html).toContain('eng-charge');
+    });
+});
+
+// ════════════════════════════════════════════════════════════════
+//  Q-state track — live BMS positions vs mode-nominal lineup
+// ════════════════════════════════════════════════════════════════
+describe('B-Q — Q-state tags, mismatch detection', () => {
+    const TAGS = [
+        { id: 'PWR.UPS_A.Q1_POS', current_value: 'Closed' },
+        { id: 'PWR.UPS_A.Q2_POS', current_value: 'Closed' },
+        { id: 'PWR.UPS_A.Q3_POS', current_value: 'Closed' },   // <- left bridged!
+        { id: 'PWR.UPS_A.Q4_POS', current_value: 'Closed' },
+        { id: 'PWR.UPS_A.Q5_POS', current_value: 'Open' },     // <- batt isolated!
+        { id: 'PWR.UPS_B.Q1_POS', current_value: 'Closed' },
+        { id: 'PWR.UPS_A.BATTERY_SOC', current_value: 100 },   // non-Q noise
+    ];
+
+    it('parseQTags maps the tag rows of ONE ups to a position object', () => {
+        expect(parseQTags(TAGS, 'ups_a')).toEqual({
+            Q1: 'closed', Q2: 'closed', Q3: 'closed', Q4: 'closed', Q5: 'open',
+        });
+        expect(parseQTags(TAGS, 'ups_b')).toEqual({ Q1: 'closed' });
+        expect(parseQTags([], 'ups_a')).toBeNull();
+        expect(parseQTags(null, 'ups_a')).toBeNull();
+    });
+
+    it('qMismatches flags the bridged MBP and the isolated battery', () => {
+        const q = parseQTags(TAGS, 'ups_a');
+        const ms = qMismatches('double_conversion', q);
+        expect(ms).toHaveLength(2);
+        expect(ms.join(' | ')).toContain('Q3 expected OPEN, reads CLOSED — MBP still bridged?');
+        expect(ms.join(' | ')).toContain('Q5 expected CLOSED, reads OPEN — battery isolated: NO holdup');
+        // A nominal lineup raises nothing.
+        expect(qMismatches('double_conversion',
+            upsBreakerStates('double_conversion'))).toHaveLength(0);
+        expect(qMismatches('double_conversion', null)).toHaveLength(0);
+    });
+
+    it('the section renders ACTUAL positions + the mismatch alarm + rings', () => {
+        const grid = { ups_a: { alive: true, mode: 'double_conversion' }, batt_a: { soc: 100 } };
+        const html = engineeringSection('ups_a', grid, {},
+            { qStates: parseQTags(TAGS, 'ups_a') });
+        expect(html).toContain('Q-STATE MISMATCH');
+        expect(html).toContain('MBP still bridged?');
+        // Actual position wins over nominal in the glyph…
+        expect(html).toMatch(/data-q="Q3" data-pos="closed"/);
+        // …and the offending breakers carry the alarm ring.
+        expect(html).toContain('eng-q-mismatch');
+        expect(html).toContain('eng-q-alarm-ring');
+        // Origin line now credits the BMS tags.
+        expect(html).toContain('Q POSITIONS from BMS tags');
+    });
+
+    it('genset section carries the ANSI 25 / dead-bus paralleling note', () => {
+        const html = engineeringSection('genset_a',
+            { genset_a: { state: 'standby' }, ats_a: {} }, {});
+        expect(html).toContain('ANSI 25 sync check');
+        expect(html).toContain('dead-bus black-start');
     });
 });
 

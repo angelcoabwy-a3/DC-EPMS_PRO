@@ -498,6 +498,115 @@ tags:
     writable: false
     description: "Outdoor wind speed"
 
+
+  # ------------ Galaxy VX Q-breaker positions (Diagram Q-state track) ------------
+  # Per-breaker POSITION telemetry for the UPS internal one-line.
+  # Writable BO so maneuvers can be exercised (RBAC SME_L6 gate, as
+  # every BMS write). Nominal double-conversion lineup: Q1/Q2/Q4/Q5
+  # Closed, Q3 (external MBP) Open. The HMI compares ACTUAL vs the
+  # mode-nominal lineup and flags mismatches (e.g. Q3 left Closed
+  # after maintenance = MBP still bridged).
+
+  - id: PWR.UPS_A.Q1_POS
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [Open, Closed]
+    source: { type: static, value: "Closed" }
+    writable: true
+    description: "UPS A rectifier input breaker Q1 position"
+    location: "Elec Room A"
+
+  - id: PWR.UPS_A.Q2_POS
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [Open, Closed]
+    source: { type: static, value: "Closed" }
+    writable: true
+    description: "UPS A static-bypass input breaker Q2 position"
+    location: "Elec Room A"
+
+  - id: PWR.UPS_A.Q3_POS
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [Open, Closed]
+    source: { type: static, value: "Open" }
+    writable: true
+    description: "UPS A external maintenance bypass Q3 position (Castell-interlocked)"
+    location: "Elec Room A - MBP panel"
+
+  - id: PWR.UPS_A.Q4_POS
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [Open, Closed]
+    source: { type: static, value: "Closed" }
+    writable: true
+    description: "UPS A output isolation breaker Q4 position"
+    location: "Elec Room A"
+
+  - id: PWR.UPS_A.Q5_POS
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [Open, Closed]
+    source: { type: static, value: "Closed" }
+    writable: true
+    description: "UPS A battery isolation breaker Q5 position"
+    location: "Elec Room A"
+
+  - id: PWR.UPS_B.Q1_POS
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [Open, Closed]
+    source: { type: static, value: "Closed" }
+    writable: true
+    description: "UPS B rectifier input breaker Q1 position"
+    location: "Elec Room B"
+
+  - id: PWR.UPS_B.Q2_POS
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [Open, Closed]
+    source: { type: static, value: "Closed" }
+    writable: true
+    description: "UPS B static-bypass input breaker Q2 position"
+    location: "Elec Room B"
+
+  - id: PWR.UPS_B.Q3_POS
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [Open, Closed]
+    source: { type: static, value: "Open" }
+    writable: true
+    description: "UPS B external maintenance bypass Q3 position (Castell-interlocked)"
+    location: "Elec Room B - MBP panel"
+
+  - id: PWR.UPS_B.Q4_POS
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [Open, Closed]
+    source: { type: static, value: "Closed" }
+    writable: true
+    description: "UPS B output isolation breaker Q4 position"
+    location: "Elec Room B"
+
+  - id: PWR.UPS_B.Q5_POS
+    protocol: BACnet
+    object_type: BO
+    units: enum
+    enum_values: [Open, Closed]
+    source: { type: static, value: "Closed" }
+    writable: true
+    description: "UPS B battery isolation breaker Q5 position"
+    location: "Elec Room B"
+
 # Categorisation for UI grouping
 categories:
   HVAC:

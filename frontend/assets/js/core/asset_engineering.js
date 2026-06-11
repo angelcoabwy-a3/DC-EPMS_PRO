@@ -92,42 +92,90 @@ const UPS_MODES = [
 ];
 
 /**
- * Galaxy breaker POSITIONS per operating mode. Pure — and distinct
- * from path energization: in battery mode Q1 stays CLOSED (the
- * breaker does not open itself; the input is simply dead).
+ * Galaxy breaker POSITIONS per operating mode (the mode-NOMINAL
+ * lineup). Pure — and distinct from path energization: in battery
+ * mode Q1 stays CLOSED (the breaker does not open itself; the input
+ * is simply dead).
  */
 export function upsBreakerStates(mode) {
     if (mode === 'maint_bypass') {
-        // The MBP wraps the UPS; Q1/Q2/Q5 open for safe intervention
-        // (rectifier + inverter + batteries physically isolated).
-        return { Q1: 'open', Q2: 'open', Q3: 'closed', Q5: 'open' };
+        // The MBP wraps the UPS; Q1/Q2/Q4/Q5 open for safe
+        // intervention (rectifier + inverter + static bypass +
+        // batteries physically isolated, Castell-interlocked).
+        return { Q1: 'open', Q2: 'open', Q3: 'closed', Q4: 'open', Q5: 'open' };
     }
-    return { Q1: 'closed', Q2: 'closed', Q3: 'open', Q5: 'closed' };
+    return { Q1: 'closed', Q2: 'closed', Q3: 'open', Q4: 'closed', Q5: 'closed' };
+}
+
+/**
+ * Map live /api/bms/tags rows to a Q-position object for one UPS.
+ * Pure. Tag convention: PWR.UPS_A.Q1_POS .. Q5_POS with enum value
+ * "Open" | "Closed". Returns null when no Q tags exist (pre-Q-state
+ * deployments degrade to the mode-nominal lineup).
+ */
+export function parseQTags(tags, upsId) {
+    const prefix = 'PWR.' + String(upsId || '').toUpperCase() + '.Q';
+    const out = {};
+    for (const t of tags || []) {
+        if (!t?.id?.startsWith(prefix) || !t.id.endsWith('_POS')) continue;
+        const q = t.id.slice(prefix.length - 1).replace('_POS', '');
+        out[q] = String(t.current_value).toLowerCase() === 'closed' ? 'closed' : 'open';
+    }
+    return Object.keys(out).length ? out : null;
+}
+
+/**
+ * Compare ACTUAL Q positions (BMS telemetry) against the
+ * mode-nominal lineup. Returns a list of mismatch strings — the
+ * maneuvering-error detector ("Q3 reads CLOSED in double conversion
+ * = the MBP was left bridged after maintenance").
+ */
+export function qMismatches(mode, qActual) {
+    if (!qActual) return [];
+    const nominal = upsBreakerStates(mode);
+    const out = [];
+    for (const q of Object.keys(nominal)) {
+        if (qActual[q] && qActual[q] !== nominal[q]) {
+            let msg = `${q} expected ${nominal[q].toUpperCase()}, reads ${qActual[q].toUpperCase()}`;
+            if (q === 'Q3' && qActual.Q3 === 'closed') msg += ' — MBP still bridged?';
+            if (q === 'Q5' && qActual.Q5 === 'open') msg += ' — battery isolated: NO holdup';
+            out.push(msg);
+        }
+    }
+    return out;
 }
 
 // Energized path segments per mode. 'charge' = battery float trickle.
+// Topology per the Galaxy one-line: inverter AND static bypass
+// converge at the SSM (static switching module), then Q4, then load.
 const _UPS_PATHS = {
-    double_conversion: ['in1', 'q1', 'rect', 'dc', 'inv', 'out', 'q5charge'],
-    battery: ['q5', 'batt', 'dc', 'inv', 'out'],
-    static_bypass: ['in2', 'q2', 'ssm', 'out'],
+    double_conversion: ['in1', 'q1', 'rect', 'dc', 'inv', 'ssm', 'q4', 'out', 'q5charge'],
+    battery: ['q5', 'batt', 'dc', 'inv', 'ssm', 'q4', 'out'],
+    static_bypass: ['in2', 'q2', 'ssm', 'q4', 'out'],
     maint_bypass: ['mbp', 'q3', 'out'],
     off: [],
     unknown: [],
 };
 
-function _upsMimic(mode) {
+function _upsMimic(mode, qActual) {
     const segs = _UPS_PATHS[mode] || [];
     const lit = (s) => (segs.includes(s) ? ' eng-on' : '');
     const charge = segs.includes('q5charge') ? ' eng-charge' : '';
-    const Q = upsBreakerStates(mode);
+    // ACTUAL positions (BMS Q-state telemetry) override the nominal
+    // lineup; a position that disagrees with nominal gets the alarm
+    // ring (the maneuvering-error detector, rendered per-breaker).
+    const nominal = upsBreakerStates(mode);
+    const Q = { ...nominal, ...(qActual || {}) };
 
     // Breaker glyph: closed = continuous blade; open = blade swung out.
     const breaker = (id, x, y, seg) => {
         const pos = Q[id];
+        const mismatch = qActual && qActual[id] && qActual[id] !== nominal[id];
         const blade = pos === 'closed'
             ? `<line class="eng-q-blade" x1="${x - 7}" y1="${y}" x2="${x + 7}" y2="${y}"/>`
             : `<line class="eng-q-blade" x1="${x - 7}" y1="${y}" x2="${x + 4}" y2="${y - 8}"/>`;
-        return `<g class="eng-q${lit(seg)}${seg === 'q5' || seg === 'q5charge' ? charge : ''}" data-q="${id}" data-pos="${pos}">
+        return `<g class="eng-q${lit(seg)}${seg === 'q5' || seg === 'q5charge' ? charge : ''}${mismatch ? ' eng-q-mismatch' : ''}" data-q="${id}" data-pos="${pos}">
+            ${mismatch ? `<circle class="eng-q-alarm-ring" cx="${x}" cy="${y}" r="11"/>` : ''}
             <circle class="eng-q-pole" cx="${x - 7}" cy="${y}" r="1.8"/>
             <circle class="eng-q-pole" cx="${x + 7}" cy="${y}" r="1.8"/>
             ${blade}
@@ -135,54 +183,60 @@ function _upsMimic(mode) {
         </g>`;
     };
 
-    return `<svg class="eng-mimic" viewBox="0 0 340 206" xmlns="http://www.w3.org/2000/svg">
+    // Topology per the Galaxy one-line (operator spec): inverter AND
+    // static bypass converge at the SSM, then Q4, then the load.
+    return `<svg class="eng-mimic" viewBox="0 0 370 206" xmlns="http://www.w3.org/2000/svg">
         <!-- Q3 maintenance bypass rail (external MBP panel) -->
-        <path class="eng-wire eng-mbp-rail${lit('mbp')}" d="M14 18 L330 18"/>
-        ${breaker('Q3', 172, 18, 'q3')}
-        <text class="eng-lbl" x="14" y="10">MBP · EXTERNAL PANEL</text>
+        <path class="eng-wire eng-mbp-rail${lit('mbp')}" d="M14 18 L356 18"/>
+        ${breaker('Q3', 180, 18, 'q3')}
+        <text class="eng-lbl" x="14" y="10">MBP · EXTERNAL PANEL · Castell interlock</text>
         <path class="eng-wire eng-mbp-rail${lit('mbp')}" d="M14 18 L14 110"/>
-        <path class="eng-wire eng-mbp-rail${lit('out')}" d="M330 18 L330 110"/>
+        <path class="eng-wire eng-mbp-rail${lit('out')}" d="M356 18 L356 110"/>
 
-        <!-- Static bypass rail: INPUT 2 -> Q2 -> SSM (SCR) -> junction -->
+        <!-- Static bypass leg: INPUT 2 -> Q2 -> SSM top -->
         <path class="eng-wire${lit('in2')}" d="M14 56 L66 56"/>
         ${breaker('Q2', 80, 56, 'q2')}
-        <path class="eng-wire${lit('q2')}" d="M94 56 L150 56"/>
-        <rect class="eng-box eng-ssm${lit('ssm')}" x="150" y="44" width="44" height="24" rx="2"/>
-        <text class="eng-txt" x="172" y="60">SSM</text>
-        <text class="eng-lbl" x="222" y="48">SCR · ms transfer</text>
-        <path class="eng-wire${lit('ssm')}" d="M194 56 L306 56 L306 110"/>
+        <path class="eng-wire${lit('q2')}" d="M94 56 L284 56 L284 84"/>
+        <text class="eng-lbl" x="160" y="48">SCR antiparalelo · 0 ms</text>
 
-        <!-- Main path: INPUT 1 -> Q1 -> PFC RECT -> DC BUS -> INV -> out -->
+        <!-- Main path: INPUT 1 -> Q1 -> PFC RECT -> DC BUS -> INV -> SSM -->
         <path class="eng-wire${lit('in1')}" d="M14 110 L66 110"/>
         ${breaker('Q1', 80, 110, 'q1')}
-        <path class="eng-wire${lit('q1')}" d="M94 110 L104 110"/>
-        <rect class="eng-box${lit('rect')}" x="104" y="94" width="50" height="32" rx="2"/>
-        <text class="eng-txt" x="129" y="110">AC→DC</text>
-        <text class="eng-lbl" x="129" y="122">PFC · THDi&lt;3%</text>
-        <path class="eng-wire${lit('dc')}" d="M154 110 L168 110"/>
-        <rect class="eng-box eng-dclink${lit('dc')}" x="168" y="104" width="36" height="12" rx="2"/>
-        <text class="eng-lbl" x="186" y="98">DC BUS</text>
-        <path class="eng-wire${lit('dc')}" d="M204 110 L216 110"/>
-        <rect class="eng-box${lit('inv')}" x="216" y="94" width="50" height="32" rx="2"/>
-        <text class="eng-txt" x="241" y="110">DC→AC</text>
-        <text class="eng-lbl" x="241" y="122">senoidal reg.</text>
-        <path class="eng-wire${lit('out')}" d="M266 110 L330 110"/>
+        <path class="eng-wire${lit('q1')}" d="M94 110 L102 110"/>
+        <rect class="eng-box${lit('rect')}" x="102" y="94" width="48" height="32" rx="2"/>
+        <text class="eng-txt" x="126" y="110">AC→DC</text>
+        <text class="eng-lbl" x="126" y="122">IGBT · THDi&lt;3%</text>
+        <path class="eng-wire${lit('dc')}" d="M150 110 L162 110"/>
+        <rect class="eng-box eng-dclink${lit('dc')}" x="162" y="104" width="34" height="12" rx="2"/>
+        <text class="eng-lbl" x="179" y="98">DC BUS</text>
+        <path class="eng-wire${lit('dc')}" d="M196 110 L206 110"/>
+        <rect class="eng-box${lit('inv')}" x="206" y="94" width="48" height="32" rx="2"/>
+        <text class="eng-txt" x="230" y="110">DC→AC</text>
+        <text class="eng-lbl" x="230" y="122">PWM · ±1%</text>
+        <path class="eng-wire${lit('inv')}" d="M254 110 L266 110"/>
+
+        <!-- SSM: the common static switching module -> Q4 -> load -->
+        <rect class="eng-box eng-ssm${lit('ssm')}" x="266" y="84" width="36" height="42" rx="2"/>
+        <text class="eng-txt" x="284" y="108">SSM</text>
+        <path class="eng-wire${lit('q4')}" d="M302 110 L312 110"/>
+        ${breaker('Q4', 326, 110, 'q4')}
+        <path class="eng-wire${lit('out')}" d="M340 110 L356 110"/>
 
         <!-- Battery branch: DC BUS -> Q5 -> BATT -->
-        <path class="eng-wire${lit('q5')}${charge}" d="M186 116 L186 142"/>
-        ${breaker('Q5', 186, 152, 'q5')}
-        <path class="eng-wire${lit('batt')}${charge}" d="M186 162 L186 172"/>
-        <rect class="eng-box eng-batt${lit('batt')}${charge}" x="160" y="172" width="52" height="24" rx="2"/>
-        <text class="eng-txt" x="186" y="188">BATT</text>
-        <text class="eng-lbl" x="226" y="186">VRLA · Q5 isol.</text>
+        <path class="eng-wire${lit('q5')}${charge}" d="M179 116 L179 142"/>
+        ${breaker('Q5', 179, 152, 'q5')}
+        <path class="eng-wire${lit('batt')}${charge}" d="M179 162 L179 172"/>
+        <rect class="eng-box eng-batt${lit('batt')}${charge}" x="153" y="172" width="52" height="24" rx="2"/>
+        <text class="eng-txt" x="179" y="188">BATT</text>
+        <text class="eng-lbl" x="222" y="186">VRLA/Li-ion · BMS · Q5 isol.</text>
 
         <text class="eng-lbl" x="14" y="124">INPUT 1</text>
         <text class="eng-lbl" x="14" y="70">INPUT 2 (BYP)</text>
-        <text class="eng-lbl" x="330" y="124" text-anchor="end">OUTPUT</text>
+        <text class="eng-lbl" x="356" y="124" text-anchor="end">LOAD</text>
     </svg>`;
 }
 
-function _upsSection(node) {
+function _upsSection(node, qActual) {
     const mode = upsMode(node);
     const soc = node?.soc ?? null;   // soc lives on the battery node, not here
     const chips = UPS_MODES.map((m) => {
@@ -192,17 +246,27 @@ function _upsSection(node) {
             title="${escapeHTML(m.cls + (m.modeled ? '' : ' — available mode, not modeled in sim'))}"
             data-mode="${m.id}">${escapeHTML(m.label)}</span>`;
     }).join('');
+    // Q-state mismatch alarms: ACTUAL BMS positions vs mode-nominal.
+    const mismatches = qMismatches(mode, qActual);
+    const qAlarm = mismatches.length
+        ? `<div class="eng-qalarm" data-qalarm="${mismatches.length}">⚠ Q-STATE MISMATCH: `
+          + mismatches.map(escapeHTML).join(' · ') + `</div>`
+        : '';
     // The switching discipline the MOPs encode: transfer to external
     // maintenance bypass with zero load interruption.
     const mbpSeq = `<div class="eng-seq"><span class="eng-seq-lbl">MBP transfer (MOP-UPS-001):</span>
-        INV→bypass → close Q3 → open Q2 → open Q1 → open Q5 — load never drops</div>`;
+        INV→bypass → close Q3 → open Q4 → open Q2 → open Q1 → open Q5 — load never drops</div>`;
+    const origin = qActual
+        ? 'Live: mode + path from grid DAG · Q POSITIONS from BMS tags (PWR.UPS_x.Qn_POS) · VFI-SS-111 per nameplate'
+        : 'Live: mode + path from grid DAG · breaker POSITIONS are mode-nominal (Q-state tags unavailable) · VFI-SS-111 per nameplate';
     return `<div class="eng-section" data-eng="ups">
         <div class="sld-info-eyebrow">OPERATING MODE · IEC 62040-3 · GALAXY VX ONE-LINE</div>
         <div class="eng-chips">${chips}</div>
-        ${_upsMimic(mode)}
+        ${qAlarm}
+        ${_upsMimic(mode, qActual)}
         ${soc != null ? _bar(soc, 'SOC', soc.toFixed(0) + ' %', soc < 30 ? 'crit' : soc < 70 ? 'warn' : 'ok') : ''}
         ${mbpSeq}
-        ${_origin('Live: mode + path from grid DAG · breaker POSITIONS are mode-nominal (Q-state telemetry not modeled) · VFI-SS-111 per nameplate')}
+        ${_origin(origin)}
     </div>`;
 }
 
@@ -241,6 +305,10 @@ function _gensetSection(node, atsNode) {
             <div class="eng-readout"><span>Oil</span><strong>${oil} psi</strong></div>
             <div class="eng-readout"><span>Freq</span><strong>${freq == null ? '—' : freq + ' Hz'}</strong></div>
         </div>
+        <div class="eng-seq"><span class="eng-seq-lbl">Paralleling:</span>
+        ANSI 25 sync check (V · f · phase angle · sequence) · dead-bus black-start
+        priority on total loss — first unit at 90% V/f closes onto the dead bus,
+        the rest sync AGAINST it (governor + AVR)</div>
         ${_origin('Sim-derived from DAG state (10 s nameplate start fast-fwd 0.8 s) — not live engine telemetry')}
     </div>`;
 }
@@ -317,14 +385,16 @@ const _P2_IDS = new Set(['util_d', 'mv_rect_d', 'sscb_d', 'dc_bus_d', 'bess_d', 
  * @param {string} id     canonical asset id
  * @param {object} grid   full power_grid state (may be null)
  * @param {object} meta   asset_metadata entry (may be null)
+ * @param {object} extras optional live extras: { qStates } from the
+ *                        BMS Q-position tags (parseQTags output)
  */
-export function engineeringSection(id, grid, meta) {
+export function engineeringSection(id, grid, meta, extras = {}) {
     if (_P2_IDS.has(id) || meta?.design) return _designSection(id);
     const node = grid?.[id] || null;
     if (id.startsWith('ups_')) {
         // SOC rides on the sibling battery node for the bar.
         const battNode = grid?.['batt_' + id.slice(4)];
-        return _upsSection({ ...(node || {}), soc: battNode?.soc ?? null });
+        return _upsSection({ ...(node || {}), soc: battNode?.soc ?? null }, extras.qStates || null);
     }
     if (id.startsWith('genset_')) {
         const atsNode = grid?.['ats_' + id.slice(7)];
