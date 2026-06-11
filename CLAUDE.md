@@ -15,10 +15,26 @@ DC-EPMS PRO simulates **A3-Alpha Toronto Area** under **Path C2** (sealed 2026-0
 
 **🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in CO+I panel review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
 
-## 📊 CURRENT STATE (synced 2026-06-11 — SLD Reengineering A-C closed; MVP plan S1-S6 approved)
+## 📊 CURRENT STATE (synced 2026-06-11 — MVP S1 + S2 delivered; next = S3 Epic 5)
 
 ```
-HEAD:  SLD REENGINEERING A-C (2026-06-11). Root cause of "no veo las
+HEAD:  MVP S2 — BACKEND GROUNDING (2026-06-11, same session as S1,
+       executed ahead of schedule under the blanket GO):
+       * 3c0a2a3 S2-A: gen_farm_d + mv_bus_d + stepup_xfmr_d join the
+         site_model.yml graph (Path D standby generation; 110 -> 113
+         components; registry rows gain real graph ids).
+       * 92f3fd9 S2-B: Phase 2 DESIGN-sim telemetry — 6 new generator
+         types (utility_intake metadata-keyed 27.5/35 kV, mv_rectifier,
+         sscb, dc_bus voltage_v_dc_bus, bess, genset_farm dead-bus
+         standby) + dc_bus_sag anomaly + Kalman calibration for 9 new
+         metrics. Live channels 238 -> 281.
+       * 66288d4 S2-C: What-If DAG + N-1 Shadow extended to Building D
+         (farm auto-run on utility-D loss, mvrect 2-input merge, hall_d
+         as N-1 load; sscb_d/dc_bus_d = critical, util_d = warning).
+       * 63bb9f0 smoke tool: scripts/smoke_phase2_channels.py — live
+         SSE PASS (281 channels, vocab fence clean), boot verified
+         per S-RUNTIME-01 (knowledge_graph components=113).
+       Earlier same day — SLD REENGINEERING A-C. Root cause of "no veo las
        miniaturas" was structural: #view-power booted into the 2.5D
        iso stage, which carried ZERO Phase 2 / 50 MW content.
        * 345e098 Batch A: iso stage RETIRED (power_ups_iso.js +
@@ -88,11 +104,11 @@ HEAD:  SLD REENGINEERING A-C (2026-06-11). Root cause of "no veo las
          (blocks firmas when QBER >= 11%) b186bb3. Backward-compatible with
          the pre-Epic-10 body-only sign path. Pushed to origin/master.
 
-Tests:   backend 1409 passed (Epic 10 +60; incl. 7 PG integration) —
-         full pytest ~62s, 0 fail, 5 deselected (slow/FAISS AVX2).
-         frontend 500 vitest passed across 31 files (Diagram Rebuild
-         +81; 50 MW track -> 490; SLD Reengineering A-C -> 500:
-         SLD-R1 default-surface fence + SLD-R2 farm LOD).
+Tests:   backend 1414 passed (S2 +5 design-sim; Epic 10 +60; incl. 7 PG
+         integration) — full pytest ~60s, 0 fail, 5 deselected (slow/FAISS).
+         frontend 513 vitest passed across 31 files (SLD Reengineering
+         -> 500: SLD-R1 default-surface fence + SLD-R2 farm LOD;
+         MVP S2-C -> 513: Building D DAG + N-1 coverage).
          GraphRAG: 14 knowledge documents at boot (+2 Q-state track:
          galaxy-vx-internal-oneline, genset-farm-mv-paralleling).
          BMS catalog: 62 tags (+10 PWR.UPS_x.Qn_POS breaker positions).
@@ -352,14 +368,29 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 > **PENDING OPERATOR VISUAL ACCEPTANCE** of the preview / live HMI —
 > per S-VISUAL-01 the loop closes when Wilmer SEES it.
 >
-> **🔴 NEXT SESSION ENTRY POINT — MVP S2: Bloque 3 backend grounding.**
-> Per the approved MVP plan (ROADMAP-V11.md v11.18): farm + mv_bus_d +
-> stepup_d into the `site_model.yml` graph; Phase 2 design-sim
-> telemetry channels (clearly labeled DESIGN); extend `power_grid.js`
-> DAG + `n1Power` to Building D so What-If and N-1 Shadow work on
-> Phase 2. Then S3-S4 = Epic 5 (3 sprints, ~35 h). Executive decisions
-> already taken under the blanket GO: iso retired (not demoted), Epic 5
-> complete, edge/ OUT of MVP unless the A3 manifest lands before S3.
+> **✅ MVP S2 — BACKEND GROUNDING CLOSED (2026-06-11, same day, ahead
+> of the jun 18-24 plan window).** Operator visual acceptance of the
+> S1 preview received ("ok lo veo bien"). Delivered: `3c0a2a3` farm
+> into the site graph (113 components), `92f3fd9` Phase 2 design-sim
+> channels (281 live on the wire, voltage_v_dc_bus fence clean),
+> `66288d4` What-If + N-1 over Building D, `63bb9f0` live smoke tool
+> (`python scripts/smoke_phase2_channels.py` — PASS against fresh
+> boot). Backend left RUNNING on :8080 (booted 2026-06-11 16:40,
+> knowledge_graph components=113 in the boot log).
+>
+> **🔴 NEXT SESSION ENTRY POINT — MVP S3: Epic 5 Sprints 1+2.**
+> Per ROADMAP-V11.md (plan v11.18, Epic 5 spec v11.17): E5.A
+> Optimizer heartbeat strip + E5.C per-agent voting breakdown
+> (Sprint 1, ~12 h), then E5.B approval sidebar + E5.D forensic
+> trail link (Sprint 2, ~9 h). Epic 5 risk note: E5.C touches
+> `multi_agent.py` — run `tests/test_multi_agent.py` targeted FIRST.
+> The Optimizer is default-OFF (`DC_EPMS_OPTIMIZER_ENABLED`) — E5.A
+> must verify BOTH postures (200 enabled / 503 default-OFF).
+> Executive decisions standing: iso retired, Epic 5 complete (3
+> sprints), edge/ OUT of MVP unless the A3 manifest lands before S3.
+> Demo maneuver unlocked by S2: Power SLD What-If -> trip UTILITY D
+> -> the farm lineup flips RUNNING and the whole D chain rides it
+> degraded; N-1 badges live on Building D (sscb_d/dc_bus_d critical).
 
 > **Diagram Rebuild (2026-06-10)** — the 5 diagram views now share ONE
 > visual language + ONE asset identity (ADR-012, skill S-DIAGRAM-01):

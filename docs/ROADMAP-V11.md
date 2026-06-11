@@ -1,8 +1,25 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.18 (2026-06-11) — **MVP FINAL PLAN S1-S6 APPROVED** (operator blanket GO) · SLD Reengineering A-C delivered · Epic 5 next after backend grounding · Epic 3.B cut from MVP
+- **Status**: v11.19 (2026-06-11) — **MVP S1 + S2 DELIVERED same day** · next = S3 Epic 5 Sprints 1+2 · Epic 3.B cut from MVP
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-06-11 (v11.18)
+- **Locked**: 2026-05-10 · **Synced**: 2026-06-11 (v11.19)
+- **v11.19 sync (2026-06-11) — MVP S2 BACKEND GROUNDING DELIVERED**,
+  same session as S1 and ahead of the jun 18-24 window (operator
+  visual acceptance of S1 received first: "ok lo veo bien").
+  `3c0a2a3` S2-A: gen_farm_d / mv_bus_d / stepup_xfmr_d join the
+  site_model graph (Path D standby generation, 110 -> 113 components,
+  registry graph ids real). `92f3fd9` S2-B: Phase 2 DESIGN-sim
+  telemetry — 6 generator types incl. the schema-fenced
+  `voltage_v_dc_bus`, metadata-keyed utility intakes (27.5/35 kV),
+  dead-bus standby farm aggregates, `dc_bus_sag` anomaly, Kalman
+  calibration for 9 metrics; live wire 238 -> 281 channels.
+  `66288d4` S2-C: What-If DAG + N-1 Shadow over Building D (farm
+  auto-run on utility-D loss; sscb_d/dc_bus_d critical, util_d
+  warning-degraded; hall_d is N-1 load). `63bb9f0` live SSE smoke
+  tool, PASS against a fresh boot (S-RUNTIME-01). Floors: pytest
+  1409 -> 1414, vitest 500 -> 513 (31 files). Deferred honestly:
+  proto-adapter v1 classification of the new metrics (Epic 8
+  follow-up); per-unit farm telemetry (post-MVP).
 - **Supersedes**: ad-hoc "what's next" decisions across the v0.10.x arc; and the
   2026-05-10 lock of this file's own status fields
 - **v11.18 sync (2026-06-11) — THE MVP CUT.** Operator approved the full
