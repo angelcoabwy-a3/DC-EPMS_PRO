@@ -41,6 +41,9 @@ import {
 } from '../core/node_registry.js';
 import { n1Power } from '../core/contingency.js';
 import { createN1Overlay } from '../core/n1_overlay.js';
+import {
+    startRecording, snapshotAt, range as recorderRange,
+} from '../core/flight_recorder.js';
 
 let _initialized = false;
 let _unsubTelemetry = null;
@@ -209,9 +212,9 @@ async function _refresh() {
 }
 
 function _onTelemetryFrame(payload) {
-    // What-if sandbox: the SLD is disconnected from the live feed —
-    // frozen state, no telemetry-driven updates until LIVE is restored.
-    if (_mode === 'whatif') return;
+    // What-If sandbox / Replay: the SLD is disconnected from the live
+    // feed — frozen or historical state until LIVE is restored.
+    if (_mode !== 'live') return;
     // Hermes `telemetry` frame: { schema, channels, anomaly_count_60min, ts }.
     if (payload && payload.channels) {
         _applyTelemetry(payload.channels);
@@ -586,6 +589,142 @@ function _applyGrid(grid) {
     });
 }
 
+// ════════════════════════════════════════════════════════════════
+//  FORENSIC REPLAY (innovation track R2) — scrub the session back
+//
+//  The diagrams are pure functions of state (Diagram Rebuild), so
+//  replay = re-render of flight-recorder snapshots. Operator
+//  actions from the Forensic Ledger ride the timeline as markers,
+//  each carrying its HMAC chain prefix — auditable replay.
+// ════════════════════════════════════════════════════════════════
+function _fmtClock(t) {
+    return new Date(t).toLocaleTimeString();
+}
+
+function _scrubTo(t) {
+    const snap = snapshotAt(Number(t));
+    if (snap.telemetry?.channels) _applyTelemetry(snap.telemetry.channels);
+    if (snap.grid) _applyGrid(snap.grid);
+    const timeEl = document.getElementById('pwr-replay-time');
+    if (timeEl) timeEl.textContent = _fmtClock(Number(t));
+}
+
+async function _loadLedgerMarkers(start, end) {
+    const host = document.querySelector('#pwr-replay-bar .rp-markers');
+    if (!host) return;
+    host.innerHTML = '';
+    try {
+        const r = await fetch('/api/ledger/entries?limit=200');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        const entries = (data.entries || []).filter((e) => {
+            const t = Date.parse(e.ts);
+            return Number.isFinite(t) && t >= start && t <= end;
+        });
+        for (const e of entries) {
+            const t = Date.parse(e.ts);
+            const dot = document.createElement('button');
+            dot.type = 'button';
+            dot.className = 'rp-marker';
+            dot.style.left = (((t - start) / Math.max(1, end - start)) * 100).toFixed(2) + '%';
+            dot.title = `#${e.sequence_no} ${e.action} · ${e.actor}`
+                + ` · hmac ${(e.entry_hmac_hex || '').slice(0, 12)}…`;
+            dot.addEventListener('click', () => {
+                const slider = document.getElementById('pwr-replay-slider');
+                if (slider) { slider.value = String(t); _scrubTo(t); }
+                const det = document.getElementById('pwr-replay-entry');
+                if (det) {
+                    det.textContent = `⛓ #${e.sequence_no} ${e.action} · ${e.actor}`
+                        + ` · ${_fmtClock(t)} · hmac ${(e.entry_hmac_hex || '').slice(0, 12)}…`;
+                }
+            });
+            host.appendChild(dot);
+        }
+        const det = document.getElementById('pwr-replay-entry');
+        if (det && !entries.length) det.textContent = 'no ledger actions in window';
+    } catch (err) {
+        console.warn('[power] ledger markers unavailable:', err.message);
+    }
+}
+
+function _buildReplayBar() {
+    let bar = document.getElementById('pwr-replay-bar');
+    if (bar) { bar.hidden = false; return bar; }
+    const view = document.getElementById('view-power');
+    if (!view) return null;
+    bar = document.createElement('div');
+    bar.id = 'pwr-replay-bar';
+    bar.className = 'pwr-replay-bar';
+    bar.innerHTML = `
+        <span class="rp-title">⏮ SESSION FLIGHT RECORDER</span>
+        <span class="rp-scope">in-browser ring buffer · ~10 min · session only — not persisted history</span>
+        <div class="rp-track">
+            <input type="range" id="pwr-replay-slider" step="1000">
+            <div class="rp-markers"></div>
+        </div>
+        <span class="rp-time" id="pwr-replay-time">—</span>
+        <span class="rp-entry" id="pwr-replay-entry"></span>`;
+    const anchor = view.querySelector('.pid-action-bar');
+    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(bar, anchor.nextSibling);
+    else view.insertBefore(bar, view.firstChild);
+    bar.querySelector('#pwr-replay-slider')
+        .addEventListener('input', (e) => _scrubTo(e.target.value));
+    return bar;
+}
+
+function _setReplay(on) {
+    const btn = document.getElementById('pwr-replay-toggle');
+    if (on) {
+        const win = recorderRange();
+        if (win.count < 2) {
+            console.warn('[power] replay: buffer empty — recording runs since page load');
+            return;
+        }
+        _setN1(false);
+        _mode = 'replay';
+        const view = document.getElementById('view-power');
+        if (view) view.classList.add('pwr-replay');
+        const bar = _buildReplayBar();
+        if (bar) {
+            const slider = bar.querySelector('#pwr-replay-slider');
+            slider.min = String(win.start);
+            slider.max = String(win.end);
+            slider.value = String(win.end);
+            _scrubTo(win.end);
+            _loadLedgerMarkers(win.start, win.end);
+        }
+    } else {
+        _mode = 'live';
+        const view = document.getElementById('view-power');
+        if (view) view.classList.remove('pwr-replay');
+        const bar = document.getElementById('pwr-replay-bar');
+        if (bar) bar.hidden = true;
+        _refresh();   // re-sync to live; Hermes resumes on next frame
+    }
+    if (btn) {
+        btn.dataset.on = on && _mode === 'replay' ? '1' : '0';
+        btn.classList.toggle('is-on', _mode === 'replay');
+    }
+}
+
+function _buildReplayToggle() {
+    if (document.getElementById('pwr-replay-toggle')) return;
+    const view = document.getElementById('view-power');
+    if (!view) return;
+    const btn = document.createElement('button');
+    btn.id = 'pwr-replay-toggle';
+    btn.type = 'button';
+    btn.className = 'pwr-mode-toggle pwr-n1-toggle';
+    btn.dataset.on = '0';
+    btn.textContent = '⏮ REPLAY';
+    btn.title = 'Forensic replay: scrub the session flight recorder; '
+        + 'ledger actions ride the timeline with their HMAC chain';
+    btn.addEventListener('click', () => _setReplay(btn.dataset.on !== '1'));
+    const bar = view.querySelector('.pid-action-bar') || view;
+    const n1Btn = document.getElementById('pwr-n1-toggle');
+    bar.insertBefore(btn, n1Btn ? n1Btn.nextSibling : bar.firstChild);
+}
+
 function _activate() {
     // Baseline physics-validated topology — fetched once per activation,
     // NOT polled. Live updates arrive on the Hermes telemetry stream.
@@ -611,6 +750,9 @@ export function initPowerView() {
     // DAG fault-cascade (the sandbox's simulated faults become visible).
     _buildModeToggle();
     _buildN1Toggle();
+    _buildReplayToggle();
+    // R2: arm the session black box (records Hermes + DAG planes).
+    startRecording();
     subscribe('grid', _applyGrid);
     // T3.1: live severity from the Hermes telemetry stream — the legacy
     // 5 s setInterval poll is eradicated.
@@ -638,6 +780,10 @@ export const __power_test__ = {
     buildN1Toggle: _buildN1Toggle,
     setN1: _setN1,
     n1Overlay: _n1Overlay,
+    setReplay: _setReplay,
+    scrubTo: _scrubTo,
+    buildReplayToggle: _buildReplayToggle,
+    loadLedgerMarkers: _loadLedgerMarkers,
     applyGrid: _applyGrid,
     sparkPoints,
     updateSparklines: _updateSparklines,
@@ -648,6 +794,8 @@ export const __power_test__ = {
         if (_unsubTelemetry) { _unsubTelemetry(); _unsubTelemetry = null; }
         const modal = document.getElementById('pwr-breaker-modal');
         if (modal) modal.remove();
+        const replayBar = document.getElementById('pwr-replay-bar');
+        if (replayBar) replayBar.remove();
         _n1Overlay.detach();
         _sparkTracker.reset();
     },

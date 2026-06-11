@@ -8273,3 +8273,20 @@ body {
 .dk-n1-victim { filter: drop-shadow(0 0 7px var(--dk-sev-critical)); }
 .dk-n1-deg { filter: drop-shadow(0 0 6px var(--dk-sev-warning)); }
 .pwr-n1-toggle.is-on { border-color: var(--dk-dc); color: var(--dk-dc); }
+
+/* Forensic Replay (R2) — session flight recorder bar + ledger markers. */
+.pwr-replay-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: #0E1318; border: 1px solid #2A3038; border-radius: 6px;
+    padding: 8px 14px; margin: 8px 0; }
+.pwr-replay-bar .rp-title { font-size: 11px; letter-spacing: .1em; color: var(--dk-dc); }
+.pwr-replay-bar .rp-scope { font-size: 9.5px; color: #5d6f7e; font-style: italic; }
+.pwr-replay-bar .rp-track { position: relative; flex: 1; min-width: 260px; height: 26px; }
+.pwr-replay-bar input[type="range"] { width: 100%; margin-top: 6px; accent-color: #00B8D4; }
+.pwr-replay-bar .rp-markers { position: absolute; inset: 0 8px auto 8px; height: 0; pointer-events: none; }
+.pwr-replay-bar .rp-marker { position: absolute; top: -2px; width: 9px; height: 9px;
+    border-radius: 50%; background: var(--dk-dc); border: 1px solid #0B0D10;
+    cursor: pointer; transform: translateX(-50%); pointer-events: auto; padding: 0; }
+.pwr-replay-bar .rp-marker:hover { box-shadow: 0 0 7px var(--dk-dc); }
+.pwr-replay-bar .rp-time { font-size: 12px; color: #c7d6e2; font-variant-numeric: tabular-nums; }
+.pwr-replay-bar .rp-entry { font-size: 10.5px; color: #9fb6c6; font-family: monospace; }
+#view-power.pwr-replay .pid-svg { outline: 1px dashed var(--dk-dc); outline-offset: -1px; }
