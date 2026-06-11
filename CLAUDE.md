@@ -326,7 +326,24 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 > Mission Control breadcrumb DELIVERED (0cc7d5e): drill-down trail
 > surviving navigation + Building D retargeted to the Power SLD with
 > mv_rect_d pre-selected (scene -> SLD -> Phase 2 spec sheet in one
-> click). The Diagram Rebuild plan is 100% closed; vitest floor 453.
+> click). The Diagram Rebuild plan is 100% closed.
+>
+> **INNOVATION TRACK (2026-06-10, same session)** — two market-first
+> features on top of the rebuild:
+> * **N-1 Shadow** (c18b7c8): pure steady-state contingency
+>   (`core/contingency.js` — genset = degraded survival, battery
+>   holdup excluded, tone = load impact) painted live on the Power
+>   SLD + Cooling P&ID via one shared overlay (`core/n1_overlay.js`):
+>   tone-coded N-1 badges per node, hover lights victims. Disabled
+>   inside What-If.
+> * **Forensic Replay** (065d45f): session flight recorder
+>   (`core/flight_recorder.js`, 600-tick in-browser ring buffer) +
+>   REPLAY scrubber on the Power SLD — re-renders the full mimic at
+>   any past instant; Forensic Ledger actions ride the timeline as
+>   clickable markers with their HMAC chain prefix. Honest scope:
+>   session-only, not persisted history.
+> Vitest floor **473 / 30 files**. Demo harness: `frontend/assets/
+> demo/breadcrumb_demo.html` (committed as demo-gallery seed).
 
 > Epic 10 closed on `master` via 4 atomic commits, **pushed to origin/master**:
 > `5a8252e` backend IAM core (roles + JWT + login),

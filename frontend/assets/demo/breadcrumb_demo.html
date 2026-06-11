@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>DC-EPMS PRO — Breadcrumb demo (Mission Control B6)</title>
+<link rel="stylesheet" href="/assets/app.css?v=demo">
+<style>
+  body { background:#0B0D10; color:#c7d6e2; font-family:system-ui,sans-serif;
+         margin:0; padding:80px 32px 32px; }
+  h1 { font-size:18px; letter-spacing:.06em; }
+  .note { font-size:13px; color:#7e93a5; max-width:760px; line-height:1.5; }
+  .demo-row { display:flex; gap:10px; margin:20px 0; flex-wrap:wrap; }
+  .demo-btn { background:#11161c; border:1px solid #2A3038; color:#c7d6e2;
+              border-radius:5px; padding:10px 16px; cursor:pointer; font-size:13px; }
+  .demo-btn:hover { border-color:#00B8D4; }
+  .demo-btn em { color:#7e93a5; font-style:normal; font-size:11px; display:block; }
+  .fake-nav { margin-top:28px; border-top:1px solid #1C2128; padding-top:14px; }
+  .fake-nav .nav-item { background:none; border:1px solid #2A3038; color:#8fa3b8;
+                        border-radius:4px; padding:6px 12px; margin-right:6px;
+                        cursor:pointer; font-size:12px; }
+  #demo-log { margin-top:16px; font-size:11.5px; color:#5d6f7e; font-family:monospace;
+              white-space:pre-line; }
+</style>
+</head>
+<body>
+<h1>🛰 Mission Control — drill-down breadcrumb (demo del módulo REAL)</h1>
+<p class="note">Esta página importa <code>views/mission_control.js</code> de producción
+(vía su superficie de test <code>injectScene</code> — sin WebGL) y dispara
+<code>drillTo()</code> tal como lo hace el raycaster 3D. El breadcrumb que aparece
+<strong>arriba al centro</strong> es el componente real con su CSS real.
+Probá también el botón <strong>🛰 Mission Control</strong> dentro del propio breadcrumb
+(navega de vuelta) y los nav-items falsos de abajo (un click manual rompe el trail
+y lo descarta).</p>
+
+<div class="demo-row">
+  <button class="demo-btn" data-drill="building_a" data-route="rack-heatmap">
+    Drill → Building A<em>como un click en el mesh 3D · destino Rack Heatmap</em></button>
+  <button class="demo-btn" data-drill="yard" data-route="site_topology">
+    Drill → Yard<em>destino Site Topology</em></button>
+  <button class="demo-btn" data-drill="building_d" data-route="power">
+    Drill → Building D (Ph2)<em>destino Power SLD + pre-selecciona mv_rect_d</em></button>
+</div>
+
+<div class="fake-nav">
+  <span class="note">Sidebar simulado (click manual = descarta el breadcrumb):</span><br><br>
+  <button class="nav-item" data-route="mission-control">Mission Control</button>
+  <button class="nav-item" data-route="rack-heatmap">Rack Heatmap</button>
+  <button class="nav-item" data-route="site_topology">Site Topology</button>
+  <button class="nav-item" data-route="power">Power &amp; UPS</button>
+</div>
+
+<div id="demo-log"></div>
+
+<script type="module">
+const log = (m, isErr) => {
+    const el = document.getElementById('demo-log');
+    el.textContent = `[${new Date().toLocaleTimeString()}] ${isErr ? '❌ ' : ''}${m}\n` + el.textContent;
+    if (isErr) el.style.color = '#E53935';
+};
+window.addEventListener('error', (e) => log(`JS error: ${e.message}`, true));
+window.addEventListener('unhandledrejection', (e) => log(`Promise rejection: ${e.reason}`, true));
+
+// Cache-busted dynamic import: the browser may still hold a stale
+// pre-breadcrumb mission_control.js from an earlier session.
+let __mc_test__, getState;
+try {
+    ({ __mc_test__ } = await import('/assets/js/views/mission_control.js?v=b6-breadcrumb'));
+    ({ getState } = await import('/assets/js/core/state.js'));
+    if (typeof __mc_test__.drillTo !== 'function') {
+        throw new Error('mission_control.js cargado SIN drillTo — modulo viejo cacheado. Ctrl+Shift+R.');
+    }
+} catch (err) {
+    log(`No pude cargar el modulo: ${err.message}`, true);
+    throw err;
+}
+
+// Fake the 3D scene buildings (the real boot needs WebGL; the
+// breadcrumb does not).
+__mc_test__.injectScene({ buildings: [
+    { id: 'building_a', displayName: 'Building A · A3-Alpha · Path C2' },
+    { id: 'yard',       displayName: 'Yard · A3-Alpha · Path C2' },
+    { id: 'building_d', displayName: 'Building D · 800 VDC unipolar TN-S · design Q2 2026' },
+] });
+
+// Wire the manual-nav dismiss exactly like initMissionControlView does.
+document.addEventListener('click', (e) => {
+    const nav = e.target.closest('.nav-item');
+    if (nav) {
+        __mc_test__.hideBreadcrumb();
+        log(`nav manual -> ${nav.dataset.route} (breadcrumb descartado)`);
+    }
+});
+
+document.querySelectorAll('.demo-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+        __mc_test__.drillTo(btn.dataset.drill, btn.dataset.route);
+        let extra = '';
+        if (btn.dataset.drill === 'building_d') {
+            extra = ` · selectedAsset=${getState('selectedAsset')} (ficha Ph2 lista en el panel)`;
+        }
+        log(`drillTo(${btn.dataset.drill}, ${btn.dataset.route})${extra}`);
+    });
+});
+
+log('demo lista — módulo de producción importado, escena inyectada');
+</script>
+</body>
+</html>
