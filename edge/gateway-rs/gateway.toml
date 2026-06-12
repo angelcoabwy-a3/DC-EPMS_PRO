@@ -1,0 +1,54 @@
+# dc-epms-gateway — BENCH profile (modbus-sim on localhost).
+#
+# Register map mirrors sim::bench_profile(). With a real PLC: change
+# [device], adjust registers/scales to the device's point map, and
+# drop `quality = "simulated"` so channels travel as GOOD.
+#
+# STRICT SI: scale/offset must land values in SI units (V, K, m^3/s).
+# AC frequency word is fixed centi-hertz by convention (config.rs).
+
+site_id = "a3-alpha-toronto"
+backend_ingest_url = "http://127.0.0.1:8080/api/telemetry/ingest/proto"
+poll_period_ms = 1000
+
+[device]
+host = "127.0.0.1"
+port = 1502
+unit_id = 1
+timeout_ms = 2000
+
+# ─── Phase 2 Building D — 800 VDC unipolar TN-S bus (NO phases) ──────
+[[channels]]
+name = "dc_bus_d_voltage"
+asset_id = "dc_bus_d"
+kind = "dc_unipolar_voltage"
+register = 0
+scale = 0.1                 # deci-volt register -> V
+quality = "simulated"
+
+# ─── Phase 2 Building D — 35 kV utility intake (AC, 3-phase) ─────────
+[[channels]]
+name = "utility_d_mv_voltage"
+asset_id = "utility_intake_d"
+kind = "ac_three_phase_voltage"
+register = 10               # words: v_ab, v_bc, v_ca, freq(cHz)
+scale = 1.0                 # volt register -> V
+quality = "simulated"
+
+# ─── DLC loop — supply temperature ───────────────────────────────────
+[[channels]]
+name = "dlc_supply_temperature"
+asset_id = "cdu_a_01"
+kind = "temperature"
+register = 20
+scale = 0.01                # centi-kelvin register -> K
+quality = "simulated"
+
+# ─── DLC loop — secondary flow ───────────────────────────────────────
+[[channels]]
+name = "dlc_loop_flow"
+asset_id = "chw_loop_a"
+kind = "flow"
+register = 30
+scale = 0.00001             # 1e-5 m^3/s units -> m^3/s
+quality = "simulated"

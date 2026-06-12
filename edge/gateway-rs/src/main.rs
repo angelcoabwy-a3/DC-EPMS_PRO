@@ -1,71 +1,82 @@
-//! dc-epms-gateway — A3 edge gateway (Rust).
+//! dc-epms-gateway — A3 edge gateway binary.
 //!
-//! Scaffold skeleton (Option 2, 2026-05-28). This binary is the field-edge
-//! ingestion + feature-extraction front end for DC-EPMS PRO. It is built and
-//! link-verified locally on `x86_64-pc-windows-msvc` (rustc 1.96.0).
-//!
-//! Responsibilities (target architecture — implemented incrementally):
-//!   1. Modbus ingestion from field devices          -> `rmodbus` (phase 2).
-//!   2. Feature extraction into the A3 feature vector -> `nalgebra` (below).
-//!   3. Telemetry egress over gRPC                    -> `tonic` (phase 2),
-//!      bound to the EXISTING canonical wire contract
-//!      `backend/telemetry_proto/v1/telemetry.proto`. The gateway MUST NOT
-//!      fork or redefine that schema — the vocabulary fence (AC trifasico
-//!      upstream of the MV rectifier vs. 800 VDC unipolar TN-S downstream)
-//!      is owned by the .proto and only referenced here.
-//!
-//! HONEST SCOPE: `rmodbus` and `tonic` are declared dependencies but are not
-//! yet wired — that work depends on (a) the A3 spec landing in
-//! `edge/CLAUDE.md` and (b) the proto-fence task. They build clean as unused
-//! deps. The feature-vector SEMANTICS (what each of the 6 components means)
-//! are intentionally left undefined here: defining them without the A3 spec
-//! would violate the project's Grounding Forzado rule.
+//! Phase 2 Batch A: real Modbus TCP polling. Loads `gateway.toml`,
+//! connects to the configured device (bench `modbus-sim` or a real
+//! PLC), sweeps the register map every poll period and logs the
+//! strict-SI samples. Egress of v1 proto envelopes to the backend is
+//! Batch B — the sample structs produced here are already
+//! payload-shaped for it.
 
-use nalgebra::Vector6;
+use std::path::PathBuf;
+use std::time::Duration;
 
-/// The A3 edge feature vector: a fixed 6-component real vector.
-///
-/// The PHYSICAL MEANING of each component is PENDING the A3 manifest
-/// (`edge/CLAUDE.md`, to be authored). Until that spec is grounded, this is a
-/// neutral 6-D container only — no component is claimed to represent any
-/// specific physical quantity.
-pub type FeatureVector = Vector6<f64>;
-
-/// Construct a zeroed feature vector. Placeholder until the A3 extraction
-/// pipeline (Modbus -> features) is specified and wired.
-fn empty_feature_vector() -> FeatureVector {
-    FeatureVector::zeros()
-}
+use anyhow::Result;
+use dc_epms_gateway::config::GatewayConfig;
+use dc_epms_gateway::modbus::ModbusClient;
+use tracing::{error, info, warn};
 
 #[tokio::main]
-async fn main() {
-    // Minimal, dependency-free boot banner. Structured logging (tracing) is
-    // wired alongside the gRPC egress in phase 2.
-    println!("[edge/gateway-rs] dc-epms-gateway boot — scaffold skeleton");
-    println!("[edge/gateway-rs] tokio runtime: online");
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_level(true)
+        .init();
 
-    let features = empty_feature_vector();
-    println!(
-        "[edge/gateway-rs] A3 feature vector dim={} (semantics PENDING A3 spec)",
-        features.len()
+    let config_path = std::env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("gateway.toml"));
+    let cfg = GatewayConfig::load(&config_path)?;
+    info!(
+        site_id = %cfg.site_id,
+        device = %format!("{}:{}", cfg.device.host, cfg.device.port),
+        channels = cfg.channels.len(),
+        poll_ms = cfg.poll_period_ms,
+        "dc-epms-gateway boot (phase 2 batch A — modbus ingestion)"
     );
 
-    println!("[edge/gateway-rs] modbus ingestion: NOT wired (phase 2, rmodbus)");
-    println!("[edge/gateway-rs] gRPC egress:      NOT wired (phase 2, tonic + v1 proto)");
-    println!("[edge/gateway-rs] scaffold OK — exiting");
-}
+    let io_timeout = Duration::from_millis(cfg.device.timeout_ms);
+    let poll_period = Duration::from_millis(cfg.poll_period_ms);
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+    // Defensive outer loop: a lost device connection (PLC reboot,
+    // network blip) re-enters connect with backoff instead of dying.
+    loop {
+        let mut client = match ModbusClient::connect(
+            &cfg.device.host,
+            cfg.device.port,
+            cfg.device.unit_id,
+            io_timeout,
+        )
+        .await
+        {
+            Ok(c) => {
+                info!("modbus: connected");
+                c
+            }
+            Err(e) => {
+                error!(error = %e, "modbus: connect failed; retrying in 3 s");
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                continue;
+            }
+        };
 
-    #[test]
-    fn feature_vector_has_six_components() {
-        assert_eq!(empty_feature_vector().len(), 6);
-    }
-
-    #[test]
-    fn feature_vector_starts_zeroed() {
-        assert!(empty_feature_vector().iter().all(|&x| x == 0.0));
+        'poll: loop {
+            tokio::time::sleep(poll_period).await;
+            for ch in &cfg.channels {
+                match client.read_holdings(ch.register, ch.kind.word_count()).await {
+                    Ok(words) => match ch.to_si(&words) {
+                        Ok(sample) => {
+                            info!(channel = %ch.name, asset = %ch.asset_id,
+                                  quality = ?ch.quality, sample = ?sample, "poll");
+                        }
+                        Err(e) => warn!(channel = %ch.name, error = %e, "scaling error"),
+                    },
+                    Err(e) => {
+                        warn!(channel = %ch.name, error = %e, "modbus read failed; reconnecting");
+                        break 'poll;
+                    }
+                }
+            }
+        }
     }
 }
