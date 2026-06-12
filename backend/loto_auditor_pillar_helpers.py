@@ -240,35 +240,53 @@ def build_steady_state_measurements(
         "hall_outlet_temp_c": 27.0,
         "hall_dewpoint_c": 8.0,
 
-        # ─── Physics-engine canonical fields (DC-EPMS-029b fix) ────────
+        # ─── Physics-engine canonical fields (DC-EPMS-029b fix,
+        #     recalibrated for DC-EPMS-029c) ───────────────────────────
         # These ARE consumed by physics/*.py validate(measurements).
-        # IMPORTANT: we deliberately DO NOT override fields that physics
-        # already has good defaults for (dlc_supply_c, dlc_flow_l_min,
-        # dlc_return_c, hall_inlet_c, gpu_tj_max_c, loop_supply_c,
-        # loop_return_c, cdu_primary_in_c, cdu_primary_out_c). Custom
-        # values would need to satisfy first-law energy balance
-        # (Q_dlc = mass * c * deltaT == rack_tdp_kw * rack_count) and
-        # cross-module consistency, which is beyond this fix's scope.
-        # Falling back to module defaults keeps the baseline self-
-        # consistent (it_thermal health = 1.0).
+        # DC-EPMS-029c root cause: the previous values were SITE-level
+        # (ups_load_kw=16756 against the UNIT-level Galaxy VX model,
+        # UPS_RATED_KW=600; loop_flow 0.45 m^3/s against the per-hall
+        # Darcy geometry), so the pre-LOTO baseline already failed
+        # ups_efficiency / xfmr_thermal / darcy / cdu_balance checks
+        # (SHI 0.54). Under the min() rollup that degraded baseline
+        # MASKED every post-LOTO delta. The values below are derived
+        # from the modules' own curves so the baseline validates
+        # healthy (SHI = 1.0) and LOTO deltas become visible.
+        # it_thermal fields stay on module defaults (self-consistent,
+        # health = 1.0) — same rationale as 029b.
 
-        # Electrical (consumed by physics/electrical.py)
-        "utility_kw": 17400.0,
-        "facility_it_kw": 16756.0,
-        "ups_load_kw": 16756.0,
-        "ups_input_kw": 17450.0,
+        # Electrical (physics/electrical.py — UNIT model: one Galaxy VX
+        # 750 kVA / 600 kW + one 2.5 MVA transformer)
+        "utility_kw": 17400.0,          # site context (metrics only)
+        "facility_it_kw": 16756.0,      # site context (metrics only)
+        "ups_load_kw": 450.0,           # 75% of UPS_RATED_KW 600
+        "ups_input_kw": 468.75,         # 450 / eta_expected(0.75)=0.96
         "ups_mode": "online",
         "battery_soc": 1.0,
         "battery_on_load": False,
+        "xfmr_load_kva": 2000.0,        # 80% of XFMR_RATED_KVA 2500
+        # winding = ambient 25 + no-load rise 40 + 65*(0.8)^2 per the
+        # module's IEEE C57.12 steady-state thermal model
+        "xfmr_winding_c": 106.6,
+        "xfmr_top_oil_c": 80.0,
 
-        # Mechanical (consumed by physics/mechanical.py)
+        # Mechanical (physics/mechanical.py — per-hall loop)
         "rack_count": 118,
         "rack_tdp_kw": 142.0,
-        "loop_flow_m3_s": 0.45,
-        "cdu_primary_flow_m3_s": 0.08,
-        "pump_power_kw": 45.0,
+        "loop_flow_m3_s": 0.066,        # HALL_FLOW_NOMINAL_M3_S
+        "loop_dp_measured_bar": 2.1724, # Darcy-Weisbach at 0.066 m^3/s
+        "loop_supply_c": 18.0,
+        "loop_return_c": 40.0,
+        "cdu_primary_in_c": 7.0,
+        "cdu_primary_out_c": 14.0,
+        # balances q_secondary = 0.066*1040*3650*22 = 5511.8 kW at the
+        # primary side's 7 K rise: 5511.8 / (1000*4.18*7) m^3/s
+        "cdu_primary_flow_m3_s": 0.18837,
+        "pump_speed_hz": 60.0,
+        "pump_power_kw": 45.0,          # affinity law at 60 Hz rated
+        "pump_suction_bar": 1.8,
 
-        # Heat rejection (consumed by physics/heat_rejection.py)
+        # Heat rejection (physics/heat_rejection.py — 2x York YZ)
         "chiller_1_load_kw": 2500.0,
         "chiller_1_power_kw": 350.0,
         "chiller_1_ecwt_c": 29.0,

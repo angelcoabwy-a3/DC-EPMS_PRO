@@ -106,6 +106,10 @@ CHILLER_RATED_ECWT_C = 29.4  # AHRI entering condenser water
 CHILLER_RATED_LCHWT_C = 6.7  # AHRI leaving chilled water
 CHILLER_MIN_ECWT_C = 10.0  # operational minimum
 CHILLER_MAX_ECWT_C = 40.0  # operational maximum, >40 trips
+# DC-EPMS-029c: approach-margin warning. Above 34 C the condenser has
+# lost most of its tower approach margin (rated 29.4 C + ~4.6 K) and is
+# trending toward the 40 C high-discharge-pressure trip.
+CHILLER_ECWT_WARN_C = 34.0
 
 # --- a3semi operational targets ---
 DLC_SUPPLY_TARGET_C = 18.0
@@ -441,11 +445,15 @@ class HeatRejectionModule(PhysicsModule):
 
         # ============ Check 5: Overall N+1 redundancy ======================
         total_rejection_kw = ch1_load + ch2_load
-        CHILLER_RATED_CAPACITY_KW * CHILLER_COUNT
-        # If total load > 50% of combined capacity, we've lost N+1 margin
-        # (a single chiller trip would undersize cooling)
+        # N+1 margin is lost two ways (DC-EPMS-029c):
+        #   (a) total load > single-chiller capacity (a trip undersizes
+        #       cooling even with both units running), or
+        #   (b) a unit is already OFFLINE while the plant carries load —
+        #       the carrying chiller is a single point of failure.
         redundancy_ratio = total_rejection_kw / CHILLER_RATED_CAPACITY_KW
-        n_plus_1_ok = redundancy_ratio <= 1.0  # one chiller can carry full load
+        online_count = sum(1 for p in (ch1_power, ch2_power) if p > 1.0)
+        unit_offline_under_load = online_count < CHILLER_COUNT and total_rejection_kw > 0.0
+        n_plus_1_ok = redundancy_ratio <= 1.0 and not unit_offline_under_load
         r.add_check(
             name="n_plus_1_redundancy_margin",
             passed=n_plus_1_ok,
@@ -454,12 +462,20 @@ class HeatRejectionModule(PhysicsModule):
             unit="ratio",
         )
         if not n_plus_1_ok:
-            interp = (
-                f"Total heat rejection {total_rejection_kw:.0f} kW exceeds "
-                f"single-chiller capacity {CHILLER_RATED_CAPACITY_KW:.0f} kW. "
-                f"N+1 redundancy lost - a single chiller trip would result "
-                f"in undersized cooling capacity."
-            )
+            if unit_offline_under_load:
+                interp = (
+                    f"Only {online_count} of {CHILLER_COUNT} chillers online "
+                    f"while rejecting {total_rejection_kw:.0f} kW. The "
+                    f"carrying chiller is a single point of failure - its "
+                    f"trip means total loss of heat rejection."
+                )
+            else:
+                interp = (
+                    f"Total heat rejection {total_rejection_kw:.0f} kW exceeds "
+                    f"single-chiller capacity {CHILLER_RATED_CAPACITY_KW:.0f} kW. "
+                    f"N+1 redundancy lost - a single chiller trip would result "
+                    f"in undersized cooling capacity."
+                )
             action = (
                 "Reduce IT workload per EOP-003 to restore N+1 margin, or "
                 "commission additional cooling capacity."
@@ -471,10 +487,63 @@ class HeatRejectionModule(PhysicsModule):
                     measured={
                         "total_heat_rejection_kw": total_rejection_kw,
                         "single_chiller_capacity_kw": CHILLER_RATED_CAPACITY_KW,
+                        "chillers_online": online_count,
                     },
-                    expected={"max_safe_total_kw": CHILLER_RATED_CAPACITY_KW},
+                    expected={
+                        "max_safe_total_kw": CHILLER_RATED_CAPACITY_KW,
+                        "chillers_online_min": CHILLER_COUNT,
+                    },
                     residual={"excess_kw": total_rejection_kw - CHILLER_RATED_CAPACITY_KW},
                     threshold={"redundancy_ratio_max": 1.0},
+                    interpretation=interp,
+                    suggested_action=action,
+                )
+            )
+
+        # ============ Check 6: Condenser-water envelope (DC-EPMS-029c) =====
+        # ECWT on RUNNING chillers vs the York YZ operational envelope.
+        # Cooling-tower capacity loss surfaces here: fewer cells -> higher
+        # ECWT at unchanged duty -> approach margin to the 40 C trip erodes.
+        running_ecwts = [
+            ecwt for power, ecwt in ((ch1_power, ch1_ecwt), (ch2_power, ch2_ecwt))
+            if power > 1.0
+        ]
+        ecwt_worst = max(running_ecwts) if running_ecwts else CHILLER_RATED_ECWT_C
+        ecwt_ok = ecwt_worst <= CHILLER_ECWT_WARN_C
+        r.add_check(
+            name="condenser_water_envelope",
+            passed=ecwt_ok,
+            value=ecwt_worst,
+            threshold=CHILLER_ECWT_WARN_C,
+            unit="C",
+        )
+        if not ecwt_ok:
+            tripping = ecwt_worst >= CHILLER_MAX_ECWT_C
+            interp = (
+                f"Worst running-chiller ECWT {ecwt_worst:.1f} C exceeds the "
+                f"{CHILLER_ECWT_WARN_C:.0f} C approach-margin threshold "
+                f"(rated {CHILLER_RATED_ECWT_C:.1f} C, trip "
+                f"{CHILLER_MAX_ECWT_C:.0f} C). Condenser heat rejection is "
+                f"capacity-limited - typical of cooling tower cell loss or "
+                f"fouled fill at sustained duty."
+            )
+            action = (
+                "Verify all cooling tower cells / fans running. Check "
+                "condenser water flow balance. Reduce IT workload per "
+                "EOP-003 if ECWT trends toward 40 C."
+            )
+            r.escalate(Severity.CRITICAL if tripping else Severity.WARNING)
+            r.add_justification(
+                PhysicalJustification(
+                    law="condenser_water_envelope",
+                    measured={"ecwt_worst_c": ecwt_worst},
+                    expected={
+                        "ecwt_rated_c": CHILLER_RATED_ECWT_C,
+                        "ecwt_warn_c": CHILLER_ECWT_WARN_C,
+                        "ecwt_trip_c": CHILLER_MAX_ECWT_C,
+                    },
+                    residual={"excess_c": ecwt_worst - CHILLER_ECWT_WARN_C},
+                    threshold={"ecwt_warn_c": CHILLER_ECWT_WARN_C},
                     interpretation=interp,
                     suggested_action=action,
                 )
@@ -492,6 +561,8 @@ class HeatRejectionModule(PhysicsModule):
             penalty = max(penalty, 0.15)
         if not n_plus_1_ok:
             penalty = max(penalty, 0.20)
+        if not ecwt_ok:
+            penalty = max(penalty, 0.50 if ecwt_worst >= CHILLER_MAX_ECWT_C else 0.20)
         r.health = _clamp01(1.0 - penalty)
 
         r.metrics = {
@@ -508,6 +579,8 @@ class HeatRejectionModule(PhysicsModule):
             "chiller_2_cop_expected": cop2_result["cop_expected"],
             "total_heat_rejection_kw": total_rejection_kw,
             "n_plus_1_ratio": redundancy_ratio,
+            "chillers_online": online_count,
+            "ecwt_worst_c": ecwt_worst,
             "health": r.health,
         }
         return r
