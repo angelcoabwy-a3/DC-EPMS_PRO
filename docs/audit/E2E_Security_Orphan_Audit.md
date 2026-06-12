@@ -15,14 +15,18 @@
 | **F1-1** Riva ASR ghost button | ✅ CLOSED | v0.17.0 cycle -- button `hidden` with HTML comment + `data-feature-pending="riva-asr"` marker; handlers already null-safe |
 | **F3-6** dev DB password literal | ✅ CLOSED | v0.17.0 cycle -- `docker-compose.yml` header expanded with explicit DEV-ONLY CREDENTIAL POLICY block + override mechanism documented (env vars OR `.env` file) |
 | **F2-3** `write_procedure_yaml` orphan | 🟡 DEFER | Acceptable per audit ("intentional for now, production-orphan until draft store lands"). Tracked in V11 roadmap (draft persistence) |
-| **F3-4** RBAC coverage of remaining mutating endpoints | 🟡 DEFER | Scope = router-wide auth dependency + RBAC gate. Estimated 1-2 day surgical work. Tracked for future sprint |
-| **F3-5** 73 `.innerHTML =` sinks | 🟡 DEFER | Scope = systematic refactor to `sanitizeHTML` wrapper. Estimated 1-2 day surgical work. Tracked for future sprint |
+| **F3-4** RBAC coverage of remaining mutating endpoints | ✅ CLOSED | `d3e333e` (2026-05-17) claim-based RBAC gates across 14 mutating endpoints; superseded in depth by Epic 10 (2026-06): `5a8252e` JWT IAM core (4 roles), `a68381e` Maker-Checker dual-JWT on procedure sign, `58f648a` frontend auth gate + API middleware |
+| **F3-5** 73 `.innerHTML =` sinks | ✅ CLOSED | `5ed2409` shared `core/sanitize.js` (allowlist sanitizer for LLM-authored payloads) + `81a8909` shared `escapeHTML` consolidation; discipline codified as skill `S-SEC-01` (sanitizeHTML for LLM surfaces, escapeHTML for interpolated data) with per-view XSS vitest coverage |
 | **CLEANUP × 6** | (per individual finding) | mostly handled in `d495c7b` dead-code eradication |
 
 DEFERRED items are NOT regressions — they are explicit scope decisions
-documented for traceability. Closure of the 2 QUICK WINS (F1-1 + F3-6)
-in this cycle reduces the WARNING-tier count from 4 to 2. Remaining
-deferrals are intentional and scheduled.
+documented for traceability.
+
+**WARNING-tier triage closed 2026-06-12 (MVP S4 bug closeout):** of the
+4 original WARNINGs, F1-1 / F3-6 / F3-4 / F3-5 are CLOSED with the
+commit evidence above. The single remaining open item is **F2-3**
+(intentional production-orphan until a procedure draft store lands —
+post-MVP scope).
 
 ## Severity legend
 

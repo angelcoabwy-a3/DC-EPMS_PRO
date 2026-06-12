@@ -15,10 +15,24 @@ DC-EPMS PRO simulates **A3-Alpha Toronto Area** under **Path C2** (sealed 2026-0
 
 **🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in CO+I panel review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
 
-## 📊 CURRENT STATE (synced 2026-06-12 — EPIC 5 CLOSED E5.A-E5.G; next = S4 bug closeout)
+## 📊 CURRENT STATE (synced 2026-06-12 — S4 BUG CLOSEOUT DELIVERED; next = S5 feature freeze)
 
 ```
-HEAD:  EPIC 5 SPRINT 3 — E5.F + E5.G (2026-06-12, commit 3269ae9):
+HEAD:  MVP S4 — BUG CLOSEOUT (2026-06-12, same day as Epic 5 closure):
+       reality check found T1.6 already delivered (ebefdb6) and 2 of 4
+       E2E WARNINGs already closed but unrecorded. Delivered:
+       * 07efabc DC-EPMS-TEST-01 — overview.test.js fetch leak fixed.
+       * 441fea2 DC-EPMS-029c — SHI rollup reacts to ALL SIX LOTO
+         types: baseline recalibrated to unit-level physics (was
+         masking deltas at SHI 0.54), heat_rejection gains SPOF +
+         condenser_water_envelope checks. pytest 1416 -> 1429.
+       * E2E WARNING triage closed in the audit doc (F3-4/F3-5
+         statuses corrected; only F2-3 remains, intentional).
+       S4 fully closed ~3 weeks ahead of plan. NEXT = S5 FEATURE
+       FREEZE scope: T1.1 Mission Control eyeball validation,
+       DEMO_SCRIPT v5, replay_demo refresh, full regression,
+       tag v1.0.0-rc.
+       Previous HEAD — EPIC 5 SPRINT 3 — E5.F + E5.G (2026-06-12, commit 3269ae9):
        reality check revealed Epic 5 Sprints 1+2 AND E5.E were already
        on master since 2026-05-23 (0aa9e6b3 / 5b55111 / c1d334a) —
        the v11.18 plan's S3/S4 windows assumed them pending. This
@@ -125,9 +139,10 @@ HEAD:  EPIC 5 SPRINT 3 — E5.F + E5.G (2026-06-12, commit 3269ae9):
          (blocks firmas when QBER >= 11%) b186bb3. Backward-compatible with
          the pre-Epic-10 body-only sign path. Pushed to origin/master.
 
-Tests:   backend 1416 passed (E5.F +2 config inspector; S2 +5 design-sim;
-         Epic 10 +60; incl. 7 PG integration) — full pytest ~70s, 0 fail,
-         5 deselected (slow/FAISS).
+Tests:   backend 1429 passed (029c +13 physics sensitivity; E5.F +2
+         config inspector; S2 +5 design-sim; Epic 10 +60; incl. 7 PG
+         integration) — full pytest ~70s, 0 fail, 5 deselected
+         (slow/FAISS).
          frontend 523 vitest passed across 31 files (SLD Reengineering
          -> 500: SLD-R1 default-surface fence + SLD-R2 farm LOD;
          MVP S2-C -> 513: Building D DAG + N-1 coverage;
@@ -239,9 +254,9 @@ docs/
 
 (Closed bugs are in git history. The full closed list lived in the pre-2026-05-27 CLAUDE.md if needed.)
 
-- **DC-EPMS-TEST-01** (LOW, test hygiene) — `tests/frontend/overview.test.js` leaks an unstubbed relative `fetch` when run in isolation (unhandled `ECONNREFUSED ::1:3000` against happy-dom's default origin). Pre-existing (reproduced on clean HEAD 2026-06-10); all assertions pass. Fix: stub fetch in the overview fixture. Found during the Q-state track.
-- **DC-EPMS-029c** (LOW) — `physics_engine.validate_site()` SHI rollup insensitive to some LOTO types (chiller / cooling_tower / chw_pump / RPP). simulate_loto output is structurally correct; only the SHI delta is unreactive. UPS + CDU scenarios DO produce SHI delta, sufficient for demo. Resolution: tune `physics_engine` module thresholds (2-3h surgical). Target: V10 / dedicated bite.
-- **E2E audit WARNING-tier findings** in `docs/audit/E2E_Security_Orphan_Audit.md` — the 3 CRITICAL RBAC findings closed in `b34efb1`; WARNINGs remain open.
+- **DC-EPMS-TEST-01** (RESOLVED 2026-06-12, `07efabc`) — overview.test.js fetch leak: blanket ok:false fetch stub in the fixture; clean in isolation, floor unchanged.
+- **DC-EPMS-029c** (RESOLVED 2026-06-12, `441fea2`) — SHI rollup now reacts to ALL SIX LOTO types. Two stacked defects: (1) steady-state baseline carried site-level magnitudes against unit-level physics models (pre-failed 4 checks, SHI 0.54 floor masked every delta under min() rollup) — recalibrated from the modules' own curves, baseline SHI = 1.0 with a regression fence; (2) heat_rejection blind to redundancy loss + condenser temp — Check 5 flags unit-offline-under-load (SPOF) and new Check 6 `condenser_water_envelope` (warn 34 C, CRITICAL at 40 C trip). +13 tests.
+- **E2E audit WARNING-tier findings** (TRIAGE CLOSED 2026-06-12) — all 4 WARNINGs verified closed with commit evidence (F1-1, F3-6 v0.17.0; F3-4 `d3e333e` + Epic 10 IAM; F3-5 `5ed2409` sanitize.js + S-SEC-01) except **F2-3** (`write_procedure_yaml` production-orphan — intentional until a draft store lands, post-MVP). Closure table updated in `docs/audit/E2E_Security_Orphan_Audit.md`.
 - **TODO(asset-manufacturer-migration)**: S-VENDOR-EATON-01 string-matches context for "eaton" today. Next sprint should add `Asset.manufacturer` to `backend/cmms_models.py` for deterministic lookup. Tracked in `backend/agents/procedure_architect.py`.
 - **DC-EPMS-036** (RESOLVED 2026-05-28) — venv contamination. An uncommitted langchain-1.x / crewai / instructor experiment (parallel to the still-uncommitted `package.json` JS deps `@anthropic-ai/sdk` + `@langchain/anthropic` + `langchain`) pip-installed `langchain-core 1.4.0` **violating the pyproject pin `<0.3.0`**, which dragged in `chromadb 1.1.1` + `transformers 4.57.6` and downgraded `protobuf` to 5.29.6. Two failures resulted: (a) Epic 8 proto stubs (gencode 6.31.1) refused to import under protobuf 5.29.6; (b) `from transformers import GPT2TokenizerFast` (via nemoguardrails + incompatible langchain-core) hung past the 30 s `pytest-timeout`. **Fix**: forensic backup (`pip freeze` + `chroma_db/` copy → `logs/env-rollback-20260528-210919/`), `pip install -e .[all]` to restore pyproject baseline (chromadb 0.5.18, langchain-core 0.2.43, pydantic 2.9.2), uninstall orphans (crewai*, instructor, langchain-anthropic, langchain-protocol), bump `protobuf` to 6.33.6 (resolver floated otel up to 1.42.1). `pyproject` now pins `protobuf>=6.31.1,<7` to prevent recurrence. `pip check` clean; suite restored to 1409/368. The JS counterpart (`package.json` deps `@anthropic-ai/sdk` + `@langchain/anthropic` + `langchain`) was reverted 2026-05-28 — zero frontend usage, Node libs incompatible with the static-ESM frontend, no bundler — so nothing to rescue. Fully closed.
 
@@ -370,8 +385,33 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
   - `docs/skills/agent-harness-registry.md` — 30-harness Gentle IA master registry. **Bloque 4 cerrado completo** (H06/H13/H16 all OPERATIVO). Implementations: `backend/phase_dag.py` + `backend/agent_continuity.py` + `backend/skill_audit.py`.
 - **Audit CLI**: `python -m backend.skill_audit --since HEAD~N` prints per-commit CLEAN / GAPS / UNKNOWNS reports against the registry.
 
-## ⏸ PAUSE_STATE (last updated 2026-06-12 — EPIC 5 CLOSED E5.A-E5.G; next = S4 bug closeout)
+## ⏸ PAUSE_STATE (last updated 2026-06-12 — S4 BUG CLOSEOUT DELIVERED; next = S5 feature freeze)
 
+> **✅ MVP S4 BUG CLOSEOUT DELIVERED (2026-06-12, same session as the
+> Epic 5 closure).** Reality check first: T1.6 was ALREADY closed
+> (`ebefdb6` DC-EPMS-019+039; DC-EPMS-022 closed v11.4 "verified
+> stale") — the v11.18 S4 list was partially stale. Delivered:
+> * `07efabc` DC-EPMS-TEST-01 — overview fixture fetch stub.
+> * `441fea2` DC-EPMS-029c — SHI reacts to ALL SIX LOTO types.
+>   Baseline recalibrated to unit-level physics (Galaxy VX eta curve,
+>   IEEE C57.12 xfmr thermal, Darcy at hall-nominal 0.066 m^3/s, CDU
+>   balance at 7 K) -> pre-LOTO SHI 1.0 (was 0.54, masking deltas);
+>   heat_rejection Check 5 flags unit-offline-under-load (SPOF) +
+>   new Check 6 condenser_water_envelope (warn 34 C / CRITICAL 40 C).
+>   Probe deltas: ups -0.51, cdu -0.55, chw_pump -0.46, rpp -0.325,
+>   chiller -0.28, cooling_tower -0.28.
+> * E2E WARNING triage: closure table corrected with commit evidence
+>   (F3-4 `d3e333e`+Epic 10; F3-5 `5ed2409`+S-SEC-01). Only F2-3
+>   remains open, intentional post-MVP.
+> Floors: **1429 pytest / 523 vitest (31 files)**, ruff clean.
+>
+> **🔴 NEXT SESSION ENTRY POINT — MVP S5: FEATURE FREEZE** (jul 9-15
+> window, running ~3-4 weeks ahead): T1.1 Mission Control eyeball
+> validation, DEMO_SCRIPT v5, replay_demo refresh, full regression,
+> tag v1.0.0-rc (tag-is-not-closure verified). Operator eyeball still
+> pending per S-VISUAL-01 on the Epic 5 optimizer surfaces (see the
+> superseded block below). S6 = OBS rehearsals + v1.0.0 MVP tag.
+>
 > **✅ EPIC 5 CLOSED COMPLETE (2026-06-12, commit `3269ae9`).** The
 > session's reality check found Sprints 1+2 + E5.E already on master
 > since 2026-05-23 (`0aa9e6b3` / `5b55111` / `c1d334a`) — the v11.18
@@ -386,7 +426,8 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 > on :8080. NOT yet pushed to origin (local commits: `3269ae9` +
 > doc-sync).
 >
-> **🔴 NEXT SESSION ENTRY POINT — MVP S4: bug closeout** (the Epic 5
+> **✅ SUPERSEDED same day (S4 bug closeout delivered — see the block
+> above). Original entry:** ~~MVP S4: bug closeout~~ (the Epic 5
 > portion of S4 is done; MVP runs ~3 weeks ahead of the jul 2-8
 > window): T1.6, DC-EPMS-029c (SHI rollup insensitivity), 
 > DC-EPMS-TEST-01 (overview.test.js fetch leak), E2E WARNING triage

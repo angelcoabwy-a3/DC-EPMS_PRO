@@ -1,8 +1,33 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.20 (2026-06-12) — **EPIC 5 CLOSED (E5.A-E5.G)** · MVP S3 + S4 Epic-5 scope satisfied · next = S4 bug closeout (T1.6, DC-EPMS-029c, DC-EPMS-TEST-01, E2E WARNING triage)
+- **Status**: v11.21 (2026-06-12) — **S4 BUG CLOSEOUT DELIVERED** (same day as Epic 5 closure) · next = S5 FEATURE FREEZE scope (T1.1 eyeball validation, DEMO_SCRIPT v5, full regression, v1.0.0-rc)
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-06-12 (v11.20)
+- **Locked**: 2026-05-10 · **Synced**: 2026-06-12 (v11.21)
+- **v11.21 sync (2026-06-12) — S4 BUG CLOSEOUT.** Reality check first:
+  T1.6 was ALREADY delivered (`ebefdb6` closed DC-EPMS-019 + 039;
+  DC-EPMS-022 closed v11.4) and two of the four E2E WARNINGs had
+  closing commits the audit table never recorded. Delivered this
+  session:
+  * `07efabc` DC-EPMS-TEST-01 — overview.test.js fetch leak fixed
+    (blanket ok:false stub in the fixture; clean in isolation).
+  * `441fea2` DC-EPMS-029c — SHI rollup now reacts to ALL SIX LOTO
+    types. Root cause was two stacked defects: (1) the steady-state
+    baseline carried site-level magnitudes against unit-level physics
+    models, pre-failing 4 checks (SHI 0.54) and masking every delta
+    under the min() rollup — recalibrated from the modules' own
+    curves, baseline now SHI 1.0; (2) heat_rejection was blind to
+    redundancy loss and condenser temperature — Check 5 now flags a
+    unit offline under load (carrying chiller = SPOF) and new Check 6
+    (condenser_water_envelope) warns at ECWT > 34 C / goes CRITICAL
+    at the 40 C York trip. Deltas: ups -0.51, cdu -0.55, chw_pump
+    -0.46, rpp -0.325, chiller -0.28, cooling_tower -0.28. +13 tests
+    (pytest 1416 -> 1429).
+  * E2E WARNING triage closed in the audit doc: F3-4 (closed
+    `d3e333e` + Epic 10 IAM) and F3-5 (closed `5ed2409` sanitize.js +
+    S-SEC-01) statuses corrected; F1-1 / F3-6 were already recorded
+    closed. Sole remaining WARNING = F2-3 (intentional orphan until a
+    draft store lands, post-MVP).
+  S4 is fully closed ~3 weeks ahead of its jul 2-8 window.
 - **v11.20 sync (2026-06-12) — EPIC 5 CLOSED.** Reality-check finding:
   Epic 5 Sprints 1+2 AND E5.E were already on master since 2026-05-23
   (`0aa9e6b3` Sprint 1 heartbeat + per-agent voting, `5b55111`
@@ -74,8 +99,7 @@
   S4  jul 2-8     Epic 5 Sprint 3 (E5.F config, E5.G analytics,
                   E5.E What-If preview) + bug closeout: T1.6,
                   DC-EPMS-029c, DC-EPMS-TEST-01, E2E WARNING triage
-                  [EPIC 5 PORTION DELIVERED 2026-06-12; bug closeout
-                  remains]
+                  [FULLY DELIVERED 2026-06-12 — Epic 5 + bug closeout]
   S5  jul 9-15    FEATURE FREEZE -> T1.1 Mission Control eyeball
                   validation, DEMO_SCRIPT v5, replay_demo refresh,
                   full regression, tag v1.0.0-rc
@@ -318,7 +342,10 @@ Add:
 - Set sessionStorage flags to a known-clean state
 - Print a "browser hard-reload Ctrl+Shift+R" reminder at the end
 
-### T1.6 — Backend bug closeout (~1 h, opportunistic)
+### T1.6 — ✅ DELIVERED — Backend bug closeout (~1 h, opportunistic)
+
+(Verified delivered during the 2026-06-12 S4 reality check: DC-EPMS-019
++ 039 closed in `ebefdb6`; DC-EPMS-022 closed v11.4 "verified stale".)
 
 While in cleanup mode, knock out the cosmetic bugs that have lingered:
 - DC-EPMS-019 logging file handle on shutdown (30 min)
