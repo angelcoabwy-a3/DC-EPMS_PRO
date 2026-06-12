@@ -860,6 +860,30 @@ class OptimizerService:
             ],
         }
 
+    def config_snapshot(self) -> dict[str, Any]:
+        """E5.F — read-only OptimizerConfig inspector payload.
+
+        Surfaces every UPPER_CASE threshold so the operator approving a
+        proposal can see WHY the Optimizer chose this value (drift gate,
+        sustain window, step sizes, pacing). Config is design-time per
+        ADR-006 — there is deliberately no mutation surface.
+        """
+        thresholds = {
+            name: getattr(self._cfg, name)
+            for name in dir(self._cfg)
+            if name.isupper() and not name.startswith("_")
+        }
+        return {
+            "read_only": True,
+            "note": (
+                "Design-time control-law thresholds per ADR-006 -- "
+                "not operator-tunable at runtime."
+            ),
+            "pue_target": self._pue_target,
+            "surfaces": sorted(VALID_SURFACES),
+            "thresholds": thresholds,
+        }
+
     async def _read_telemetry(self) -> TelemetryPoint | None:
         if self._telemetry is None:
             return None

@@ -283,6 +283,23 @@ async def optimizer_health(request: Request) -> dict[str, Any]:
     return svc.health()
 
 
+@router.get("/config")
+async def optimizer_config(request: Request) -> dict[str, Any]:
+    """Epic 5.F — read-only OptimizerConfig inspector.
+
+    Serialises the control-law thresholds (drift gate, sustain window,
+    LWT / VFD bounds + steps, pacing) plus the PUE target and the
+    handled surfaces, so the operator has the WHY behind each proposed
+    value. Config is design-time per ADR-006: there is no mutation
+    counterpart to this endpoint, by design.
+
+    HTTP 503 when the Optimizer service is not running (same gate as
+    ``/health`` — ``DC_EPMS_OPTIMIZER_ENABLED`` default OFF).
+    """
+    svc = _get_optimizer_service(request)
+    return svc.config_snapshot()
+
+
 @router.post("/preview/{proposal_id}")
 async def preview_proposal_impact(
     proposal_id: str, request: Request,

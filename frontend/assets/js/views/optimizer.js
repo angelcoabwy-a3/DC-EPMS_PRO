@@ -577,6 +577,7 @@ async function _fetchHistory() {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         _renderHistory(data.approvals || []);
+        _renderRejectionAnalytics(data.approvals || []);   // E5.G
         const counter = document.querySelector('[data-opt-history-counter]');
         if (counter) counter.textContent = String(Number(data.total) || 0);
     } catch (e) {
@@ -593,6 +594,136 @@ function _toggleHistorySidebar() {
     const isOpen = aside.dataset.open === '1';
     aside.dataset.open = isOpen ? '0' : '1';
     aside.hidden = isOpen;
+}
+
+
+// ─── E5.F — OptimizerConfig inspector (read-only, ADR-006) ───────────
+const CONFIG_UNITS = {
+    PUE_DRIFT_THRESHOLD: 'PUE pts',
+    PUE_SUSTAIN_TICKS: 'ticks',
+    LWT_FLOOR_C: '°C',
+    LWT_STEP_C: 'K',
+    LWT_HALL_INLET_GUARD_C: '°C',
+    CT_VFD_MAX_PCT: '%',
+    CT_VFD_STEP_PCT: '%',
+    CT_APPROACH_FLOOR_K: 'K',
+    CT_APPROACH_HEADROOM_K: 'K',
+    PACING_SECONDS: 's',
+    LOOP_TICK_SECONDS: 's',
+};
+
+function _formatConfigValue(key, value) {
+    const unit = CONFIG_UNITS[key] || '';
+    if (unit === 's' && typeof value === 'number' && value >= 60) {
+        return `${value} s = ${Math.round(value / 60)} min`;
+    }
+    return unit ? `${value} ${unit}` : String(value);
+}
+
+function _renderConfig(payload) {
+    const slot = document.querySelector('[data-opt-config-body]');
+    if (!slot) return;
+    if (!payload || typeof payload !== 'object' || !payload.thresholds) {
+        slot.innerHTML = sanitizeHTML(
+            '<div class="opt-config-empty">Config unavailable.</div>',
+        );
+        return;
+    }
+    const rows = Object.entries(payload.thresholds)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, value]) =>
+            `<tr><td class="opt-config-key">${escapeHTML(key)}</td>`
+            + `<td class="opt-config-val">${escapeHTML(_formatConfigValue(key, value))}</td></tr>`)
+        .join('');
+    const surfaces = Array.isArray(payload.surfaces)
+        ? payload.surfaces.map((s) => escapeHTML(String(s))).join(' · ')
+        : '—';
+    slot.innerHTML = sanitizeHTML(
+        `<div class="opt-config-note">${escapeHTML(String(payload.note || ''))}</div>`
+        + `<div class="opt-config-meta">PUE target `
+        + `<strong>${escapeHTML(String(payload.pue_target ?? '—'))}</strong>`
+        + ` · surfaces: ${surfaces}</div>`
+        + `<table class="opt-config-table"><tbody>${rows}</tbody></table>`,
+    );
+}
+
+async function _fetchConfig() {
+    const slot = document.querySelector('[data-opt-config-body]');
+    if (!slot) return;
+    try {
+        const resp = await fetch('/api/optimizer/config');
+        if (resp.status === 503) {
+            slot.innerHTML = sanitizeHTML(
+                '<div class="opt-config-empty">Optimizer not running.</div>',
+            );
+            return;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        _renderConfig(await resp.json());
+    } catch (e) {
+        slot.innerHTML = sanitizeHTML(
+            `<div class="opt-config-empty opt-config-error">config error: `
+            + `${escapeHTML(e.message)}</div>`,
+        );
+    }
+}
+
+
+// ─── E5.G — Rejection-reason analytics (pure client-side) ────────────
+// Reject reasons are operator-authored free text living in the E5.B
+// approval feed; this block surfaces the recurring patterns so the
+// "optional 2.2 learning loop" finally has an operator-visible signal.
+// No new backend: derivation is purely client-side per the Epic 5 spec.
+const MIN_REJECTIONS_FOR_ANALYTICS = 10;
+const _ANALYTICS_STOPWORDS = new Set([
+    'this', 'that', 'with', 'from', 'have', 'will', 'would', 'about',
+    'because', 'pero', 'porque', 'para', 'esta', 'este', 'cuando',
+]);
+
+function _rejectionPatterns(approvals) {
+    const rejections = (Array.isArray(approvals) ? approvals : [])
+        .filter((a) => String(a.decision || '').toLowerCase() === 'rejected');
+    const words = new Map();
+    const tags = new Map();
+    for (const r of rejections) {
+        const tag = String(r.bms_tag_id || '').trim();
+        if (tag) tags.set(tag, (tags.get(tag) || 0) + 1);
+        const tokens = String(r.reason || '').toLowerCase()
+            .split(/[^a-z0-9_áéíóúñ]+/i)
+            .filter((w) => w.length >= 4 && !_ANALYTICS_STOPWORDS.has(w));
+        for (const w of new Set(tokens)) {
+            words.set(w, (words.get(w) || 0) + 1);
+        }
+    }
+    const top = (m, n) => [...m.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, n);
+    return { count: rejections.length, topWords: top(words, 5), topTags: top(tags, 3) };
+}
+
+function _renderRejectionAnalytics(approvals) {
+    const slot = document.querySelector('[data-opt-reject-analytics]');
+    if (!slot) return;
+    const p = _rejectionPatterns(approvals);
+    if (p.count < MIN_REJECTIONS_FOR_ANALYTICS) {
+        slot.innerHTML = sanitizeHTML(
+            `<div class="opt-ra-hdr">Common rejection patterns</div>`
+            + `<div class="opt-ra-empty">Not enough data — need more rejections `
+            + `(${escapeHTML(String(p.count))} so far, threshold `
+            + `${MIN_REJECTIONS_FOR_ANALYTICS}).</div>`,
+        );
+        return;
+    }
+    const wordChips = p.topWords.map(([w, n]) =>
+        `<span class="opt-ra-chip">${escapeHTML(w)} ×${escapeHTML(String(n))}</span>`).join('');
+    const tagRows = p.topTags.map(([t, n]) =>
+        `<li>${escapeHTML(t)} — ${escapeHTML(String(n))} rejection(s)</li>`).join('');
+    slot.innerHTML = sanitizeHTML(
+        `<div class="opt-ra-hdr">Common rejection patterns `
+        + `(${escapeHTML(String(p.count))} rejections)</div>`
+        + `<div class="opt-ra-words">${wordChips}</div>`
+        + (tagRows ? `<ul class="opt-ra-tags">${tagRows}</ul>` : ''),
+    );
 }
 
 
@@ -805,8 +936,15 @@ function _wireOptimizerView() {
             <aside data-opt-history class="opt-history" data-open="0" hidden>
                 <div class="opt-history-hdr">Approval history</div>
                 <div data-opt-history-body class="opt-history-body"></div>
+                <div data-opt-reject-analytics class="opt-reject-analytics"></div>
             </aside>
         </div>
+        <details data-opt-config class="opt-config">
+            <summary>Config &amp; Bounds
+                <span class="opt-config-tag">read-only · ADR-006 design-time</span>
+            </summary>
+            <div data-opt-config-body class="opt-config-body"></div>
+        </details>
     `;
     root.addEventListener('click', _onClick);
     const refreshBtn = root.querySelector('[data-opt-refresh]');
@@ -824,6 +962,15 @@ function _wireOptimizerView() {
         historyBtn.addEventListener('click', () => {
             _toggleHistorySidebar();
             _fetchHistory();
+        });
+    }
+    // E5.F: lazy fetch — the panel is collapsed by default; the config
+    // is design-time so one fetch per open is plenty.
+    const configPanel = root.querySelector('[data-opt-config]');
+    if (configPanel && !configPanel._bound) {
+        configPanel._bound = true;
+        configPanel.addEventListener('toggle', () => {
+            if (configPanel.open) _fetchConfig();
         });
     }
     document.addEventListener('hermes:optimizer-proposal', _onHermesProposal);
@@ -872,6 +1019,10 @@ export const __optimizer_view_test__ = {
     renderHeartbeat: _renderHeartbeat,
     renderAgentVotesTable: _renderAgentVotesTable,
     renderHistory: _renderHistory,
+    renderConfig: _renderConfig,
+    fetchConfig: _fetchConfig,
+    rejectionPatterns: _rejectionPatterns,
+    renderRejectionAnalytics: _renderRejectionAnalytics,
     renderForensicTrail: _renderForensicTrail,
     renderPreview: _renderPreview,
     submitApprove: _submitApprove,

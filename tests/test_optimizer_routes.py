@@ -518,6 +518,40 @@ class TestOptimizerHealthEndpoint:
 
 
 # ════════════════════════════════════════════════════════════════════
+# Epic 5 Sprint 3 — E5.F GET /api/optimizer/config (read-only inspector)
+# ════════════════════════════════════════════════════════════════════
+class TestOptimizerConfigEndpoint:
+    def test_config_returns_every_threshold_read_only(self, stack):
+        client, _svc, _bms, _app = stack
+        r = client.get("/api/optimizer/config")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["read_only"] is True
+        assert body["pue_target"] == 1.30
+        assert sorted(body["surfaces"]) == ["chiller_lwt", "ct_fan_vfd"]
+        th = body["thresholds"]
+        # Every control-law constant the operator needs the WHY for.
+        for key in (
+            "PUE_DRIFT_THRESHOLD", "PUE_SUSTAIN_TICKS",
+            "LWT_FLOOR_C", "LWT_STEP_C", "LWT_HALL_INLET_GUARD_C",
+            "CT_VFD_MAX_PCT", "CT_VFD_STEP_PCT",
+            "CT_APPROACH_FLOOR_K", "CT_APPROACH_HEADROOM_K",
+            "PACING_SECONDS", "LOOP_TICK_SECONDS",
+        ):
+            assert key in th, f"threshold missing from inspector: {key}"
+        assert th["PACING_SECONDS"] == 900
+        # ADR-006: design-time config — the note states it explicitly.
+        assert "ADR-006" in body["note"]
+
+    def test_config_returns_503_when_service_not_wired(self):
+        app = FastAPI()
+        register_optimizer_routes(app, bms_write_fn=lambda *a, **k: (True, "ok"))
+        client = TestClient(app)
+        r = client.get("/api/optimizer/config")
+        assert r.status_code == 503
+
+
+# ════════════════════════════════════════════════════════════════════
 # Epic 5 Sprint 1 — E5.C per-agent verdicts traverse to JSON
 # ════════════════════════════════════════════════════════════════════
 class TestQueuedProposalAgentVerdictsJSON:

@@ -18,6 +18,8 @@ const {
     renderQueue, renderProposalCard,
     renderHeartbeat, renderAgentVotesTable,
     renderHistory, renderForensicTrail, renderPreview,
+    renderConfig, fetchConfig,
+    rejectionPatterns, renderRejectionAnalytics,
     submitApprove, submitReject, fetchQueue, fetchHealth,
     fetchHistory, fetchForensicTrail, fetchPreview,
     toggleHistorySidebar,
@@ -950,5 +952,186 @@ describe('Epic 5.B/D/E — card actions trigger the right handlers', () => {
         await Promise.resolve(); await Promise.resolve();
         const urls = spy.mock.calls.map((c) => c[0]);
         expect(urls.some((u) => u.startsWith('/api/ledger/entries?proposal_id='))).toBe(true);
+    });
+});
+
+
+// ── E5.F — OptimizerConfig inspector (read-only, ADR-006) ───────────
+function _mountSprint3View() {
+    document.body.innerHTML = `
+        <div id="view-optimizer">
+            <aside data-opt-history hidden data-open="0">
+                <div data-opt-history-body></div>
+                <div data-opt-reject-analytics></div>
+            </aside>
+            <details data-opt-config>
+                <div data-opt-config-body></div>
+            </details>
+        </div>`;
+}
+
+function _configPayload(overrides = {}) {
+    return {
+        read_only: true,
+        note: 'Design-time control-law thresholds per ADR-006 -- '
+            + 'not operator-tunable at runtime.',
+        pue_target: 1.30,
+        surfaces: ['chiller_lwt', 'ct_fan_vfd'],
+        thresholds: {
+            PACING_SECONDS: 900,
+            LOOP_TICK_SECONDS: 5,
+            LWT_FLOOR_C: 5.0,
+            PUE_SUSTAIN_TICKS: 3,
+        },
+        ...overrides,
+    };
+}
+
+describe('Epic 5.F — renderConfig + fetchConfig', () => {
+    it('renders note, PUE target, surfaces and sorted threshold rows', () => {
+        _mountSprint3View();
+        renderConfig(_configPayload());
+        const body = document.querySelector('[data-opt-config-body]');
+        expect(body.textContent).toContain('ADR-006');
+        expect(body.textContent).toContain('1.3');
+        expect(body.textContent).toContain('chiller_lwt');
+        expect(body.textContent).toContain('ct_fan_vfd');
+        const keys = [...body.querySelectorAll('.opt-config-key')]
+            .map((td) => td.textContent);
+        expect(keys).toHaveLength(4);
+        // Alphabetical: deterministic ordering regardless of dict order.
+        expect(keys).toEqual([...keys].sort());
+    });
+
+    it('formats values human-readable: 900 s = 15 min, units per key', () => {
+        _mountSprint3View();
+        renderConfig(_configPayload());
+        const body = document.querySelector('[data-opt-config-body]');
+        expect(body.textContent).toContain('900 s = 15 min');
+        // Sub-minute seconds stay raw; ticks keep their unit.
+        expect(body.textContent).toContain('5 s');
+        expect(body.textContent).toContain('3 ticks');
+    });
+
+    it('renders the unavailable state on a malformed payload', () => {
+        _mountSprint3View();
+        renderConfig({ read_only: true });   // no thresholds key
+        expect(document.querySelector('[data-opt-config-body]').textContent)
+            .toContain('Config unavailable');
+    });
+
+    it('fetchConfig GETs /api/optimizer/config; 503 renders not-running', async () => {
+        _mountSprint3View();
+        const spy = vi.fn(async () => ({
+            ok: true, status: 200, json: async () => _configPayload(),
+        }));
+        vi.stubGlobal('fetch', spy);
+        await fetchConfig();
+        expect(spy).toHaveBeenCalledWith('/api/optimizer/config');
+        expect(document.querySelectorAll('.opt-config-key').length).toBe(4);
+
+        // Default-OFF posture (DC_EPMS_OPTIMIZER_ENABLED unset) -> 503.
+        vi.stubGlobal('fetch', vi.fn(async () => ({
+            ok: false, status: 503, json: async () => ({ detail: 'not running' }),
+        })));
+        await fetchConfig();
+        expect(document.querySelector('[data-opt-config-body]').textContent)
+            .toContain('Optimizer not running');
+    });
+
+    it('XSS — hostile note string is escaped (S-SEC-01)', () => {
+        _mountSprint3View();
+        renderConfig(_configPayload({
+            note: '<img src=x onerror=window.__c1=1>',
+        }));
+        const body = document.querySelector('[data-opt-config-body]');
+        expect(body.querySelector('img')).toBeNull();
+        expect(window.__c1).toBeUndefined();
+    });
+});
+
+
+// ── E5.G — Rejection-reason analytics (pure client-side) ────────────
+function _rejection(reason, tag = 'HVAC.CHILLER1.CW_SETPOINT', decision = 'rejected') {
+    return { proposal_id: 'qp-x', decision, reason, bms_tag_id: tag };
+}
+
+describe('Epic 5.G — rejectionPatterns + renderRejectionAnalytics', () => {
+    it('empty feed renders the not-enough-data state (0 so far)', () => {
+        _mountSprint3View();
+        renderRejectionAnalytics([]);
+        const slot = document.querySelector('[data-opt-reject-analytics]');
+        expect(slot.textContent).toContain('Not enough data');
+        expect(slot.textContent).toContain('(0 so far');
+    });
+
+    it('sparse feed (5 rejections, below the 10 threshold) stays gated', () => {
+        _mountSprint3View();
+        const approvals = Array.from({ length: 5 }, () =>
+            _rejection('Hall already cool enough'));
+        // Approved decisions never count toward the threshold.
+        approvals.push({ proposal_id: 'qp-ok', decision: 'approved' });
+        renderRejectionAnalytics(approvals);
+        const slot = document.querySelector('[data-opt-reject-analytics]');
+        expect(slot.textContent).toContain('Not enough data');
+        expect(slot.textContent).toContain('(5 so far');
+        expect(slot.querySelector('.opt-ra-chip')).toBeNull();
+    });
+
+    it('dense feed (30 rejections) clusters words and tags', () => {
+        _mountSprint3View();
+        const approvals = [
+            ...Array.from({ length: 12 }, () =>
+                _rejection('Chiller vibration alarm active')),
+            ...Array.from({ length: 10 }, () =>
+                _rejection('Hall inlet temperature already cool',
+                    'HVAC.CT1.FAN_VFD', 'REJECTED')),   // case-insensitive
+            ...Array.from({ length: 8 }, () =>
+                _rejection('Maintenance window pending')),
+            { proposal_id: 'qp-ok', decision: 'approved', reason: 'noise noise' },
+        ];
+        renderRejectionAnalytics(approvals);
+        const slot = document.querySelector('[data-opt-reject-analytics]');
+        expect(slot.textContent).toContain('(30 rejections)');
+        const chips = [...slot.querySelectorAll('.opt-ra-chip')]
+            .map((c) => c.textContent);
+        expect(chips).toHaveLength(5);
+        // Count desc, alpha tiebreak: the four 12-count words lead.
+        expect(chips[0]).toContain('active');
+        expect(chips[0]).toContain('12');
+        expect(chips.some((c) => c.includes('vibration'))).toBe(true);
+        const tagRows = [...slot.querySelectorAll('.opt-ra-tags li')]
+            .map((li) => li.textContent);
+        expect(tagRows[0]).toContain('HVAC.CHILLER1.CW_SETPOINT');
+        expect(tagRows[0]).toContain('20');
+        expect(tagRows[1]).toContain('HVAC.CT1.FAN_VFD');
+    });
+
+    it('rejectionPatterns drops stopwords, short words, and dedupes per reason', () => {
+        const p = rejectionPatterns([
+            _rejection('pero esta drift drift gate due'),
+        ]);
+        expect(p.count).toBe(1);
+        const words = Object.fromEntries(p.topWords);
+        // Spanish/English stopwords + <4-char tokens excluded.
+        expect(words.pero).toBeUndefined();
+        expect(words.esta).toBeUndefined();
+        expect(words.due).toBeUndefined();
+        // Repeated word in ONE reason counts once (per-rejection dedupe).
+        expect(words.drift).toBe(1);
+        expect(words.gate).toBe(1);
+    });
+
+    it('XSS — hostile operator-authored tag + reason are neutralised (S-SEC-01)', () => {
+        _mountSprint3View();
+        const approvals = Array.from({ length: 12 }, () =>
+            _rejection('<script>window.__r1=1</script> overheating',
+                '<img src=x onerror=window.__r2=1>'));
+        renderRejectionAnalytics(approvals);
+        const slot = document.querySelector('[data-opt-reject-analytics]');
+        expect(slot.querySelector('script')).toBeNull();
+        expect(slot.querySelector('img')).toBeNull();
+        expect(window.__r1).toBeUndefined();
+        expect(window.__r2).toBeUndefined();
     });
 });
