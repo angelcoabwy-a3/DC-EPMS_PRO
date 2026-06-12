@@ -1,8 +1,28 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.19 (2026-06-11) — **MVP S1 + S2 DELIVERED same day** · next = S3 Epic 5 Sprints 1+2 · Epic 3.B cut from MVP
+- **Status**: v11.20 (2026-06-12) — **EPIC 5 CLOSED (E5.A-E5.G)** · MVP S3 + S4 Epic-5 scope satisfied · next = S4 bug closeout (T1.6, DC-EPMS-029c, DC-EPMS-TEST-01, E2E WARNING triage)
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-06-11 (v11.19)
+- **Locked**: 2026-05-10 · **Synced**: 2026-06-12 (v11.20)
+- **v11.20 sync (2026-06-12) — EPIC 5 CLOSED.** Reality-check finding:
+  Epic 5 Sprints 1+2 AND E5.E were already on master since 2026-05-23
+  (`0aa9e6b3` Sprint 1 heartbeat + per-agent voting, `5b55111`
+  Sprint 2 history sidebar + forensic trail + preview UI, `c1d334a`
+  E5.E sandbox preview backend) — they predate the v11.18 MVP plan,
+  whose S3/S4 windows assumed them pending. This session delivered
+  the only missing pieces, Sprint 3's E5.F + E5.G, found in-flight
+  in the working tree and completed with their test artifacts:
+  `3269ae9` — E5.F read-only OptimizerConfig inspector
+  (`config_snapshot()` + `GET /api/optimizer/config`, 503 on
+  default-OFF; collapsed "Config & Bounds" panel, human-readable
+  units) + E5.G client-side rejection analytics (word/tag clustering
+  over the E5.B feed, 10-rejection gate, S-SEC-01 escaping of
+  operator-authored reasons). Floors: pytest 1414 -> 1416, vitest
+  513 -> 523 (31 files), ruff clean. Live smoke per S-RUNTIME-01:
+  fresh boot verified (components=113), `/api/optimizer/config`
+  returns 503 with the Optimizer default-OFF; the 200-enabled
+  posture is covered by TestClient with the service wired. The MVP
+  sequence is now ~3 weeks ahead of plan: S4's remaining scope is
+  the bug closeout only.
 - **v11.19 sync (2026-06-11) — MVP S2 BACKEND GROUNDING DELIVERED**,
   same session as S1 and ahead of the jun 18-24 window (operator
   visual acceptance of S1 received first: "ok lo veo bien").
@@ -50,10 +70,12 @@
                   + n1Power extended to Building D
   S3  jun 25-jul 1  Epic 5 Sprints 1+2 (E5.A heartbeat, E5.C 6-agent
                   breakdown, E5.B approval sidebar, E5.D forensic
-                  trail link) ~21 h
+                  trail link) ~21 h  [ALREADY ON MASTER 2026-05-23]
   S4  jul 2-8     Epic 5 Sprint 3 (E5.F config, E5.G analytics,
                   E5.E What-If preview) + bug closeout: T1.6,
                   DC-EPMS-029c, DC-EPMS-TEST-01, E2E WARNING triage
+                  [EPIC 5 PORTION DELIVERED 2026-06-12; bug closeout
+                  remains]
   S5  jul 9-15    FEATURE FREEZE -> T1.1 Mission Control eyeball
                   validation, DEMO_SCRIPT v5, replay_demo refresh,
                   full regression, tag v1.0.0-rc

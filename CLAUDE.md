@@ -15,10 +15,31 @@ DC-EPMS PRO simulates **A3-Alpha Toronto Area** under **Path C2** (sealed 2026-0
 
 **🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in CO+I panel review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
 
-## 📊 CURRENT STATE (synced 2026-06-11 — MVP S1 + S2 delivered; next = S3 Epic 5)
+## 📊 CURRENT STATE (synced 2026-06-12 — EPIC 5 CLOSED E5.A-E5.G; next = S4 bug closeout)
 
 ```
-HEAD:  MVP S2 — BACKEND GROUNDING (2026-06-11, same session as S1,
+HEAD:  EPIC 5 SPRINT 3 — E5.F + E5.G (2026-06-12, commit 3269ae9):
+       reality check revealed Epic 5 Sprints 1+2 AND E5.E were already
+       on master since 2026-05-23 (0aa9e6b3 / 5b55111 / c1d334a) —
+       the v11.18 plan's S3/S4 windows assumed them pending. This
+       session completed the in-flight Sprint 3 working-tree diff
+       with its missing test artifacts and committed:
+       * E5.F OptimizerConfig inspector — config_snapshot() serialises
+         every UPPER_CASE control-law threshold + PUE target +
+         surfaces; GET /api/optimizer/config (read-only per ADR-006,
+         503 when DC_EPMS_OPTIMIZER_ENABLED default-OFF); collapsed
+         "Config & Bounds" panel, human-readable units (900 s = 15 min),
+         lazy fetch on open.
+       * E5.G rejection-reason analytics — pure client-side word/tag
+         clustering over the E5.B approval feed; gated <10 rejections;
+         ES/EN stopwords; operator-authored reasons escaped (S-SEC-01).
+       Live smoke per S-RUNTIME-01: fresh boot (components=113),
+       /api/optimizer/config -> 503 default-OFF on the wire; the
+       200-enabled posture covered by TestClient with service wired.
+       EPIC 5 IS NOW CLOSED COMPLETE (E5.A-E5.G). MVP runs ~3 weeks
+       ahead of plan; S4 remaining scope = bug closeout only (T1.6,
+       DC-EPMS-029c, DC-EPMS-TEST-01, E2E WARNING triage).
+       Previous HEAD — MVP S2 BACKEND GROUNDING (2026-06-11, same session as S1,
        executed ahead of schedule under the blanket GO):
        * 3c0a2a3 S2-A: gen_farm_d + mv_bus_d + stepup_xfmr_d join the
          site_model.yml graph (Path D standby generation; 110 -> 113
@@ -104,11 +125,14 @@ HEAD:  MVP S2 — BACKEND GROUNDING (2026-06-11, same session as S1,
          (blocks firmas when QBER >= 11%) b186bb3. Backward-compatible with
          the pre-Epic-10 body-only sign path. Pushed to origin/master.
 
-Tests:   backend 1414 passed (S2 +5 design-sim; Epic 10 +60; incl. 7 PG
-         integration) — full pytest ~60s, 0 fail, 5 deselected (slow/FAISS).
-         frontend 513 vitest passed across 31 files (SLD Reengineering
+Tests:   backend 1416 passed (E5.F +2 config inspector; S2 +5 design-sim;
+         Epic 10 +60; incl. 7 PG integration) — full pytest ~70s, 0 fail,
+         5 deselected (slow/FAISS).
+         frontend 523 vitest passed across 31 files (SLD Reengineering
          -> 500: SLD-R1 default-surface fence + SLD-R2 farm LOD;
-         MVP S2-C -> 513: Building D DAG + N-1 coverage).
+         MVP S2-C -> 513: Building D DAG + N-1 coverage;
+         Epic 5 Sprint 3 -> 523: E5.F render/units/postures/XSS +
+         E5.G empty/sparse/dense/pure-fn/XSS).
          GraphRAG: 14 knowledge documents at boot (+2 Q-state track:
          galaxy-vx-internal-oneline, genset-farm-mv-paralleling).
          BMS catalog: 62 tags (+10 PWR.UPS_x.Qn_POS breaker positions).
@@ -346,7 +370,34 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
   - `docs/skills/agent-harness-registry.md` — 30-harness Gentle IA master registry. **Bloque 4 cerrado completo** (H06/H13/H16 all OPERATIVO). Implementations: `backend/phase_dag.py` + `backend/agent_continuity.py` + `backend/skill_audit.py`.
 - **Audit CLI**: `python -m backend.skill_audit --since HEAD~N` prints per-commit CLEAN / GAPS / UNKNOWNS reports against the registry.
 
-## ⏸ PAUSE_STATE (last updated 2026-06-11 — SLD Reengineering A-C CLOSED; MVP plan S1-S6 approved)
+## ⏸ PAUSE_STATE (last updated 2026-06-12 — EPIC 5 CLOSED E5.A-E5.G; next = S4 bug closeout)
+
+> **✅ EPIC 5 CLOSED COMPLETE (2026-06-12, commit `3269ae9`).** The
+> session's reality check found Sprints 1+2 + E5.E already on master
+> since 2026-05-23 (`0aa9e6b3` / `5b55111` / `c1d334a`) — the v11.18
+> plan windows S3/S4 assumed them pending. Sprint 3 (E5.F config
+> inspector + E5.G rejection analytics) was found in-flight in the
+> working tree, completed with its test artifacts (+2 pytest, +10
+> vitest) and committed. Floors: **1416 pytest / 523 vitest (31
+> files)**, ruff clean. Live smoke per S-RUNTIME-01: fresh boot
+> 2026-06-12 05:46 (components=113, graphrag 14), GET
+> /api/optimizer/config -> 503 with the Optimizer default-OFF
+> (200-enabled posture covered by TestClient). Backend left RUNNING
+> on :8080. NOT yet pushed to origin (local commits: `3269ae9` +
+> doc-sync).
+>
+> **🔴 NEXT SESSION ENTRY POINT — MVP S4: bug closeout** (the Epic 5
+> portion of S4 is done; MVP runs ~3 weeks ahead of the jul 2-8
+> window): T1.6, DC-EPMS-029c (SHI rollup insensitivity), 
+> DC-EPMS-TEST-01 (overview.test.js fetch leak), E2E WARNING triage
+> (docs/audit/E2E_Security_Orphan_Audit.md). Then S5 = FEATURE
+> FREEZE -> T1.1 Mission Control eyeball validation, DEMO_SCRIPT v5,
+> full regression, tag v1.0.0-rc. Per S-VISUAL-01 the new optimizer
+> HMI surfaces (Config & Bounds panel + rejection analytics block)
+> still await operator eyeball on the live view (Optimizer view ->
+> open history sidebar / expand Config & Bounds; nota: el Optimizer
+> es default-OFF, el panel muestra "Optimizer not running" salvo
+> DC_EPMS_OPTIMIZER_ENABLED=true).
 
 > **✅ SLD REENGINEERING A-C CLOSED (2026-06-11, operator GO "aprobamos
 > todo").** Root cause of "no veo las miniaturas" was NOT the mini
@@ -378,7 +429,9 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 > boot). Backend left RUNNING on :8080 (booted 2026-06-11 16:40,
 > knowledge_graph components=113 in the boot log).
 >
-> **🔴 NEXT SESSION ENTRY POINT — MVP S3: Epic 5 Sprints 1+2.**
+> **✅ SUPERSEDED 2026-06-12 (Epic 5 closed — Sprints 1+2 were already
+> on master since 2026-05-23; see the block above). Original entry:**
+> ~~MVP S3: Epic 5 Sprints 1+2.~~
 > Per ROADMAP-V11.md (plan v11.18, Epic 5 spec v11.17): E5.A
 > Optimizer heartbeat strip + E5.C per-agent voting breakdown
 > (Sprint 1, ~12 h), then E5.B approval sidebar + E5.D forensic
