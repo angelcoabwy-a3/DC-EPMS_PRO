@@ -8,7 +8,7 @@
  * initOverviewView() registers the 'overview' route. No browser, no
  * backend.
  * ════════════════════════════════════════════════════════════════ */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
 import { __overview_test__ } from '/assets/js/views/overview.js';
 import { isRegistered } from '/assets/js/core/router.js';
@@ -16,9 +16,22 @@ import { isRegistered } from '/assets/js/core/router.js';
 const { updateKPIs, renderIncidents, renderSiteHealth, severityClass,
     initOverviewView, setIncidents, reset } = __overview_test__;
 
+// DC-EPMS-TEST-01: initOverviewView() fires the initial poll cycle
+// (health / telemetry / incidents / SHI). Unstubbed, those relative
+// fetches hit happy-dom's default origin (:3000) and leak unhandled
+// ECONNREFUSED rejections when this file runs in isolation. Every
+// fetcher bails cleanly on a non-ok response, so a blanket ok:false
+// stub keeps the view code on its no-op paths.
+beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+        ok: false, status: 503, json: async () => ({}),
+    })));
+});
+
 afterEach(() => {
     reset();
     document.body.innerHTML = '';
+    vi.unstubAllGlobals();
 });
 
 describe('T2.1 Vector 4b — views/overview.js KPIs + severity', () => {
