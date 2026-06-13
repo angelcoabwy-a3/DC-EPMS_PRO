@@ -3274,6 +3274,20 @@ except Exception as e:
     log.error(f"[T3.1] Hermes WebSocket mount failed: {e}")
 
 
+# Edge track (gateway-rs phase 2 Batch C) — v1 proto ingest from the
+# field-edge gateway + edge-channel visibility endpoint.
+try:
+    from backend.telemetry_ingest_routes import register_telemetry_ingest
+
+    register_telemetry_ingest(app)
+    log.info(
+        "[BOOT] Edge telemetry ingest mounted "
+        "(POST /api/telemetry/ingest/proto + GET /api/telemetry/edge)"
+    )
+except Exception as e:
+    log.error("[BOOT] Edge telemetry ingest mount failed: %s", e, exc_info=True)
+
+
 # ==============================================================
 #  Entrypoint
 # ==============================================================
