@@ -47,9 +47,14 @@ pub enum ChannelKind {
     DcUnipolarVoltage,
     /// 4 words: v_ab, v_bc, v_ca (shared scale) + frequency (x0.01 Hz).
     AcThreePhaseVoltage,
-    /// 1 word: temperature_k.
+    /// 1 word: temperature_k (location via `temp_location`).
     Temperature,
-    /// 1 word: flow_m3_per_s.
+    /// 2 words: temperature_k + dewpoint_k. Produces the panel-grade
+    /// ATD (approach to dewpoint) the v1 schema REQUIRES at every
+    /// TEMP_DLC_SUPPLY location (RFC §3.4) — a DLC supply temperature
+    /// without its dewpoint companion is not panel-grade data.
+    TemperatureDlcSupply,
+    /// 1 word: flow_m3_per_s (loop via `coolant_loop`).
     Flow,
 }
 
@@ -58,6 +63,7 @@ impl ChannelKind {
     pub fn word_count(self) -> u16 {
         match self {
             ChannelKind::AcThreePhaseVoltage => 4,
+            ChannelKind::TemperatureDlcSupply => 2,
             _ => 1,
         }
     }
@@ -91,6 +97,20 @@ pub struct ChannelConfig {
     pub offset: f64,
     #[serde(default)]
     pub quality: QualityLabel,
+    /// v1 TempLocation for `temperature` channels (e.g. "rack_inlet",
+    /// "dlc_return", "chiller_lwt"). `temperature_dlc_supply` is
+    /// always TEMP_DLC_SUPPLY.
+    #[serde(default)]
+    pub temp_location: Option<String>,
+    /// v1 CoolantLoop for `flow` channels ("primary" | "secondary" |
+    /// "condenser"). DLC loops are "secondary".
+    #[serde(default)]
+    pub coolant_loop: Option<String>,
+    /// v1 AcBusSegment for `ac_three_phase_voltage` channels
+    /// ("utility_mv" | "primary_480_a" | "primary_480_b" |
+    /// "generator_parallel").
+    #[serde(default)]
+    pub bus_segment: Option<String>,
 }
 
 /// One scaled strict-SI sample read from the device.
@@ -99,6 +119,7 @@ pub enum SiSample {
     DcUnipolarVoltage { v_dc_bus_v: f64 },
     AcThreePhaseVoltage { v_ab_v: f64, v_bc_v: f64, v_ca_v: f64, frequency_hz: f64 },
     Temperature { temperature_k: f64 },
+    TemperatureDlcSupply { temperature_k: f64, approach_to_dewpoint_k: f64 },
     Flow { flow_m3_per_s: f64 },
 }
 
@@ -125,6 +146,14 @@ impl ChannelConfig {
                 frequency_hz: f64::from(words[3]) * 0.01,
             },
             ChannelKind::Temperature => SiSample::Temperature { temperature_k: si(words[0]) },
+            ChannelKind::TemperatureDlcSupply => {
+                let temperature_k = si(words[0]);
+                let dewpoint_k = si(words[1]);
+                SiSample::TemperatureDlcSupply {
+                    temperature_k,
+                    approach_to_dewpoint_k: temperature_k - dewpoint_k,
+                }
+            }
             ChannelKind::Flow => SiSample::Flow { flow_m3_per_s: si(words[0]) },
         })
     }

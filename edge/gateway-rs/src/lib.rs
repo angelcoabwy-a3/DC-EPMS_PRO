@@ -26,7 +26,10 @@
 //! does not touch the schema.
 
 pub mod config;
+pub mod egress;
+pub mod envelope;
 pub mod modbus;
+pub mod proto;
 pub mod sim;
 
 use nalgebra::Vector6;

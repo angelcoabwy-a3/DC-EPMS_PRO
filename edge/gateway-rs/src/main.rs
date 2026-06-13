@@ -12,6 +12,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use dc_epms_gateway::config::GatewayConfig;
+use dc_epms_gateway::egress::EgressClient;
+use dc_epms_gateway::envelope::build_envelope;
 use dc_epms_gateway::modbus::ModbusClient;
 use tracing::{error, info, warn};
 
@@ -37,6 +39,9 @@ async fn main() -> Result<()> {
 
     let io_timeout = Duration::from_millis(cfg.device.timeout_ms);
     let poll_period = Duration::from_millis(cfg.poll_period_ms);
+    let egress = EgressClient::new(&cfg.backend_ingest_url, Duration::from_secs(5))?;
+    let mut sequence: u64 = 0;
+    let mut dropped_batches: u64 = 0;
 
     // Defensive outer loop: a lost device connection (PLC reboot,
     // network blip) re-enters connect with backoff instead of dying.
@@ -62,10 +67,13 @@ async fn main() -> Result<()> {
 
         'poll: loop {
             tokio::time::sleep(poll_period).await;
+            let mut batch = Vec::with_capacity(cfg.channels.len());
             for ch in &cfg.channels {
                 match client.read_holdings(ch.register, ch.kind.word_count()).await {
                     Ok(words) => match ch.to_si(&words) {
                         Ok(sample) => {
+                            sequence += 1;
+                            batch.push(build_envelope(&cfg.site_id, sequence, ch, &sample));
                             info!(channel = %ch.name, asset = %ch.asset_id,
                                   quality = ?ch.quality, sample = ?sample, "poll");
                         }
@@ -75,6 +83,15 @@ async fn main() -> Result<()> {
                         warn!(channel = %ch.name, error = %e, "modbus read failed; reconnecting");
                         break 'poll;
                     }
+                }
+            }
+            // Drop-and-continue egress policy: a dead backend must never
+            // stall field polling. Losses are counted and logged.
+            match egress.ship(&batch).await {
+                Ok(n) => info!(shipped = n, "egress"),
+                Err(e) => {
+                    dropped_batches += 1;
+                    warn!(error = %e, dropped_batches, "egress failed; batch dropped");
                 }
             }
         }

@@ -63,12 +63,14 @@ async fn full_bench_sweep_yields_strict_si_samples() {
         }
         ref other => panic!("expected AC sample, got {other:?}"),
     }
-    // Temperature in Kelvin (291.15 K = 18 degC), flow in m^3/s.
+    // DLC supply in Kelvin (291.15 K = 18 degC) WITH its mandatory ATD
+    // companion (dewpoint 281.15 K -> approach 10 K, RFC 3.4).
     match samples[2].2 {
-        SiSample::Temperature { temperature_k } => {
+        SiSample::TemperatureDlcSupply { temperature_k, approach_to_dewpoint_k } => {
             assert!((temperature_k - 291.15).abs() < 1e-9);
+            assert!((approach_to_dewpoint_k - 10.0).abs() < 1e-9);
         }
-        ref other => panic!("expected temperature sample, got {other:?}"),
+        ref other => panic!("expected dlc-supply temperature sample, got {other:?}"),
     }
     match samples[3].2 {
         SiSample::Flow { flow_m3_per_s } => assert!((flow_m3_per_s - 0.066).abs() < 1e-12),
@@ -111,6 +113,9 @@ async fn dc_kind_cannot_produce_phase_fields() {
         scale: 0.1,
         offset: 0.0,
         quality: QualityLabel::Simulated,
+        temp_location: None,
+        coolant_loop: None,
+        bus_segment: None,
     };
     match ch.to_si(&[8000]).unwrap() {
         SiSample::DcUnipolarVoltage { v_dc_bus_v } => assert_eq!(v_dc_bus_v, 800.0),

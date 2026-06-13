@@ -26,12 +26,14 @@ pub type SharedStorage = Arc<RwLock<ModbusStorageFull>>;
 ///   reg 10-12  utility_d MV    volts             ~35000 V line-line
 ///   reg 13     utility_d freq  centi-hertz       6000 -> 60.00 Hz
 ///   reg 20     dlc supply      centi-kelvin      29115 -> 291.15 K
+///   reg 21     hall dewpoint   centi-kelvin      28115 -> 281.15 K
+///              (ATD = reg20 - reg21 = 10 K, the RFC 3.4 requirement)
 ///   reg 30     dlc loop flow   1e-5 m^3/s units  6600 -> 0.066 m^3/s
 pub fn bench_profile() -> SharedStorage {
     let mut s = ModbusStorageFull::default();
     s.set_holding(0, 8000).expect("dc bus reg");
     s.set_holdings_bulk(10, &[35000, 35010, 34990, 6000]).expect("mv intake regs");
-    s.set_holding(20, 29115).expect("dlc supply temp reg");
+    s.set_holdings_bulk(20, &[29115, 28115]).expect("dlc temp + dewpoint regs");
     s.set_holding(30, 6600).expect("loop flow reg");
     Arc::new(RwLock::new(s))
 }
@@ -124,6 +126,7 @@ mod tests {
         assert_eq!(s.get_holding(10).unwrap(), 35000);
         assert_eq!(s.get_holding(13).unwrap(), 6000);
         assert_eq!(s.get_holding(20).unwrap(), 29115);
+        assert_eq!(s.get_holding(21).unwrap(), 28115);
         assert_eq!(s.get_holding(30).unwrap(), 6600);
     }
 

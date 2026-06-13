@@ -31,16 +31,19 @@ quality = "simulated"
 name = "utility_d_mv_voltage"
 asset_id = "utility_intake_d"
 kind = "ac_three_phase_voltage"
+bus_segment = "utility_mv"
 register = 10               # words: v_ab, v_bc, v_ca, freq(cHz)
 scale = 1.0                 # volt register -> V
 quality = "simulated"
 
-# ─── DLC loop — supply temperature ───────────────────────────────────
+# ─── DLC loop — supply temperature + dewpoint -> ATD ─────────────────
+# v1 schema REQUIRES approach-to-dewpoint at TEMP_DLC_SUPPLY (RFC 3.4):
+# this kind reads TWO registers (temp, dewpoint) and ships the ATD.
 [[channels]]
 name = "dlc_supply_temperature"
 asset_id = "cdu_a_01"
-kind = "temperature"
-register = 20
+kind = "temperature_dlc_supply"
+register = 20               # words: temp(cK), dewpoint(cK)
 scale = 0.01                # centi-kelvin register -> K
 quality = "simulated"
 
@@ -49,6 +52,7 @@ quality = "simulated"
 name = "dlc_loop_flow"
 asset_id = "chw_loop_a"
 kind = "flow"
+coolant_loop = "secondary"
 register = 30
 scale = 0.00001             # 1e-5 m^3/s units -> m^3/s
 quality = "simulated"
