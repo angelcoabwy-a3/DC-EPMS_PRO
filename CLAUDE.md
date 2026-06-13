@@ -15,10 +15,32 @@ DC-EPMS PRO simulates **A3-Alpha Toronto Area** under **Path C2** (sealed 2026-0
 
 **🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in CO+I panel review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
 
-## 📊 CURRENT STATE (synced 2026-06-12 — S4 BUG CLOSEOUT DELIVERED; next = S5 feature freeze)
+## 📊 CURRENT STATE (synced 2026-06-12 — EDGE TRACK PHASE 2 DELIVERED; operator pivot to core dev)
 
 ```
-HEAD:  MVP S4 — BUG CLOSEOUT (2026-06-12, same day as Epic 5 closure):
+HEAD:  EDGE TRACK PHASE 2 (2026-06-12, operator GO "punto 1, gateway-rs
+       fase 2" after pivoting from demo polish to core/operations
+       development). The field-edge loop is CLOSED live:
+         modbus-sim --Modbus TCP--> gateway-rs --v1/HTTP--> backend
+       * ed0b3b8 Batch A — real Modbus TCP client (rmodbus sans-io over
+         tokio) + register-map gateway.toml + bench modbus-sim server
+         (real protocol, synthetic values, quality=simulated honest).
+         tonic REMOVED: canonical proto has no service; gRPC = RFC+ADR.
+       * e6036e4 Batch B — canonical v1 envelopes (prost compiles the
+         operator-approved .proto READ-ONLY; dc samples can only build
+         the dc_unipolar arm — fence by type construction); NEW kind
+         temperature_dlc_supply ships the RFC-3.4-mandatory ATD;
+         framed HTTP egress with drop-and-continue. 19 cargo tests.
+       * 4349642 Batch C — POST /api/telemetry/ingest/proto (mirror
+         parser, whole-batch rejection) + EdgeChannelStore + GET
+         /api/telemetry/edge. LIVE E2E: 28 envelopes / 0 rejected /
+         4 channels, fence intact Rust->wire->Python. pytest 1443.
+       Next edge bites: TimescaleDB persistence -> Kalman admission ->
+       HMI surface -> real-PLC profile. Core-gap ranking: #2 platform
+       ops (supervised service + TLS + metrics), #3 Alarm Storm ISA
+       18.2. MVP S5 (feature freeze) queda en pausa por decisión del
+       operador (sin narración de demo).
+       Previous HEAD — MVP S4 — BUG CLOSEOUT (2026-06-12, same day as Epic 5 closure):
        reality check found T1.6 already delivered (ebefdb6) and 2 of 4
        E2E WARNINGs already closed but unrecorded. Delivered:
        * 07efabc DC-EPMS-TEST-01 — overview.test.js fetch leak fixed.
@@ -139,10 +161,12 @@ HEAD:  MVP S4 — BUG CLOSEOUT (2026-06-12, same day as Epic 5 closure):
          (blocks firmas when QBER >= 11%) b186bb3. Backward-compatible with
          the pre-Epic-10 body-only sign path. Pushed to origin/master.
 
-Tests:   backend 1429 passed (029c +13 physics sensitivity; E5.F +2
-         config inspector; S2 +5 design-sim; Epic 10 +60; incl. 7 PG
-         integration) — full pytest ~70s, 0 fail, 5 deselected
-         (slow/FAISS).
+Tests:   backend 1443 passed (edge ingest +14; 029c +13 physics
+         sensitivity; E5.F +2 config inspector; S2 +5 design-sim;
+         Epic 10 +60; incl. 7 PG integration) — full pytest ~70s,
+         0 fail, 5 deselected (slow/FAISS).
+         edge/gateway-rs: 19 cargo tests (16 lib + 3 integration over
+         a real TCP socket) + clippy clean.
          frontend 523 vitest passed across 31 files (SLD Reengineering
          -> 500: SLD-R1 default-surface fence + SLD-R2 farm LOD;
          MVP S2-C -> 513: Building D DAG + N-1 coverage;
@@ -385,7 +409,33 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
   - `docs/skills/agent-harness-registry.md` — 30-harness Gentle IA master registry. **Bloque 4 cerrado completo** (H06/H13/H16 all OPERATIVO). Implementations: `backend/phase_dag.py` + `backend/agent_continuity.py` + `backend/skill_audit.py`.
 - **Audit CLI**: `python -m backend.skill_audit --since HEAD~N` prints per-commit CLEAN / GAPS / UNKNOWNS reports against the registry.
 
-## ⏸ PAUSE_STATE (last updated 2026-06-12 — S4 BUG CLOSEOUT DELIVERED; next = S5 feature freeze)
+## ⏸ PAUSE_STATE (last updated 2026-06-12 — EDGE TRACK PHASE 2 DELIVERED; core-dev pivot)
+
+> **✅ EDGE TRACK PHASE 2 DELIVERED (2026-06-12 evening session,
+> operator GO).** Operator pivoted from demo polish to core/operations
+> development ("no vamos a narrar ningún demo... en desarrollo del
+> sistema core/núcleo y operación que nos falta"). Gap analysis ranked
+> real field ingestion #1. Delivered `ed0b3b8` + `e6036e4` + `4349642`
+> — the loop modbus-sim -> gateway-rs -> backend is CLOSED and
+> verified LIVE (28 envelopes, 0 rejected, 4 channels, vocab fence
+> intact Rust->wire->Python). Floors: **1443 pytest / 523 vitest /
+> 19 cargo**. Backend RUNNING on :8080 (boot 20:30, edge ingest
+> mounted). Commits LOCAL, push pending operator word.
+>
+> **🔴 NEXT SESSION ENTRY POINT — edge track continuation (operator
+> priority) OR S5 freeze if the operator reverts to the MVP plan:**
+> 1. TimescaleDB persistence of edge channels (hypertable + retention).
+> 2. Kalman admission: edge channels into telemetry_pipeline with the
+>    QUALITY_GOOD upgrade path (real PLC) vs SIMULATED (bench).
+> 3. HMI surface for GET /api/telemetry/edge (ops visibility).
+> 4. Real-PLC profile (hardware on the bench closes the honest-scope
+>    gap: drop quality=simulated with zero code changes).
+> Bench loop replay: `edge\gateway-rs\target\debug\modbus_sim.exe 1502`
+> + `edge\gateway-rs\target\debug\dc-epms-gateway.exe` (desde
+> edge/gateway-rs, lee gateway.toml) -> curl /api/telemetry/edge.
+> Core-gap ranking standing: #2 platform ops (supervised service,
+> TLS, Prometheus), #3 Alarm Storm ISA 18.2, #4 EOP Abort async,
+> #5 IAM prod, #6 physics site<->unit calibration.
 
 > **✅ MVP S4 BUG CLOSEOUT DELIVERED (2026-06-12, same session as the
 > Epic 5 closure).** Reality check first: T1.6 was ALREADY closed

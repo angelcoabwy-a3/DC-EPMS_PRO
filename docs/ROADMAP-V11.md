@@ -1,8 +1,43 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.21 (2026-06-12) — **S4 BUG CLOSEOUT DELIVERED** (same day as Epic 5 closure) · next = S5 FEATURE FREEZE scope (T1.1 eyeball validation, DEMO_SCRIPT v5, full regression, v1.0.0-rc)
+- **Status**: v11.22 (2026-06-12) — **EDGE TRACK PHASE 2 DELIVERED** (operator pivot: core/operations development over demo polish) · gateway-rs speaks real Modbus TCP -> canonical v1 envelopes -> backend ingest, E2E live
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-06-12 (v11.21)
+- **Locked**: 2026-05-10 · **Synced**: 2026-06-12 (v11.22)
+- **v11.22 sync (2026-06-12) — EDGE TRACK PHASE 2 (operator GO, core
+  development pivot).** Operator direction: no demo narration —
+  develop the core/operations gaps. Gap analysis ranked real field
+  ingestion #1 (the structural difference between a simulator
+  platform and an operable system). Delivered in 3 atomic batches:
+  * `ed0b3b8` Batch A — real Modbus TCP: gateway-rs restructured
+    (lib + 2 bins), async rmodbus client over tokio sockets,
+    register-map config (`gateway.toml`: register -> scale ->
+    strict-SI -> v1 payload kind, vocab fence at the type level),
+    bench `modbus-sim` server (real protocol, synthetic values,
+    honest `quality = simulated`), reconnect-with-backoff poll loop.
+    DESIGN DECISION: tonic removed — the canonical telemetry.proto
+    defines messages only; a gRPC service is a schema change gated
+    behind RFC + ADR. Egress is HTTP POST of canonical envelopes.
+  * `e6036e4` Batch B — canonical v1 egress: prost-build compiles
+    backend/telemetry_proto/v1/telemetry.proto READ-ONLY (vendored
+    protoc); envelope mapper where a DC sample can only construct
+    the dc_unipolar oneof arm (fence by type construction); NEW
+    channel kind temperature_dlc_supply (temp + dewpoint registers
+    -> mandatory ATD per RFC 3.4); framed HTTP egress ([u32be
+    len][envelope]...) with drop-and-continue policy (a dead backend
+    never stalls field polling). 19 cargo tests + clippy clean.
+  * `4349642` Batch C — backend ingest: POST
+    /api/telemetry/ingest/proto (mirror parser, whole-batch
+    rejection, 415/400 guards) + EdgeChannelStore + GET
+    /api/telemetry/edge. LIVE E2E: 28 envelopes / 0 rejected /
+    4 channels with wobble visible; the vocabulary fence survives
+    Rust -> wire -> Python (dc summary structurally phase-free).
+    pytest 1429 -> 1443.
+  Next edge bites (in order): TimescaleDB persistence of edge
+  channels; Kalman admission (edge channels into the pipeline +
+  quality upgrade path); HMI surface for /api/telemetry/edge;
+  real-PLC profile validation (hardware on the bench). Platform
+  ops track (supervised service + TLS + metrics) remains #2 in the
+  core-gap ranking; Alarm Storm ISA 18.2 #3.
 - **v11.21 sync (2026-06-12) — S4 BUG CLOSEOUT.** Reality check first:
   T1.6 was ALREADY delivered (`ebefdb6` closed DC-EPMS-019 + 039;
   DC-EPMS-022 closed v11.4) and two of the four E2E WARNINGs had
