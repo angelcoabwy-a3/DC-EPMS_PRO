@@ -1,14 +1,12 @@
 # DC-EPMS PRO - a3semi Edge Operations Platform
 
-**A-Cubed Semiconductor Systems Inc. (a3semi)** - proprietary EPMS for
-critical semiconductor infrastructure and NVIDIA Blackwell Fleet management.
+> **Founder-built MVP.** A-Cubed Semiconductor Systems Inc. (a3semi) is my company, registered in Canada (pre-revenue). This repository is the MVP: a data center digital twin with AI-assisted operations. The facility (A3-Alpha Toronto Area), the deployment described, and all telemetry, incidents and procedures are simulated for demo purposes.
 
-Deployed at **A3-Alpha Toronto Area** (Tier IV 2N, 40 MW,
-118 x NVIDIA GB200 NVL72 Blackwell racks).
+**A-Cubed Semiconductor Systems Inc. (a3semi)** — EPMS platform for critical infrastructure monitoring and simulation.
 
-**Version 1.0** — includes Sovereign Operator features (dual utility 2N,
-What-If simulation, AI Mission Control) and MCP server for Claude Desktop
-integration. See `docs/DEMO_SCRIPT.md` for the Microsoft CO+I demo flow.
+Simulated facility: **A3-Alpha** (Tier IV 2N, 40 MW, 118 x NVIDIA GB200 NVL72 racks — all simulated).
+
+**Version 1.0** — includes dual utility 2N simulation, What-If analysis, AI agent with RAG grounding, and MCP server for Claude Desktop integration. See `docs/DEMO_SCRIPT.md` for the demo flow.
 
 ---
 
@@ -150,7 +148,7 @@ DC-EPMS_PRO/
 - ISO 22301 — P1 RTO=15min RPO=0
 - Schneider WP122 — Critical power and cooling
 
-## Hardware model
+## Hardware model (simulated facility)
 
 - 118 x NVIDIA GB200 NVL72 Blackwell racks @ 142 kW DLC = 16,756 kW nominal
 - Tier IV 2N 40 MW total facility capacity
@@ -158,7 +156,7 @@ DC-EPMS_PRO/
 
 ## Author
 
-Wilmer Angel — CET Night Shift Candidate, A-Cubed Semiconductor Systems
+Wilmer Angel — Founder, A-Cubed Semiconductor Systems Inc. (registered in Canada)
 
 ---
 
@@ -200,6 +198,6 @@ cd DC-EPMS_PRO
 python backend\mcp_server.py
 # Type a JSON-RPC request:
 #   {"jsonrpc":"2.0","id":1,"method":"resources/list","params":{}}
-# Then press Enter; the server replies with the resource list.
+# Then press Enter; the server replies with the result.
 # Ctrl+C to exit.
 ```
