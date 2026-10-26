@@ -201,3 +201,43 @@ python backend\mcp_server.py
 # Then press Enter; the server replies with the result.
 # Ctrl+C to exit.
 ```
+
+## Meta Global AI Developer Hackathon submission (Oct 26 - Nov 4, 2026)
+
+Track: Indie Developer, theme: Build for Your World.
+Project: Facility Shift Copilot, Shift Forensic Investigator.
+
+### Pre-existing base (built before the hackathon, NOT claimed as hackathon work)
+- The EPMS/BMS digital twin, in use since February 2026.
+- The deterministic Shift Copilot: alarm correlation (15-minute window),
+  P1/P2/P3 triage, MOP-style log draft, shift handover, and the demo
+  scenarios (utility_failure, chiller_fail, random_burst).
+  Files: `backend/shift_copilot.py`, `backend/llm_providers.py` (Meta
+  provider seam only, not wired to investigation before the hackathon),
+  the Incidents-view panel.
+
+### Built during the hackathon (the submitted feature)
+- Shift Forensic Investigator agent: `backend/copilot_forensic.py`.
+  It collects every alarm in a burst as evidence, rebuilds the
+  timeline in chronological order, tests hypotheses against that
+  evidence (and rules out what the evidence contradicts), names a
+  probable cause with a confidence level, states what is still
+  unconfirmed, and gives a verification checklist for the operator
+  to confirm in person. It never changes the deterministic priority,
+  score, or suggested procedure. If no Meta key is configured or the
+  API call fails, it returns the deterministic investigation and
+  labels that source. A Meta model, when configured, performs the
+  same investigation from the same evidence list, with the same
+  guardrails.
+- Endpoint: `POST /api/copilot/investigate` (mounted in `backend/main.py`).
+- Demo script: `scripts/demo_forensic.py` (utility_failure scenario,
+  no API key required for the fallback path).
+- The 3-minute demo video shows only this investigation feature; the
+  twin and the deterministic triage appear only as brief context.
+
+### Run the forensic demo (fallback, no key needed)
+```powershell
+python scripts/demo_forensic.py
+```
+With a Meta key, set `META_API_KEY` (and optionally `META_MODEL`) as
+environment variables, never in code. The key is not included in this repo.
