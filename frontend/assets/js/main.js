@@ -41,6 +41,7 @@ import { initPowerGrid } from './core/power_grid.js';
 import { initAssetPanel } from './views/asset_panel.js';
 import { initScenariosView } from './views/scenarios.js';
 import { initIncidentsView } from './views/incidents.js';
+import { initShiftCopilotView } from './views/shift_copilot.js';
 import { initMopsView } from './views/mops.js';
 import { initPowerView } from './views/power.js';
 import { initCoolingView } from './views/cooling.js';
@@ -96,6 +97,8 @@ initAssetPanel();
 initScenariosView();
 // Incident audit log — T2.1: second IIFE view extracted to an ES module
 initIncidentsView();
+// Shift Copilot panel (inside #view-incidents) — drives /api/copilot/*
+initShiftCopilotView();
 // MOP/SOP/EOP library — T2.1: third IIFE view extracted to an ES module
 initMopsView();
 // Power & UPS SLD — T2.1: data plane extracted; Hermes-bound (T3.1)
