@@ -205,7 +205,9 @@ async def investigate(analysis: dict, provider: MetaProvider | None = None) -> d
 
     prompt = build_investigation_prompt(analysis, evidence, hypotheses)
     chunks: list[str] = []
-    async for token in provider.stream(prompt, max_tokens=800):
+    # 4000, not 800: Muse Spark reasoning tokens count against the cap,
+    # and 800 left no room for visible text after reasoning (2026-10-26).
+    async for token in provider.stream(prompt, max_tokens=4000):
         chunks.append(token)
     text = "".join(chunks).strip()
     if not text or text.startswith("[Meta"):

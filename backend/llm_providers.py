@@ -64,9 +64,15 @@ class MetaProvider:
             return
 
         url = f"{self.api_url}/chat/completions"
+        # Muse Spark is a reasoning model: reasoning tokens are mandatory
+        # and count against the output cap. With a small cap (e.g. 800)
+        # reasoning can eat the whole budget and return no visible text.
+        # Keep reasoning effort low for this short, evidence-bound task
+        # and let the caller pass a larger cap (forensic uses 4000).
         payload = {
             "model": self.model,
             "max_tokens": max_tokens,
+            "reasoning_effort": "low",
             "stream": True,
             "messages": [
                 {"role": "system", "content": self.system_prompt},
