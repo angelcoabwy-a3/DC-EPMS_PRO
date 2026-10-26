@@ -392,6 +392,26 @@
                     </div>
                     <div id="inc-table" style="font-size:11px"></div>
                 </div>
+
+                <div class="telemetry-panel" style="margin-top:16px">
+                    <div class="panel-title">
+                        Shift Copilot
+                        <span class="chip" style="font-size:10px">NEW</span>
+                    </div>
+                    <div class="view-sub" style="margin-bottom:12px">
+                        Correlates alarm floods into incident stories, triages criticality,
+                        drafts the MOP log and the shift handover.
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+                        <button class="chip" id="cp-sim-utility" style="cursor:pointer">Inject utility failure</button>
+                        <button class="chip" id="cp-sim-chiller" style="cursor:pointer">Inject chiller failure</button>
+                        <button class="chip" id="cp-analyze" style="cursor:pointer">Analyze shift</button>
+                        <button class="chip" id="cp-clear" style="cursor:pointer">Clear</button>
+                    </div>
+                    <div id="cp-status" style="font-size:11px;margin-bottom:10px;min-height:16px"></div>
+                    <div id="cp-stories"></div>
+                    <div id="cp-handover"></div>
+                </div>
             </div>
 
             <!-- ══════════ View: Scenarios (Día 4) ══════════ -->
