@@ -81,6 +81,41 @@ export async function getIncidents(limit = 50) {
 }
 
 /**
+ * Shift Copilot — facility shift assistant loop (backend/shift_copilot.py).
+ * Self-contained: works in Tier 1 (in-memory store, no Postgres needed).
+ */
+
+/** Inject a demo alarm burst. scenario: utility_failure | chiller_fail | random_burst */
+export async function copilotSimulate(scenario, count = 8) {
+    return apiFetch('/api/copilot/simulate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenario, count }),
+    });
+}
+
+/** Run correlate -> triage -> MOP log -> handover. Returns the full analysis. */
+export async function copilotAnalyze() {
+    return apiFetch('/api/copilot/analyze', { method: 'POST' });
+}
+
+/** Latest handover report (generates one if none exists yet). */
+export async function copilotHandover() {
+    return apiFetch('/api/copilot/handover');
+}
+
+/** Copilot incident working set (its own store, not the Postgres audit log). */
+export async function copilotIncidents(limit = 100) {
+    const data = await apiFetch(`/api/copilot/incidents?limit=${encodeURIComponent(limit)}`);
+    return data.rows || [];
+}
+
+/** Clear the copilot working set (demo reset). */
+export async function copilotClear() {
+    return apiFetch('/api/copilot/incidents', { method: 'DELETE' });
+}
+
+/**
  * MOP / SOP / EOP procedure library — corpus-indexed.
  * @returns {Promise<object>} { mops: [...], count, by_type }
  */
