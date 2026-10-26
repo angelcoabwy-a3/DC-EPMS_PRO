@@ -37,15 +37,29 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 try:  # package import (backend.copilot_forensic)
+    from .copilot_limits import (
+        MetaLimitError,
+        check_limits,
+        record_meta_attempt,
+        retry_after_for_ip,
+        seconds_until_utc_midnight,
+    )
     from .llm_providers import MetaProvider
     from .shift_copilot import list_incidents, run_analysis
 except ImportError:  # top-level import, as backend/main.py does it
-    from llm_providers import MetaProvider
-    from shift_copilot import list_incidents, run_analysis
+    from copilot_limits import (  # type: ignore[no-redef]
+        MetaLimitError,
+        check_limits,
+        record_meta_attempt,
+        retry_after_for_ip,
+        seconds_until_utc_midnight,
+    )
+    from llm_providers import MetaProvider  # type: ignore[no-redef]
+    from shift_copilot import list_incidents, run_analysis  # type: ignore[no-redef]
 
 forensic_router = APIRouter(prefix="/api/copilot", tags=["shift-forensic-investigator"])
 
@@ -63,10 +77,22 @@ SYSTEM_PROMPT = (
 # Hypothesis -> keywords that support it in alarm titles/sources.
 _HYPOTHESES = [
     ("utility_loss", "Utility power loss", ["voltage loss", "utility"]),
-    ("ats_transfer", "ATS transferred load to emergency source", ["ats transfer", "load transferred"]),
-    ("generator_running", "Generator started and is carrying load", ["generator", "crank", "frequency"]),
+    (
+        "ats_transfer",
+        "ATS transferred load to emergency source",
+        ["ats transfer", "load transferred"],
+    ),
+    (
+        "generator_running",
+        "Generator started and is carrying load",
+        ["generator", "crank", "frequency"],
+    ),
     ("ups_on_battery", "UPS on battery", ["ups", "on battery"]),
-    ("cooling_loss", "Cooling loss / chiller failure", ["chiller", "crah", "cooling", "outlet temp"]),
+    (
+        "cooling_loss",
+        "Cooling loss / chiller failure",
+        ["chiller", "crah", "cooling", "outlet temp"],
+    ),
     # Note: "VESDA self-test" alone is NOT a fire event, so fire needs an
     # alarm/smoke phrase, not just the sensor name.
     ("fire_event", "Fire / smoke detection event", ["fire alarm", "smoke detected", "vesda alarm"]),
@@ -92,7 +118,11 @@ def test_hypotheses(evidence: list[dict]) -> list[dict]:
     """Test each hypothesis against the evidence."""
     tested = []
     for key, label, keywords in _HYPOTHESES:
-        hits = [e["incident_id"] for e in evidence if any(k in (e["source"] + " " + e["title"]).lower() for k in keywords)]
+        hits = [
+            e["incident_id"]
+            for e in evidence
+            if any(k in (e["source"] + " " + e["title"]).lower() for k in keywords)
+        ]
         tested.append(
             {
                 "key": key,
@@ -111,15 +141,23 @@ def _verification_checklist(top_source: str, hypotheses: list[dict]) -> list[str
     ]
     supported = {h["key"] for h in hypotheses if h["status"] == "supported"}
     if "utility_loss" in supported or "ats_transfer" in supported:
-        checks.append("ATS room: confirm utility feed state, ATS position, and load on emergency source.")
+        checks.append(
+            "ATS room: confirm utility feed state, ATS position, and load on emergency source."
+        )
     if "generator_running" in supported:
-        checks.append("Generator: confirm fuel, frequency, load, and coolant temperature in person.")
+        checks.append(
+            "Generator: confirm fuel, frequency, load, and coolant temperature in person."
+        )
     if "ups_on_battery" in supported:
         checks.append("UPS room: confirm battery runtime remaining and battery voltage.")
     if "cooling_loss" in supported:
-        checks.append("Cooling: confirm chiller pressure, CRAH outlet temperatures, and chilled water setpoint.")
+        checks.append(
+            "Cooling: confirm chiller pressure, CRAH outlet temperatures, and chilled water setpoint."
+        )
     if "fire_event" in supported:
-        checks.append("Fire safety: confirm VESDA status and that no fire panel is in alarm before resuming normal work.")
+        checks.append(
+            "Fire safety: confirm VESDA status and that no fire panel is in alarm before resuming normal work."
+        )
     if top_source:
         checks.append(f"Top story source to inspect first: {top_source}.")
     return checks
@@ -135,7 +173,14 @@ def deterministic_investigation(analysis: dict) -> dict:
     mop = top["mop_log"] if top else None
     supported = [h for h in hypotheses if h["status"] == "supported"]
     probable = None
-    for key in ("utility_loss", "cooling_loss", "fire_event", "ats_transfer", "generator_running", "ups_on_battery"):
+    for key in (
+        "utility_loss",
+        "cooling_loss",
+        "fire_event",
+        "ats_transfer",
+        "generator_running",
+        "ups_on_battery",
+    ):
         match = next((h for h in supported if h["key"] == key), None)
         if match:
             probable = match["label"]
@@ -157,7 +202,9 @@ def deterministic_investigation(analysis: dict) -> dict:
         "priority": triage["priority"] if triage else None,
         "story_id": triage["story_id"] if triage else None,
         "suggested_procedure": mop["suggested_procedure"] if mop else None,
-        "verification_checklist": _verification_checklist(triage["source"] if triage else "", hypotheses),
+        "verification_checklist": _verification_checklist(
+            triage["source"] if triage else "", hypotheses
+        ),
         "text": (
             f"Burst: {len(evidence)} alarms across {len(stories)} stories. "
             f"Top story: {triage['story_id'] if triage else 'none'} "
@@ -172,14 +219,22 @@ def deterministic_investigation(analysis: dict) -> dict:
 def build_investigation_prompt(analysis: dict, evidence: list[dict], hypotheses: list[dict]) -> str:
     lines = ["Evidence, in chronological order (incident_id | source | severity | title | time):"]
     for e in evidence:
-        lines.append(f"- {e['incident_id']} | {e['source']} | {e['severity']} | {e['title']} | {e['created_at']}")
+        lines.append(
+            f"- {e['incident_id']} | {e['source']} | {e['severity']} | {e['title']} | {e['created_at']}"
+        )
     lines.append("")
-    lines.append("Deterministic hypotheses already tested (do not contradict them without evidence):")
+    lines.append(
+        "Deterministic hypotheses already tested (do not contradict them without evidence):"
+    )
     for h in hypotheses:
-        lines.append(f"- {h['label']}: {h['status']}, evidence: {', '.join(h['evidence_ids']) or 'none'}")
+        lines.append(
+            f"- {h['label']}: {h['status']}, evidence: {', '.join(h['evidence_ids']) or 'none'}"
+        )
     top = (analysis.get("stories") or [None])[0]
     if top:
-        lines.append(f"\nDeterministic priority: {top['triage']['priority']} (score {top['triage']['score']}).")
+        lines.append(
+            f"\nDeterministic priority: {top['triage']['priority']} (score {top['triage']['score']})."
+        )
         lines.append(f"Deterministic suggested procedure: {top['mop_log']['suggested_procedure']}.")
     lines.append(
         "\nWrite a forensic investigation in five short parts, using ONLY the evidence above:\n"
@@ -203,6 +258,12 @@ async def investigate(analysis: dict, provider: MetaProvider | None = None) -> d
         result["note"] = "Meta API key not configured; deterministic investigation used."
         return result
 
+    # The guard (check_limits, run by the endpoint) already passed, and a
+    # Meta call is really about to be attempted, so count it now. A
+    # deterministic fallback returned above records nothing; a fallback
+    # returned after a failed API attempt still counts the attempt.
+    record_meta_attempt()
+
     prompt = build_investigation_prompt(analysis, evidence, hypotheses)
     chunks: list[str] = []
     # 4000, not 800: Muse Spark reasoning tokens count against the cap,
@@ -213,7 +274,9 @@ async def investigate(analysis: dict, provider: MetaProvider | None = None) -> d
     if not text or text.startswith("[Meta"):
         result = deterministic_investigation(analysis)
         result["meta_configured"] = True
-        result["note"] = f"Meta call did not return usable text ({text[:80]}); deterministic investigation used."
+        result["note"] = (
+            f"Meta call did not return usable text ({text[:80]}); deterministic investigation used."
+        )
         return result
 
     base = deterministic_investigation(analysis)
@@ -230,13 +293,37 @@ async def investigate(analysis: dict, provider: MetaProvider | None = None) -> d
 
 
 @forensic_router.post("/investigate")
-async def copilot_investigate():
+async def copilot_investigate(request: Request):
     """Run deterministic analysis, then forensically investigate the burst.
 
     The response labels its source clearly so judges can tell what the
     model did (investigation) from what the deterministic copilot did
     (correlation, triage, procedure suggestion).
+
+    Meta credit protection runs FIRST, before any Meta work: when the
+    daily cap or the per-IP rate limit is hit, this returns HTTP 429
+    and no Meta API call is made for the request.
     """
+    client_ip = request.client.host if request.client else "unknown"
+    try:
+        check_limits(client_ip)
+    except MetaLimitError as exc:
+        if exc.limit == "daily_cap":
+            retry_after_s = seconds_until_utc_midnight()
+        else:
+            retry_after_s = retry_after_for_ip(client_ip)
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "limit_exceeded",
+                "limit": exc.limit,
+                "detail": exc.message,
+                "daily_cap": exc.daily_cap,
+                "meta_call_made": False,
+                "retry_after_s": retry_after_s,
+            },
+            headers={"Retry-After": str(retry_after_s)},
+        )
     analysis = run_analysis()
     result = await investigate(analysis)
     return JSONResponse(
