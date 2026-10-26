@@ -183,10 +183,11 @@ class AgentEngine:
         max_tokens: int = 500,
         model_hint: str = "auto",
     ) -> AsyncIterator[str]:
-        """Stream tokens from Gemma or Claude.
+        """Stream tokens from Gemma, Claude, or Meta.
 
-        model_hint: 'auto' | 'gemma' | 'claude'
+        model_hint: 'auto' | 'gemma' | 'claude' | 'meta'
           auto: prefer Gemma for short queries, Claude for complex reasoning
+          meta: Meta Model API via backend.llm_providers (needs META_API_KEY)
         """
         # -- Guardrails: input filter -------------------------
         # Simple input length guard (NeMo rails would expand this)
@@ -202,6 +203,11 @@ class AgentEngine:
 
         # -- Route to Gemma or Claude -------------------------
         use_gemma = False
+        if model_hint == "meta":
+            # Meta Model API: dedicated provider, key-ready via META_API_KEY.
+            async for token in self._stream_meta(augmented_query, max_tokens):
+                yield token
+            return
         if model_hint == "gemma":
             use_gemma = True
         elif model_hint == "auto":
@@ -221,6 +227,24 @@ class AgentEngine:
         else:
             async for token in self._stream_claude(augmented_query, max_tokens):
                 yield token
+
+    # -- Meta Model API streaming (hackathon provider) ---------
+    async def _stream_meta(self, prompt: str, max_tokens: int) -> AsyncIterator[str]:
+        """Stream via backend.llm_providers.MetaProvider.
+
+        Key-ready: set META_API_KEY in the environment (and META_API_URL /
+        META_MODEL if the official endpoint or model id differ). Without a
+        key it yields '[Meta API key not configured]', the same sentinel
+        pattern the Claude path uses.
+        """
+        try:
+            from llm_providers import MetaProvider
+        except ImportError:
+            yield "[Meta provider module not available]"
+            return
+        provider = MetaProvider(system_prompt=SYSTEM_PROMPT)
+        async for token in provider.stream(prompt, max_tokens):
+            yield token
 
     # -- Gemma streaming via LM Studio OpenAI-compatible API --
     async def _stream_gemma(self, prompt: str, max_tokens: int) -> AsyncIterator[str]:

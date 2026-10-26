@@ -189,7 +189,7 @@ class AgentQuery(BaseModel):
     query: str = Field(..., min_length=1, max_length=4000)
     context: dict | None = None
     max_tokens: int = Field(default=500, ge=1, le=4000)
-    model_hint: str = Field(default="auto", pattern="^(auto|gemma|claude)$")
+    model_hint: str = Field(default="auto", pattern="^(auto|gemma|claude|meta)$")
 
 
 class RAGQuery(BaseModel):
@@ -3009,6 +3009,33 @@ except ImportError as e:
     log.warning(f"[v8] Agent Copilot not loaded: {e}")
 except Exception as e:
     log.error(f"[v8] Agent Copilot mount failed: {e}")
+
+
+# Mount the shift copilot router. Wrapped in try/except so the platform boots
+# even if the copilot module has a load-time issue.
+try:
+    from shift_copilot import router as _shift_copilot_router
+
+    app.include_router(_shift_copilot_router)
+    log.info("[copilot] Shift Copilot mounted at /api/copilot")
+except ImportError as e:
+    log.warning(f"[copilot] Shift Copilot not loaded: {e}")
+except Exception as e:
+    log.error(f"[copilot] Shift Copilot mount failed: {e}")
+
+
+# Mount the Shift Forensic Investigator agent router.
+# BUILT DURING THE META GLOBAL AI DEVELOPER HACKATHON (Oct 26 - Nov 4, 2026).
+# This is the hackathon feature only; the deterministic copilot above is pre-existing.
+try:
+    from copilot_forensic import forensic_router as _forensic_router
+
+    app.include_router(_forensic_router)
+    log.info("[copilot] Shift Forensic Investigator mounted at /api/copilot/investigate")
+except ImportError as e:
+    log.warning(f"[copilot] Shift Forensic Investigator not loaded: {e}")
+except Exception as e:
+    log.error(f"[copilot] Shift Forensic Investigator mount failed: {e}")
 
 
 # ==============================================================
