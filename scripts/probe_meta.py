@@ -1,7 +1,8 @@
 """Meta API probe: tool calling, image input, SAM docs, contributor model.
 
 HACKATHON diagnostic script. Makes a handful of cheap model calls only:
-max_tokens 200 each, one attempt per test, no retries, 30 s timeout.
+max_tokens 4000 each (a cap, not usage; short answers stay cheap),
+one attempt per test, no retries, 30 s timeout.
 
 Secrets: the API key comes ONLY from the META_API_KEY environment variable
 and is NEVER printed. Every line printed passes through _scrub, which
@@ -29,7 +30,7 @@ from backend.llm_providers import MetaProvider
 SAM_DOCS_URL = "https://dev.meta.ai/docs/sam/overview"  # the one documented URL; no others
 CONTRIBUTOR_MODEL = "muse-spark-1.3-contributor"
 TIMEOUT_S = 30.0
-MAX_TOKENS = 200
+MAX_TOKENS = 4000
 
 
 def _scrub(text: str) -> str:
@@ -70,12 +71,32 @@ def _post(url, headers, payload):
 
 
 def _assistant_text(data):
+    """Split choices[0].message content from empty-content diagnostics.
+
+    Returns (text, diag): diag is None when content is non-empty.
+    When content is empty, diag carries finish_reason, the keys present
+    in choices[0].message, and usage tokens when the response has them.
+    A diag starting with "ERROR" means the message itself is unusable.
+    """
     try:
-        msg = data["choices"][0]["message"]
-    except (KeyError, IndexError, TypeError):
-        return "", "no choices[0].message in response"
+        choice = data["choices"][0]
+        msg = choice.get("message") or {}
+        keys = sorted(msg.keys())
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return "", "ERROR no choices[0].message in response"
     text = msg.get("content") or ""
-    return (text if isinstance(text, str) else ""), ""
+    if isinstance(text, str) and text.strip():
+        return text, None
+    usage = data.get("usage")
+    if isinstance(usage, dict) and usage:
+        use = (
+            f"usage prompt={usage.get('prompt_tokens')} "
+            f"completion={usage.get('completion_tokens')} "
+            f"total={usage.get('total_tokens')}"
+        )
+    else:
+        use = "usage not included"
+    return "", (f"EMPTY finish_reason={choice.get('finish_reason')} message_keys={keys} {use}")
 
 
 def test_tool_calling():
@@ -89,7 +110,10 @@ def test_tool_calling():
         "reasoning_effort": "low",
         "stream": False,
         "messages": [
-            {"role": "user", "content": "How many open alarms are there right now?"},
+            {
+                "role": "user",
+                "content": "How many open alarms are there right now? You must use the get_alarm_count tool to answer; do not answer from memory.",
+            },
         ],
         "tools": [
             {
@@ -105,7 +129,7 @@ def test_tool_calling():
                 },
             },
         ],
-        "tool_choice": {"type": "function", "function": {"name": "get_alarm_count"}},
+        "tool_choice": "auto",
     }
     status, data, error = _post(url, headers, payload)
     if error or data is None:
@@ -115,20 +139,21 @@ def test_tool_calling():
     except (KeyError, IndexError, TypeError):
         return ("tool-calling", False, f"model={provider.model} no choices[0].message")
     calls = msg.get("tool_calls") or []
-    if not calls:
+    first = calls[0] if calls else {}
+    fn = (first.get("function") or {}) if isinstance(first, dict) else {}
+    if fn.get("name") == "get_alarm_count":
         return (
             "tool-calling",
-            False,
-            f"model={provider.model} no tool call returned "
-            f"(finish_reason={msg.get('finish_reason')})",
+            True,
+            f"model={provider.model} tool_call name={fn.get('name')} "
+            f"arguments={fn.get('arguments')}",
         )
-    first = calls[0]
-    fn = first.get("function") or {}
+    seen = [((c.get("function") or {}).get("name") if isinstance(c, dict) else None) for c in calls]
     return (
         "tool-calling",
-        True,
-        f"model={provider.model} tool_call name={fn.get('name')} "
-        f"arguments={fn.get('arguments')}",
+        False,
+        f"model={provider.model} no get_alarm_count tool call "
+        f"(finish_reason={msg.get('finish_reason')} returned={seen})",
     )
 
 
@@ -173,15 +198,16 @@ def test_image(model_label, model_name):
     status, data, error = _post(url, headers, payload)
     if error or data is None:
         return (f"image-{model_label}", False, f"model={model_name} error={error}")
-    text, parse_error = _assistant_text(data)
-    if parse_error:
-        return (f"image-{model_label}", False, f"model={model_name} {parse_error}")
+    text, diag = _assistant_text(data)
+    if diag is not None and diag.startswith("ERROR"):
+        return (f"image-{model_label}", False, f"model={model_name} {diag}")
     if "red" in text.lower():
         return (f"image-{model_label}", True, f"model={model_name} answer={text[:200]!r}")
+    extra = f" [{diag}]" if diag else ""
     return (
         f"image-{model_label}",
         False,
-        f"model={model_name} answer missing 'red': {text[:200]!r}",
+        f"model={model_name} answer missing 'red': {text[:200]!r}{extra}",
     )
 
 
@@ -215,11 +241,16 @@ def test_contributor():
     status, data, error = _post(url, headers, payload)
     if error or data is None:
         return ("contributor", False, f"model={CONTRIBUTOR_MODEL} error={error}")
-    text, parse_error = _assistant_text(data)
-    if parse_error:
-        return ("contributor", False, f"model={CONTRIBUTOR_MODEL} {parse_error}")
+    text, diag = _assistant_text(data)
+    if diag is not None and diag.startswith("ERROR"):
+        return ("contributor", False, f"model={CONTRIBUTOR_MODEL} {diag}")
     if not text.strip():
-        return ("contributor", False, f"model={CONTRIBUTOR_MODEL} HTTP 200 with empty content")
+        extra = f" [{diag}]" if diag else ""
+        return (
+            "contributor",
+            False,
+            f"model={CONTRIBUTOR_MODEL} HTTP 200 with empty content{extra}",
+        )
     return ("contributor", True, f"model={CONTRIBUTOR_MODEL} answer={text[:200]!r}")
 
 
