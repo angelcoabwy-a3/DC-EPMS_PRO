@@ -18,12 +18,23 @@ reasoning_effort low, max_tokens 4000. No key is ever printed.
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import httpx
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 try:  # package import (backend.copilot_agent)
     from .agent_fixture import get_alarms, get_breaker, get_procedure, get_trend, list_scenarios
+    from .copilot_limits import (
+        MetaLimitError,
+        check_limits,
+        record_meta_attempt,
+        retry_after_for_ip,
+        seconds_until_utc_midnight,
+    )
     from .llm_providers import MetaProvider
 except ImportError:  # top-level import, as backend/main.py does it
     from agent_fixture import (  # type: ignore[no-redef]  # type: ignore[no-redef]
@@ -32,6 +43,13 @@ except ImportError:  # top-level import, as backend/main.py does it
         get_procedure,
         get_trend,
         list_scenarios,
+    )
+    from copilot_limits import (  # type: ignore[no-redef]
+        MetaLimitError,
+        check_limits,
+        record_meta_attempt,
+        retry_after_for_ip,
+        seconds_until_utc_midnight,
     )
     from llm_providers import MetaProvider  # type: ignore[no-redef]
 
@@ -469,3 +487,134 @@ def run_investigation(scenario_id: str, client=None, max_calls: int = MAX_MODEL_
     except (MetaAgentError, KeyError, IndexError, TypeError) as e:
         return _error_result(scenario_id, f"investigation failed: {e}")
     return _cap_result(state)
+
+
+agent_router = APIRouter(prefix="/api/copilot", tags=["shift-agentic-investigator"])
+
+
+class AgentInvestigateIn(BaseModel):
+    scenario: str
+
+
+class _CountingClient:
+    """One daily-cap attempt per investigation plus the ordered tool trace.
+
+    Records when the FIRST Meta call is about to happen; the remaining
+    iterations of the same investigation record nothing (the 8-call
+    iteration cap bounds the cost). The loop itself is untouched.
+    """
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.counted = False
+        self.trace: list = []
+
+    def chat(self, messages: list, tools: list) -> dict:
+        if not self.counted:
+            record_meta_attempt()
+            self.counted = True
+        response: dict = self._inner.chat(messages, tools)
+        message = (response.get("choices") or [{}])[0].get("message") or {}
+        for call in message.get("tool_calls") or []:
+            func = call.get("function") or {}
+            try:
+                arguments = json.loads(func.get("arguments") or "{}")
+            except (ValueError, TypeError):
+                arguments = {}
+            self.trace.append({"tool": func.get("name"), "arguments": arguments})
+        return response
+
+
+@agent_router.post("/agent-investigate")
+async def copilot_agent_investigate(payload: AgentInvestigateIn, request: Request):
+    """Agentic investigation over the fixture, guarded like /investigate.
+
+    Guard runs FIRST: unknown scenario -> 400, exceeded cap/rate -> 429
+    with no Meta call. Missing key or Meta failure -> 503, never a
+    fabricated investigation (the agent has no deterministic fallback).
+    """
+    scenario_id = (payload.scenario or "").strip()
+    if scenario_id not in list_scenarios():
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "unknown_scenario",
+                "detail": f"Unknown scenario '{scenario_id}'.",
+                "known_scenarios": list_scenarios(),
+            },
+        )
+    client_ip = request.client.host if request.client else "unknown"
+    try:
+        check_limits(client_ip)
+    except MetaLimitError as exc:
+        if exc.limit == "daily_cap":
+            retry_after_s = seconds_until_utc_midnight()
+        else:
+            retry_after_s = retry_after_for_ip(client_ip)
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "limit_exceeded",
+                "limit": exc.limit,
+                "detail": exc.message,
+                "daily_cap": exc.daily_cap,
+                "meta_call_made": False,
+                "retry_after_s": retry_after_s,
+            },
+            headers={"Retry-After": str(retry_after_s)},
+        )
+    try:
+        inner = MetaAgentClient()
+    except MetaAgentError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "meta_unavailable",
+                "detail": str(exc),
+                "meta_call_made": False,
+            },
+        )
+    client = _CountingClient(inner)
+    try:
+        result = await asyncio.to_thread(run_investigation, scenario_id, client)
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "meta_unavailable",
+                "detail": f"investigation failed: {exc}",
+                "meta_call_made": client.counted,
+            },
+        )
+    if result.get("model_calls", 0) == 0:
+        reason = "; ".join(result.get("notes") or result.get("unconfirmed") or ["Meta call failed"])
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "meta_unavailable",
+                "detail": reason,
+                "meta_call_made": client.counted,
+            },
+        )
+    cited = sorted(
+        {i for claim in result.get("claims", []) for i in (claim.get("evidence_ids") or [])}
+    )
+    return JSONResponse(
+        {
+            "feature": "shift-agentic-investigator",
+            "built_during_hackathon": True,
+            "source": "meta",
+            "model": MODEL,
+            "scenario": scenario_id,
+            "probable_cause": result["probable_cause"],
+            "confidence": result["confidence"],
+            "priority": result["priority"],
+            "suggested_procedure": result["suggested_procedure"],
+            "verification_checklist": result["verification_checklist"],
+            "tool_calls": client.trace,
+            "evidence_ids_cited": cited,
+            "model_calls": result["model_calls"],
+            "meta_call_made": True,
+            "investigation": result,
+        }
+    )

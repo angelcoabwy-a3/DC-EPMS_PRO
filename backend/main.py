@@ -108,9 +108,7 @@ _PG_PORT = os.environ.get("PG_PORT", "5432")
 _PG_DB = os.environ.get("PG_DB", "dcepms")
 _PG_USER = os.environ.get("PG_USER", "epms")
 _PG_PWD = (
-    os.environ.get("PG_PASSWORD")
-    or os.environ.get("DEV_DB_PASSWORD")
-    or "epms_dev_only_change_me"
+    os.environ.get("PG_PASSWORD") or os.environ.get("DEV_DB_PASSWORD") or "epms_dev_only_change_me"
 )
 PG_DSN = f"postgresql://{_PG_USER}:{_PG_PWD}@{_PG_HOST}:{_PG_PORT}/{_PG_DB}"
 
@@ -178,7 +176,7 @@ class IncidentPayload(BaseModel):
     severity: str = Field(default="info", pattern="^(info|warning|warn|critical|crit)$")
     status: str = Field(default="OPEN")
     physics_json: str = Field(default="{}")
-    actor_role: str | None = None        # RBAC F3-4 claim; None -> gate not enforced
+    actor_role: str | None = None  # RBAC F3-4 claim; None -> gate not enforced
 
 
 class AgentQuery(BaseModel):
@@ -238,7 +236,8 @@ async def lifespan(app: FastAPI):
             InMemoryPersistence,
             PostgresPersistence,
         )
-        _ledger_persistence = None
+
+        _ledger_persistence: PostgresPersistence | InMemoryPersistence | None = None
         if db_manager is not None and db_manager.pool is not None:
             try:
                 async with db_manager.pool.acquire() as _ledger_probe_conn:
@@ -271,6 +270,7 @@ async def lifespan(app: FastAPI):
                 QKDService,
                 periodic_replenish_sync,
             )
+
             _qkd_eve = os.environ.get("DC_EPMS_QKD_EAVESDROP", "0") == "1"
             _qkd_service = QKDService(
                 base_seed=int(
@@ -284,9 +284,10 @@ async def lifespan(app: FastAPI):
             # that needs a key sees one (no first-request stall).
             _admit, _reject = _qkd_service.replenish(8)
             log.info(
-                "[BOOT] QKDService primed (eavesdrop=%s, admitted=%d, "
-                "rejected=%d, depth=%d)",
-                _qkd_eve, _admit, _reject,
+                "[BOOT] QKDService primed (eavesdrop=%s, admitted=%d, " "rejected=%d, depth=%d)",
+                _qkd_eve,
+                _admit,
+                _reject,
                 _qkd_service.stats().pool_depth,
             )
             app.state.qkd_service = _qkd_service
@@ -306,13 +307,13 @@ async def lifespan(app: FastAPI):
                         return
                     except Exception as exc:
                         log.warning(
-                            "[qkd] periodic top-up errored: %r -- "
-                            "will retry next interval",
+                            "[qkd] periodic top-up errored: %r -- " "will retry next interval",
                             exc,
                         )
 
             app.state.qkd_topup_task = asyncio.create_task(
-                _qkd_topup_loop(), name="qkd-topup",
+                _qkd_topup_loop(),
+                name="qkd-topup",
             )
         except Exception as e:
             log.warning(
@@ -323,12 +324,12 @@ async def lifespan(app: FastAPI):
             app.state.qkd_topup_task = None
 
         app.state.forensic_ledger = ForensicLedger(
-            _ledger_persistence, qkd_provider=_qkd_service,
+            _ledger_persistence,
+            qkd_provider=_qkd_service,
         )
         app.state.forensic_ledger_loop = asyncio.get_running_loop()
         log.info(
-            "[BOOT] ForensicLedger ready (key_version=%d, persistence=%s, "
-            "qkd=%s)",
+            "[BOOT] ForensicLedger ready (key_version=%d, persistence=%s, " "qkd=%s)",
             app.state.forensic_ledger.current_key_version,
             type(_ledger_persistence).__name__,
             "wired" if _qkd_service is not None else "none",
@@ -347,6 +348,7 @@ async def lifespan(app: FastAPI):
     # a real provisioning flow against an OIDC/LDAP backend.
     try:
         from backend.auth.jwt_handler import seed_demo_users
+
         app.state.user_store = seed_demo_users()
         log.info(
             "[BOOT] IAM user store seeded with %d demo users",
@@ -362,6 +364,7 @@ async def lifespan(app: FastAPI):
         from backend.procedure_routes import (
             _seed_architect_library_from_catalog,
         )
+
         seeded = _seed_architect_library_from_catalog()
         log.info(
             "[BOOT] Architect library pre-seeded with %d catalog MOP(s)",
@@ -369,7 +372,8 @@ async def lifespan(app: FastAPI):
         )
     except Exception as e:
         log.warning(
-            "[BOOT] Architect library pre-seed failed (continuing): %s", e,
+            "[BOOT] Architect library pre-seed failed (continuing): %s",
+            e,
         )
 
     if RAGService:
@@ -411,7 +415,9 @@ async def lifespan(app: FastAPI):
                 seed_result = await seed_assets_from_site_model(_cmms_repo_instance, sm)
                 log.info("[BOOT] CMMS asset seeding: %s", seed_result)
             else:
-                log.warning("[BOOT] CMMS seeder skipped: _site_model not available at lifespan time")
+                log.warning(
+                    "[BOOT] CMMS seeder skipped: _site_model not available at lifespan time"
+                )
 
             # ─── v0.16.1: Procedure Architect vendor cache ────────────
             # Closes the S-VENDOR-EATON-01 TODO -- audit gate now uses
@@ -421,6 +427,7 @@ async def lifespan(app: FastAPI):
             # refresh (vendor changes are operationally rare).
             try:
                 from backend.agents.procedure_architect import set_vendor_cache
+
                 _all_assets = await _cmms_repo_instance.list_assets_async(limit=10000)
                 _vendor_cache_dict = {
                     a.asset_id.lower(): (a.vendor.lower() if a.vendor else None)
@@ -431,12 +438,14 @@ async def lifespan(app: FastAPI):
                 log.info(
                     "[BOOT] Procedure Architect vendor cache primed: %d assets, "
                     "%d with vendor metadata",
-                    len(_vendor_cache_dict), _with_vendor,
+                    len(_vendor_cache_dict),
+                    _with_vendor,
                 )
             except Exception as e:
                 log.warning(
                     "[BOOT] vendor cache prime failed (string-match fallback "
-                    "remains active): %s", e,
+                    "remains active): %s",
+                    e,
                 )
 
             # ─── v0.16.1: MCP health probe option (ii) ────────────────
@@ -448,6 +457,7 @@ async def lifespan(app: FastAPI):
             # v0.16.0 unless explicitly enabled.
             try:
                 from backend.mcp_health import start_probe_background_task
+
                 _mcp_probe_task = start_probe_background_task(
                     asyncio.get_running_loop(),
                 )
@@ -463,13 +473,16 @@ async def lifespan(app: FastAPI):
             # into CMMS work orders. Hooked into the SSE generator below.
             try:
                 from backend.cmms_predictive_trigger import get_predictive_trigger
+
                 _predictive_trigger = get_predictive_trigger(
                     repository=_cmms_repo_instance,
                     sustain_threshold=int(os.environ.get("DC_EPMS_PREDICTIVE_SUSTAIN", "3")),
                 )
                 app.state.cmms_predictive_trigger = _predictive_trigger
-                log.info("[BOOT] Predictive WO trigger ready (sustain_threshold=%d)",
-                         _predictive_trigger.sustain_threshold)
+                log.info(
+                    "[BOOT] Predictive WO trigger ready (sustain_threshold=%d)",
+                    _predictive_trigger.sustain_threshold,
+                )
             except Exception as e:
                 log.error("[BOOT] Predictive trigger init failed: %s", e, exc_info=True)
 
@@ -478,6 +491,7 @@ async def lifespan(app: FastAPI):
             # 7.1b: DocumentIngester (PDF upload -> ChromaDB chunks).
             try:
                 from backend.tech_assist.routes import register_tech_assist_routes
+
                 _upload_dir = PROJECT_ROOT / "data" / "tech_assist_uploads"
                 register_tech_assist_routes(
                     app,
@@ -501,6 +515,7 @@ async def lifespan(app: FastAPI):
                 from backend import hermes as _hermes
                 from backend.grid_provider import get_grid_state as _grid_state
                 from backend.multi_agent_routes import register_multi_agent_routes
+
                 register_multi_agent_routes(
                     app,
                     site_model=globals().get("_site_model"),
@@ -514,10 +529,12 @@ async def lifespan(app: FastAPI):
                     # for the Carbon/Grid agent.
                     grid_provider=_grid_state,
                 )
-                log.info("[BOOT] Multi-Agent façade active (6 agents, "
-                         "Safety Officer veto, deterministic consensus; "
-                         "T3.3-family live-Gemma narrative %s)",
-                         "ON" if agent is not None else "OFF")
+                log.info(
+                    "[BOOT] Multi-Agent façade active (6 agents, "
+                    "Safety Officer veto, deterministic consensus; "
+                    "T3.3-family live-Gemma narrative %s)",
+                    "ON" if agent is not None else "OFF",
+                )
             except Exception as e:
                 log.error("[BOOT] Multi-Agent init failed: %s", e, exc_info=True)
 
@@ -532,6 +549,7 @@ async def lifespan(app: FastAPI):
                     get_service as _get_optimizer,
                     is_enabled as _optimizer_enabled,
                 )
+
                 if _optimizer_enabled():
                     orch = getattr(app.state, "multi_agent_orchestrator", None)
 
@@ -555,12 +573,16 @@ async def lifespan(app: FastAPI):
 
                     def _optimizer_event_emitter(event: str, payload: dict) -> None:
                         stream = _OPTIMIZER_EVENT_TO_STREAM.get(
-                            event, "optimizer_proposal",
+                            event,
+                            "optimizer_proposal",
                         )
-                        _hermes.emit_event(stream, {
-                            "event": event,
-                            **payload,
-                        })
+                        _hermes.emit_event(
+                            stream,
+                            {
+                                "event": event,
+                                **payload,
+                            },
+                        )
 
                     _optimizer_svc = _get_optimizer(
                         telemetry_provider=None,  # composed in 2.E smoke test
@@ -599,7 +621,9 @@ async def lifespan(app: FastAPI):
                     if not BMS_AVAILABLE:
                         return False, "BMS connector unavailable"
                     return get_bms(PROJECT_ROOT).write(
-                        tag_id, value, user=user,
+                        tag_id,
+                        value,
+                        user=user,
                     )
 
                 def _prev_value_reader(tag_id):
@@ -650,7 +674,8 @@ async def lifespan(app: FastAPI):
                     )
 
                 register_optimizer_routes(
-                    app, bms_write_fn=_optimizer_bms_write,
+                    app,
+                    bms_write_fn=_optimizer_bms_write,
                 )
                 log.info(
                     "[BOOT] Optimizer routes registered "
@@ -660,7 +685,8 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 log.error(
                     "[BOOT] Optimizer routes init failed: %s",
-                    e, exc_info=True,
+                    e,
+                    exc_info=True,
                 )
         else:
             log.warning("[BOOT] CMMS skipped: db_manager pool unavailable")
@@ -674,6 +700,7 @@ async def lifespan(app: FastAPI):
     # Config in config/pue_targets.yml; ADR-004 documents the decision.
     try:
         from backend.physics.pue_routes import register_pue_routes
+
         register_pue_routes(app, PROJECT_ROOT)
         log.info("[BOOT] PUE physics active (Phase 1 live, Phase 2 design)")
     except Exception as e:
@@ -724,6 +751,7 @@ async def lifespan(app: FastAPI):
         _wt0 = time.perf_counter()
         try:
             from loto_auditor_models import LotoAuditRequest as _AuditRequest
+
             _dry_request = _AuditRequest(
                 procedure_id="MOP-ATS-MONTHLY-001",
                 target_component_id="ups_a",
@@ -751,6 +779,7 @@ async def lifespan(app: FastAPI):
     if _mcp_task is not None:
         _mcp_task.cancel()
         import contextlib
+
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await _mcp_task
         log.info("[SHUTDOWN] MCP probe task cancelled cleanly")
@@ -760,6 +789,7 @@ async def lifespan(app: FastAPI):
     if _qkd_task is not None:
         _qkd_task.cancel()
         import contextlib
+
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await _qkd_task
         log.info("[SHUTDOWN] QKD top-up task cancelled cleanly")
@@ -883,7 +913,7 @@ def _read_gpu_stats() -> dict:
 @app.get("/api/health")
 async def health():
     """Unified health check."""
-    checks = {
+    checks: dict = {
         "service": "dc-epms-pro",
         "version": __version__,
         "operator": OPERATOR_ORG,
@@ -1075,12 +1105,14 @@ async def telemetry_stream(request: Request):
             from site_model import get_site_model as _sm_get
             from telemetry_pipeline import get_pipeline
             from telemetry_simulator import get_simulator
+
             sim = get_simulator(_sm_get())
             pipeline = get_pipeline(dt_seconds=1.0)
             log.info(
                 "[telemetry/stream] simulator + Kalman pipeline active: "
                 "%d components, %d channels",
-                sim.component_count, sim.channel_count,
+                sim.component_count,
+                sim.channel_count,
             )
         except Exception as e:
             log.warning("[telemetry/stream] simulator init failed, falling back to legacy: %s", e)
@@ -1107,28 +1139,34 @@ async def telemetry_stream(request: Request):
                             await _predictive.handle_payload(channels)
                         except Exception as e:
                             log.warning("[telemetry/stream] predictive trigger error: %s", e)
-                    payload = json.dumps({
-                        "schema": "channel_innovations",
-                        "channels": channels,
-                        "anomaly_count_60min": pipeline.count_anomalies_60min(),
-                        "ts": time.time(),
-                    })
+                    payload = json.dumps(
+                        {
+                            "schema": "channel_innovations",
+                            "channels": channels,
+                            "anomaly_count_60min": pipeline.count_anomalies_60min(),
+                            "ts": time.time(),
+                        }
+                    )
                 else:
                     if db_manager:
                         rows = await db_manager.fetch_telemetry(limit=1)
                         latest = rows[0] if rows else None
-                        payload = json.dumps({
-                            "schema": "legacy_kpi",
-                            "latest": latest,
-                            "ts": time.time(),
-                        })
+                        payload = json.dumps(
+                            {
+                                "schema": "legacy_kpi",
+                                "latest": latest,
+                                "ts": time.time(),
+                            }
+                        )
                     else:
-                        payload = json.dumps({
-                            "schema": "legacy_kpi",
-                            "latest": None,
-                            "error": "DB unavailable",
-                            "ts": time.time(),
-                        })
+                        payload = json.dumps(
+                            {
+                                "schema": "legacy_kpi",
+                                "latest": None,
+                                "error": "DB unavailable",
+                                "ts": time.time(),
+                            }
+                        )
                 yield f"data: {payload}\n\n"
             except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
                 break
@@ -1179,8 +1217,7 @@ async def telemetry_stream_proto(request: Request):
     if not use_simulator:
         return JSONResponse(
             {
-                "error": "proto stream requires simulator mode "
-                         "(set DC_EPMS_USE_SIMULATOR=1)",
+                "error": "proto stream requires simulator mode " "(set DC_EPMS_USE_SIMULATOR=1)",
             },
             status_code=503,
         )
@@ -1193,12 +1230,14 @@ async def telemetry_stream_proto(request: Request):
         from telemetry_simulator import get_simulator
 
         from backend.telemetry_proto_stream import proto_tick_payload
+
         sim = get_simulator(_sm_get())
         pipeline = get_pipeline(dt_seconds=1.0)
         log.info(
-            "[telemetry/stream/proto] proto SSE active: site_id=%s, "
-            "%d components, %d channels",
-            site_id, sim.component_count, sim.channel_count,
+            "[telemetry/stream/proto] proto SSE active: site_id=%s, " "%d components, %d channels",
+            site_id,
+            sim.component_count,
+            sim.channel_count,
         )
     except Exception as e:
         log.error("[telemetry/stream/proto] init failed: %s", e)
@@ -1256,6 +1295,7 @@ async def telemetry_stream_proto(request: Request):
 @app.post("/api/incidents")
 async def create_incident(incident: IncidentPayload):
     from backend.rbac import require_actor_role
+
     require_actor_role(incident.actor_role, 4, "creating an incident")
     if not db_manager:
         return JSONResponse({"written": False, "error": "DB unavailable"})
@@ -1648,6 +1688,7 @@ async def list_scenarios():
 async def run_scenario(scenario_id: str, horizon_s: int = 900, actor_role: str | None = None):
     """Execute a named scenario and return the trajectory."""
     from backend.rbac import require_actor_role
+
     require_actor_role(actor_role, 4, "running a scenario")
     if not PHYSICS_AVAILABLE:
         raise HTTPException(503, "Physics engine unavailable")
@@ -1791,7 +1832,7 @@ def _extract_mop_steps(body: str) -> list[dict]:
 
     # Split into steps using ### headers
     current_step = None
-    current_content = []
+    current_content: list[str] = []
     step_pattern = re.compile(
         r"^###\s+(?:Phase|Step|Stage|Test|Section|Part)?\s*(\d+)?\s*[ - \-:.]?\s*(.*)$",
         re.IGNORECASE,
@@ -1931,8 +1972,8 @@ async def generate_mop_endpoint_deprecated(_payload: dict = Body(default={})):
             "successor": "POST /api/procedures/architect/generate",
             "sign_path": "POST /api/procedures/architect/sign",
             "doc": "config/knowledge/cdu-l-l-operating-standards.md "
-                   "and other knowledge base documents are surfaced "
-                   "to the Architect via GraphRAG.",
+            "and other knowledge base documents are surfaced "
+            "to the Architect via GraphRAG.",
         },
     )
 
@@ -2353,6 +2394,7 @@ async def topology_whatif(payload: dict = Body(...)):
     out of service. Used by the Emergency Simulation Mode in the UI.
     """
     from backend.rbac import require_actor_role
+
     require_actor_role(payload.get("actor_role"), 4, "running a what-if simulation")
     if not PHYSICS_AVAILABLE:
         raise HTTPException(503, "Physics engine unavailable")
@@ -2543,6 +2585,7 @@ async def write_bms_tag(request: Request, payload: dict = Body(...)):
     """
     # F3-2 + S-SEC-02: BMS write is a raw control-surface actuation, SME_L6 only.
     from backend.cmms_models import role_rank as _role_rank
+
     _bms_role = payload.get("actor_role")
     if _role_rank(_bms_role) < 6:
         raise HTTPException(
@@ -2603,10 +2646,14 @@ async def write_bms_tag(request: Request, payload: dict = Body(...)):
     else:
         # S-PROPOSER-01: stamp proposal context onto the ledger entry.
         from backend.ledger import reset_proposal_context, set_proposal_context
+
         token = set_proposal_context(proposal_id)
         try:
             success, message = await asyncio.to_thread(
-                direct_fn, tag_id, value, user,
+                direct_fn,
+                tag_id,
+                value,
+                user,
             )
         finally:
             reset_proposal_context(token)
@@ -2639,6 +2686,7 @@ async def revert_bms_write(entry_id: str, request: Request, payload: dict = Body
     """
     # SME_L6 gate (IEC 62443-3-3 SR 2.1).
     from backend.cmms_models import role_rank as _role_rank
+
     _bms_role = payload.get("actor_role")
     if _role_rank(_bms_role) < 6:
         raise HTTPException(
@@ -2660,6 +2708,7 @@ async def revert_bms_write(entry_id: str, request: Request, payload: dict = Body
         raise HTTPException(404, f"ledger entry_id={entry_id!r} not found")
 
     from backend.ledger import ACTION_BMS_REVERT, ACTION_BMS_WRITE_REQUESTED
+
     if entry.action != ACTION_BMS_WRITE_REQUESTED:
         raise HTTPException(
             422,
@@ -2710,7 +2759,10 @@ async def revert_bms_write(entry_id: str, request: Request, payload: dict = Body
             "revert_bms_write_fn not wired — boot-time ledger setup failed",
         )
     success, message = await asyncio.to_thread(
-        revert_fn, tag_id, prev_value, revert_user,
+        revert_fn,
+        tag_id,
+        prev_value,
+        revert_user,
     )
     if not success:
         raise HTTPException(400, f"revert counter-write failed: {message}")
@@ -2763,7 +2815,7 @@ async def list_ledger_entries(
     entries = await ledger.fetch_all()
     if action:
         entries = [e for e in entries if e.action == action]
-    entries = entries[-max(1, int(limit)):]
+    entries = entries[-max(1, int(limit)) :]
     return {
         "entries": [e.to_dict() for e in entries],
         "total": await ledger.count(),
@@ -2778,6 +2830,7 @@ async def verify_ledger_chain(request: Request):
     if ledger is None:
         raise HTTPException(503, "ForensicLedger not initialised")
     from backend.ledger import LedgerChainBrokenError
+
     try:
         await ledger.verify_chain()
     except LedgerChainBrokenError as exc:
@@ -2805,6 +2858,7 @@ async def post_auth_login(request: Request):
     HTTP 503: user store unavailable (lifespan init failure).
     """
     from backend.auth.jwt_handler import LoginError, login
+
     store = getattr(request.app.state, "user_store", None)
     if store is None:
         raise HTTPException(503, "user store not initialised")
@@ -2830,6 +2884,7 @@ async def get_auth_whoami(request: Request):
     UI state on session resume).
     """
     from backend.auth.dependencies import get_current_user
+
     auth = request.headers.get("Authorization")
     claims = await get_current_user(authorization=auth)
     return {
@@ -2858,6 +2913,7 @@ async def get_qkd_status(request: Request, audit_limit: int = 16):
     when the pool is fresh).
     """
     from backend.services.qkd_service import build_status_payload
+
     svc = getattr(request.app.state, "qkd_service", None)
     try:
         return build_status_payload(svc, audit_limit=audit_limit)
@@ -2953,7 +3009,7 @@ async def _execute_drafted_command(
     # â"€â"€ set_chilled_water_setpoint â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
     # Maps to BMS tag HVAC.CHILLER1.CW_SETPOINT or HVAC.CHILLER2.CW_SETPOINT
     if cmd_id == "set_chilled_water_setpoint":
-        target_c = float(payload.get("target_c"))
+        target_c = float(payload.get("target_c"))  # type: ignore[arg-type]
         # Map device_id â†' BMS tag
         tag_map = {
             "chiller_1": "HVAC.CHILLER1.CW_SETPOINT",
@@ -3038,6 +3094,22 @@ except Exception as e:
     log.error(f"[copilot] Shift Forensic Investigator mount failed: {e}")
 
 
+# Mount the agentic investigator router.
+# BUILT DURING THE META GLOBAL AI DEVELOPER HACKATHON (Oct 26 - Nov 4, 2026).
+# Tool loop over the agent fixture with a deterministic priority floor.
+try:
+    from copilot_agent import agent_router as _agentic_router
+
+    app.include_router(_agentic_router)
+    log.info(
+        "[copilot] Agentic Investigator mounted at /api/copilot/agent-investigate (hackathon-built)"
+    )
+except ImportError as e:
+    log.warning(f"[copilot] Agentic Investigator not loaded: {e}")
+except Exception as e:
+    log.error(f"[copilot] Agentic Investigator mount failed: {e}")
+
+
 # ==============================================================
 #  Sprint 1+2+3  -  Procedure orchestrator + Witness workflow
 # ==============================================================
@@ -3079,8 +3151,10 @@ try:
         if _role_rank(role) < min_rank:
             raise HTTPException(
                 status_code=403,
-                detail=(f"{action} requires role rank >= {min_rank}; "
-                        f"actor_role={role!r} is insufficient (RBAC F3-3)."),
+                detail=(
+                    f"{action} requires role rank >= {min_rank}; "
+                    f"actor_role={role!r} is insufficient (RBAC F3-3)."
+                ),
             )
 
     # â"€â"€ Procedure endpoints â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -3099,7 +3173,9 @@ try:
         try:
             return _proc_orch.registry.get(procedure_id)
         except ProcedureNotFoundError:
-            raise HTTPException(status_code=404, detail=f"procedure {procedure_id} not found") from None
+            raise HTTPException(
+                status_code=404, detail=f"procedure {procedure_id} not found"
+            ) from None
 
     @_proc_router.get("/executions/list")
     async def list_executions():
@@ -3133,7 +3209,9 @@ try:
             d["state"] = ex.state.value
             return d
         except ProcedureNotFoundError:
-            raise HTTPException(status_code=404, detail=f"procedure {procedure_id} not found") from None
+            raise HTTPException(
+                status_code=404, detail=f"procedure {procedure_id} not found"
+            ) from None
 
     @_proc_router.post("/executions/{exec_id}/advance")
     async def advance_execution(exec_id: str, body: dict):
@@ -3186,7 +3264,9 @@ try:
         try:
             return _serialize_witness(_witness_store.get(request_id))
         except WitnessRequestNotFoundError:
-            raise HTTPException(status_code=404, detail=f"witness request {request_id} not found") from None
+            raise HTTPException(
+                status_code=404, detail=f"witness request {request_id} not found"
+            ) from None
 
     @_witness_router.post("/{request_id}/sign")
     async def sign_witness(request_id: str, body: dict):
@@ -3201,7 +3281,9 @@ try:
         except WitnessRequestNotPendingError as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
         except WitnessRequestNotFoundError:
-            raise HTTPException(status_code=404, detail=f"witness request {request_id} not found") from None
+            raise HTTPException(
+                status_code=404, detail=f"witness request {request_id} not found"
+            ) from None
 
     @_witness_router.post("/{request_id}/reject")
     async def reject_witness(request_id: str, body: dict):
@@ -3216,7 +3298,9 @@ try:
         except WitnessRequestNotPendingError as e:
             raise HTTPException(status_code=409, detail=str(e)) from e
         except WitnessRequestNotFoundError:
-            raise HTTPException(status_code=404, detail=f"witness request {request_id} not found") from None
+            raise HTTPException(
+                status_code=404, detail=f"witness request {request_id} not found"
+            ) from None
 
     app.include_router(_proc_router)
     app.include_router(_witness_router)
@@ -3235,8 +3319,9 @@ try:
     from backend import procedure_routes
 
     app.include_router(procedure_routes.router)
-    log.info("[G5] Procedure generator routes mounted at /api/procedures "
-             "(/generate, /{id}/activate)")
+    log.info(
+        "[G5] Procedure generator routes mounted at /api/procedures " "(/generate, /{id}/activate)"
+    )
 except Exception as e:
     log.error(f"[G5] Procedure generator routes mount failed: {e}")
 
@@ -3324,6 +3409,7 @@ except Exception as e:
 # Defensive: handles physics factory + witness_store subset interface.
 try:
     from backend.loto_auditor_routes import register_loto_auditor
+
     _loto_physics = get_physics_engine() if PHYSICS_AVAILABLE else None
     if _loto_physics is not None:
         register_loto_auditor(
@@ -3396,6 +3482,7 @@ def _active_children_terminator(
     swallowed so a stuck worker doesn't block the others.
     """
     import multiprocessing
+
     if active_children_fn is None:
         active_children_fn = multiprocessing.active_children
     pids: list[int] = []
@@ -3423,7 +3510,9 @@ def _cleanup_subtree(reason: str = "atexit") -> None:
     if killed:
         log.info(
             "[SHUTDOWN] subprocess cleanup (%s) — terminated %d child(ren): %s",
-            reason, len(killed), killed,
+            reason,
+            len(killed),
+            killed,
         )
     else:
         log.info("[SHUTDOWN] subprocess cleanup (%s) — no children to clean", reason)
