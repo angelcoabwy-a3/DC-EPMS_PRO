@@ -464,6 +464,10 @@ def run_investigation(scenario_id: str, client=None, max_calls: int = MAX_MODEL_
             message = response["choices"][0]["message"]
             tool_calls = message.get("tool_calls") or []
             if tool_calls:
+                # The assistant message itself must travel with its tool
+                # results, verbatim: Meta rejects a tool message whose
+                # tool_call_id has no matching assistant tool_calls (400).
+                messages.append(message)
                 for call in tool_calls:
                     result = _execute_tool_call(call)
                     state.record_tool_result(call.get("function", {}).get("name", ""), result)

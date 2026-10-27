@@ -130,6 +130,45 @@ def test_cause_outside_closed_list_mapped_to_unknown():
     assert any("mapped to unknown" in n for n in result["notes"])
 
 
+def test_tool_results_follow_their_assistant_message():
+    observed = {}
+
+    class CheckingClient:
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, messages, tools):
+            self.calls += 1
+            if self.calls == 1:
+                return _tool_resp(
+                    ("query_alarms", {"scenario_id": "burst-utility-01", "window_minutes": 30})
+                )
+            if self.calls == 2:
+                observed["messages"] = list(messages)
+                return _tool_resp(
+                    (
+                        "get_breaker_state",
+                        {"scenario_id": "burst-utility-01", "breaker_id": "util-a-feeder"},
+                    )
+                )
+            return _final_resp(_final(ids=["U-01", "util-a-feeder"]))
+
+    result = run_investigation("burst-utility-01", client=CheckingClient())
+    messages = observed["messages"]
+    tools_seen = [m for m in messages if m.get("role") == "tool"]
+    assert tools_seen, "second request must carry the tool result"
+    at = messages.index(tools_seen[0])
+    wanted = tools_seen[0].get("tool_call_id")
+    assert any(
+        call.get("id") == wanted
+        for msg in messages[:at]
+        if msg.get("role") == "assistant"
+        for call in (msg.get("tool_calls") or [])
+    ), "assistant tool_calls must precede the tool result with the same id"
+    assert result["probable_cause"] == "utility_loss"
+    assert set(result["tools_used"]) == {"query_alarms", "get_breaker_state"}
+
+
 def test_priority_floor_raises_table_priority():
     client = FakeClient(
         [
