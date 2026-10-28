@@ -110,6 +110,32 @@ NUDGE_BAD_JSON = (
     "Answer again with exactly one JSON object and nothing else."
 )
 
+CHECKLIST_SYSTEM_PROMPT = (
+    "You are planning a forensic investigation for a data-center shift. "
+    "Before using any tool, write the investigation checklist. Answer with "
+    "ONE JSON object and nothing else, using exactly these keys: "
+    "working_hypothesis (one of utility_loss, ats_transfer_fault, "
+    "generator_fault, ups_fault, cooling_loss, fire_event, unknown; "
+    "a non-binding first guess) and checklist (4 to 6 items). Each item "
+    "has exactly these keys: id (CHK-01, CHK-02, and so on), question, "
+    "evidence_needed, is_counter_evidence (boolean). Every question must "
+    "be answerable from ONLY these evidence sources: raw alarms (id, "
+    "source, severity, title, timestamp), measurement trend series, "
+    "breaker open/closed states with last-change times, or reference "
+    "procedure texts. At least one item must be counter-evidence: a "
+    "question whose answer could weaken or rule out the "
+    "working_hypothesis. Do not use background knowledge. Do not invent "
+    "alarms, readings, equipment, or times."
+)
+
+NUDGE_BAD_CHECKLIST = (
+    "That checklist was invalid. I need exactly one JSON object with "
+    "working_hypothesis from the closed list and 4 to 6 items, each with "
+    "a unique id, a non-empty question and evidence_needed, and "
+    "is_counter_evidence boolean, with at least one counter-evidence "
+    "item true. Answer again with exactly one JSON object and nothing else."
+)
+
 TOOL_SCHEMAS: list = [
     {
         "type": "function",
@@ -194,17 +220,22 @@ class MetaAgentClient:
         self.model = model
         self.max_tokens = max_tokens
 
-    def chat(self, messages: list, tools: list) -> dict:
-        """One POST, one attempt, no retries. Returns the decoded body."""
-        payload = {
+    def chat(self, messages: list, tools: list | None) -> dict:
+        """One POST, one attempt, no retries. Returns the decoded body.
+
+        When tools is None the tools array (and tool_choice) is omitted:
+        that shape is used only for the checklist call.
+        """
+        payload: dict = {
             "model": self.model,
             "max_tokens": self.max_tokens,
             "reasoning_effort": "low",
             "stream": False,
             "messages": messages,
-            "tools": tools,
-            "tool_choice": "auto",
         }
+        if tools is not None:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
         try:
             resp = httpx.post(self.url, json=payload, headers=self.headers, timeout=TIMEOUT_S)
         except Exception as e:
@@ -280,6 +311,7 @@ class _Investigation:
         self.evidence_ids: set = set()
         self.severities: list = []
         self.early_rejections = 0
+        self.checklist: dict | None = None
 
     def record_tool_result(self, name: str, result: dict) -> None:
         self.tools_used.add(name)
@@ -327,6 +359,53 @@ def _parse_final(text: str) -> dict | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _validate_checklist(data: dict | None) -> dict | None:
+    """Validate a checklist response in code. Stored form or None.
+
+    Rules: working_hypothesis in the closed list; 4 to 6 items; unique
+    ids; every item with non-empty question and evidence_needed;
+    is_counter_evidence strictly boolean; at least one counter-evidence
+    item true. A probable_cause field, if present, is ignored.
+    The checklist is never fabricated or auto-completed here.
+    """
+    if not isinstance(data, dict):
+        return None
+    if data.get("working_hypothesis") not in CLOSED_CAUSES:
+        return None
+    items = data.get("checklist")
+    if not isinstance(items, list) or not 4 <= len(items) <= 6:
+        return None
+    seen: set = set()
+    stored = []
+    for item in items:
+        if not isinstance(item, dict):
+            return None
+        item_id = item.get("id")
+        question = item.get("question")
+        needed = item.get("evidence_needed")
+        counter = item.get("is_counter_evidence")
+        if not isinstance(item_id, str) or not item_id or item_id in seen:
+            return None
+        if not isinstance(question, str) or not question.strip():
+            return None
+        if not isinstance(needed, str) or not needed.strip():
+            return None
+        if not isinstance(counter, bool):
+            return None
+        seen.add(item_id)
+        stored.append(
+            {
+                "id": item_id,
+                "question": question,
+                "evidence_needed": needed,
+                "is_counter_evidence": counter,
+            }
+        )
+    if not any(entry["is_counter_evidence"] for entry in stored):
+        return None
+    return {"working_hypothesis": data["working_hypothesis"], "items": stored}
+
+
 def _finalize(state: _Investigation, final: dict) -> dict:
     """Validate the model conclusion in code and attach the safety layer."""
     cause = final.get("probable_cause")
@@ -354,6 +433,67 @@ def _finalize(state: _Investigation, final: dict) -> dict:
     checklist = final.get("verification_checklist") or []
     if not checklist:
         checklist = ["Verify the affected equipment in person before closing the story."]
+    stored_items = (state.checklist or {}).get("items", [])
+    stored_by_id = {item["id"]: item for item in stored_items}
+    inv_list = []
+    seen_ids: set = set()
+    discarded = []
+    for entry in final.get("investigation_checklist") or []:
+        if not isinstance(entry, dict):
+            continue
+        entry_id = entry.get("id")
+        if entry_id in seen_ids:
+            continue
+        if entry_id not in stored_by_id:
+            discarded.append(entry_id)
+            continue
+        seen_ids.add(entry_id)
+        stored = stored_by_id[entry_id]
+        raw_cited = entry.get("cited_evidence_ids") or []
+        raw_cited = raw_cited if isinstance(raw_cited, list) else []
+        valid = [i for i in raw_cited if i in state.evidence_ids]
+        status = entry.get("status")
+        if status not in ("settled", "contradicted", "not_settled"):
+            status = "not_settled"
+        if status in ("settled", "contradicted") and (not valid or len(valid) != len(raw_cited)):
+            status = "not_settled"
+        inv_list.append(
+            {
+                "id": entry_id,
+                "question": stored["question"],
+                "is_counter_evidence": stored["is_counter_evidence"],
+                "status": status,
+                "cited_evidence_ids": valid,
+            }
+        )
+    for item in stored_items:
+        if item["id"] not in seen_ids:
+            inv_list.append(
+                {
+                    "id": item["id"],
+                    "question": item["question"],
+                    "is_counter_evidence": item["is_counter_evidence"],
+                    "status": "not_settled",
+                    "cited_evidence_ids": [],
+                }
+            )
+    unconfirmed = list(final.get("unconfirmed") or [])
+    rank = {"high": 3, "medium": 2, "low": 1}
+    if rank.get(confidence, 1) > 2 and any(
+        e["is_counter_evidence"] and e["status"] == "not_settled" for e in inv_list
+    ):
+        confidence = "medium"
+        notes.append("confidence capped at medium: a counter-evidence item is not settled")
+    contradicted = [e for e in inv_list if e["status"] == "contradicted"]
+    if contradicted:
+        confidence = "low"
+        for entry in contradicted:
+            unconfirmed.append(f"Contradicted checklist item {entry['id']}: {entry['question']}")
+        notes.append("confidence capped at low: a checklist item was contradicted")
+    working_hypothesis = (state.checklist or {}).get("working_hypothesis")
+    notes.append(
+        "working_hypothesis is non-binding: it never sets priority, procedure, or probable_cause"
+    )
     table_priority, procedure = PRIORITY_TABLE[cause]
     floor = _severity_floor(state.severities)
     priority = _higher_priority(table_priority, floor)
@@ -366,8 +506,11 @@ def _finalize(state: _Investigation, final: dict) -> dict:
         "priority": priority,
         "suggested_procedure": procedure,
         "claims": claims,
-        "unconfirmed": list(final.get("unconfirmed") or []),
+        "unconfirmed": unconfirmed,
         "verification_checklist": list(checklist),
+        "investigation_checklist": inv_list,
+        "working_hypothesis": working_hypothesis,
+        "discarded_checklist_ids": discarded,
         "model_calls": state.calls,
         "tools_used": sorted(state.tools_used),
         "early_rejections": state.early_rejections,
@@ -375,10 +518,27 @@ def _finalize(state: _Investigation, final: dict) -> dict:
     }
 
 
+def _checklist_view(state: _Investigation) -> tuple:
+    """Stored checklist as not-settled entries, hypothesis, no discards."""
+    stored = state.checklist or {"working_hypothesis": None, "items": []}
+    inv_list = [
+        {
+            "id": item["id"],
+            "question": item["question"],
+            "is_counter_evidence": item["is_counter_evidence"],
+            "status": "not_settled",
+            "cited_evidence_ids": [],
+        }
+        for item in stored.get("items", [])
+    ]
+    return inv_list, stored.get("working_hypothesis"), []
+
+
 def _cap_result(state: _Investigation) -> dict:
     """Iteration cap reached: stop with confidence low and cause unknown."""
     table_priority, procedure = PRIORITY_TABLE["unknown"]
     priority = _higher_priority(table_priority, _severity_floor(state.severities))
+    inv_list, working_hypothesis, discarded = _checklist_view(state)
     return {
         "scenario_id": state.scenario_id,
         "probable_cause": "unknown",
@@ -390,10 +550,38 @@ def _cap_result(state: _Investigation) -> dict:
         "verification_checklist": [
             "Verify the affected equipment in person before closing the story."
         ],
+        "investigation_checklist": inv_list,
+        "working_hypothesis": working_hypothesis,
+        "discarded_checklist_ids": discarded,
         "model_calls": state.calls,
         "tools_used": sorted(state.tools_used),
         "early_rejections": state.early_rejections,
         "notes": [f"stopped after {MAX_MODEL_CALLS} model calls"],
+    }
+
+
+def _invalid_checklist_result(state: _Investigation) -> dict:
+    """Checklist still invalid after regeneration: unknown and low."""
+    table_priority, procedure = PRIORITY_TABLE["unknown"]
+    priority = _higher_priority(table_priority, _severity_floor(state.severities))
+    return {
+        "scenario_id": state.scenario_id,
+        "probable_cause": "unknown",
+        "confidence": "low",
+        "priority": priority,
+        "suggested_procedure": procedure,
+        "claims": [],
+        "unconfirmed": ["Checklist invalid after regeneration."],
+        "verification_checklist": [
+            "Verify the affected equipment in person before closing the story."
+        ],
+        "investigation_checklist": [],
+        "working_hypothesis": None,
+        "discarded_checklist_ids": [],
+        "model_calls": state.calls,
+        "tools_used": sorted(state.tools_used),
+        "early_rejections": state.early_rejections,
+        "notes": ["checklist invalid after regeneration; stopped with cause unknown"],
     }
 
 
@@ -410,6 +598,9 @@ def _error_result(scenario_id: str, note: str) -> dict:
         "verification_checklist": [
             "Verify the affected equipment in person before closing the story."
         ],
+        "investigation_checklist": [],
+        "working_hypothesis": None,
+        "discarded_checklist_ids": [],
         "model_calls": 0,
         "tools_used": [],
         "early_rejections": 0,
@@ -457,6 +648,34 @@ def run_investigation(scenario_id: str, client=None, max_calls: int = MAX_MODEL_
             ),
         },
     ]
+    checklist_messages = [
+        {"role": "system", "content": CHECKLIST_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"Write the investigation checklist for scenario '{scenario_id}'. "
+                "Answer with exactly one JSON object and nothing else."
+            ),
+        },
+    ]
+    regenerated = False
+    while True:
+        if state.calls >= max_calls:
+            return _invalid_checklist_result(state)
+        try:
+            checklist_response = client.chat(checklist_messages, None)
+            content = checklist_response["choices"][0]["message"].get("content") or ""
+        except (MetaAgentError, KeyError, IndexError, TypeError) as e:
+            return _error_result(scenario_id, f"investigation failed: {e}")
+        state.calls += 1
+        validated = _validate_checklist(_parse_final(content))
+        if validated is not None:
+            state.checklist = validated
+            break
+        if regenerated:
+            return _invalid_checklist_result(state)
+        regenerated = True
+        checklist_messages.append({"role": "user", "content": NUDGE_BAD_CHECKLIST})
     try:
         while state.calls < max_calls:
             response = client.chat(messages, TOOL_SCHEMAS)
@@ -615,6 +834,9 @@ async def copilot_agent_investigate(payload: AgentInvestigateIn, request: Reques
             "priority": result["priority"],
             "suggested_procedure": result["suggested_procedure"],
             "verification_checklist": result["verification_checklist"],
+            "investigation_checklist": result["investigation_checklist"],
+            "working_hypothesis": result["working_hypothesis"],
+            "discarded_checklist_ids": result["discarded_checklist_ids"],
             "tool_calls": client.trace,
             "evidence_ids_cited": cited,
             "model_calls": result["model_calls"],
