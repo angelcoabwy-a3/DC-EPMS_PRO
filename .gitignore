@@ -204,3 +204,7 @@ mlruns/
 
 # SBOM generator outputs (DC-EPMS-MSD-007) — produced by scripts/generate_sbom.py
 /sbom/
+
+scripts/probe_photos/
+pip-build-tracker-*/
+pip-download-*/

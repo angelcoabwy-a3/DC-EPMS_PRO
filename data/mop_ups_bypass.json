@@ -1,0 +1,165 @@
+{
+  "mop_id": "MOP-UPS-BYP-DEMO-01",
+  "title": "UPS transfer to maintenance bypass (demo training panel)",
+  "version": "1.3",
+  "author": "Wilmer Angel",
+  "disclaimer": "Simplified demonstration procedure. The breakers used are a residential training panel that represents a maintenance bypass cabinet; they do not control any UPS. Not a manufacturer or site MOP. Real transfers must follow the UPS OEM manual, the site MOP, interlock (key) requirements and a qualified two-person rule. Battery isolation, inverter shutdown and downstream checks are intentionally omitted.",
+  "basis": "Steps 1 to 3 follow the sequence common to the reviewed OEM manuals: UPS to static bypass, close MBB, verify, then open MIB. Steps 4 and 5 (bypass input before rectifier input) follow the Schneider Galaxy VX order; other manufacturers use a different isolation order.",
+  "references": [
+    "Vertiv Liebert APM operation manual, section 10.4 Switching the UPS from Normal Operation to Maintenance Bypass",
+    "Vertiv Liebert 1000kVA / 610 user manual, Maintenance Bypass Load Transfers",
+    "Schneider Electric Galaxy VX Operation 990-5452, Shut Down Single System from Normal to Maintenance Bypass Operation",
+    "Eaton 93PR Installation and Operation Manual, 6.7 Transfer the UPS from Double Conversion Mode to Maintenance Bypass Mode"
+  ],
+  "panel_note": "Labels are on tape next to each breaker. Handle ON direction is toward the center of the panel: to the right for the left column, to the left for the right column. CLOSED means handle ON; OPEN means handle OFF. Circuit numbers follow the panel directory: odd numbers in the left column, even numbers in the right column. Circuits not in this MOP are not evaluated.",
+  "panel": [
+    {
+      "label": "Q5",
+      "type": "breaker",
+      "represents": "UPS rectifier input breaker (RIB)",
+      "panel_circuit": 5,
+      "directory_name": "15A ARC - WASHING MACHINE",
+      "position": "left column, 1st single 15 A below the quad"
+    },
+    {
+      "label": "Q7",
+      "type": "breaker",
+      "represents": "UPS static bypass input breaker (BIB)",
+      "panel_circuit": 7,
+      "directory_name": "15A ARC - PLUGS",
+      "position": "left column, 2nd single 15 A"
+    },
+    {
+      "label": "Q9",
+      "type": "breaker",
+      "represents": "Maintenance isolation breaker, UPS output to load (MIB)",
+      "panel_circuit": 9,
+      "directory_name": "15A ARC - PLUGS",
+      "position": "left column, 3rd single 15 A (bottom)"
+    },
+    {
+      "label": "Q8",
+      "type": "breaker",
+      "represents": "Maintenance bypass breaker (MBB)",
+      "panel_circuit": 8,
+      "directory_name": "15A ARC - MICROWAVE",
+      "position": "right column, 2nd from bottom"
+    },
+    {
+      "label": "BYP",
+      "type": "breaker",
+      "represents": "UPS ON STATIC BYPASS status (CLOSED = on bypass)",
+      "panel_circuit": 10,
+      "directory_name": "15A ARC - DISHWASHER",
+      "position": "right column, bottom"
+    }
+  ],
+  "initial_state": {
+    "Q5": "CLOSED",
+    "Q7": "CLOSED",
+    "Q9": "CLOSED",
+    "Q8": "OPEN",
+    "BYP": "OPEN"
+  },
+  "steps": [
+    {
+      "step_id": 1,
+      "panel_label": "BYP",
+      "action": "From the UPS control panel, transfer the UPS to internal static bypass. Confirm the ON BYPASS status.",
+      "expected_state": {
+        "Q5": "CLOSED",
+        "Q7": "CLOSED",
+        "Q9": "CLOSED",
+        "Q8": "OPEN",
+        "BYP": "CLOSED"
+      },
+      "hazard_if_wrong": "If the UPS is not on static bypass, closing Q8 parallels the inverter output with the bypass source."
+    },
+    {
+      "step_id": 2,
+      "panel_label": "Q8",
+      "action": "Close the maintenance bypass breaker Q8.",
+      "expected_state": {
+        "Q5": "CLOSED",
+        "Q7": "CLOSED",
+        "Q9": "CLOSED",
+        "Q8": "CLOSED",
+        "BYP": "CLOSED"
+      },
+      "hazard_if_wrong": "If Q8 is not closed, opening Q9 in the next step drops the critical load."
+    },
+    {
+      "step_id": 3,
+      "panel_label": "Q9",
+      "action": "Open the maintenance isolation breaker Q9. The load is now fed through maintenance bypass Q8.",
+      "expected_state": {
+        "Q5": "CLOSED",
+        "Q7": "CLOSED",
+        "Q9": "OPEN",
+        "Q8": "CLOSED",
+        "BYP": "CLOSED"
+      },
+      "hazard_if_wrong": "If Q9 remains closed, the UPS output is still connected to the load and cannot be isolated."
+    },
+    {
+      "step_id": 4,
+      "panel_label": "Q7",
+      "action": "Open the static bypass input breaker Q7. The UPS is no longer on static bypass.",
+      "expected_state": {
+        "Q5": "CLOSED",
+        "Q7": "OPEN",
+        "Q9": "OPEN",
+        "Q8": "CLOSED",
+        "BYP": "OPEN"
+      },
+      "hazard_if_wrong": "If Q7 remains closed, the UPS bypass path stays energized."
+    },
+    {
+      "step_id": 5,
+      "panel_label": "Q5",
+      "action": "Open the rectifier input breaker Q5. The UPS is isolated and the load remains on maintenance bypass.",
+      "expected_state": {
+        "Q5": "OPEN",
+        "Q7": "OPEN",
+        "Q9": "OPEN",
+        "Q8": "CLOSED",
+        "BYP": "OPEN"
+      },
+      "hazard_if_wrong": "If Q5 remains closed, the UPS rectifier is still energized."
+    }
+  ],
+  "label_scheme": "Tape labels follow the official panel directory: Q1 to Q9 are directory positions 1 to 9, BYP is position 10. Only Q5, Q7, Q8, Q9 and BYP are operated in this MOP.",
+  "distractors": [
+    {
+      "label": "Q1",
+      "panel_circuit": 1,
+      "directory_name": "A 15A LIGHTING / B 30A DRYER",
+      "operated": false
+    },
+    {
+      "label": "Q2",
+      "panel_circuit": 2,
+      "directory_name": "A 15A FRIDGE / B 40A STOVE",
+      "operated": false
+    },
+    {
+      "label": "Q3",
+      "panel_circuit": 3,
+      "directory_name": "A 30A DRYER / B 15A BATHROOM",
+      "operated": false
+    },
+    {
+      "label": "Q4",
+      "panel_circuit": 4,
+      "directory_name": "A 40A STOVE / B 15A FANCOIL",
+      "operated": false
+    },
+    {
+      "label": "Q6",
+      "panel_circuit": 6,
+      "directory_name": "A/B 20A KITCHEN PLUG",
+      "operated": false
+    }
+  ],
+  "distractor_note": "Distractors are never operated and never scored. They stay ON for the whole procedure."
+}
