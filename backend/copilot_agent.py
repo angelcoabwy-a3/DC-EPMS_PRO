@@ -1,9 +1,12 @@
 """Agentic investigator with tool loop, fixture, deterministic priority floor.
 
-HACKATHON feature. The model investigates ONLY through four tools that read
-ONLY ``agent_fixture.py`` (never the incident store, never the network).
-Two loop limits are enforced in code: at least two DIFFERENT tools before
-any final answer is accepted, and at most 8 model calls per investigation.
+HACKATHON feature. The model investigates ONLY through five tools: four read
+ONLY ``agent_fixture.py`` (never the incident store, never the network);
+verify_photo checks an operator-uploaded panel photo against a MOP step via
+the Meta API (bounded: 1 SAM + 5 crops + at most 5 retries, one daily-cap
+attempt per use). Two loop limits are enforced in code: at least two
+DIFFERENT tools before any final answer is accepted, and at most 8 model
+calls per investigation.
 
 The model never sets priority. Priority and suggested procedure come from
 the fixed PRIORITY_TABLE below, raised by a severity floor computed in
@@ -36,6 +39,14 @@ try:  # package import (backend.copilot_agent)
         seconds_until_utc_midnight,
     )
     from .llm_providers import MetaProvider
+    from .mop_verify import (
+        MopInputError,
+        get_mop_steps,
+        get_session,
+        store_session_photo,
+        validate_verify_inputs,
+        verify_photo,
+    )
 except ImportError:  # top-level import, as backend/main.py does it
     from agent_fixture import (  # type: ignore[no-redef]  # type: ignore[no-redef]
         get_alarms,
@@ -52,6 +63,14 @@ except ImportError:  # top-level import, as backend/main.py does it
         seconds_until_utc_midnight,
     )
     from llm_providers import MetaProvider  # type: ignore[no-redef]
+    from mop_verify import (  # type: ignore[no-redef]
+        MopInputError,
+        get_mop_steps,
+        get_session,
+        store_session_photo,
+        validate_verify_inputs,
+        verify_photo,
+    )
 
 MODEL = "muse-spark-1.3"
 MAX_TOKENS = 4000
@@ -87,7 +106,11 @@ _RANK = {"P1": 1, "P2": 2, "P3": 3}
 SYSTEM_PROMPT = (
     "You are a forensic investigator for a data-center shift. "
     "You may ONLY use the tools provided: query_alarms, get_trend, "
-    "get_breaker_state, lookup_procedure. Work only from what the tools "
+    "get_breaker_state, lookup_procedure, verify_photo. verify_photo checks "
+    "an operator-uploaded panel photo against one MOP step; it needs the "
+    "session_id the photo was uploaded with and the step_id (0 means the "
+    "initial state), and fails when no photo was uploaded for that session. "
+    "Work only from what the tools "
     "return. Never invent alarms, readings, equipment, or times. "
     "Use at least two DIFFERENT tools before concluding. "
     "When the evidence supports a conclusion, answer with ONE JSON object "
@@ -198,6 +221,27 @@ TOOL_SCHEMAS: list = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "verify_photo",
+            "description": (
+                "Verify an operator-uploaded panel photo against one MOP step. "
+                "Needs the session_id the photo was uploaded with and the step_id "
+                "(0 means the initial state). Fails when no photo was uploaded."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "step_id": {"type": "integer"},
+                    "operator_claim": {"type": "string"},
+                },
+                "required": ["session_id", "step_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -293,11 +337,53 @@ def tool_lookup_procedure(arguments: dict) -> dict:
     return {"event_type": event_type, **procedure}
 
 
+def tool_verify_photo(arguments: dict) -> dict:
+    """Verify a session photo against one MOP step (verdict computed in code)."""
+    session_id = arguments.get("session_id", "")
+    session_id = session_id.strip() if isinstance(session_id, str) else ""
+    if not session_id:
+        return {"error": "session_id is required"}
+    raw_step = arguments.get("step_id")
+    if isinstance(raw_step, bool) or not isinstance(raw_step, int | float):
+        return {"error": "step_id must be an integer 0-5"}
+    step_id = int(raw_step)
+    if float(raw_step) != step_id or step_id not in (0, 1, 2, 3, 4, 5):
+        return {"error": "step_id must be an integer 0-5"}
+    claim = arguments.get("operator_claim")
+    claim = claim if isinstance(claim, str) and claim.strip() else None
+    session = get_session(session_id)
+    if not session.pending_image:
+        return {"error": f"no photo stored for session '{session_id}'"}
+    try:
+        result = verify_photo(
+            step_id, session.pending_image, operator_claim=claim, session_id=session_id
+        )
+    except MopInputError as exc:
+        return {"error": str(exc)}
+    except Exception as exc:
+        return {"error": f"verification failed: {exc}"}
+    evidence_ids = [f"mop-step-{step_id}-{label}" for label in result["readings"]]
+    return {
+        "verdict": result["verdict"],
+        "differing_labels": result["differing_labels"],
+        "readings": {
+            label: {"mapped": reading["mapped"], "crop_box": reading["crop_box"]}
+            for label, reading in result["readings"].items()
+        },
+        "contradiction": result["contradiction"],
+        "expected_state": result["expected_state"],
+        "evidence_ids": evidence_ids,
+        "session": result["session"],
+        "meta_calls_made": result["meta_calls_made"],
+    }
+
+
 _TOOL_FNS = {
     "query_alarms": tool_query_alarms,
     "get_trend": tool_get_trend,
     "get_breaker_state": tool_get_breaker_state,
     "lookup_procedure": tool_lookup_procedure,
+    "verify_photo": tool_verify_photo,
 }
 
 
@@ -327,6 +413,10 @@ class _Investigation:
             self.evidence_ids.add(result["breaker_id"])
         elif name == "lookup_procedure" and result.get("procedure_id"):
             self.evidence_ids.add(result["procedure_id"])
+        elif name == "verify_photo":
+            for evidence_id in result.get("evidence_ids", []):
+                if evidence_id:
+                    self.evidence_ids.add(evidence_id)
 
 
 def _severity_floor(severities: list) -> str:
@@ -844,3 +934,106 @@ async def copilot_agent_investigate(payload: AgentInvestigateIn, request: Reques
             "investigation": result,
         }
     )
+
+
+def _limit_exceeded_response(exc: MetaLimitError, client_ip: str) -> JSONResponse:
+    """429 body identical to the agent endpoint (guard shared by MOP routes)."""
+    if exc.limit == "daily_cap":
+        retry_after_s = seconds_until_utc_midnight()
+    else:
+        retry_after_s = retry_after_for_ip(client_ip)
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "limit_exceeded",
+            "limit": exc.limit,
+            "detail": exc.message,
+            "daily_cap": exc.daily_cap,
+            "meta_call_made": False,
+            "retry_after_s": retry_after_s,
+        },
+        headers={"Retry-After": str(retry_after_s)},
+    )
+
+
+def _bad_verify_request(detail: str) -> JSONResponse:
+    return JSONResponse(status_code=400, content={"error": "invalid_request", "detail": detail})
+
+
+@agent_router.post("/mop/verify")
+async def copilot_mop_verify(request: Request):
+    """Verify a training-panel photo against one MOP step.
+
+    Multipart fields: image (photo bytes), step_id (0-5, 0 is the initial
+    state), session_id, optional operator_claim text. Guarded exactly
+    like /agent-investigate: bad input -> 400 before the guard, exceeded
+    cap/rate -> 429 with no Meta call, missing key or Meta failure ->
+    503. One verify counts as one daily-cap Meta attempt, recorded
+    right before the SAM call inside verify_photo.
+    """
+    form = await request.form()
+    upload = form.get("image")
+    if upload is None or isinstance(upload, str):
+        return _bad_verify_request("multipart field 'image' with an uploaded photo is required")
+    image_bytes = await upload.read()
+    raw_step = form.get("step_id")
+    try:
+        step_id = int(str(raw_step).strip())
+    except (TypeError, ValueError):
+        return _bad_verify_request("step_id must be an integer 0-5")
+    raw_session = form.get("session_id")
+    if not isinstance(raw_session, str) or not raw_session.strip():
+        return _bad_verify_request("session_id must be a non-empty string")
+    session_id = raw_session.strip()
+    raw_claim = form.get("operator_claim")
+    if raw_claim is not None and not isinstance(raw_claim, str):
+        return _bad_verify_request("operator_claim must be text when given")
+    operator_claim = raw_claim.strip() if isinstance(raw_claim, str) and raw_claim.strip() else None
+    try:
+        validate_verify_inputs(step_id, image_bytes, session_id)
+    except MopInputError as exc:
+        return _bad_verify_request(str(exc))
+    client_ip = request.client.host if request.client else "unknown"
+    try:
+        check_limits(client_ip)
+    except MetaLimitError as exc:
+        return _limit_exceeded_response(exc, client_ip)
+    try:
+        MetaAgentClient()  # key check only; mop_verify builds its own requests
+    except MetaAgentError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "meta_unavailable", "detail": str(exc), "meta_call_made": False},
+        )
+    store_session_photo(session_id, image_bytes)
+    try:
+        result = await asyncio.to_thread(
+            verify_photo, step_id, image_bytes, operator_claim, session_id
+        )
+    except MopInputError as exc:
+        return _bad_verify_request(str(exc))
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "meta_unavailable",
+                "detail": f"verification failed: {exc}",
+                "meta_call_made": True,
+            },
+        )
+    return JSONResponse({**result, "meta_call_made": True})
+
+
+@agent_router.get("/mop/steps")
+async def copilot_mop_steps(request: Request):
+    """MOP steps for the UI. Same guard/429 as the agent endpoint.
+
+    Static data: never records a daily-cap attempt and has no 503 path
+    (nothing here depends on Meta).
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    try:
+        check_limits(client_ip)
+    except MetaLimitError as exc:
+        return _limit_exceeded_response(exc, client_ip)
+    return JSONResponse(get_mop_steps())

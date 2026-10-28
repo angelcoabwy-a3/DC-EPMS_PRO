@@ -1,0 +1,31 @@
+{
+  "panel_id": "training-panel-residential-01",
+  "mop_id": "MOP-UPS-BYP-DEMO-01",
+  "note": "Geometry calibrated for this one training panel only (the residential panel photographed for MOP-UPS-BYP-DEMO-01). Column bands, split fractions and aspect ratio do not transfer to other panels; recalibrate per panel.",
+  "columns": {
+    "left": {
+      "labels": ["Q1/Q3 quad", "Q5", "Q7", "Q9"],
+      "singles": ["Q5", "Q7", "Q9"]
+    },
+    "right": {
+      "labels": ["Q2/Q4 quad", "Q6", "Q8", "BYP"],
+      "singles": ["Q6", "Q8", "BYP"]
+    }
+  },
+  "split_fractions": {
+    "quad": [0.0, 0.4],
+    "s1": [0.41, 0.6],
+    "s2": [0.61, 0.8],
+    "s3": [0.81, 1.0]
+  },
+  "expected_column_aspect": 0.47,
+  "aspect_tolerance": 0.15,
+  "crop_padding": 0.05,
+  "handle_mapping": {
+    "left": {"RIGHT": "CLOSED", "LEFT": "OPEN"},
+    "right": {"LEFT": "CLOSED", "RIGHT": "OPEN"}
+  },
+  "operated_labels": ["Q5", "Q7", "Q9", "Q8", "BYP"],
+  "distractors": ["Q1", "Q2", "Q3", "Q4", "Q6"],
+  "distractor_note": "Distractors are never operated and never scored."
+}

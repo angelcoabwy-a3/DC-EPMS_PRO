@@ -208,3 +208,4 @@ mlruns/
 scripts/probe_photos/
 pip-build-tracker-*/
 pip-download-*/
+pytest-of-*/
