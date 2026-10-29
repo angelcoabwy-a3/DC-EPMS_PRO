@@ -22,6 +22,7 @@
 import { registerRoute } from '../core/router.js';
 import { escapeHTML } from '../core/sanitize.js';
 import { authFetch } from '../core/api_client.js';
+import { isDemoActive } from '../core/demo.js';
 
 const STEPS_URL = '/api/copilot/mop/steps';
 const VERIFY_URL = '/api/copilot/mop/verify';
@@ -52,6 +53,13 @@ let _running = false;
 let _elapsedTimer = null;
 let _retryUntil = 0;        // epoch ms while a 429 Retry-After is honoured
 let _retryTimer = null;
+let _demoLayout = false;  // the view currently shows the demo skeleton
+let _savedLayoutHTML = null; // classic .mv-layout outerHTML (restored when demo turns off)
+let _lastBody = null;     // last verify response (re-rendered across skeleton swaps)
+let _zoomOn = true;       // demo "Zoom to breakers" toggle state
+let _samplesVisible = false; // probeSamples() found the sample photos
+let _keysWired = false;   // document keydown listener (registered once)
+let _demoListenerWired = false; // epms:demo-mode listener (registered once)
 
 // ─── Pure helpers (testable) ───────────────────────────────────────
 function newSessionId() {
@@ -132,6 +140,48 @@ function contradictionCopy(contradiction) {
         + '; the photo shows ' + contradiction.observed + '.';
 }
 
+function _cropBoxes(readings, operated) {
+    const boxes = [];
+    for (const label of operated || []) {
+        const box = (readings || {})[label] && (readings || {})[label].crop_box;
+        if (Array.isArray(box) && box.length >= 4
+            && box.slice(0, 4).every((v) => typeof v === 'number' && Number.isFinite(v))) {
+            boxes.push(box.slice(0, 4));
+        }
+    }
+    return boxes;
+}
+
+/**
+ * Demo "Zoom to breakers": union of the API crop boxes plus a margin
+ * (fraction of the union size on every side), clamped to the image.
+ * Returns { x, y, w, h } in image pixels, or null when there is
+ * nothing valid to zoom to. Pure; the SVG viewBox consumes it.
+ */
+function zoomBox(cropBoxes, width, height, margin) {
+    const pad = (typeof margin === 'number' && margin >= 0) ? margin : 0.1;
+    const valid = (cropBoxes || []).filter((box) => Array.isArray(box) && box.length >= 4
+        && box.slice(0, 4).every((v) => typeof v === 'number' && Number.isFinite(v)));
+    if (!valid.length || !(width > 0) || !(height > 0)) return null;
+    let x1 = Infinity;
+    let y1 = Infinity;
+    let x2 = -Infinity;
+    let y2 = -Infinity;
+    for (const box of valid) {
+        x1 = Math.min(x1, box[0]);
+        y1 = Math.min(y1, box[1]);
+        x2 = Math.max(x2, box[2]);
+        y2 = Math.max(y2, box[3]);
+    }
+    const px = Math.max(1, x2 - x1) * pad;
+    const py = Math.max(1, y2 - y1) * pad;
+    const zx = Math.max(0, Math.round(x1 - px));
+    const zy = Math.max(0, Math.round(y1 - py));
+    const zx2 = Math.min(width, Math.round(x2 + px));
+    const zy2 = Math.min(height, Math.round(y2 + py));
+    return { x: zx, y: zy, w: Math.max(1, zx2 - zx), h: Math.max(1, zy2 - zy) };
+}
+
 // ─── DOM helpers ───────────────────────────────────────────────────
 function _view() {
     return document.getElementById('view-mop-verify');
@@ -160,6 +210,7 @@ function _expectedChips(expectedState, operatedLabels) {
 }
 
 function renderStepper() {
+    if (isDemoActive()) { renderDemoTracker(); return; }
     const list = _hook('stepper');
     if (!list || !_stepsData) return;
     const operated = _stepsData.operated_labels || [];
@@ -210,6 +261,7 @@ function _currentStepRecord() {
 function renderCurrent() {
     const el = _hook('current');
     if (!el) return;
+    if (isDemoActive()) { renderDemoCurrent(el); return; }
     if (!_stepsData) {
         el.innerHTML = '';
         return;
@@ -276,6 +328,16 @@ async function loadProcedure() {
 // ─── Verification panel ────────────────────────────────────────────
 function _setPhoto(blob, name) {
     _clearPhoto();
+    if (isDemoActive()) {
+        // A new photo invalidates the displayed result overlay; the
+        // right-column text stays until the next verification, as usual.
+        _lastBody = null;
+        _zoomOn = true;
+        const zoomWrap = _hook('zoom-wrap');
+        if (zoomWrap) zoomWrap.setAttribute('hidden', '');
+        const zoomToggle = _hook('zoom');
+        if (zoomToggle) zoomToggle.checked = true;
+    }
     _photo = { blob, name, url: URL.createObjectURL(blob), width: 0, height: 0 };
     const img = new Image();
     img.onload = () => {
@@ -297,6 +359,7 @@ function _clearPhoto() {
 }
 
 function renderPreview() {
+    if (isDemoActive()) { renderDemoStage(); return; }
     const el = _hook('preview');
     if (!el) return;
     if (!_photo) {
@@ -334,8 +397,15 @@ function _startElapsed() {
     const started = Date.now();
     const paint = () => {
         const secs = Math.floor((Date.now() - started) / 1000);
-        _setStatus('<span class="mv-running">'
-            + _esc('Verifying… ' + secs + ' s (about 6 to 12 s per photo)') + '</span>');
+        if (isDemoActive()) {
+            _setStatus('<div class="mv-running-big">'
+                + '<div class="mv-running-secs">' + _esc(secs + ' s') + '</div>'
+                + '<div class="mv-running-models">' + _esc('SAM 3.1 + Muse Spark 1.3') + '</div>'
+                + '</div>');
+        } else {
+            _setStatus('<span class="mv-running">'
+                + _esc('Verifying… ' + secs + ' s (about 6 to 12 s per photo)') + '</span>');
+        }
         _updateVerifyButton();
     };
     paint();
@@ -471,9 +541,11 @@ async function probeSamples() {
         ok = false;
     }
     if (!ok) {
+        _samplesVisible = false;
         section.setAttribute('hidden', '');
         return;
     }
+    _samplesVisible = true;
     section.removeAttribute('hidden');
     renderSamples();
 }
@@ -597,13 +669,207 @@ function renderFooter(container, body) {
         ) + '</div>';
 }
 
+// ─── Demo presentation rendering ──────────────────────────────────
+// Horizontal step tracker, one-line current step, single photo stage
+// and right-column result. Used only when demo mode is on; the
+// classic renderers above stay untouched for ?demo=0.
+
+function _expectsTip(stepId, panelLabel, expectedState, operated) {
+    const chips = (operated || []).map((label) => (
+        label + ' ' + ((expectedState && expectedState[label]) || '—')
+    )).join(' · ');
+    return 'Step ' + stepId + ' (' + panelLabel + '): ' + chips;
+}
+
+function renderDemoTracker() {
+    const list = _hook('stepper');
+    if (!list || !_stepsData) return;
+    const operated = _stepsData.operated_labels || [];
+    const dot = (id, caption, state, tip) => (
+        '<li class="mv-dot" data-state="' + (state === 'todo' ? 'pending' : state) + '" title="' + _esc(tip) + '">'
+        + '<span class="mv-dot-circle">' + _esc(id) + '</span>'
+        + '<span class="mv-dot-cap">' + _esc(caption) + '</span></li>'
+    );
+    const items = [dot(0, 'INIT', stepState(0, _currentStep, _blockedStep, _completed),
+        _expectsTip(0, 'initial', _stepsData.initial_state, operated))];
+    for (const step of _stepsData.steps || []) {
+        items.push(dot(step.step_id, step.panel_label || '',
+            stepState(step.step_id, _currentStep, _blockedStep, _completed),
+            _expectsTip(step.step_id, step.panel_label || '', step.expected_state, operated)));
+    }
+    list.innerHTML = items.join('');
+}
+
+function renderDemoCurrent(el) {
+    if (_completed) {
+        el.innerHTML = '<div class="mv-current-line mv-complete">'
+            + _esc('Procedure complete — all 5 steps verified.') + '</div>';
+    } else if (!_stepsData) {
+        el.innerHTML = '';
+    } else {
+        const record = _currentStepRecord();
+        const action = _currentStep === 0
+            ? 'Confirm the initial panel state.'
+            : (record ? record.action : '');
+        const panelLabel = _currentStep === 0
+            ? '—'
+            : (record ? record.panel_label : '—');
+        el.innerHTML = '<div class="mv-current-line">'
+            + '<strong>' + _esc('Step ' + _currentStep) + '</strong>'
+            + ' <span class="mv-panel-label">' + _esc(panelLabel) + '</span>'
+            + ' <span class="mv-current-action">' + _esc(action) + '</span></div>';
+    }
+    _updateVerifyButton();
+}
+
+function renderDemoResult(body) {
+    const host = _hook('result');
+    if (!host) return;
+    const verdict = body.verdict || '—';
+    const bannerState = verdict === 'MATCH' ? 'ok'
+        : (verdict === 'MISMATCH' ? 'crit' : 'warn');
+    let html = '<div class="mv-banner" data-state="' + bannerState + '">'
+        + '<div class="mv-banner-title mv-demo-verdict">' + _esc(verdictCopy(verdict, body.step_id, body.advanced, _completed)) + '</div>';
+    if (verdict === 'MISMATCH') {
+        const differing = (body.differing_labels || []).map((label) => (
+            '<span class="mv-chip" data-chip="crit">' + _esc(label) + '</span>'
+        )).join(' ');
+        html += '<div class="mv-banner-labels">' + _esc('Differing: ') + differing + '</div>'
+            + '<div class="mv-hazard">' + _esc(body.hazard_if_wrong || '') + '</div>';
+    }
+    html += '<div class="mv-verdict-note">' + _esc('Computed in code from the photo readings') + '</div>'
+        + '</div>';
+    if (contradictionCopy(body.contradiction)) {
+        const c = body.contradiction || {};
+        html += '<div class="mv-banner" data-state="contra">'
+            + '<div class="mv-contra-line">' + _esc('Operator: ' + (c.label || '—') + ' ' + (c.claimed || '—')) + '</div>'
+            + '<div class="mv-contra-line">' + _esc('Photo: ' + (c.label || '—') + ' ' + (c.observed || '—')) + '</div>'
+            + '</div>';
+    }
+    html += '<div data-mv-cards></div>';
+    host.innerHTML = html;
+
+    const cardsHost = host.querySelector('[data-mv-cards]');
+    const operated = (_stepsData && _stepsData.operated_labels) || Object.keys(body.readings || {});
+    if (cardsHost) renderDemoCards(cardsHost, body.readings, body.expected_state, operated);
+    const footHost = _hook('result-foot');
+    if (footHost) renderFooter(footHost, body);
+    const zoomWrap = _hook('zoom-wrap');
+    if (zoomWrap) {
+        if (_photo && _cropBoxes(body.readings, operated).length) zoomWrap.removeAttribute('hidden');
+        else zoomWrap.setAttribute('hidden', '');
+    }
+    renderDemoStage();
+}
+
+function renderDemoCards(container, readings, expectedState, operated) {
+    const cards = (operated || []).map((label) => {
+        const reading = (readings || {})[label] || {};
+        const mapped = reading.mapped || '—';
+        const expected = expectedState ? expectedState[label] : '—';
+        const state = cardState(reading.mapped, expected);
+        const icon = state === 'match' ? '✓' : (state === 'mismatch' ? '✗' : '!');
+        const note = parseNotes(reading.raw) || reading.call_error || reading.parse_error || '—';
+        return '<article class="mv-card" data-state="' + state + '">'
+            + '<div class="mv-card-head"><span class="mv-card-label">' + _esc(label) + '</span>'
+            + '<span class="mv-card-icon" data-state="' + state + '">' + _esc(icon) + '</span></div>'
+            + '<div class="mv-card-row"><span>Read</span>' + _stateChip(mapped) + '</div>'
+            + '<div class="mv-card-row"><span>Expected</span>' + _stateChip(expected) + '</div>'
+            + '<div class="mv-card-note mv-card-note-clip" title="' + _esc(note) + '">' + _esc(note) + '</div>'
+            + '</article>';
+    }).join('');
+    container.innerHTML = '<div class="mv-cards mv-cards-row">' + cards + '</div>';
+}
+
+function renderDemoStage() {
+    const stage = _hook('photo');
+    if (!stage) return;
+    if (!_photo) {
+        stage.innerHTML = '<div class="mv-stage-empty">' + _esc('Select a sample photo to begin.') + '</div>';
+        return;
+    }
+    if (!_lastBody) {
+        stage.innerHTML = '';
+        const img = document.createElement('img');
+        img.className = 'mv-demo-photo';
+        img.alt = 'Selected panel photo';
+        img.src = _photo.url;
+        stage.appendChild(img);
+        return;
+    }
+    const width = _photo.width || 0;
+    const height = _photo.height || 0;
+    if (!(width > 0) || !(height > 0)) {
+        const probe = new Image();
+        probe.onload = () => {
+            _photo.width = probe.naturalWidth;
+            _photo.height = probe.naturalHeight;
+            renderDemoStage();
+        };
+        probe.src = _photo.url;
+        return;
+    }
+    // One SVG holds the photo (<image>) plus every overlay rect in the
+    // same user units, so photo and overlay stay aligned by
+    // construction — including under the zoomed viewBox.
+    const operated = (_stepsData && _stepsData.operated_labels) || Object.keys(_lastBody.readings || {});
+    const zoom = _zoomOn ? zoomBox(_cropBoxes(_lastBody.readings, operated), width, height, 0.1) : null;
+    const vb = zoom
+        ? (zoom.x + ' ' + zoom.y + ' ' + zoom.w + ' ' + zoom.h)
+        : ('0 0 ' + width + ' ' + height);
+    stage.innerHTML = '';
+    const svg = _svgEl('svg', {
+        class: 'mv-demo-photo',
+        viewBox: vb,
+        role: 'img',
+        'aria-label': 'Panel photo with verification overlay',
+        preserveAspectRatio: 'xMidYMid meet',
+    });
+    svg.appendChild(_svgEl('image', { href: _photo.url, x: 0, y: 0, width, height }));
+    for (const box of _lastBody.sam_boxes || []) {
+        if (!Array.isArray(box) || box.length < 4) continue;
+        const [x1, y1, x2, y2] = box;
+        svg.appendChild(_svgEl('rect', {
+            x: x1, y: y1, width: Math.max(1, x2 - x1), height: Math.max(1, y2 - y1),
+            class: 'mv-sam-rect',
+        }));
+    }
+    const fontSize = Math.max(28, Math.round(width * 0.022));
+    for (const label of operated) {
+        const reading = (_lastBody.readings || {})[label] || {};
+        const box = reading.crop_box;
+        if (!Array.isArray(box) || box.length < 4) continue;
+        const [x1, y1, x2, y2] = box;
+        svg.appendChild(_svgEl('rect', {
+            x: x1, y: y1, width: Math.max(1, x2 - x1), height: Math.max(1, y2 - y1),
+            class: 'mv-crop-rect',
+            'data-crop': (reading.mapped === 'CLOSED' || reading.mapped === 'OPEN') ? 'read' : 'warn',
+        }));
+        svg.appendChild(_svgEl('text', {
+            x: x1 + 6, y: Math.max(y1 - 8, fontSize),
+            class: 'mv-crop-tag',
+            'font-size': fontSize,
+        }, label + ' ' + (reading.mapped || '—')));
+    }
+    stage.appendChild(svg);
+}
+
 function applyResult(body) {
     const session = body.session || {};
     if (typeof session.current_step === 'number') _currentStep = session.current_step;
     _completed = !!session.completed;
     _blockedStep = body.advanced ? null : body.step_id;
+    _lastBody = body;
     renderProcedureHead();
+    renderResult(body);
+}
 
+function renderResult(body) {
+    if (isDemoActive()) renderDemoResult(body);
+    else renderClassicResult(body);
+}
+
+function renderClassicResult(body) {
     const host = _hook('result');
     if (!host) return;
     const verdict = body.verdict || '—';
@@ -722,14 +988,145 @@ function restartProcedure() {
     _currentStep = 0;
     _blockedStep = null;
     _completed = false;
+    _lastBody = null;
+    _zoomOn = true;
+    const zoomWrap = _hook('zoom-wrap');
+    if (zoomWrap) zoomWrap.setAttribute('hidden', '');
+    const zoomToggle = _hook('zoom');
+    if (zoomToggle) zoomToggle.checked = true;
     const host = _hook('result');
     if (host) {
         host.innerHTML = '<div class="mv-empty">' + _esc('No verification yet. Pick a photo and press Verify.') + '</div>';
+    }
+    if (isDemoActive()) {
+        const footHost = _hook('result-foot');
+        if (footHost) footHost.innerHTML = '';
     }
     renderPreview();
     renderProcedureHead();
     _setStatus('');
     _updateVerifyButton();
+}
+
+// ─── Demo presentation skeleton ─────────────────────────────────
+// Swapped in for .mv-layout only when demo mode is on (?demo=0 keeps
+// the static skeleton untouched). Hook names match the classic
+// skeleton so every data path stays shared; there is no file picker
+// in demo mode (samples + keys 1-5 are the photo source).
+
+function demoSkeletonHTML() {
+    return '<div class="mv-demo">'
+        + '<section class="mv-tracker" aria-label="Procedure steps">'
+        + '<ol class="mv-circles" data-mv-stepper></ol>'
+        + '<div class="mv-tracker-row">'
+        + '<div class="mv-tracker-current" data-mv-current></div>'
+        + '<button type="button" class="btn btn-secondary" data-mv-restart>Restart procedure</button>'
+        + '</div></section>'
+        + '<div class="mv-demo-cols">'
+        + '<section class="mv-stage-col" aria-label="Panel photo">'
+        + '<div class="mv-stage" data-mv-photo></div>'
+        + '<label class="mv-toggle mv-zoom" data-mv-zoom-wrap hidden><input type="checkbox" data-mv-zoom checked> '
+        + 'Zoom to breakers</label>'
+        + '</section>'
+        + '<section class="mv-right" aria-label="Verification result">'
+        + '<div class="mv-status" data-mv-status aria-live="polite"></div>'
+        + '<div data-mv-result><div class="mv-empty">No verification yet. Pick a photo and press Verify.</div></div>'
+        + '<div class="mv-controls">'
+        + '<div class="mv-samples" data-mv-samples-section hidden>'
+        + '<div class="mv-field-label">Try a sample photo</div>'
+        + '<div class="mv-sample-row" data-mv-samples></div>'
+        + '</div>'
+        + '<label class="mv-field">'
+        + '<span class="mv-field-label">Operator readback</span>'
+        + '<input type="text" data-mv-claim placeholder="e.g. Q8 closed" maxlength="120" autocomplete="off">'
+        + '</label>'
+        + '<div class="mv-actions">'
+        + '<button type="button" class="btn" data-mv-verify-btn disabled>Verify</button>'
+        + '</div>'
+        + '<div class="mv-verify-note">Verification can take up to a minute depending on API load.</div>'
+        + '<div class="mv-keys-hint">Keys: 1–5 load sample · Enter verify · R restart</div>'
+        + '</div>'
+        + '<div data-mv-result-foot></div>'
+        + '</section>'
+        + '</div>'
+        + '</div>';
+}
+
+function syncDemoLayout() {
+    const view = _view();
+    if (!view) return;
+    const wantDemo = isDemoActive();
+    if (wantDemo === _demoLayout) return;
+    if (wantDemo) {
+        const layout = view.querySelector('.mv-layout');
+        if (!layout) return;
+        if (_savedLayoutHTML === null) _savedLayoutHTML = layout.outerHTML;
+        const tmp = document.createElement('div');
+        tmp.innerHTML = demoSkeletonHTML();
+        if (!tmp.firstElementChild) return;
+        layout.replaceWith(tmp.firstElementChild);
+        _demoLayout = true;
+    } else {
+        const demo = view.querySelector('.mv-demo');
+        if (!demo || _savedLayoutHTML === null) {
+            _demoLayout = false;
+            return;
+        }
+        const tmp = document.createElement('div');
+        tmp.innerHTML = _savedLayoutHTML;
+        if (!tmp.firstElementChild) return;
+        demo.replaceWith(tmp.firstElementChild);
+        _demoLayout = false;
+    }
+    _wired = false;
+    _wire();
+    renderProcedureHead();
+    renderPreview();
+    if (_samplesVisible) {
+        const section = _hook('samples-section');
+        if (section) section.removeAttribute('hidden');
+        renderSamples();
+    }
+    if (_lastBody && _stepsData) renderResult(_lastBody);
+}
+
+function _inTextField(target) {
+    if (target && typeof target.closest === 'function'
+        && target.closest('input, textarea, [contenteditable="true"], [contenteditable=""]')) {
+        return true;
+    }
+    const active = (typeof document !== 'undefined') ? document.activeElement : null;
+    return !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'
+        || !!active.isContentEditable);
+}
+
+// Demo-only shortcuts: 1-5 load the samples in shown order, Enter
+// verifies when enabled, R restarts. Silent when demo mode is off,
+// when the view is hidden, or when focus sits in a text field.
+function _onDemoKey(event) {
+    if (!isDemoActive()) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const view = _view();
+    if (!view || view.hasAttribute('hidden')) return;
+    if (_inTextField(event.target)) return;
+    const key = event.key;
+    if (typeof key === 'string' && key.length === 1 && key >= '1' && key <= '5') {
+        const file = SAMPLE_FILES[Number(key) - 1];
+        if (file && !_running) loadSample(file);
+        return;
+    }
+    if (key === 'Enter') {
+        // A focused button or link already activates natively; skip it
+        // here so Verify never runs twice from one keypress.
+        if (event.target && typeof event.target.closest === 'function'
+            && event.target.closest('button, a')) return;
+        const btn = _hook('verify-btn');
+        if (btn && !btn.disabled) runVerification();
+        return;
+    }
+    if (key === 'r' || key === 'R') {
+        restartProcedure();
+    }
 }
 
 // ─── Wiring + lifecycle ────────────────────────────────────────────
@@ -755,13 +1152,29 @@ function _wire() {
     if (verifyBtn) verifyBtn.addEventListener('click', runVerification);
     const restartBtn = _hook('restart');
     if (restartBtn) restartBtn.addEventListener('click', restartProcedure);
+    const zoomToggle = _hook('zoom');
+    if (zoomToggle) {
+        zoomToggle.addEventListener('change', () => {
+            _zoomOn = !!zoomToggle.checked;
+            if (_lastBody) renderDemoStage();
+        });
+    }
+    if (!_keysWired && typeof document !== 'undefined') {
+        _keysWired = true;
+        document.addEventListener('keydown', _onDemoKey);
+    }
 }
 
 function initMopVerifyView() {
     if (_routeRegistered) return;
+    if (!_demoListenerWired && typeof window !== 'undefined') {
+        _demoListenerWired = true;
+        window.addEventListener('epms:demo-mode', () => syncDemoLayout());
+    }
     registerRoute('mop-verify', {
         viewId: 'view-mop-verify',
         activate: ({ firstActivation } = {}) => {
+            syncDemoLayout();
             _wire();
             if (firstActivation) {
                 _sessionId = newSessionId();
@@ -790,6 +1203,11 @@ function reset() {
     _completed = false;
     _running = false;
     _retryUntil = 0;
+    _demoLayout = false;
+    _savedLayoutHTML = null;
+    _lastBody = null;
+    _zoomOn = true;
+    _samplesVisible = false;
 }
 
 // ─── Exports ───────────────────────────────────────────────────────
@@ -817,6 +1235,8 @@ export const __mop_verify_test__ = {
     runVerification,
     loadSample,
     restartProcedure,
+    syncDemoLayout,
+    zoomBox,
     initMopVerifyView,
     reset,
     SAMPLE_FILES,
@@ -829,6 +1249,9 @@ export const __mop_verify_test__ = {
         running: _running,
         hasPhoto: !!_photo,
         hasSteps: !!_stepsData,
+        demoLayout: _demoLayout,
+        hasResult: !!_lastBody,
+        zoomOn: _zoomOn,
     }),
     setStepsData: (data) => { _stepsData = data; },
     setSession: (id, step) => { _sessionId = id; _currentStep = step; },

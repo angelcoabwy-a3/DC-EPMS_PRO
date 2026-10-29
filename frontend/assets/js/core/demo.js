@@ -121,8 +121,10 @@ function _setVisible(el, visible) {
  * Apply (or, when inactive, fully revert) every demo-mode hiding:
  * nav entries outside allowed_views, every [data-demo-chrome] element
  * (Reports rail section, header facility chips, footer telemetry
- * line), header chips/counters, right-rail panels, plus the demo note
- * under the allowed views' headers. Idempotent; safe to call repeatedly.
+ * line), header chips/counters, right-rail panels, the nav + rail grid
+ * columns themselves (zero width), plus the demo note under the
+ * allowed views' headers and the slim top bar (badge + inline note).
+ * Idempotent; safe to call repeatedly.
  */
 function applyDemoMode() {
     if (typeof document === 'undefined') return;
@@ -136,6 +138,32 @@ function applyDemoMode() {
     });
     for (const id of CHROME_IDS) {
         _setVisible(document.getElementById(id), !_active);
+    }
+    // The nav + rail grid columns leave the layout entirely (CSS also
+    // collapses .app-main to one column under body.demo-mode; the
+    // inline style guarantees zero width even if CSS fails to load).
+    document.querySelectorAll('.panel-nav, .panel-side').forEach((el) => {
+        _setVisible(el, !_active);
+    });
+
+    // Slim top bar: product name (kept) + hackathon badge + demo note
+    // on the same flex line. Removed again when demo mode is off.
+    document.querySelectorAll('.demo-note-inline, .demo-bar-badge').forEach((el) => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    if (_active) {
+        const header = document.querySelector('.app-header');
+        const logo = header ? header.querySelector('.logo') : null;
+        if (header && logo && !header.querySelector('.demo-note-inline')) {
+            const badge = document.createElement('span');
+            badge.className = 'mv-badge demo-bar-badge';
+            badge.textContent = 'Built during hackathon';
+            const note = document.createElement('span');
+            note.className = 'demo-note-inline';
+            note.textContent = DEMO_NOTE_TEXT;
+            logo.after(badge);
+            badge.after(note);
+        }
     }
 
     document.querySelectorAll('.demo-note').forEach((el) => {
@@ -180,6 +208,21 @@ function ensureAllowedRoute() {
 }
 
 /**
+ * Tell views the demo state settled so they can swap their layout
+ * (mop_verify.js listens). demo.js stays dependency-free: no imports,
+ * just a DOM event.
+ */
+function _notifyDemoMode() {
+    try {
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('epms:demo-mode', {
+                detail: { active: _active },
+            }));
+        }
+    } catch (_e) { /* no event surface available */ }
+}
+
+/**
  * Startup entry, called once from main.js after initBootstrap().
  * Fire-and-forget: never throws, never rejects.
  */
@@ -195,6 +238,7 @@ async function initDemoMode() {
         setDemoState(resolveDemoState(config, search));
         applyDemoMode();
         ensureAllowedRoute();
+        _notifyDemoMode();
     } catch (_e) {
         // Demo mode must never break boot: fall back to today's app.
         try {

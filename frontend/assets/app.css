@@ -8574,8 +8574,86 @@ rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
  * (56px header / 32px activity strip / 1fr main / 28px footer) whose
  * children auto-place in order. Hiding #activity-strip removes it from
  * layout, so main would land in the 32px row and the footer in 1fr.
- * Collapse to the 3 remaining rows instead. Demo-off layout untouched. */
-body.demo-mode .app-shell { grid-template-rows: 56px 1fr 28px; }
+ * Collapse to a slim top bar + full-height main + footer instead.
+ * Demo-off layout untouched. */
+body.demo-mode .app-shell { grid-template-rows: 48px 1fr 28px; }
+
+/* Demo presentation shell: the nav + rail columns leave the grid
+ * entirely (demo.js also sets inline display:none so they take zero
+ * width even if this stylesheet fails). MOP Verification is the only
+ * view, so no nav is needed. */
+body.demo-mode .app-main { grid-template-columns: 1fr; }
+body.demo-mode .panel-nav, body.demo-mode .panel-side { display: none; }
+body.demo-mode #view-mop-verify { height: 100%; }
+body.demo-mode #view-mop-verify .view-hdr { display: none; }
+body.demo-mode .app-header .demo-note-inline {
+    font-size: 12px; color: var(--text-muted); white-space: nowrap; letter-spacing: 0.3px;
+}
+
+/* ── Demo presentation: tracker on top, photo + result below ──────
+ * Designed for 1920x1080 fullscreen with no page scroll. Every rule
+ * is scoped to body.demo-mode, so ?demo=0 renders exactly as today. */
+body.demo-mode .mv-demo { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 16px; }
+body.demo-mode .mv-tracker {
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; flex: none;
+}
+body.demo-mode .mv-circles { display: flex; align-items: center; list-style: none; margin: 0; padding: 0; flex-wrap: nowrap; }
+body.demo-mode .mv-dot { display: flex; align-items: center; }
+body.demo-mode .mv-dot + .mv-dot::before {
+    content: ''; width: 44px; height: 2px; background: var(--border-strong);
+    margin: 0 10px; flex: none;
+}
+body.demo-mode .mv-dot-circle {
+    width: 34px; height: 34px; border-radius: 50%; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700;
+    border: 2px solid var(--border-strong); color: var(--text-dim); background: var(--bg-elevated);
+}
+body.demo-mode .mv-dot-cap { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-left: 6px; }
+body.demo-mode .mv-dot[data-state="done"] .mv-dot-circle { border-color: var(--ok); color: var(--ok); }
+body.demo-mode .mv-dot[data-state="current"] .mv-dot-circle {
+    border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+body.demo-mode .mv-dot[data-state="blocked"] .mv-dot-circle { border-color: var(--crit); color: var(--crit); }
+body.demo-mode .mv-tracker-row { display: flex; align-items: center; gap: 16px; margin-top: 8px; }
+body.demo-mode .mv-tracker-current { flex: 1; min-width: 0; }
+body.demo-mode .mv-current-line { font-size: 16px; color: var(--text); }
+body.demo-mode .mv-current-line.mv-complete { color: var(--ok); }
+body.demo-mode .mv-demo-cols { display: flex; gap: 16px; flex: 1; min-height: 0; }
+body.demo-mode .mv-stage-col { flex: 0 0 45%; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+body.demo-mode .mv-stage {
+    flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+}
+body.demo-mode .mv-demo-photo { width: 100%; height: 100%; object-fit: contain; display: block; }
+body.demo-mode .mv-stage-empty { color: var(--text-dim); font-size: 16px; padding: 24px; text-align: center; }
+body.demo-mode .mv-zoom { margin-top: 8px; flex: none; }
+body.demo-mode .mv-right {
+    flex: 1; min-width: 0; min-height: 0; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 12px;
+}
+body.demo-mode .mv-right .mv-banner { margin-bottom: 0; }
+body.demo-mode .mv-demo-verdict { font-size: 30px; line-height: 1.25; }
+body.demo-mode .mv-right .mv-hazard { font-size: 16px; }
+body.demo-mode .mv-right .mv-banner-labels { font-size: 14px; }
+body.demo-mode .mv-contra-line { font-size: 16px; line-height: 1.5; }
+body.demo-mode .mv-cards-row { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 0; }
+body.demo-mode .mv-right .mv-card-label { font-size: 18px; }
+body.demo-mode .mv-right .mv-card-row { font-size: 14px; }
+body.demo-mode .mv-right .mv-card-note { font-size: 13px; }
+body.demo-mode .mv-card-note-clip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.demo-mode .mv-card-icon { font-size: 18px; font-weight: 700; }
+body.demo-mode .mv-card-icon[data-state="match"] { color: var(--ok); }
+body.demo-mode .mv-card-icon[data-state="mismatch"] { color: var(--crit); }
+body.demo-mode .mv-card-icon[data-state="warn"] { color: var(--warn); }
+body.demo-mode .mv-right .mv-chip { font-size: 14px; }
+body.demo-mode .mv-right .mv-samples { margin-bottom: 10px; }
+body.demo-mode .mv-keys-hint { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+body.demo-mode .mv-running-big { text-align: center; padding: 12px 0; }
+body.demo-mode .mv-running-secs { font-size: 44px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+body.demo-mode .mv-running-models { font-size: 16px; color: var(--text-muted); margin-top: 4px; }
 .mv-status { font-size: 12px; min-height: 18px; }
 .mv-running { color: var(--accent); }
 
