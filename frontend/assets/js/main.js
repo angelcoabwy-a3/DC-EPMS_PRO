@@ -53,6 +53,7 @@ import { initOverviewView } from './views/overview.js';
 import { initOptimizerView } from './views/optimizer.js';
 import { initProceduresView } from './views/procedures.js';
 import { initQuantumView } from './views/quantum.js';
+import { initMopVerifyView } from './views/mop_verify.js';
 import { initLoginView, showLoginView, hideLoginView } from './views/login.js';
 import { hasValidToken, getClaims, onAuthChange } from './core/auth.js';
 import { startQkdGate } from './core/qkd_gate.js';
@@ -133,6 +134,9 @@ initProceduresView();
 // current QBER + pool depth so the eavesdropper-injection drill is
 // visually demonstrable. structured render path -> escapeHTML only.
 initQuantumView();
+// Meta hackathon — MOP photo verification HMI: procedure stepper +
+// multipart photo verify + result rendered only from the API response.
+initMopVerifyView();
 // Epic 10 — IAM login view. Wired BEFORE bootstrap so the form is
 // listening for clicks even before auth has been granted. The auth
 // gate below decides whether to show login or run the full app.

@@ -135,6 +135,7 @@
                 <div class="nav-item" data-route="cooling"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="snowflake"><path d="M2 12h20"/><path d="M12 2v20"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/></svg></span>Cooling (DLC)</div>
                 <div class="nav-item" data-route="incidents"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="alert-triangle"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span>Incidents</div>
                 <div class="nav-item" data-route="mops"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="file-text"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></span>MOPs &amp; EOPs</div>
+                <div class="nav-item" data-route="mop-verify"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="camera"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>MOP Verification <sup class="nav-item-tag">hackathon</sup></div>
                 <div class="nav-item" data-route="topology"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="network"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg></span>Topology (HLD/LLD)</div>
                 <div class="nav-item" data-route="bms"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="plug"><path d="M12 22v-5"/><path d="M9 7V2"/><path d="M15 7V2"/><path d="M6 13V8h12v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4Z"/></svg></span>BMS Connector</div>
                 <div class="nav-item" data-route="copilot"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="bot"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></span>Facility Co-Pilot</div>
@@ -1475,7 +1476,7 @@
                 </style>
             </div>
 
-        
+
             <!-- LOTO Auditor view (Camino 1 Phase D - Sprint 5 partial) -->
             <div class="view" id="view-loto-auditor" hidden>
                 <div class="view-hdr">
@@ -1682,6 +1683,61 @@
                     </thead>
                     <tbody data-qkd-audit></tbody>
                 </table>
+            </div>
+
+            <!-- ══════════ View: MOP Verification (Meta hackathon) ══════
+                 Photo verification of the UPS maintenance-bypass training
+                 procedure. Driven by frontend/assets/js/views/mop_verify.js:
+                 GET /api/copilot/mop/steps feeds the stepper, POST
+                 /api/copilot/mop/verify (multipart) verifies the current
+                 step. The result panel renders ONLY the API response. -->
+            <div class="view" id="view-mop-verify" hidden>
+                <div class="view-hdr">
+                    <h2>MOP Verification <span class="mv-badge">Built during hackathon</span></h2>
+                    <div class="view-sub">Photograph each breaker operation; the server verifies it against the expected panel state. Verdicts are computed in code from the photo readings.</div>
+                </div>
+                <div class="mv-layout">
+                    <section class="mv-panel" aria-label="Procedure">
+                        <div class="mv-panel-hdr">
+                            <h3>Procedure</h3>
+                            <button type="button" class="btn btn-secondary btn-sm" data-mv-restart>Restart procedure</button>
+                        </div>
+                        <div class="mv-mop" data-mv-mop>Loading procedure…</div>
+                        <div class="mv-session">Session <code data-mv-session>—</code></div>
+                        <ol class="mv-stepper" data-mv-stepper></ol>
+                    </section>
+                    <section class="mv-panel" aria-label="Verification">
+                        <div class="mv-panel-hdr">
+                            <h3>Verify current step</h3>
+                        </div>
+                        <div data-mv-current></div>
+                        <label class="mv-field">
+                            <span class="mv-field-label">Photo</span>
+                            <input type="file" data-mv-file accept="image/jpeg,image/png" capture="environment">
+                        </label>
+                        <div class="mv-preview" data-mv-preview></div>
+                        <label class="mv-field">
+                            <span class="mv-field-label">Operator readback <span class="mv-field-hint">(voice readback will fill this later)</span></span>
+                            <input type="text" data-mv-claim placeholder="Q8 closed" maxlength="120" autocomplete="off">
+                        </label>
+                        <div class="mv-samples" data-mv-samples-section hidden>
+                            <div class="mv-field-label">Try a sample photo</div>
+                            <div class="mv-sample-row" data-mv-samples></div>
+                        </div>
+                        <div class="mv-actions">
+                            <button type="button" class="btn" data-mv-verify-btn disabled>Verify</button>
+                        </div>
+                        <div class="mv-status" data-mv-status aria-live="polite"></div>
+                    </section>
+                    <section class="mv-panel" aria-label="Result">
+                        <div class="mv-panel-hdr">
+                            <h3>Result</h3>
+                        </div>
+                        <div data-mv-result>
+                            <div class="mv-empty">No verification yet. Pick a photo and press Verify.</div>
+                        </div>
+                    </section>
+                </div>
             </div>
 
             <!-- ══════════ View: Maintenance (Sprint 6 Fase 5) ══════════
