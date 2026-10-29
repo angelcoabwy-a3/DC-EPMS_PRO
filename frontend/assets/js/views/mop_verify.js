@@ -761,7 +761,7 @@ function renderDemoResult(body) {
 
     const cardsHost = host.querySelector('[data-mv-cards]');
     const operated = (_stepsData && _stepsData.operated_labels) || Object.keys(body.readings || {});
-    if (cardsHost) renderDemoCards(cardsHost, body.readings, body.expected_state, operated);
+    if (cardsHost) renderDemoCompare(cardsHost, body.readings, body.expected_state, operated);
     const footHost = _hook('result-foot');
     if (footHost) renderFooter(footHost, body);
     const zoomWrap = _hook('zoom-wrap');
@@ -772,23 +772,45 @@ function renderDemoResult(body) {
     renderDemoStage();
 }
 
-function renderDemoCards(container, readings, expectedState, operated) {
-    const cards = (operated || []).map((label) => {
+function renderDemoCompare(container, readings, expectedState, operated) {
+    const labels = operated || [];
+    const states = labels.map((label) => {
         const reading = (readings || {})[label] || {};
         const mapped = reading.mapped || '—';
         const expected = expectedState ? expectedState[label] : '—';
-        const state = cardState(reading.mapped, expected);
-        const icon = state === 'match' ? '✓' : (state === 'mismatch' ? '✗' : '!');
-        const note = parseNotes(reading.raw) || reading.call_error || reading.parse_error || '—';
-        return '<article class="mv-card" data-state="' + state + '">'
-            + '<div class="mv-card-head"><span class="mv-card-label">' + _esc(label) + '</span>'
-            + '<span class="mv-card-icon" data-state="' + state + '">' + _esc(icon) + '</span></div>'
-            + '<div class="mv-card-row"><span>Read</span>' + _stateChip(mapped) + '</div>'
-            + '<div class="mv-card-row"><span>Expected</span>' + _stateChip(expected) + '</div>'
-            + '<div class="mv-card-note mv-card-note-clip" title="' + _esc(note) + '">' + _esc(note) + '</div>'
-            + '</article>';
-    }).join('');
-    container.innerHTML = '<div class="mv-cards mv-cards-row">' + cards + '</div>';
+        return {
+            label, reading, mapped, expected,
+            state: cardState(reading.mapped, expected),
+        };
+    });
+    const icon = (state) => (state === 'match' ? '✓' : (state === 'mismatch' ? '✗' : '!'));
+    let html = '<div class="mv-compare" role="table" aria-label="Breaker readings compared to expected state">';
+    html += '<div class="mv-compare-corner" role="columnheader"></div>';
+    for (const s of states) {
+        html += '<div class="mv-compare-head" role="columnheader" data-bstate="' + s.state + '">'
+            + '<span class="mv-compare-name">' + _esc(s.label) + '</span>'
+            + '<span class="mv-card-icon" data-state="' + s.state + '">' + _esc(icon(s.state)) + '</span></div>';
+    }
+    const rows = [
+        ['Read', (s) => _stateChip(s.mapped)],
+        ['Exp', (s) => _stateChip(s.expected)],
+        ['Note', null],
+    ];
+    for (const [name, chipFor] of rows) {
+        html += '<div class="mv-compare-rowhead" role="rowheader">' + _esc(name) + '</div>';
+        for (const s of states) {
+            if (chipFor) {
+                html += '<div class="mv-compare-cell" role="cell" data-bstate="' + s.state + '">'
+                    + chipFor(s) + '</div>';
+            } else {
+                const note = parseNotes(s.reading.raw) || s.reading.call_error || s.reading.parse_error || '—';
+                html += '<div class="mv-compare-cell mv-compare-note" role="cell" data-bstate="' + s.state
+                    + '" title="' + _esc(note) + '">' + _esc(note) + '</div>';
+            }
+        }
+    }
+    html += '</div>';
+    container.innerHTML = html;
 }
 
 function renderDemoStage() {

@@ -8644,31 +8644,46 @@ body.demo-mode .mv-demo-photo { width: 100%; height: 100%; object-fit: contain; 
 body.demo-mode .mv-stage-empty { color: var(--text-dim); font-size: 16px; padding: 24px; text-align: center; }
 body.demo-mode .mv-zoom { margin-top: 8px; flex: none; }
 body.demo-mode .mv-right {
-    flex: 1; min-width: 0; min-height: 0;
-    display: flex; flex-direction: column; gap: 12px;
+    flex: 1; min-width: 0; min-height: 0; overflow: hidden;
+    display: flex; flex-direction: column; gap: 8px;
 }
 body.demo-mode .mv-right .mv-banner { margin-bottom: 0; }
 body.demo-mode .mv-demo-verdict {
-    font-size: 24px; line-height: 1.3;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: 22px; line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-body.demo-mode .mv-right .mv-hazard { font-size: 18px; }
+body.demo-mode .mv-right .mv-hazard {
+    font-size: 16px; line-height: 1.4;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 body.demo-mode .mv-right .mv-banner-labels { font-size: 14px; }
 body.demo-mode .mv-contra-line { font-size: 16px; line-height: 1.5; }
-body.demo-mode .mv-cards-row { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 0; }
-body.demo-mode .mv-right .mv-card-label { font-size: 18px; }
-body.demo-mode .mv-right .mv-card-row { font-size: 14px; }
-body.demo-mode .mv-right .mv-card-note { font-size: 13px; }
-body.demo-mode .mv-card-note-clip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.demo-mode .mv-compare {
+    display: grid; grid-template-columns: max-content repeat(5, minmax(0, 1fr));
+    border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+    background: var(--bg-surface); font-size: 14px;
+}
+body.demo-mode .mv-compare-head {
+    font-family: var(--font-mono); font-size: 16px; font-weight: 700; color: var(--text);
+    padding: 6px 8px; border-bottom: 1px solid var(--border-strong);
+    display: flex; align-items: center; gap: 6px;
+}
+body.demo-mode .mv-compare-rowhead {
+    font-size: 14px; font-weight: 700; color: var(--text-muted);
+    padding: 6px 8px; white-space: nowrap;
+}
+body.demo-mode .mv-compare-cell { padding: 6px 8px; min-width: 0; }
+body.demo-mode .mv-compare-note {
+    font-size: 13px; color: var(--text-dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+body.demo-mode .mv-compare [data-bstate="mismatch"] { background: rgba(239, 68, 68, 0.12); }
+body.demo-mode .mv-compare [data-bstate="warn"] { background: rgba(251, 191, 36, 0.10); }
 body.demo-mode .mv-card-icon { font-size: 18px; font-weight: 700; }
 body.demo-mode .mv-card-icon[data-state="match"] { color: var(--ok); }
 body.demo-mode .mv-card-icon[data-state="mismatch"] { color: var(--crit); }
 body.demo-mode .mv-card-icon[data-state="warn"] { color: var(--warn); }
-body.demo-mode .mv-right .mv-chip { font-size: 14px; white-space: nowrap; flex: none; }
-body.demo-mode .mv-right .mv-card-row { gap: 6px; }
-body.demo-mode .mv-right .mv-card-row > span:first-child {
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
+body.demo-mode .mv-right .mv-chip { font-size: 15px; padding: 1px 4px; white-space: nowrap; }
 
 /* Two-row control bar: full width at the bottom of the view, above
  * the app footer. Row 1 holds samples + readback + Verify; row 2 the

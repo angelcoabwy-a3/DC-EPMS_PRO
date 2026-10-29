@@ -331,6 +331,8 @@ describe('demo mode — ?demo=0 applies none of the new presentation', () => {
         expect(document.querySelector('.mv-overlay').getAttribute('viewBox')).toBe('0 0 100 100');
         expect(document.querySelector('.mv-dot')).toBeNull();
         expect(document.querySelectorAll('.mv-step').length).toBeGreaterThan(0);
+        expect(document.querySelectorAll('.mv-card').length).toBeGreaterThan(0);
+        expect(document.querySelector('.mv-compare')).toBeNull();
     });
 });
 
@@ -382,15 +384,55 @@ describe('demo presentation — single photo result', () => {
         expect(svg.querySelectorAll('.mv-crop-rect')).toHaveLength(5);
     });
 
-    it('renders six tracker dots, five cards in one row, then the footer line', () => {
+    it('renders six tracker dots, then the footer line', () => {
         demoResultFixture();
         expect(document.querySelectorAll('.mv-dot')).toHaveLength(6);
-        expect(document.querySelectorAll('[data-mv-cards] .mv-card')).toHaveLength(5);
-        expect(document.querySelector('[data-mv-cards] .mv-cards-row')).not.toBeNull();
         const kids = Array.from(document.querySelector('.mv-right').children);
         const idx = (sel) => kids.findIndex((el) => el.matches(sel));
         expect(idx('[data-mv-result]')).toBeLessThan(idx('[data-mv-result-foot]'));
         expect(document.querySelector('[data-mv-result-foot]').textContent).toContain('Meta calls');
+    });
+
+    it('renders one comparison table: 6 columns, Read/Exp/Note rows, mismatch column lit', () => {
+        mvLayoutFixture();
+        setDemoState(DEMO_ON);
+        __mop_verify_test__.syncDemoLayout();
+        __mop_verify_test__.setStepsData(STEPS5);
+        __mop_verify_test__.setSession('sess-1', 2);
+        __mop_verify_test__.setPhotoForTest(new Blob(['x'], { type: 'image/jpeg' }), 'p.jpg', 1000, 800);
+        __mop_verify_test__.applyResult({
+            ...MATCH_BODY_5,
+            verdict: 'MISMATCH',
+            step_id: 2,
+            advanced: false,
+            differing_labels: ['Q8'],
+            hazard_if_wrong: 'haz',
+            readings: {
+                ...MATCH_BODY_5.readings,
+                Q8: { mapped: 'OPEN', raw: '{"handle":"RIGHT","notes":"model note Q8"}', crop_box: [700, 260, 800, 410] },
+            },
+        });
+        expect(document.querySelectorAll('.mv-compare')).toHaveLength(1);
+        const cells = Array.from(document.querySelector('.mv-compare').children);
+        expect(cells).toHaveLength(24);
+        expect(cells[0].textContent).toBe('');
+        expect(cells.slice(1, 6).map((el) => el.textContent)).toEqual([
+            'Q5✓', 'Q7✓', 'Q9✓', 'Q8✗', 'BYP✓',
+        ]);
+        expect([cells[6], cells[12], cells[18]].map((el) => el.textContent))
+            .toEqual(['Read', 'Exp', 'Note']);
+        // Q8 is the 4th breaker: header + Read + Exp + Note cells mismatch-lit.
+        for (const i of [4, 10, 16, 22]) {
+            expect(cells[i].getAttribute('data-bstate')).toBe('mismatch');
+        }
+        expect(cells[3].getAttribute('data-bstate')).toBe('match');
+        const note = cells[22];
+        expect(note.classList.contains('mv-compare-note')).toBe(true);
+        expect(note.getAttribute('title')).toBe('model note Q8');
+        const chips = Array.from(document.querySelectorAll('.mv-compare .mv-chip'))
+            .map((el) => el.textContent);
+        expect(chips).toContain('CLOSED');
+        expect(chips).toContain('OPEN');
     });
 
     it('keeps the controls out of the result column in a bottom bar', () => {
@@ -431,24 +473,34 @@ describe('demo presentation CSS — sizes and five-column cards', () => {
         return css.slice(i, css.indexOf('}', i));
     };
 
-    it('cards use five equal minmax columns with no horizontal overflow', () => {
-        expect(rule('body.demo-mode .mv-cards-row')).toContain('repeat(5, minmax(0, 1fr))');
+    it('comparison table: max-content label column plus five equal columns', () => {
+        expect(rule('body.demo-mode .mv-compare'))
+            .toContain('grid-template-columns: max-content repeat(5, minmax(0, 1fr))');
     });
 
-    it('verdict is one line at 24px', () => {
+    it('verdict wraps to at most two lines at 22px, never truncates to one', () => {
         const r = rule('body.demo-mode .mv-demo-verdict');
-        expect(r).toContain('font-size: 24px');
-        expect(r).toContain('white-space: nowrap');
+        expect(r).toContain('font-size: 22px');
+        expect(r).toContain('-webkit-line-clamp: 2');
+        expect(r).not.toContain('white-space: nowrap');
     });
 
-    it('hazard text is 18px', () => {
-        expect(rule('body.demo-mode .mv-right .mv-hazard')).toContain('font-size: 18px');
+    it('hazard text is 16px at most two lines', () => {
+        const r = rule('body.demo-mode .mv-right .mv-hazard');
+        expect(r).toContain('font-size: 16px');
+        expect(r).toContain('-webkit-line-clamp: 2');
     });
 
-    it('state chips never wrap or shrink inside cards', () => {
+    it('state chips never wrap or clip inside the table', () => {
         const r = rule('body.demo-mode .mv-right .mv-chip');
+        expect(r).toContain('font-size: 15px');
         expect(r).toContain('white-space: nowrap');
-        expect(r).toContain('flex: none');
+    });
+
+    it('a differing column uses the mismatch color; no container-query fallback', () => {
+        const r = rule('body.demo-mode .mv-compare [data-bstate="mismatch"]');
+        expect(r).toContain('239, 68, 68');
+        expect(css).not.toContain('@container');
     });
 
     it('readback input grows with a 360px floor; samples and Verify never shrink', () => {
