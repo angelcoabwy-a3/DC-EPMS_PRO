@@ -8585,6 +8585,7 @@ body.demo-mode .app-shell { grid-template-rows: 48px 1fr 28px; }
 body.demo-mode .app-main { grid-template-columns: 1fr; }
 body.demo-mode .panel-nav, body.demo-mode .panel-side { display: none; }
 body.demo-mode #view-mop-verify { height: 100%; }
+body.demo-mode .panel-main { overflow: hidden; }
 body.demo-mode #view-mop-verify .view-hdr { display: none; }
 body.demo-mode .app-header .demo-note-inline {
     font-size: 12px; color: var(--text-muted); white-space: nowrap; letter-spacing: 0.3px;
@@ -8593,13 +8594,25 @@ body.demo-mode .app-header .demo-note-inline {
 /* ── Demo presentation: tracker on top, photo + result below ──────
  * Designed for 1920x1080 fullscreen with no page scroll. Every rule
  * is scoped to body.demo-mode, so ?demo=0 renders exactly as today. */
-body.demo-mode .mv-demo { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 16px; }
+body.demo-mode .mv-demo { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 16px; overflow: hidden; }
 body.demo-mode .mv-tracker {
     background: var(--bg-surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 10px 16px; margin-bottom: 12px; flex: none;
 }
 body.demo-mode .mv-circles { display: flex; align-items: center; list-style: none; margin: 0; padding: 0; flex-wrap: nowrap; }
-body.demo-mode .mv-dot { display: flex; align-items: center; }
+body.demo-mode .mv-dot { display: flex; align-items: center; position: relative; cursor: pointer; }
+body.demo-mode .mv-dot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+body.demo-mode .mv-dot-pop {
+    position: absolute; top: calc(100% + 8px); left: 0; z-index: 50;
+    min-width: 280px; max-width: 360px;
+    background: var(--bg-elevated); border: 1px solid var(--border-strong);
+    border-radius: 8px; padding: 10px 12px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    font-size: 14px; color: var(--text); white-space: normal; cursor: default;
+}
+body.demo-mode .mv-dot:nth-last-child(-n+2) .mv-dot-pop { left: auto; right: 0; }
+body.demo-mode .mv-dot-pop-head { font-weight: 700; margin-bottom: 4px; }
+body.demo-mode .mv-dot-pop-action { color: var(--text-muted); margin-bottom: 6px; line-height: 1.4; }
+body.demo-mode .mv-dot-pop-expects { display: flex; flex-wrap: wrap; gap: 4px; }
 body.demo-mode .mv-dot + .mv-dot::before {
     content: ''; width: 44px; height: 2px; background: var(--border-strong);
     margin: 0 10px; flex: none;
@@ -8631,12 +8644,15 @@ body.demo-mode .mv-demo-photo { width: 100%; height: 100%; object-fit: contain; 
 body.demo-mode .mv-stage-empty { color: var(--text-dim); font-size: 16px; padding: 24px; text-align: center; }
 body.demo-mode .mv-zoom { margin-top: 8px; flex: none; }
 body.demo-mode .mv-right {
-    flex: 1; min-width: 0; min-height: 0; overflow-y: auto;
+    flex: 1; min-width: 0; min-height: 0;
     display: flex; flex-direction: column; gap: 12px;
 }
 body.demo-mode .mv-right .mv-banner { margin-bottom: 0; }
-body.demo-mode .mv-demo-verdict { font-size: 30px; line-height: 1.25; }
-body.demo-mode .mv-right .mv-hazard { font-size: 16px; }
+body.demo-mode .mv-demo-verdict {
+    font-size: 24px; line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+body.demo-mode .mv-right .mv-hazard { font-size: 18px; }
 body.demo-mode .mv-right .mv-banner-labels { font-size: 14px; }
 body.demo-mode .mv-contra-line { font-size: 16px; line-height: 1.5; }
 body.demo-mode .mv-cards-row { grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 0; }
@@ -8648,9 +8664,38 @@ body.demo-mode .mv-card-icon { font-size: 18px; font-weight: 700; }
 body.demo-mode .mv-card-icon[data-state="match"] { color: var(--ok); }
 body.demo-mode .mv-card-icon[data-state="mismatch"] { color: var(--crit); }
 body.demo-mode .mv-card-icon[data-state="warn"] { color: var(--warn); }
-body.demo-mode .mv-right .mv-chip { font-size: 14px; }
-body.demo-mode .mv-right .mv-samples { margin-bottom: 10px; }
-body.demo-mode .mv-keys-hint { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+body.demo-mode .mv-right .mv-chip { font-size: 14px; white-space: nowrap; flex: none; }
+body.demo-mode .mv-right .mv-card-row { gap: 6px; }
+body.demo-mode .mv-right .mv-card-row > span:first-child {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Two-row control bar: full width at the bottom of the view, above
+ * the app footer. Row 1 holds samples + readback + Verify; row 2 the
+ * latency note + shortcut hint in smaller text. The right column keeps
+ * only the result. */
+body.demo-mode .mv-controlbar {
+    flex: none; display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+    margin-top: 12px; padding: 8px 16px;
+    background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px;
+}
+body.demo-mode .mv-controlbar-row { display: flex; align-items: center; gap: 16px; flex-wrap: nowrap; }
+body.demo-mode .mv-controlbar .mv-samples { margin-bottom: 0; flex: none; }
+body.demo-mode .mv-controlbar .mv-sample-row { flex-wrap: nowrap; }
+body.demo-mode .mv-controlbar .mv-field {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 0; flex: 1 1 auto; min-width: 0;
+}
+body.demo-mode .mv-controlbar .mv-field-label { margin-bottom: 0; white-space: nowrap; flex: none; }
+body.demo-mode .mv-controlbar .mv-field input[type="text"] { flex: 1 1 auto; min-width: 360px; }
+body.demo-mode .mv-controlbar .mv-actions { margin-bottom: 0; flex: none; }
+body.demo-mode .mv-controlbar .mv-actions .btn { flex: none; white-space: nowrap; }
+body.demo-mode .mv-controlbar-sub { font-size: 12px; }
+body.demo-mode .mv-controlbar .mv-verify-note { margin: 0; white-space: nowrap; flex: none; }
+body.demo-mode .mv-controlbar .mv-keys-hint {
+    margin: 0; white-space: nowrap; flex: none;
+    font-size: 12px; color: var(--text-dim);
+}
 body.demo-mode .mv-running-big { text-align: center; padding: 12px 0; }
 body.demo-mode .mv-running-secs { font-size: 44px; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
 body.demo-mode .mv-running-models { font-size: 16px; color: var(--text-muted); margin-top: 4px; }

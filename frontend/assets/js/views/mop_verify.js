@@ -60,6 +60,8 @@ let _zoomOn = true;       // demo "Zoom to breakers" toggle state
 let _samplesVisible = false; // probeSamples() found the sample photos
 let _keysWired = false;   // document keydown listener (registered once)
 let _demoListenerWired = false; // epms:demo-mode listener (registered once)
+let _clickWired = false;  // document click listener for dot popovers (once)
+let _openDot = null;      // data-step of the circle with an open popover
 
 // ─── Pure helpers (testable) ───────────────────────────────────────
 function newSessionId() {
@@ -140,16 +142,17 @@ function contradictionCopy(contradiction) {
         + '; the photo shows ' + contradiction.observed + '.';
 }
 
+function _validBoxes(list) {
+    return (list || [])
+        .filter((box) => Array.isArray(box) && box.length >= 4
+            && box.slice(0, 4).every((v) => typeof v === 'number' && Number.isFinite(v)))
+        .map((box) => box.slice(0, 4));
+}
+
 function _cropBoxes(readings, operated) {
-    const boxes = [];
-    for (const label of operated || []) {
-        const box = (readings || {})[label] && (readings || {})[label].crop_box;
-        if (Array.isArray(box) && box.length >= 4
-            && box.slice(0, 4).every((v) => typeof v === 'number' && Number.isFinite(v))) {
-            boxes.push(box.slice(0, 4));
-        }
-    }
-    return boxes;
+    return _validBoxes((operated || []).map((label) => (
+        (readings || {})[label] && (readings || {})[label].crop_box
+    )));
 }
 
 /**
@@ -329,9 +332,13 @@ async function loadProcedure() {
 function _setPhoto(blob, name) {
     _clearPhoto();
     if (isDemoActive()) {
-        // A new photo invalidates the displayed result overlay; the
-        // right-column text stays until the next verification, as usual.
+        // A new photo clears the stale result; the stage shows the new
+        // photo unzoomed until the next verification.
         _lastBody = null;
+        const host = _hook('result');
+        if (host) host.innerHTML = '<div class="mv-empty">' + _esc('Ready to verify step ' + _currentStep) + '</div>';
+        const footHost = _hook('result-foot');
+        if (footHost) footHost.innerHTML = '';
         _zoomOn = true;
         const zoomWrap = _hook('zoom-wrap');
         if (zoomWrap) zoomWrap.setAttribute('hidden', '');
@@ -686,7 +693,8 @@ function renderDemoTracker() {
     if (!list || !_stepsData) return;
     const operated = _stepsData.operated_labels || [];
     const dot = (id, caption, state, tip) => (
-        '<li class="mv-dot" data-state="' + (state === 'todo' ? 'pending' : state) + '" title="' + _esc(tip) + '">'
+        '<li class="mv-dot" data-state="' + (state === 'todo' ? 'pending' : state) + '" data-step="' + _esc(id) + '"'
+        + ' tabindex="0" role="button" aria-label="' + _esc('Step ' + id + ' details') + '" title="' + _esc(tip) + '">'
         + '<span class="mv-dot-circle">' + _esc(id) + '</span>'
         + '<span class="mv-dot-cap">' + _esc(caption) + '</span></li>'
     );
@@ -698,6 +706,7 @@ function renderDemoTracker() {
             _expectsTip(step.step_id, step.panel_label || '', step.expected_state, operated)));
     }
     list.innerHTML = items.join('');
+    _openDot = null;
 }
 
 function renderDemoCurrent(el) {
@@ -728,8 +737,9 @@ function renderDemoResult(body) {
     const verdict = body.verdict || '—';
     const bannerState = verdict === 'MATCH' ? 'ok'
         : (verdict === 'MISMATCH' ? 'crit' : 'warn');
+    const verdictText = verdictCopy(verdict, body.step_id, body.advanced, _completed);
     let html = '<div class="mv-banner" data-state="' + bannerState + '">'
-        + '<div class="mv-banner-title mv-demo-verdict">' + _esc(verdictCopy(verdict, body.step_id, body.advanced, _completed)) + '</div>';
+        + '<div class="mv-banner-title mv-demo-verdict" title="' + _esc(verdictText) + '">' + _esc(verdictText) + '</div>';
     if (verdict === 'MISMATCH') {
         const differing = (body.differing_labels || []).map((label) => (
             '<span class="mv-chip" data-chip="crit">' + _esc(label) + '</span>'
@@ -813,7 +823,16 @@ function renderDemoStage() {
     // same user units, so photo and overlay stay aligned by
     // construction — including under the zoomed viewBox.
     const operated = (_stepsData && _stepsData.operated_labels) || Object.keys(_lastBody.readings || {});
-    const zoom = _zoomOn ? zoomBox(_cropBoxes(_lastBody.readings, operated), width, height, 0.1) : null;
+    // Zoom to breakers covers both full columns (quad breakers Q1-Q4
+    // included): the SAM boxes span the whole column height, and the
+    // 6% horizontal margin keeps the side paper labels (Q1-Q9, BYP)
+    // inside while the empty lower cover stays outside (the union
+    // ends at the last breaker row). Falls back to the crop-box
+    // union when sam_boxes is missing or empty.
+    const samBoxes = _validBoxes(_lastBody.sam_boxes);
+    const zoomBoxes = samBoxes.length ? samBoxes : _cropBoxes(_lastBody.readings, operated);
+    const zoomMargin = samBoxes.length ? 0.06 : 0.1;
+    const zoom = _zoomOn ? zoomBox(zoomBoxes, width, height, zoomMargin) : null;
     const vb = zoom
         ? (zoom.x + ' ' + zoom.y + ' ' + zoom.w + ' ' + zoom.h)
         : ('0 0 ' + width + ' ' + height);
@@ -1031,7 +1050,11 @@ function demoSkeletonHTML() {
         + '<section class="mv-right" aria-label="Verification result">'
         + '<div class="mv-status" data-mv-status aria-live="polite"></div>'
         + '<div data-mv-result><div class="mv-empty">No verification yet. Pick a photo and press Verify.</div></div>'
-        + '<div class="mv-controls">'
+        + '<div data-mv-result-foot></div>'
+        + '</section>'
+        + '</div>'
+        + '<div class="mv-controlbar">'
+        + '<div class="mv-controlbar-row">'
         + '<div class="mv-samples" data-mv-samples-section hidden>'
         + '<div class="mv-field-label">Try a sample photo</div>'
         + '<div class="mv-sample-row" data-mv-samples></div>'
@@ -1043,11 +1066,11 @@ function demoSkeletonHTML() {
         + '<div class="mv-actions">'
         + '<button type="button" class="btn" data-mv-verify-btn disabled>Verify</button>'
         + '</div>'
+        + '</div>'
+        + '<div class="mv-controlbar-row mv-controlbar-sub">'
         + '<div class="mv-verify-note">Verification can take up to a minute depending on API load.</div>'
         + '<div class="mv-keys-hint">Keys: 1–5 load sample · Enter verify · R restart</div>'
         + '</div>'
-        + '<div data-mv-result-foot></div>'
-        + '</section>'
         + '</div>'
         + '</div>';
 }
@@ -1100,16 +1123,111 @@ function _inTextField(target) {
         || !!active.isContentEditable);
 }
 
+// Read-only step details popover (demo tracker circles). Pure render
+// from _stepsData: it never changes the current step, unlocks
+// nothing, clears nothing, and triggers no verification.
+function renderDotPopover(stepId) {
+    if (!_stepsData) return null;
+    const id = Number(stepId);
+    const operated = _stepsData.operated_labels || [];
+    let caption;
+    let action;
+    let expected;
+    if (id === 0) {
+        caption = 'INIT';
+        action = 'Confirm the initial panel state.';
+        expected = _stepsData.initial_state;
+    } else {
+        const record = (_stepsData.steps || []).find((s) => s.step_id === id);
+        if (!record) return null;
+        caption = record.panel_label || '';
+        action = record.action || '';
+        expected = record.expected_state;
+    }
+    const pop = document.createElement('div');
+    pop.className = 'mv-dot-pop';
+    pop.innerHTML = '<div class="mv-dot-pop-head">' + _esc('Step ' + id)
+        + ' <span class="mv-panel-label">' + _esc(caption) + '</span></div>'
+        + '<div class="mv-dot-pop-action">' + _esc(action) + '</div>'
+        + '<div class="mv-dot-pop-expects">' + _expectedChips(expected, operated) + '</div>';
+    return pop;
+}
+
+function closeDotPopover() {
+    _openDot = null;
+    const view = _view();
+    if (view) view.querySelectorAll('.mv-dot-pop').forEach((el) => el.remove());
+}
+
+function toggleDotPopover(dotEl) {
+    if (!dotEl) return;
+    const id = dotEl.getAttribute('data-step');
+    const existing = dotEl.querySelector('.mv-dot-pop');
+    closeDotPopover();
+    if (existing) return;
+    const pop = renderDotPopover(id);
+    if (pop) {
+        dotEl.appendChild(pop);
+        _openDot = id;
+    }
+}
+
+// One delegated document click: a circle toggles its popover, a click
+// inside a popover stays put, anything else closes it. Only one
+// popover is ever open. Demo-gated; inert when demo mode is off.
+function _onDocClick(event) {
+    if (!isDemoActive()) return;
+    const target = event.target;
+    const closest = target && typeof target.closest === 'function'
+        ? target.closest.bind(target)
+        : null;
+    if (closest && closest('.mv-dot-pop')) return;
+    const dot = closest && closest('.mv-dot');
+    if (dot && _view() && _view().contains(dot)) {
+        toggleDotPopover(dot);
+        return;
+    }
+    closeDotPopover();
+}
+
+function _closestDot(target) {
+    const view = _view();
+    if (!view) return null;
+    if (target && typeof target.closest === 'function') {
+        const dot = target.closest('.mv-dot');
+        if (dot && view.contains(dot)) return dot;
+    }
+    const active = (typeof document !== 'undefined') ? document.activeElement : null;
+    if (active && typeof active.closest === 'function') {
+        const dot = active.closest('.mv-dot');
+        if (dot && view.contains(dot)) return dot;
+    }
+    return null;
+}
+
 // Demo-only shortcuts: 1-5 load the samples in shown order, Enter
 // verifies when enabled, R restarts. Silent when demo mode is off,
-// when the view is hidden, or when focus sits in a text field.
+// when the view is hidden, when focus sits in a text field, or when
+// focus sits on a tracker circle (there, Enter/Space opens details).
 function _onDemoKey(event) {
     if (!isDemoActive()) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const key = event.key;
+    if (key === 'Escape') {
+        closeDotPopover();
+        return;
+    }
     const view = _view();
     if (!view || view.hasAttribute('hidden')) return;
+    const dot = _closestDot(event.target);
+    if (dot) {
+        if (key === 'Enter' || key === ' ') {
+            if (typeof event.preventDefault === 'function') event.preventDefault();
+            toggleDotPopover(dot);
+        }
+        return;
+    }
     if (_inTextField(event.target)) return;
-    const key = event.key;
     if (typeof key === 'string' && key.length === 1 && key >= '1' && key <= '5') {
         const file = SAMPLE_FILES[Number(key) - 1];
         if (file && !_running) loadSample(file);
@@ -1163,6 +1281,10 @@ function _wire() {
         _keysWired = true;
         document.addEventListener('keydown', _onDemoKey);
     }
+    if (!_clickWired && typeof document !== 'undefined') {
+        _clickWired = true;
+        document.addEventListener('click', _onDocClick);
+    }
 }
 
 function initMopVerifyView() {
@@ -1208,6 +1330,7 @@ function reset() {
     _lastBody = null;
     _zoomOn = true;
     _samplesVisible = false;
+    _openDot = null;
 }
 
 // ─── Exports ───────────────────────────────────────────────────────
