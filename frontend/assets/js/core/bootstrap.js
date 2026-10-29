@@ -21,6 +21,7 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { APP_VERSION } from './version.js';
+import { guardRoute } from './demo.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -179,6 +180,10 @@ function renderPlaceholder(routeKey) {
 // ── Navigation ─────────────────────────────────────────────────────
 function navigateTo(routeKey) {
     if (!routeKey) routeKey = 'overview';
+    // Hackathon demo mode: a disallowed route (or an unknown one)
+    // becomes the default view, never a hidden view or a blank page.
+    // guardRoute() is a passthrough when demo mode is off.
+    routeKey = guardRoute(routeKey);
 
     // T2.2: ES-module routes are owned by core/router.js. Delegate any
     // registered route to it and return. After T2.1 closed, this covers

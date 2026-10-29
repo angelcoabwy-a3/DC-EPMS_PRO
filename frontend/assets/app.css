@@ -8545,6 +8545,9 @@ rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
     padding: 8px 10px;
 }
 
+/* Placeholder clearly lighter than typed text (--text #E4E7EB vs --text-dim #5A6270). */
+.mv-field input[type="text"]::placeholder { color: var(--text-dim); opacity: 1; }
+
 .mv-field input[type="file"] {
     width: 100%;
     box-sizing: border-box;
@@ -8554,7 +8557,7 @@ rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
 
 .mv-preview { margin: -4px 0 12px 0; }
 .mv-preview:empty { display: none; }
-.mv-preview-img { max-width: 100%; border-radius: 6px; border: 1px solid var(--border); display: block; }
+.mv-preview-img { max-width: 100%; max-height: 360px; object-fit: contain; border-radius: 6px; border: 1px solid var(--border); display: block; }
 .mv-preview-name { font-size: 11px; color: var(--text-dim); margin-top: 4px; overflow-wrap: anywhere; }
 
 .mv-samples { margin-bottom: 12px; }
@@ -8562,6 +8565,17 @@ rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
 
 .mv-actions { margin-bottom: 8px; }
 .mv-actions .btn { min-width: 130px; }
+.mv-verify-note { font-size: 11px; color: var(--text-dim); margin: 0 0 8px; }
+
+/* Hackathon demo mode: one line under the allowed views' headers. */
+.demo-note { font-size: 11px; color: var(--text-muted); letter-spacing: 0.3px; margin-top: 4px; }
+
+/* Hackathon demo mode layout: .app-shell is a 4-row grid
+ * (56px header / 32px activity strip / 1fr main / 28px footer) whose
+ * children auto-place in order. Hiding #activity-strip removes it from
+ * layout, so main would land in the 32px row and the footer in 1fr.
+ * Collapse to the 3 remaining rows instead. Demo-off layout untouched. */
+body.demo-mode .app-shell { grid-template-rows: 56px 1fr 28px; }
 .mv-status { font-size: 12px; min-height: 18px; }
 .mv-running { color: var(--accent); }
 
@@ -8620,8 +8634,8 @@ rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
 .mv-toggle { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; cursor: pointer; }
 .mv-toggle input { vertical-align: -1px; }
 
-.mv-photo-wrap { position: relative; line-height: 0; }
-.mv-photo { width: 100%; height: auto; display: block; border-radius: 6px; }
+.mv-photo-wrap { position: relative; line-height: 0; display: inline-block; max-width: 100%; }
+.mv-photo { width: auto; max-width: 100%; height: auto; max-height: 520px; display: block; border-radius: 6px; }
 .mv-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
 
 .mv-crop-rect {

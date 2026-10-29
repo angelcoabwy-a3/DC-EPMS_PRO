@@ -58,6 +58,7 @@ import { initLoginView, showLoginView, hideLoginView } from './views/login.js';
 import { hasValidToken, getClaims, onAuthChange } from './core/auth.js';
 import { startQkdGate } from './core/qkd_gate.js';
 import { initBootstrap } from './core/bootstrap.js';
+import { initDemoMode } from './core/demo.js';
 
 // Telemetry engine flag. core/telemetry_engine.js owns the SSE; this
 // stays a flag purely as a console kill-switch for debugging.
@@ -144,6 +145,11 @@ initLoginView();
 // Router glue — T2.1 Vector 4c: the app.js IIFE residual, promoted to
 // core/bootstrap.js. app.js is now DELETED — Epic T2.1 closed.
 initBootstrap();
+// Meta hackathon — demo mode. Async + fire-and-forget: loads
+// demo_config.json (?demo=0/1 overrides), hides pre-existing surfaces
+// when on, and lands on the default view. No-op when the config is
+// missing, so the app boots exactly as today.
+initDemoMode();
 
 // Epic 10 -- Auth gate. If no valid JWT in localStorage, hide every
 // view except #view-login and the sidebar nav. On successful login

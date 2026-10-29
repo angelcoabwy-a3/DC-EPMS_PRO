@@ -321,6 +321,14 @@ function _setStatus(html) {
     if (el) el.innerHTML = html || '';
 }
 
+// Clear the operator readback so an old claim is never sent by
+// accident with the next photo. Called after every verification and
+// on Restart procedure.
+function _clearClaim() {
+    const claimInput = _hook('claim');
+    if (claimInput) claimInput.value = '';
+}
+
 function _startElapsed() {
     _stopElapsed();
     const started = Date.now();
@@ -384,6 +392,7 @@ async function runVerification() {
         _running = false;
         _stopElapsed();
         _setStatus('');
+        _clearClaim();
         renderError('network', { message: 'Network error reaching the server. No result was produced.' });
         _updateVerifyButton();
         return;
@@ -394,6 +403,7 @@ async function runVerification() {
     if (res.status === 200) {
         let body = null;
         try { body = await res.json(); } catch (_e) { /* falls through */ }
+        _clearClaim();
         if (!body || typeof body !== 'object') {
             renderError('parse', { message: 'The server answered 200 with an unreadable body. No result shown.' });
         } else {
@@ -407,6 +417,7 @@ async function runVerification() {
         try { body = await res.json(); } catch (_e) { /* keep {} */ }
         const headerSecs = Number(res.headers.get('Retry-After'));
         const retrySecs = Number.isFinite(headerSecs) ? headerSecs : Number(body.retry_after_s);
+        _clearClaim();
         renderError('ratelimit', {
             limit: body.limit,
             dailyCap: body.daily_cap,
@@ -419,6 +430,7 @@ async function runVerification() {
     if (res.status === 400) {
         let detail = '';
         try { detail = (await res.json()).detail || ''; } catch (_e) { /* keep '' */ }
+        _clearClaim();
         renderError('badrequest', { message: detail || 'Bad request.' });
         _updateVerifyButton();
         return;
@@ -428,6 +440,7 @@ async function runVerification() {
         const body = await res.json();
         detail = (body && body.detail) || '';
     } catch (_e) { /* keep '' */ }
+    _clearClaim();
     renderError('unavailable', {
         message: detail || ('Verification unavailable (HTTP ' + res.status + ').'),
     });
@@ -704,8 +717,7 @@ function restartProcedure() {
     _clearPhoto();
     const fileInput = _hook('file');
     if (fileInput) fileInput.value = '';
-    const claimInput = _hook('claim');
-    if (claimInput) claimInput.value = '';
+    _clearClaim();
     _sessionId = newSessionId();
     _currentStep = 0;
     _blockedStep = null;

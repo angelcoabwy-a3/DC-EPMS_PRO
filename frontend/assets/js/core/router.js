@@ -14,6 +14,8 @@
  * renderer untouched — a bug here cannot brick the whole navigation.
  * ════════════════════════════════════════════════════════════════ */
 
+import { guardRoute } from './demo.js';
+
 // routeId -> { viewId, activate(ctx) }
 const _routes = new Map();
 // routeIds that have already had their first activation
@@ -45,6 +47,9 @@ export function isRegistered(routeId) {
  * (the caller should then fall back to the legacy renderer).
  */
 export function navigateTo(routeId) {
+    // Hackathon demo mode: a disallowed route becomes the default view.
+    // guardRoute() is a passthrough when demo mode is off.
+    routeId = guardRoute(routeId);
     const handler = _routes.get(routeId);
     if (!handler) return false;
 
