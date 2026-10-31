@@ -368,6 +368,42 @@ def test_unparseable_claim_gives_no_contradiction(monkeypatch):
     assert result["verdict"] == "MATCH"
 
 
+@pytest.mark.parametrize(
+    ("transcript", "label", "state"),
+    [
+        ("Step two, Q eight, closed.", "Q8", "CLOSED"),
+        ("Step two, Q eight. On.", "Q8", "CLOSED"),
+        ("Step one, B Y P, on.", "BYP", "CLOSED"),
+        ("Initial state Q8 open.", "Q8", "OPEN"),
+        ("Q8 off", "Q8", "OPEN"),
+        ("BYP opened", "BYP", "OPEN"),
+        ("Step one, be Y P on.", "BYP", "CLOSED"),
+        ("Step two, cue eight. On.", "Q8", "CLOSED"),
+        ("bee why pee off", "BYP", "OPEN"),
+        ("queue seven off", "Q7", "OPEN"),
+    ],
+)
+def test_parse_claim_voice_probe_transcripts(transcript, label, state):
+    assert mop_verify._parse_claim(transcript) == {"label": label, "state": state}
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "Instead one, BYP plus",
+        "Step two, QA closet.",
+        "Q A closed",
+        "Q8 Q9 closed",
+        "Q8 open closed",
+        "Step two.",
+        "be closed",
+        "cue on",
+    ],
+)
+def test_parse_claim_rejects(transcript):
+    assert mop_verify._parse_claim(transcript) is None
+
+
 def test_distractors_are_never_scored(monkeypatch):
     sam = FakeSAM(boxes=_direct_boxes())
     spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))

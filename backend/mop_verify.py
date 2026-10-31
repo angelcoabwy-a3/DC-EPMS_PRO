@@ -72,11 +72,12 @@ CROP_PROMPT = (
 BOX_RE = re.compile(r"<\|box;x1=(\d+);y1=(\d+);x2=(\d+);y2=(\d+);w=(\d+);h=(\d+)\|>")
 
 _CLAIM_Q_RE = re.compile(
-    r"\bq\s*([1-9]|one|two|three|four|five|six|seven|eight|nine)\b", re.IGNORECASE
+    r"\b(queue|cue|kyu|q)[\s,.\-]*([1-9]|one|two|three|four|five|six|seven|eight|nine)\b",
+    re.IGNORECASE,
 )
-_CLAIM_BYP_RE = re.compile(r"\bb\s*y\s*p\b", re.IGNORECASE)
-_CLAIM_CLOSED_RE = re.compile(r"\bclosed?\b", re.IGNORECASE)
-_CLAIM_OPEN_RE = re.compile(r"\bopened?\b", re.IGNORECASE)
+_CLAIM_BYP_RE = re.compile(r"\b(bee|be|b)[\s,.\-]*(why|y)[\s,.\-]*(pea|pee|p)\b", re.IGNORECASE)
+_CLAIM_CLOSED_RE = re.compile(r"\b(closed|on)\b", re.IGNORECASE)
+_CLAIM_OPEN_RE = re.compile(r"\b(opened|open|off)\b", re.IGNORECASE)
 _NUMBER_WORDS = {
     "one": "1",
     "two": "2",
@@ -475,14 +476,18 @@ def _map_handle(label: str, handle: str, geometry: dict) -> str:
 def _parse_claim(text: str | None) -> dict | None:
     """Operator claim ('Q8 closed') to {label, state} in code, else None.
 
-    Strict: exactly one label (Q1-Q9 digit or word, or BYP) and exactly
-    one state word, otherwise the claim is unparseable and ignored.
+    Strict: exactly one label and exactly one state word, otherwise the
+    claim is unparseable and ignored. Labels: Q/cue/queue/kyu plus a digit
+    or number word, or a BYP triple (B/be/bee + Y/why + P/pee/pea).
+    States: closed/on -> CLOSED, open/opened/off -> OPEN (whole words).
+    Leading context ('Step two,', 'Initial state') is ignored; a bare
+    step number word is never read as a label.
     """
     if not isinstance(text, str) or not text.strip():
         return None
     labels = []
     for match in _CLAIM_Q_RE.finditer(text):
-        token = match.group(1).lower()
+        token = match.group(2).lower()
         labels.append(f"Q{_NUMBER_WORDS.get(token, token)}")
     if _CLAIM_BYP_RE.search(text):
         labels.append("BYP")
