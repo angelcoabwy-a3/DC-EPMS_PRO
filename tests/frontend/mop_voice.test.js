@@ -80,6 +80,7 @@ function demoFixture() {
     mv.setStepsData(STEPS5);
     mv.setSession('sess-voice', 2);
     mv.syncDemoLayout();
+    document.querySelector('[data-mv-intro-start]').click();
 }
 
 class FakeAudioContext {
@@ -259,6 +260,28 @@ describe('mop voice — hold-M key (demo only)', () => {
         stubMic();
         demoFixture();
         const gum = window.navigator.mediaDevices.getUserMedia;
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'm', bubbles: true }));
+        await flush();
+        expect(gum).toHaveBeenCalledTimes(1);
+        expect(mv.getState().recording).toBe(true);
+        document.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'm', bubbles: true }));
+        expect(mv.getState().recording).toBe(false);
+    });
+
+    it('is blocked by the intro card until dismissal', async () => {
+        stubMic();
+        layoutFixture();
+        setDemoState(DEMO_ON);
+        mv.setStepsData(STEPS5);
+        mv.setSession('sess-voice', 2);
+        mv.syncDemoLayout();
+        const gum = window.navigator.mediaDevices.getUserMedia;
+        expect(document.querySelector('[data-mv-intro]')).not.toBeNull();
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'm', bubbles: true }));
+        await flush();
+        expect(gum).not.toHaveBeenCalled();
+        expect(mv.getState().recording).toBe(false);
+        document.querySelector('[data-mv-intro-start]').click();
         document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'm', bubbles: true }));
         await flush();
         expect(gum).toHaveBeenCalledTimes(1);

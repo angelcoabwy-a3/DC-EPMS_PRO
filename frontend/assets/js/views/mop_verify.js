@@ -82,6 +82,8 @@ let _keysUpWired = false; // document keyup listener for M release (once)
 let _demoListenerWired = false; // epms:demo-mode listener (registered once)
 let _clickWired = false;  // document click listener for dot popovers (once)
 let _openDot = null;      // data-step of the circle with an open popover
+let _introDismissed = false; // intro card dismissed this page load (memory only)
+let _introReturnFocus = null; // element focused before the intro opened
 let _rec = null;          // active recording { stream, ctx, processor, sink, chunks, source, startedAt, sampleRate }
 let _recTimer = null;     // auto-stop at MAX_REC_SECONDS
 let _recTickTimer = null; // recording indicator repaint
@@ -1666,6 +1668,7 @@ function syncDemoLayout() {
         if (!tmp.firstElementChild) return;
         layout.replaceWith(tmp.firstElementChild);
         _demoLayout = true;
+        showIntro();
     } else {
         const demo = view.querySelector('.mv-demo');
         if (!demo || _savedLayoutHTML === null) {
@@ -1694,6 +1697,63 @@ function syncDemoLayout() {
         renderVoiceSamples(_voiceFiles);
     }
     if (_lastBody && _stepsData) renderResult(_lastBody);
+}
+
+// ─── Demo intro card ───────────────────────────────────────────────
+// Centered overlay shown once per page load in demo mode (?demo=0
+// never shows it). Dismissal is memory-only: a reload shows it again.
+// While open, the card owns the keyboard (see _onDemoKey).
+const INTRO_TITLE = 'A second pair of eyes for every breaker operation.';
+const INTRO_LINES = [
+    'Photograph the panel at each MOP step. SAM 3.1 finds the breakers and Muse Spark 1.3 reads each handle.',
+    'Code compares every reading with the procedure and blocks the next step when the panel does not match.',
+    'Read the step back by voice. Muse Voice Transcribe turns it into a claim for the readback field, and Verify flags it when that claim and the photo disagree.',
+];
+const INTRO_PRIVACY = 'In this demo, procedure sessions live in server memory and reset when the server restarts. Photos and voice clips are sent to the Meta API for analysis and are not saved by this app.';
+const INTRO_FOOTER = 'Residential training panel, not a live UPS. Built during the Meta Global AI Developer Hackathon.';
+const INTRO_START_LABEL = 'Start the procedure';
+
+function _introEl() {
+    const view = _view();
+    return view ? view.querySelector('[data-mv-intro]') : null;
+}
+
+function showIntro() {
+    if (_introDismissed || _introEl()) return;
+    const view = _view();
+    const demo = view ? view.querySelector('.mv-demo') : null;
+    if (!demo || typeof document === 'undefined') return;
+    _introReturnFocus = document.activeElement || null;
+    const overlay = document.createElement('div');
+    overlay.className = 'mv-intro-overlay';
+    overlay.setAttribute('data-mv-intro', '');
+    overlay.innerHTML = '<div class="mv-intro-card" role="dialog" aria-modal="true" aria-labelledby="mv-intro-title">'
+        + '<h2 class="mv-intro-title" id="mv-intro-title">' + _esc(INTRO_TITLE) + '</h2>'
+        + '<ol class="mv-intro-body">'
+        + INTRO_LINES.map((line) => '<li>' + _esc(line) + '</li>').join('')
+        + '</ol>'
+        + '<button type="button" class="btn mv-intro-start" data-mv-intro-start>' + _esc(INTRO_START_LABEL) + '</button>'
+        + '<p class="mv-intro-privacy">' + _esc(INTRO_PRIVACY) + '</p>'
+        + '<p class="mv-intro-footer">' + _esc(INTRO_FOOTER) + '</p>'
+        + '</div>';
+    demo.appendChild(overlay);
+    const start = overlay.querySelector('[data-mv-intro-start]');
+    if (start) {
+        start.addEventListener('click', dismissIntro);
+        if (typeof start.focus === 'function') start.focus();
+    }
+}
+
+function dismissIntro() {
+    _introDismissed = true;
+    const el = _introEl();
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    const back = _introReturnFocus;
+    _introReturnFocus = null;
+    try {
+        if (back && back.isConnected && typeof back.focus === 'function') back.focus();
+        else if (typeof document !== 'undefined' && document.body) document.body.focus();
+    } catch (_e) { /* focus restore is best-effort */ }
 }
 
 function _inTextField(target) {
@@ -1797,6 +1857,18 @@ function _onDemoKey(event) {
     if (!isDemoActive()) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     const key = event.key;
+    if (_introEl()) {
+        // The intro card owns the keyboard until dismissed: Enter or
+        // Escape closes it, everything else is swallowed so no shortcut
+        // (1-5, Verify, R, hold-M) can fire through the overlay.
+        // preventDefault stops the focused Start button from also
+        // activating natively (double dismiss is harmless either way).
+        if (key === 'Enter' || key === 'Escape') {
+            if (typeof event.preventDefault === 'function') event.preventDefault();
+            dismissIntro();
+        }
+        return;
+    }
     if (key === 'Escape') {
         closeDotPopover();
         return;
@@ -1943,6 +2015,8 @@ function reset() {
     _zoomOn = true;
     _samplesVisible = false;
     _openDot = null;
+    _introDismissed = false;
+    _introReturnFocus = null;
     _transcribing = false;
     _micDisabled = false;
     _voiceVisible = false;

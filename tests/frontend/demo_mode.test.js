@@ -95,6 +95,7 @@ function trackerFixture() {
     __mop_verify_test__.setStepsData(STEPS5);
     __mop_verify_test__.setSession('sess-1', 2);
     __mop_verify_test__.syncDemoLayout();
+    document.querySelector('[data-mv-intro-start]').click();
 }
 
 const STEPS5 = {
@@ -701,6 +702,7 @@ describe('demo shortcuts — 1-5, Enter, R outside text fields only', () => {
         setDemoState(DEMO_ON);
         __mop_verify_test__.syncDemoLayout();
         __mop_verify_test__.setStepsData(STEPS5);
+        document.querySelector('[data-mv-intro-start]').click();
     }
 
     function stubObjectUrls() {
@@ -949,6 +951,7 @@ describe('demo contradiction — operator_claim reaches the request', () => {
         __mop_verify_test__.setSession('sess-1', 2);
         __mop_verify_test__.setPhotoForTest(new Blob(['x'], { type: 'image/jpeg' }), '07.jpg', 1000, 800);
         document.querySelector('[data-mv-verify-btn]').disabled = false;
+        document.querySelector('[data-mv-intro-start]').click();
     }
 
     async function runWithCapture(trigger) {
@@ -1284,5 +1287,157 @@ describe('demo tab title (P2)', () => {
         } finally {
             document.title = prev;
         }
+    });
+});
+
+describe('demo intro card — shown once per load in demo mode', () => {
+    const PRIVACY_TEXT = 'In this demo, procedure sessions live in server memory and reset '
+        + 'when the server restarts. Photos and voice clips are sent to the Meta API '
+        + 'for analysis and are not saved by this app.';
+
+    function introFixture() {
+        mvLayoutFixture();
+        setDemoState(DEMO_ON);
+        __mop_verify_test__.syncDemoLayout();
+    }
+
+    it('shows a dialog with the exact title, privacy text and no em-dash', () => {
+        introFixture();
+        const overlay = document.querySelector('[data-mv-intro]');
+        expect(overlay).not.toBeNull();
+        const card = overlay.querySelector('.mv-intro-card');
+        expect(card.getAttribute('role')).toBe('dialog');
+        expect(card.getAttribute('aria-modal')).toBe('true');
+        expect(overlay.querySelector('.mv-intro-title').textContent)
+            .toBe('A second pair of eyes for every breaker operation.');
+        expect(overlay.querySelectorAll('.mv-intro-body li')).toHaveLength(3);
+        expect(overlay.querySelector('[data-mv-intro-start]').textContent).toBe('Start the procedure');
+        expect(overlay.querySelector('.mv-intro-privacy').textContent).toBe(PRIVACY_TEXT);
+        expect(overlay.querySelector('.mv-intro-footer').textContent)
+            .toBe('Residential training panel, not a live UPS. Built during the Meta Global AI Developer Hackathon.');
+        expect(overlay.textContent).not.toContain('—');
+    });
+
+    it('moves focus to the Start button on open', () => {
+        introFixture();
+        expect(document.activeElement).toBe(document.querySelector('[data-mv-intro-start]'));
+    });
+
+    it('is not shown with ?demo=0', () => {
+        mvLayoutFixture();
+        setDemoState(resolveDemoState(null, '?demo=0'));
+        __mop_verify_test__.syncDemoLayout();
+        expect(document.querySelector('[data-mv-intro]')).toBeNull();
+    });
+
+    it('is dismissed by the Start button and stays dismissed on re-sync', () => {
+        introFixture();
+        document.querySelector('[data-mv-intro-start]').click();
+        expect(document.querySelector('[data-mv-intro]')).toBeNull();
+        // Layout churn (off/on) must not bring it back this page load.
+        setDemoState(DEMO_OFF);
+        __mop_verify_test__.syncDemoLayout();
+        setDemoState(DEMO_ON);
+        __mop_verify_test__.syncDemoLayout();
+        expect(document.querySelector('[data-mv-intro]')).toBeNull();
+    });
+
+    it('returns focus to the page on close', () => {
+        introFixture();
+        document.querySelector('[data-mv-intro-start]').click();
+        expect(document.activeElement).toBe(document.body);
+    });
+
+    it('the overlay covers the viewport above demo content', () => {
+        const css = fs.readFileSync(path.join(process.cwd(), 'frontend/assets/app.css'), 'utf8');
+        const i = css.indexOf('body.demo-mode .mv-intro-overlay');
+        expect(i).toBeGreaterThan(-1);
+        const rule = css.slice(i, css.indexOf('}', i));
+        expect(rule).toContain('position: fixed');
+        expect(rule).toContain('inset: 0');
+        expect(rule).toContain('z-index: 5000');
+    });
+});
+
+describe('demo intro card — owns the keyboard until dismissed', () => {
+    function loadedFixture() {
+        mvLayoutFixture();
+        setDemoState(DEMO_ON);
+        __mop_verify_test__.syncDemoLayout();
+        __mop_verify_test__.setStepsData(STEPS5);
+        __mop_verify_test__.setSession('sess-1', 2);
+        __mop_verify_test__.setPhotoForTest(new Blob(['x'], { type: 'image/jpeg' }), '07.jpg', 1000, 800);
+        document.querySelector('[data-mv-verify-btn]').disabled = false;
+    }
+
+    it('blocks digit shortcuts while open', async () => {
+        mvLayoutFixture();
+        setDemoState(DEMO_ON);
+        __mop_verify_test__.syncDemoLayout();
+        __mop_verify_test__.setStepsData(STEPS5);
+        let calls = 0;
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async () => {
+            calls += 1;
+            return { ok: true, blob: async () => new Blob(['x']) };
+        };
+        try {
+            document.dispatchEvent(new window.KeyboardEvent('keydown', { key: '3', bubbles: true }));
+            await new Promise((r) => setTimeout(r, 20));
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+        expect(calls).toBe(0);
+        expect(__mop_verify_test__.getState().hasPhoto).toBe(false);
+    });
+
+    it('blocks R while open', () => {
+        loadedFixture();
+        const claim = document.querySelector('[data-mv-claim]');
+        claim.value = 'Q8 closed';
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+        expect(claim.value).toBe('Q8 closed');
+        expect(__mop_verify_test__.getState().currentStep).toBe(2);
+    });
+
+    it('Enter dismisses the card without triggering Verify', async () => {
+        loadedFixture();
+        const claim = document.querySelector('[data-mv-claim]');
+        claim.value = 'Q8 closed';
+        let calls = 0;
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async () => {
+            calls += 1;
+            return {
+                status: 200, ok: true, headers: { get: () => null }, json: async () => ({}),
+            };
+        };
+        try {
+            document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            await new Promise((r) => setTimeout(r, 30));
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+        expect(document.querySelector('[data-mv-intro]')).toBeNull();
+        expect(calls).toBe(0);
+        expect(claim.value).toBe('Q8 closed');
+        expect(__mop_verify_test__.getState().hasResult).toBe(false);
+    });
+
+    it('Escape dismisses the card', () => {
+        loadedFixture();
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        expect(document.querySelector('[data-mv-intro]')).toBeNull();
+        expect(__mop_verify_test__.getState().currentStep).toBe(2);
+    });
+
+    it('shortcuts work again after dismissal', () => {
+        loadedFixture();
+        document.querySelector('[data-mv-intro-start]').click();
+        const claim = document.querySelector('[data-mv-claim]');
+        claim.value = 'stale';
+        document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+        expect(claim.value).toBe('');
+        expect(__mop_verify_test__.getState().currentStep).toBe(0);
     });
 });

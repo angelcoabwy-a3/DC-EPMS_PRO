@@ -8573,6 +8573,62 @@ rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
  * if anything fails. */
 html.demo-booting body { display: none; }
 
+/* Demo intro card: centered overlay shown once per page load in demo
+ * mode. Plain surface on a dimmed backdrop, demo palette throughout. */
+body.demo-mode .mv-intro-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(4, 6, 8, 0.72);
+}
+body.demo-mode .mv-intro-card {
+    width: min(600px, 100%);
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    padding: 28px 32px 20px;
+    color: var(--text);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+}
+body.demo-mode .mv-intro-title {
+    margin: 0 0 14px;
+    font-size: 21px;
+    line-height: 1.3;
+    font-weight: 700;
+    color: var(--text);
+}
+body.demo-mode .mv-intro-body {
+    margin: 0 0 20px;
+    padding-left: 22px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--text);
+}
+body.demo-mode .mv-intro-body li + li { margin-top: 8px; }
+body.demo-mode .mv-intro-start {
+    font-size: 15px;
+    padding: 10px 24px;
+}
+body.demo-mode .mv-intro-privacy,
+body.demo-mode .mv-intro-footer {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+body.demo-mode .mv-intro-privacy { margin: 18px 0 0; }
+body.demo-mode .mv-intro-footer { margin: 8px 0 0; }
+@media (max-width: 480px) {
+    body.demo-mode .mv-intro-overlay { padding: 16px; }
+    body.demo-mode .mv-intro-card { padding: 20px 20px 16px; }
+    body.demo-mode .mv-intro-title { font-size: 18px; }
+}
+
 /* Hackathon demo mode: one line under the allowed views' headers. */
 .demo-note { font-size: 11px; color: var(--text-muted); letter-spacing: 0.3px; margin-top: 4px; }
 
