@@ -11,6 +11,7 @@ import base64
 import inspect
 import io
 import json
+import logging
 import threading
 from types import SimpleNamespace
 
@@ -22,12 +23,20 @@ import backend.mop_verify as mop_verify
 from backend.copilot_agent import (
     _TOOL_FNS,
     TOOL_SCHEMAS,
+    copilot_mop_session_restart,
+    copilot_mop_session_start,
     copilot_mop_steps,
     copilot_mop_verify,
     run_investigation,
     tool_verify_photo,
 )
-from backend.copilot_limits import get_daily_count, reset_for_tests
+from backend.copilot_limits import (
+    check_limits,
+    get_daily_count,
+    get_ip_usage,
+    record_meta_attempt,
+    reset_for_tests,
+)
 
 RED = (255, 0, 0)
 GREEN = (0, 200, 0)
@@ -147,16 +156,26 @@ class _StubUpload:
         return self._data
 
 
+_NO_JSON = object()
+
+
 class _StubRequest:
     """Request stand-in: canned form fields plus a fixed client address."""
 
-    def __init__(self, fields):
+    def __init__(self, fields, json_body=_NO_JSON):
         self._fields = dict(fields)
+        self._json_body = json_body
         self.client = SimpleNamespace(host="testclient", port=50000)
 
     async def form(self):
         await asyncio.sleep(0)
         return dict(self._fields)
+
+    async def json(self):
+        await asyncio.sleep(0)
+        if self._json_body is _NO_JSON:
+            raise ValueError("no JSON body")
+        return self._json_body
 
 
 async def _immediate_to_thread(func, /, *args, **kwargs):
@@ -183,6 +202,14 @@ def _call_verify(monkeypatch, fields):
 
 def _call_steps():
     return _drive(copilot_mop_steps(_StubRequest({})))
+
+
+def _call_session_start(json_body=_NO_JSON):
+    return _drive(copilot_mop_session_start(_StubRequest({}, json_body)))
+
+
+def _call_session_restart(json_body=_NO_JSON):
+    return _drive(copilot_mop_session_restart(_StubRequest({}, json_body)))
 
 
 def _resp_body(resp):
@@ -504,6 +531,7 @@ def test_verify_endpoint_success(monkeypatch):
     sam = FakeSAM(boxes=[LEFT_COL, RIGHT_COL])
     spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))
     _inject(monkeypatch, sam, spark)
+    mop_verify.get_session("http-1")
     resp = _call_verify(
         monkeypatch,
         {
@@ -541,6 +569,7 @@ def test_verify_endpoint_guard_before_any_meta_call(monkeypatch):
     sam = FakeSAM(boxes=[LEFT_COL, RIGHT_COL])
     spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))
     _inject(monkeypatch, sam, spark)
+    mop_verify.get_session("http-429")
     resp = _call_verify(
         monkeypatch,
         {
@@ -563,6 +592,7 @@ def test_verify_endpoint_guard_before_any_meta_call(monkeypatch):
 
 def test_verify_endpoint_503_without_key(monkeypatch):
     monkeypatch.delenv("META_API_KEY", raising=False)
+    mop_verify.get_session("http-503")
     resp = _call_verify(
         monkeypatch,
         {
@@ -583,11 +613,482 @@ def test_steps_endpoint():
     assert len(body["steps"]) == 5
 
 
-def test_steps_endpoint_shares_guard(monkeypatch):
+def test_steps_endpoint_never_counts_or_429s(monkeypatch):
     monkeypatch.setenv("META_DAILY_CAP", "0")
     resp = _call_steps()
+    assert resp.status_code == 200
+    assert get_ip_usage("testclient") == (0, 10)
+    assert get_daily_count() == 0
+
+
+def _trace_lines(caplog):
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "mop.trace" and record.getMessage().startswith("MOP_TRACE")
+    ]
+
+
+def test_has_and_drop_session_do_not_create():
+    assert mop_verify.has_session("ghost") is False
+    assert mop_verify.drop_session("ghost") is False
+    mop_verify.get_session("ghost")
+    assert mop_verify.has_session("ghost") is True
+    assert mop_verify.drop_session("ghost") is True
+    assert mop_verify.has_session("ghost") is False
+
+
+def test_verify_endpoint_unknown_session_is_409(monkeypatch, caplog):
+    monkeypatch.setenv("META_API_KEY", "test-key-not-real")
+    sam = FakeSAM(boxes=[LEFT_COL, RIGHT_COL])
+    spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))
+    _inject(monkeypatch, sam, spark)
+    caplog.set_level(logging.INFO, logger="mop.trace")
+    resp = _call_verify(
+        monkeypatch,
+        {
+            "image": _StubUpload(_split_panel()),
+            "step_id": "1",
+            "session_id": "stale-after-restart",
+        },
+    )
+    assert resp.status_code == 409
+    body = _resp_body(resp)
+    assert body["error"] == "session_not_found"
+    assert body["meta_call_made"] is False
+    assert "Restart procedure" in body["detail"]
+    assert sam.calls == 0
+    assert spark.calls == 0
+    assert get_daily_count() == 0
+    assert get_ip_usage("testclient") == (0, 10)
+    assert mop_verify.has_session("stale-after-restart") is False
+    lines = _trace_lines(caplog)
+    assert len(lines) == 1
+    assert "event=verify" in lines[0]
+    assert "verdict=session_not_found" in lines[0]
+    assert "http=409" in lines[0]
+    assert f"trace={body['trace_id']}" in lines[0]
+
+
+def test_session_start_adopts_proposed_id():
+    resp = _call_session_start({"session_id": "page-1"})
+    assert resp.status_code == 200
+    body = _resp_body(resp)
+    assert body["session"] == {"session_id": "page-1", "current_step": 0, "completed": False}
+    assert mop_verify.has_session("page-1") is True
+    assert len(body["trace_id"]) == 8
+
+
+def test_session_start_without_body_mints_id():
+    resp = _call_session_start()
+    assert resp.status_code == 200
+    minted = _resp_body(resp)["session"]["session_id"]
+    assert len(minted) == 16
+    assert mop_verify.has_session(minted) is True
+
+
+def test_session_start_resets_a_known_id():
+    session = mop_verify.get_session("page-again")
+    session.current_step = 3
+    resp = _call_session_start({"session_id": "page-again"})
+    assert _resp_body(resp)["session"]["current_step"] == 0
+
+
+def test_session_start_bad_body_is_400():
+    assert _call_session_start({"session_id": "  "}).status_code == 400
+    assert _call_session_start({"session_id": 42}).status_code == 400
+    assert _call_session_start(["not", "a", "dict"]).status_code == 400
+
+
+def test_session_start_never_counts_or_429s(monkeypatch):
+    monkeypatch.setenv("META_DAILY_CAP", "0")
+    resp = _call_session_start({"session_id": "page-free"})
+    assert resp.status_code == 200
+    assert mop_verify.has_session("page-free") is True
+    assert get_ip_usage("testclient") == (0, 10)
+    assert get_daily_count() == 0
+
+
+def test_session_restart_drops_old_and_mints_fresh():
+    mop_verify.get_session("old-1")
+    resp = _call_session_restart({"session_id": "old-1"})
+    assert resp.status_code == 200
+    fresh = _resp_body(resp)["session"]
+    assert fresh["session_id"] != "old-1"
+    assert fresh["current_step"] == 0
+    assert mop_verify.has_session("old-1") is False
+    assert mop_verify.has_session(fresh["session_id"]) is True
+
+
+def test_session_restart_never_409s():
+    resp = _call_session_restart({"session_id": "never-existed"})
+    assert resp.status_code == 200
+    assert _resp_body(resp)["session"]["current_step"] == 0
+    assert _call_session_restart().status_code == 200
+
+
+def test_session_restart_bad_body_is_400():
+    assert _call_session_restart({"session_id": ""}).status_code == 400
+
+
+def test_trace_steps_success(caplog):
+    caplog.set_level(logging.INFO, logger="mop.trace")
+    resp = _call_steps()
+    body = _resp_body(resp)
+    lines = _trace_lines(caplog)
+    assert len(lines) == 1
+    assert f"trace={body['trace_id']}" in lines[0]
+    assert "event=steps" in lines[0]
+    assert "http=200" in lines[0]
+    assert "limit_ip=0/10" in lines[0]
+    assert "daily=0/50" in lines[0]
+
+
+def test_quota_free_routes_work_when_ip_quota_exhausted(caplog):
+    for _ in range(10):
+        check_limits("testclient")
+        record_meta_attempt()
+    assert get_ip_usage("testclient") == (10, 10)
+    assert get_daily_count() == 10
+    caplog.set_level(logging.INFO, logger="mop.trace")
+    assert _call_session_start({"session_id": "exhausted-1"}).status_code == 200
+    assert _call_session_restart({"session_id": "exhausted-1"}).status_code == 200
+    assert _call_steps().status_code == 200
+    assert get_ip_usage("testclient") == (10, 10)
+    assert get_daily_count() == 10
+    lines = _trace_lines(caplog)
+    assert len(lines) == 3
+    for line in lines:
+        assert "limit_ip=10/10" in line
+        assert "daily=10/50" in line
+        assert "http=200" in line
+
+
+def test_trace_verify_success_with_claim(monkeypatch, caplog):
+    monkeypatch.setenv("META_API_KEY", "test-key-not-real")
+    sam = FakeSAM(boxes=[LEFT_COL, RIGHT_COL])
+    spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))
+    _inject(monkeypatch, sam, spark)
+    mop_verify.get_session("http-trace")
+    caplog.set_level(logging.INFO, logger="mop.trace")
+    resp = _call_verify(
+        monkeypatch,
+        {
+            "image": _StubUpload(_split_panel()),
+            "step_id": "0",
+            "session_id": "http-trace",
+            "operator_claim": "Q8 closed",
+        },
+    )
+    body = _resp_body(resp)
+    assert resp.status_code == 200
+    lines = _trace_lines(caplog)
+    assert len(lines) == 1
+    line = lines[0]
+    assert f"trace={body['trace_id']}" in line
+    assert "event=verify" in line
+    assert "session=http-tra" in line
+    assert "step=0" in line
+    assert f"verdict={body['verdict']}" in line
+    assert "differing=-" in line
+    assert "claim=Q8:CLOSED" in line
+    assert "contradiction=yes" in line
+    assert f"meta_calls={body['meta_calls_made']}" in line
+    assert "http=200" in line
+    assert "limit_ip=1/10" in line
+    assert "daily=1/50" in line
+    # Privacy: parsed claim only, never the raw words, headers, keys or bytes.
+    assert "Q8 closed" not in line
+    assert "Bearer" not in line
+    assert "Authorization" not in line
+    assert "testclient" not in line
+    assert len(line) < 500
+
+
+def test_trace_verify_without_claim_logs_dashes(monkeypatch, caplog):
+    monkeypatch.setenv("META_API_KEY", "test-key-not-real")
+    sam = FakeSAM(boxes=[LEFT_COL, RIGHT_COL])
+    spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))
+    _inject(monkeypatch, sam, spark)
+    mop_verify.get_session("http-noclaim")
+    caplog.set_level(logging.INFO, logger="mop.trace")
+    resp = _call_verify(
+        monkeypatch,
+        {
+            "image": _StubUpload(_split_panel()),
+            "step_id": "0",
+            "session_id": "http-noclaim",
+        },
+    )
+    assert resp.status_code == 200
+    lines = _trace_lines(caplog)
+    assert len(lines) == 1
+    assert "claim=-" in lines[0]
+    assert "contradiction=-" in lines[0]
+
+
+def test_trace_verify_429(monkeypatch, caplog):
+    monkeypatch.setenv("META_DAILY_CAP", "0")
+    monkeypatch.setenv("META_API_KEY", "test-key-not-real")
+    mop_verify.get_session("http-trace-429")
+    caplog.set_level(logging.INFO, logger="mop.trace")
+    resp = _call_verify(
+        monkeypatch,
+        {
+            "image": _StubUpload(_split_panel()),
+            "step_id": "0",
+            "session_id": "http-trace-429",
+        },
+    )
+    body = _resp_body(resp)
     assert resp.status_code == 429
-    assert _resp_body(resp)["meta_call_made"] is False
+    lines = _trace_lines(caplog)
+    assert len(lines) == 1
+    assert f"trace={body['trace_id']}" in lines[0]
+    assert "event=verify" in lines[0]
+    assert "verdict=rate_limited" in lines[0]
+    assert "session=http-tra" in lines[0]
+    assert "http=429" in lines[0]
+
+
+def test_trace_session_start_and_restart(caplog):
+    caplog.set_level(logging.INFO, logger="mop.trace")
+    start_body = _resp_body(_call_session_start({"session_id": "trace-start"}))
+    restart_body = _resp_body(_call_session_restart({"session_id": "trace-start"}))
+    lines = _trace_lines(caplog)
+    assert len(lines) == 2
+    assert "event=session_start" in lines[0]
+    assert f"trace={start_body['trace_id']}" in lines[0]
+    assert "session=trace-st" in lines[0]
+    assert "http=200" in lines[0]
+    assert "event=restart" in lines[1]
+    assert f"trace={restart_body['trace_id']}" in lines[1]
+    assert "limit_ip=0/10" in lines[1]
+    assert "daily=0/50" in lines[1]
+
+
+def test_restarts_never_consume_quota(monkeypatch, caplog):
+    monkeypatch.setenv("META_API_KEY", "test-key-not-real")
+    sam = FakeSAM(boxes=[LEFT_COL, RIGHT_COL])
+    spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))
+    _inject(monkeypatch, sam, spark)
+    caplog.set_level(logging.INFO, logger="mop.trace")
+    fresh = None
+    for _ in range(20):
+        resp = _call_session_restart()
+        assert resp.status_code == 200
+        fresh = _resp_body(resp)["session"]["session_id"]
+    assert get_ip_usage("testclient") == (0, 10)
+    assert get_daily_count() == 0
+    resp = _call_verify(
+        monkeypatch,
+        {
+            "image": _StubUpload(_split_panel()),
+            "step_id": "0",
+            "session_id": fresh,
+        },
+    )
+    assert resp.status_code == 200
+    lines = _trace_lines(caplog)
+    assert "event=restart" in lines[0]
+    assert "limit_ip=0/10" in lines[0]
+    assert "event=verify" in lines[-1]
+    assert "limit_ip=1/10" in lines[-1]
+    assert "daily=1/50" in lines[-1]
+
+
+def test_restart_logs_same_counters_as_verify(monkeypatch, caplog):
+    monkeypatch.setenv("META_API_KEY", "test-key-not-real")
+    sam = FakeSAM(boxes=[LEFT_COL, RIGHT_COL])
+    spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))
+    _inject(monkeypatch, sam, spark)
+    mop_verify.get_session("http-cmp")
+    caplog.set_level(logging.INFO, logger="mop.trace")
+    _call_verify(
+        monkeypatch,
+        {
+            "image": _StubUpload(_split_panel()),
+            "step_id": "0",
+            "session_id": "http-cmp",
+        },
+    )
+    _call_session_restart({"session_id": "http-cmp"})
+    lines = _trace_lines(caplog)
+    assert len(lines) == 2
+    assert "event=verify" in lines[0]
+    assert "event=restart" in lines[1]
+    for key in ("limit_ip=1/10", "daily=1/50"):
+        assert key in lines[0]
+        assert key in lines[1]
+    assert "meta_calls=0" in lines[1]
+    assert "http=200" in lines[1]
+
+
+class _FakeClock:
+    """Injectable session clock: deterministic TTL tests, no sleeps."""
+
+    def __init__(self, start=1_000_000.0):
+        self.t = start
+
+    def __call__(self):
+        return self.t
+
+    def advance(self, seconds):
+        self.t += seconds
+
+
+def test_session_cap_evicts_least_recently_used(monkeypatch):
+    monkeypatch.setenv("MOP_MAX_SESSIONS", "3")
+    clock = _FakeClock()
+    monkeypatch.setattr(mop_verify, "_session_clock", clock)
+    for sid in ("s1", "s2", "s3"):
+        mop_verify.get_session(sid)
+        clock.advance(10)
+    mop_verify.get_session("s1")  # touch: s1 is now most recent
+    clock.advance(10)
+    mop_verify.get_session("s4")
+    assert mop_verify.has_session("s1") is True
+    assert mop_verify.has_session("s2") is False
+    assert mop_verify.has_session("s3") is True
+    assert mop_verify.has_session("s4") is True
+
+
+def test_evicted_session_409s_with_zero_meta_calls(monkeypatch):
+    monkeypatch.setenv("MOP_MAX_SESSIONS", "3")
+    monkeypatch.setenv("META_API_KEY", "test-key-not-real")
+    sam = FakeSAM(boxes=[LEFT_COL, RIGHT_COL])
+    spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))
+    _inject(monkeypatch, sam, spark)
+    clock = _FakeClock()
+    monkeypatch.setattr(mop_verify, "_session_clock", clock)
+    for sid in ("s1", "s2", "s3", "s4"):
+        mop_verify.get_session(sid)
+        clock.advance(10)
+    assert mop_verify.has_session("s1") is False
+    resp = _call_verify(
+        monkeypatch,
+        {
+            "image": _StubUpload(_split_panel()),
+            "step_id": "0",
+            "session_id": "s1",
+        },
+    )
+    assert resp.status_code == 409
+    assert _resp_body(resp)["error"] == "session_not_found"
+    assert sam.calls == 0
+    assert spark.calls == 0
+    assert get_daily_count() == 0
+    assert get_ip_usage("testclient") == (0, 10)
+
+
+def test_session_ttl_expiry_409s(monkeypatch):
+    monkeypatch.setenv("MOP_SESSION_TTL_MIN", "60")
+    monkeypatch.setenv("META_API_KEY", "test-key-not-real")
+    sam = FakeSAM(boxes=[LEFT_COL, RIGHT_COL])
+    spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))
+    _inject(monkeypatch, sam, spark)
+    clock = _FakeClock()
+    monkeypatch.setattr(mop_verify, "_session_clock", clock)
+    mop_verify.get_session("ttl-1")
+    clock.advance(61 * 60)
+    assert mop_verify.has_session("ttl-1") is False
+    resp = _call_verify(
+        monkeypatch,
+        {
+            "image": _StubUpload(_split_panel()),
+            "step_id": "0",
+            "session_id": "ttl-1",
+        },
+    )
+    assert resp.status_code == 409
+    assert _resp_body(resp)["error"] == "session_not_found"
+    assert sam.calls == 0
+    assert spark.calls == 0
+    assert get_daily_count() == 0
+    assert get_ip_usage("testclient") == (0, 10)
+
+
+def test_expired_sessions_do_not_evict_live_ones(monkeypatch):
+    monkeypatch.setenv("MOP_MAX_SESSIONS", "3")
+    monkeypatch.setenv("MOP_SESSION_TTL_MIN", "60")
+    clock = _FakeClock()
+    monkeypatch.setattr(mop_verify, "_session_clock", clock)
+    mop_verify.get_session("s1")
+    mop_verify.get_session("s2")
+    clock.advance(61 * 60)
+    mop_verify.get_session("s3")
+    mop_verify.get_session("s4")
+    mop_verify.get_session("s5")
+    assert mop_verify.has_session("s1") is False
+    assert mop_verify.has_session("s2") is False
+    assert mop_verify.has_session("s3") is True
+    assert mop_verify.has_session("s4") is True
+    assert mop_verify.has_session("s5") is True
+
+
+def test_verify_touch_refreshes_session_ttl(monkeypatch):
+    monkeypatch.setenv("MOP_SESSION_TTL_MIN", "60")
+    monkeypatch.setenv("META_API_KEY", "test-key-not-real")
+    sam = FakeSAM(boxes=[LEFT_COL, RIGHT_COL])
+    spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))
+    _inject(monkeypatch, sam, spark)
+    clock = _FakeClock()
+    monkeypatch.setattr(mop_verify, "_session_clock", clock)
+    mop_verify.get_session("http-touch")
+    clock.advance(59 * 60)
+    resp = _call_verify(
+        monkeypatch,
+        {
+            "image": _StubUpload(_split_panel()),
+            "step_id": "0",
+            "session_id": "http-touch",
+        },
+    )
+    assert resp.status_code == 200
+    clock.advance(59 * 60)  # past the original deadline, within the touch deadline
+    assert mop_verify.has_session("http-touch") is True
+    clock.advance(2 * 60)  # past the touch deadline
+    assert mop_verify.has_session("http-touch") is False
+
+
+def test_restart_old_id_is_unknown_with_zero_meta_calls(monkeypatch):
+    monkeypatch.setenv("META_API_KEY", "test-key-not-real")
+    sam = FakeSAM(boxes=[LEFT_COL, RIGHT_COL])
+    spark = FakeSpark(_all(dict.fromkeys(BAND_COLORS.values(), "RIGHT")))
+    _inject(monkeypatch, sam, spark)
+    old = _resp_body(_call_session_start({"session_id": "restart-me"}))["session"]["session_id"]
+    fresh = _resp_body(_call_session_restart({"session_id": old}))["session"]["session_id"]
+    assert fresh != old
+    assert mop_verify.has_session(old) is False
+    resp = _call_verify(
+        monkeypatch,
+        {
+            "image": _StubUpload(_split_panel()),
+            "step_id": "0",
+            "session_id": old,
+        },
+    )
+    assert resp.status_code == 409
+    assert _resp_body(resp)["error"] == "session_not_found"
+    assert sam.calls == 0
+    assert spark.calls == 0
+    assert get_daily_count() == 0
+    assert get_ip_usage("testclient") == (0, 10)
+
+
+@pytest.mark.parametrize("raw", ["", "abc", "0", "-5"])
+def test_session_env_garbage_falls_back_to_defaults(monkeypatch, raw):
+    monkeypatch.setenv("MOP_MAX_SESSIONS", raw)
+    monkeypatch.setenv("MOP_SESSION_TTL_MIN", raw)
+    assert mop_verify.get_max_sessions() == 200
+    assert mop_verify.get_session_ttl_min() == 120
+
+
+def test_session_env_valid_values_are_honoured(monkeypatch):
+    monkeypatch.setenv("MOP_MAX_SESSIONS", "3")
+    monkeypatch.setenv("MOP_SESSION_TTL_MIN", "30")
+    assert mop_verify.get_max_sessions() == 3
+    assert mop_verify.get_session_ttl_min() == 30
 
 
 def test_tool_registered():

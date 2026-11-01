@@ -448,18 +448,48 @@ describe('demo presentation — single photo result', () => {
         expect(idx('.mv-demo-cols')).toBeLessThan(idx('.mv-controlbar'));
     });
 
-    it('lays the bar in two rows: inputs row, then note and hint row', () => {
+    it('row 1 holds label, input, mic and Verify as four separate grid items in order', () => {
+        demoResultFixture();
+        const row = document.querySelector(
+            '.mv-demo > .mv-controlbar > .mv-controlbar-row.mv-controlbar-main');
+        expect(row).not.toBeNull();
+        const kids = Array.from(row.children);
+        const at = (sel) => kids.findIndex((el) => el.matches(sel));
+        expect(at('.mv-field-label')).toBe(0);
+        expect(at('[data-mv-claim]')).toBe(1);
+        expect(at('[data-mv-mic]')).toBe(2);
+        expect(at('.mv-actions')).toBe(3);
+        expect(at('.mv-claim-status')).toBe(4);
+    });
+
+    it('lays the bar in three rows: action, samples, notes', () => {
         demoResultFixture();
         const bar = document.querySelector('.mv-demo > .mv-controlbar');
         const rows = Array.from(bar.children)
             .filter((el) => el.classList.contains('mv-controlbar-row'));
-        expect(rows).toHaveLength(2);
-        for (const sel of ['[data-mv-samples]', '[data-mv-claim]', '[data-mv-verify-btn]']) {
+        expect(rows).toHaveLength(3);
+        expect(rows[0].classList.contains('mv-controlbar-main')).toBe(true);
+        expect(rows[1].classList.contains('mv-controlbar-samples')).toBe(true);
+        expect(rows[2].classList.contains('mv-controlbar-sub')).toBe(true);
+        for (const sel of ['[data-mv-claim]', '[data-mv-mic]', '[data-mv-verify-btn]']) {
             expect(rows[0].querySelector(sel)).not.toBeNull();
         }
-        expect(rows[1].querySelector('.mv-verify-note')).not.toBeNull();
-        expect(rows[1].querySelector('.mv-keys-hint')).not.toBeNull();
-        expect(rows[1].querySelector('[data-mv-claim], [data-mv-verify-btn]')).toBeNull();
+        expect(rows[0].querySelector('[data-mv-samples-section]')).toBeNull();
+        expect(rows[1].querySelector('[data-mv-samples-section]')).not.toBeNull();
+        expect(rows[1].querySelector('[data-mv-voice-section]')).not.toBeNull();
+        expect(rows[2].querySelector('.mv-verify-note')).not.toBeNull();
+        expect(rows[2].querySelector('.mv-keys-hint')).not.toBeNull();
+        expect(rows[2].querySelector('[data-mv-voice-note]')).not.toBeNull();
+        expect(rows[2].querySelector('[data-mv-claim], [data-mv-verify-btn]')).toBeNull();
+    });
+
+    it('photo panel and result column share the cols parent', () => {
+        demoResultFixture();
+        const stage = document.querySelector('.mv-demo > .mv-demo-cols > .mv-stage-col');
+        const right = document.querySelector('.mv-demo > .mv-demo-cols > .mv-right');
+        expect(stage).not.toBeNull();
+        expect(right).not.toBeNull();
+        expect(stage.parentElement).toBe(right.parentElement);
     });
 });
 
@@ -478,11 +508,10 @@ describe('demo presentation CSS — sizes and five-column cards', () => {
             .toContain('grid-template-columns: max-content repeat(5, minmax(0, 1fr))');
     });
 
-    it('verdict wraps to at most two lines at 22px, never truncates to one', () => {
+    it('verdict stays 22px on one line', () => {
         const r = rule('body.demo-mode .mv-demo-verdict');
         expect(r).toContain('font-size: 22px');
-        expect(r).toContain('-webkit-line-clamp: 2');
-        expect(r).not.toContain('white-space: nowrap');
+        expect(r).toContain('-webkit-line-clamp: 1');
     });
 
     it('hazard text is 16px at most two lines', () => {
@@ -503,12 +532,44 @@ describe('demo presentation CSS — sizes and five-column cards', () => {
         expect(css).not.toContain('@container');
     });
 
-    it('readback input grows with a 360px floor; samples and Verify never shrink', () => {
-        const input = rule('body.demo-mode .mv-controlbar .mv-field input[type="text"]');
-        expect(input).toContain('flex: 1 1 auto');
-        expect(input).toContain('min-width: 360px');
+    it('readback input fills its grid column edge to edge', () => {
+        const input = rule('body.demo-mode .mv-controlbar-main > [data-mv-claim]');
+        expect(input).toContain('grid-column: 2');
+        expect(input).toContain('width: 100%');
+        expect(input).toContain('min-width: 0');
         expect(rule('body.demo-mode .mv-controlbar .mv-samples')).toContain('flex: none');
         expect(rule('body.demo-mode .mv-controlbar .mv-actions')).toContain('flex: none');
+    });
+
+    it('row 1 is a four-column grid: label, input, mic, Verify', () => {
+        const row = rule('body.demo-mode .mv-controlbar-row.mv-controlbar-main');
+        expect(row).toContain('display: grid');
+        expect(row).toContain('grid-template-columns: auto minmax(360px, 1fr) auto 160px');
+        expect(row).toContain('gap: 12px');
+        expect(row).not.toContain('position: absolute');
+        expect(row).not.toContain('overflow');
+    });
+
+    it('label, input, mic and Verify are placed in different grid columns', () => {
+        expect(rule('body.demo-mode .mv-controlbar-main > .mv-field-label')).toContain('grid-column: 1');
+        expect(rule('body.demo-mode .mv-controlbar-main > [data-mv-claim]')).toContain('grid-column: 2');
+        expect(rule('body.demo-mode .mv-controlbar-main > .mv-mic-btn')).toContain('grid-column: 3');
+        expect(rule('body.demo-mode .mv-controlbar-main > .mv-actions')).toContain('grid-column: 4');
+    });
+
+    it('bar buttons never wrap their labels', () => {
+        expect(rule('body.demo-mode .mv-controlbar-main > .mv-mic-btn')).toContain('white-space: nowrap');
+        expect(rule('body.demo-mode .mv-controlbar-main .mv-actions .btn')).toContain('white-space: nowrap');
+        expect(rule('body.demo-mode .mv-controlbar-samples .btn')).toContain('white-space: nowrap');
+    });
+
+    it('cols stretch both columns; result column has no top margin or padding', () => {
+        expect(rule('body.demo-mode .mv-demo-cols')).toContain('align-items: stretch');
+        const right = rule('body.demo-mode .mv-right');
+        expect(right).not.toContain('margin-top');
+        expect(right).not.toContain('padding-top');
+        expect(right).not.toContain('padding:');
+        expect(rule('body.demo-mode .mv-right .mv-status:empty')).toContain('display: none');
     });
 });
 
@@ -804,6 +865,55 @@ describe('mop-verify — operator readback is cleared', () => {
     });
 });
 
+describe('demo verdict box — compact sub row', () => {
+    const MISMATCH = {
+        verdict: 'MISMATCH',
+        step_id: 2,
+        advanced: false,
+        session: { current_step: 2, completed: false },
+        differing_labels: ['Q8'],
+        hazard_if_wrong: 'If Q8 is not closed, opening Q9 drops the load.',
+        expected_state: { Q5: 'CLOSED', Q7: 'CLOSED', Q9: 'CLOSED', Q8: 'CLOSED', BYP: 'CLOSED' },
+        readings: {
+            Q5: reading('RIGHT', [100, 100, 200, 250], 'model note Q5'),
+            Q7: reading('RIGHT', [100, 260, 200, 410], 'model note Q7'),
+            Q9: reading('RIGHT', [100, 420, 200, 570], 'model note Q9'),
+            Q8: { mapped: 'OPEN', raw: '{"handle":"RIGHT","notes":"model note Q8"}', crop_box: [700, 260, 800, 410] },
+            BYP: reading('RIGHT', [700, 420, 800, 570], 'model note BYP'),
+        },
+        contradiction: { label: 'Q8', claimed: 'CLOSED', observed: 'OPEN' },
+        sam_boxes: [[0, 0, 100, 100]],
+        column_methods: { left: { method: 'split' }, right: { method: 'split' } },
+        models: { sam: 'sam-3.1', spark: 'muse-spark-1.3' },
+        meta_calls_made: 6,
+        latency_s: 9.9,
+    };
+
+    function mismatchFixture() {
+        mvLayoutFixture();
+        setDemoState(DEMO_ON);
+        __mop_verify_test__.syncDemoLayout();
+        __mop_verify_test__.setStepsData(STEPS5);
+        __mop_verify_test__.setSession('sess-1', 2);
+        __mop_verify_test__.setPhotoForTest(new Blob(['x'], { type: 'image/jpeg' }), '07.jpg', 1000, 800);
+        __mop_verify_test__.applyResult(MISMATCH);
+    }
+
+    it('differing chips and the computed-in-code note share one sub row', () => {
+        mismatchFixture();
+        const sub = document.querySelector('.mv-demo .mv-banner-sub');
+        expect(sub).not.toBeNull();
+        const chip = sub.querySelector('.mv-banner-labels .mv-chip');
+        expect(chip).not.toBeNull();
+        expect(chip.textContent).toBe('Q8');
+        const note = sub.querySelector('.mv-verdict-note');
+        expect(note).not.toBeNull();
+        expect(note.textContent).toContain('Computed in code from the photo readings');
+        expect(chip.closest('.mv-banner-sub')).toBe(sub);
+        expect(note.closest('.mv-banner-sub')).toBe(sub);
+    });
+});
+
 describe('demo contradiction — operator_claim reaches the request', () => {
     const MISMATCH_BODY = {
         verdict: 'MISMATCH',
@@ -880,11 +990,214 @@ describe('demo contradiction — operator_claim reaches the request', () => {
         expect(claimAfter).toBe('');
     });
 
-    it('renders a returned contradiction as Operator/Photo lines', async () => {
+    it('renders a returned contradiction as both parts and the separator in one row', async () => {
         await runWithCapture(() =>
             document.querySelector('[data-mv-verify-btn]').click());
-        const lines = Array.from(document.querySelectorAll('.mv-contra-line'))
-            .map((el) => el.textContent);
-        expect(lines).toEqual(['Operator: Q8 CLOSED', 'Photo: Q8 OPEN']);
+        const row = document.querySelector('.mv-demo .mv-banner[data-state="contra"] .mv-contra-row');
+        expect(row).not.toBeNull();
+        const parts = Array.from(row.querySelectorAll('.mv-contra-part')).map((el) => el.textContent);
+        expect(parts).toEqual(['Operator: Q8 CLOSED', 'Photo: Q8 OPEN']);
+        expect(row.querySelector('.mv-contra-sep').textContent).toBe('≠');
+    });
+});
+
+describe('mop-verify — unknown session (409) shows the reset message, never a verdict', () => {
+    const SESSION_MESSAGE = 'This procedure session was reset on the server '
+        + '(for example after a restart). Press Restart procedure to begin again.';
+
+    function demo409Fixture() {
+        mvLayoutFixture();
+        setDemoState(DEMO_ON);
+        __mop_verify_test__.syncDemoLayout();
+        __mop_verify_test__.setStepsData(STEPS5);
+        __mop_verify_test__.setSession('stale-id', 2);
+        __mop_verify_test__.setPhotoForTest(new Blob(['x'], { type: 'image/jpeg' }), '07.jpg', 1000, 800);
+        document.querySelector('[data-mv-verify-btn]').disabled = false;
+        document.querySelector('[data-mv-claim]').value = 'Q8 closed';
+    }
+
+    it('shows one clear message and leaves step, result and tracker consistent', async () => {
+        demo409Fixture();
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async () => ({
+            status: 409,
+            ok: false,
+            headers: { get: () => null },
+            json: async () => ({ error: 'session_not_found', trace_id: 'abc123ef' }),
+        });
+        try {
+            document.querySelector('[data-mv-verify-btn]').click();
+            await new Promise((r) => setTimeout(r, 50));
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+        const host = document.querySelector('[data-mv-result]');
+        expect(host.textContent).toContain(SESSION_MESSAGE);
+        expect(host.querySelector('.mv-banner-title').textContent).toBe('Session reset (409)');
+        expect(host.querySelector('.mv-banner[data-state="ok"]')).toBeNull();
+        expect(host.querySelector('.mv-banner[data-state="crit"]')).toBeNull();
+        expect(__mop_verify_test__.getState().currentStep).toBe(2);
+        expect(__mop_verify_test__.getState().hasResult).toBe(false);
+        expect(document.querySelector('[data-mv-claim]').value).toBe('');
+    });
+});
+
+describe('mop-verify — Restart procedure registers a fresh server session', () => {
+    it('posts the old id to the restart endpoint and adopts the fresh id', async () => {
+        mvFixture();
+        __mop_verify_test__.reset();
+        __mop_verify_test__.setSession('old-local', 3);
+        const calls = [];
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (url, options) => {
+            calls.push({ url: String(url), body: options && options.body });
+            return {
+                status: 200,
+                ok: true,
+                headers: { get: () => null },
+                json: async () => ({
+                    session: { session_id: 'srv-fresh', current_step: 0, completed: false },
+                }),
+            };
+        };
+        try {
+            __mop_verify_test__.restartProcedure();
+            await new Promise((r) => setTimeout(r, 30));
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+        expect(calls.length).toBe(1);
+        expect(calls[0].url).toBe('/api/copilot/mop/session/restart');
+        expect(JSON.parse(calls[0].body)).toEqual({ session_id: 'old-local' });
+        expect(__mop_verify_test__.getState().sessionId).toBe('srv-fresh');
+        expect(__mop_verify_test__.getState().currentStep).toBe(0);
+    });
+
+    it('keeps the local id when the restart post fails', async () => {
+        mvFixture();
+        __mop_verify_test__.reset();
+        __mop_verify_test__.setSession('old-local', 3);
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async () => { throw new Error('down'); };
+        try {
+            __mop_verify_test__.restartProcedure();
+            await new Promise((r) => setTimeout(r, 30));
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+        const id = __mop_verify_test__.getState().sessionId;
+        expect(id).toBeTruthy();
+        expect(id).not.toBe('old-local');
+        expect(__mop_verify_test__.getState().currentStep).toBe(0);
+    });
+});
+
+describe('mop-verify — stale rate-limit countdown clears on a successful steps load', () => {
+    it('steps 200 re-enables Verify and clears the countdown text', async () => {
+        mvFixture();
+        __mop_verify_test__.reset();
+        __mop_verify_test__.setStepsData(STEPS5);
+        __mop_verify_test__.setSession('sess-1', 1);
+        __mop_verify_test__.setPhotoForTest(new Blob(['x'], { type: 'image/jpeg' }), 'p.jpg', 100, 100);
+        const btn = document.querySelector('[data-mv-verify-btn]');
+        btn.disabled = false;
+        let mode = 'limited';
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (url) => {
+            if (String(url) === '/api/copilot/mop/verify') {
+                return {
+                    status: 429,
+                    ok: false,
+                    headers: { get: (n) => (n === 'Retry-After' ? '120' : null) },
+                    json: async () => ({
+                        limit: 'per_ip', daily_cap: 50, meta_call_made: false,
+                        detail: 'limited', retry_after_s: 120,
+                    }),
+                };
+            }
+            if (String(url) === '/api/copilot/mop/steps' && mode === 'open') {
+                return {
+                    status: 200, ok: true, headers: { get: () => null }, json: async () => STEPS5,
+                };
+            }
+            throw new Error('unexpected ' + url);
+        };
+        try {
+            await __mop_verify_test__.runVerification();
+            expect(btn.disabled).toBe(true);
+            expect(document.querySelector('[data-mv-status]').textContent).toContain('Rate limited: retry in');
+            mode = 'open';
+            await __mop_verify_test__.loadProcedure();
+            expect(document.querySelector('[data-mv-status]').textContent).toBe('');
+            expect(btn.disabled).toBe(false);
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+    });
+});
+
+describe('mop-verify — 429 card shows human text', () => {
+    it('shows per IP and not made instead of raw values', () => {
+        mvFixture();
+        __mop_verify_test__.renderError('ratelimit', {
+            limit: 'per_ip',
+            dailyCap: 50,
+            metaCallMade: false,
+            detail: 'Per-IP rate limit reached (10 Meta-backed requests from this IP '
+                + 'in the last 60 minutes, max 10). No Meta call was made for this request.',
+        });
+        const html = document.querySelector('[data-mv-result]').innerHTML;
+        expect(html).toContain('per IP');
+        expect(html).toContain('not made');
+        expect(html).toContain('Daily cap');
+        expect(html).toContain('Meta-backed requests');
+        expect(html).not.toContain('per_ip');
+        expect(html).not.toContain('>false<');
+    });
+
+    it('maps the daily-cap posture too', () => {
+        mvFixture();
+        __mop_verify_test__.renderError('ratelimit', {
+            limit: 'daily_cap', dailyCap: 50, metaCallMade: false, detail: 'capped',
+        });
+        const text = document.querySelector('[data-mv-result]').textContent;
+        expect(text).toContain('daily cap');
+        expect(text).not.toContain('daily_cap');
+    });
+});
+
+describe('mop-verify — user-facing strings use a colon, never an em dash', () => {
+    it('verdictCopy joins headline and detail with a colon', () => {
+        const mv = __mop_verify_test__;
+        expect(mv.verdictCopy('MATCH', 1, true, false)).toBe('MATCH: step 1 confirmed, step 2 unlocked.');
+        expect(mv.verdictCopy('MISMATCH', 0, false, false)).toBe('MISMATCH: step 0 not confirmed. Next step stays locked.');
+        expect(mv.verdictCopy('MATCH', 5, true, true)).toBe('MATCH: final step confirmed. Procedure complete.');
+    });
+
+    it('the 429 card title uses a colon', () => {
+        mvFixture();
+        __mop_verify_test__.renderError('ratelimit', {
+            limit: 'per_ip', dailyCap: 50, metaCallMade: false,
+        });
+        expect(document.querySelector('[data-mv-result]').textContent)
+            .toContain('Rate limited (429): no Meta call was made');
+    });
+});
+
+describe('mop trace — footer shows the server trace id', () => {
+    it('appends the trace id when the body carries one', () => {
+        document.body.innerHTML = '<div id="foot"></div>';
+        __mop_verify_test__.renderFooter(
+            document.getElementById('foot'), { ...MATCH_BODY_5, trace_id: '3f2a9c1b' },
+        );
+        const text = document.getElementById('foot').textContent;
+        expect(text).toContain('trace 3f2a9c1b');
+        expect(text).toContain('Meta calls');
+    });
+
+    it('omits the trace part without a trace id', () => {
+        document.body.innerHTML = '<div id="foot"></div>';
+        __mop_verify_test__.renderFooter(document.getElementById('foot'), MATCH_BODY_5);
+        expect(document.getElementById('foot').textContent).not.toContain('trace');
     });
 });

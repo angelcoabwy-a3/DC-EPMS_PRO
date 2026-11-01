@@ -7,8 +7,9 @@ independent limits, both enforced BEFORE any Meta API work:
 
 1. Daily cap on Meta calls (UTC date key, resets at UTC midnight):
    from env META_DAILY_CAP, default 50, safe int parsing.
-2. Per-IP rate limit on investigate calls: max 10 per IP per rolling
-   60 minutes. Timestamps older than 3600 s are pruned on every check.
+2. Per-IP rate limit on investigate calls: from env META_PER_IP_LIMIT,
+   default 10, cap 200, per rolling 60 minutes. Timestamps older than
+   3600 s are pruned on every check.
 
 Only the standard library is used. No tokens, no secrets in this file.
 
@@ -40,7 +41,9 @@ from datetime import UTC, datetime, timedelta
 DAILY_CAP_DEFAULT = 50
 DAILY_CAP_ENV_VAR = "META_DAILY_CAP"
 
-IP_MAX_CALLS = 10
+IP_MAX_CALLS_DEFAULT = 10
+IP_MAX_CALLS_ENV_VAR = "META_PER_IP_LIMIT"
+IP_MAX_CALLS_MAX = 200
 IP_WINDOW_SECONDS = 3600.0
 
 _lock = threading.Lock()
@@ -76,6 +79,21 @@ def get_daily_cap() -> int:
         return DAILY_CAP_DEFAULT
 
 
+def get_per_ip_limit() -> int:
+    """Per-IP attempt cap from META_PER_IP_LIMIT, default 10.
+
+    Garbage values (unset, empty, non-numeric, below 1) fall back to
+    10 instead of crashing the endpoint. Values above 200 are capped.
+    """
+    try:
+        value = int(str(os.environ.get(IP_MAX_CALLS_ENV_VAR, "")).strip())
+    except (ValueError, TypeError, AttributeError):
+        return IP_MAX_CALLS_DEFAULT
+    if value < 1:
+        return IP_MAX_CALLS_DEFAULT
+    return min(value, IP_MAX_CALLS_MAX)
+
+
 def _today_key() -> str:
     """UTC date string. The counter resets at UTC midnight, not on restart."""
     return datetime.now(UTC).date().isoformat()
@@ -94,7 +112,7 @@ def retry_after_for_ip(client_ip: str, now: float | None = None) -> int:
     t = time.time() if now is None else now
     with _lock:
         hits = [h for h in _ip_hits.get(ip, []) if h > t - IP_WINDOW_SECONDS]
-        if len(hits) < IP_MAX_CALLS:
+        if len(hits) < get_per_ip_limit():
             return 0
         return max(1, int(min(hits) + IP_WINDOW_SECONDS - t))
 
@@ -119,12 +137,13 @@ def check_limits(client_ip: str, now: float | None = None) -> int:
                 cap,
             )
         hits = [h for h in _ip_hits.get(ip, []) if h > t - IP_WINDOW_SECONDS]
-        if len(hits) >= IP_MAX_CALLS:
+        per_ip_limit = get_per_ip_limit()
+        if len(hits) >= per_ip_limit:
             _ip_hits[ip] = hits
             raise MetaLimitError(
                 "per_ip",
-                f"Per-IP rate limit reached ({len(hits)} investigate calls "
-                f"from this IP in the last 60 minutes, max {IP_MAX_CALLS}). "
+                f"Per-IP rate limit reached ({len(hits)} Meta-backed requests "
+                f"from this IP in the last 60 minutes, max {per_ip_limit}). "
                 "No Meta call was made for this request.",
                 cap,
             )
@@ -151,6 +170,15 @@ def get_daily_count() -> int:
     """Meta calls recorded today (UTC). Debug/testing helper."""
     with _lock:
         return _daily_counts.get(_today_key(), 0)
+
+
+def get_ip_usage(client_ip: str, now: float | None = None) -> tuple[int, int]:
+    """(in-window hits, configured max) for one IP. Read-only: records nothing."""
+    ip = (client_ip or "unknown").strip() or "unknown"
+    t = time.time() if now is None else now
+    with _lock:
+        hits = [h for h in _ip_hits.get(ip, []) if h > t - IP_WINDOW_SECONDS]
+        return len(hits), get_per_ip_limit()
 
 
 def reset_for_tests() -> None:

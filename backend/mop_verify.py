@@ -25,6 +25,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
 import re
 import threading
 import time
@@ -513,20 +514,111 @@ class MopSession:
     completed: bool = False
     history: list = field(default_factory=list)
     pending_image: bytes | None = None
+    last_used: float = field(default_factory=time.time)
 
+
+SESSION_MAX_DEFAULT = 200
+SESSION_MAX_ENV_VAR = "MOP_MAX_SESSIONS"
+SESSION_TTL_MIN_DEFAULT = 120
+SESSION_TTL_MIN_ENV_VAR = "MOP_SESSION_TTL_MIN"
 
 _sessions: dict[str, MopSession] = {}
 _sessions_lock = threading.Lock()
 
+# Injectable clock for TTL tests (monkeypatch with a fake, no sleeps).
+_session_clock: Callable[[], float] = time.time
+
+
+def get_max_sessions() -> int:
+    """Session cap from MOP_MAX_SESSIONS, default 200.
+
+    Garbage values (unset, empty, non-numeric, below 1) fall back to
+    200 instead of crashing.
+    """
+    try:
+        value = int(str(os.environ.get(SESSION_MAX_ENV_VAR, "")).strip())
+    except (ValueError, TypeError, AttributeError):
+        return SESSION_MAX_DEFAULT
+    if value < 1:
+        return SESSION_MAX_DEFAULT
+    return value
+
+
+def get_session_ttl_min() -> int:
+    """Session TTL in minutes from MOP_SESSION_TTL_MIN, default 120.
+
+    Garbage values (unset, empty, non-numeric, below 1) fall back to
+    120 instead of crashing.
+    """
+    try:
+        value = int(str(os.environ.get(SESSION_TTL_MIN_ENV_VAR, "")).strip())
+    except (ValueError, TypeError, AttributeError):
+        return SESSION_TTL_MIN_DEFAULT
+    if value < 1:
+        return SESSION_TTL_MIN_DEFAULT
+    return value
+
+
+def _purge_expired_sessions(now: float, ttl_s: float) -> None:
+    """Drop sessions idle longer than the TTL. Caller holds _sessions_lock."""
+    expired = [sid for sid, session in _sessions.items() if now - session.last_used > ttl_s]
+    for sid in expired:
+        del _sessions[sid]
+
+
+def _evict_lru_sessions(max_sessions: int) -> None:
+    """Evict least-recently-used sessions down to the cap. Caller holds the lock."""
+    while len(_sessions) > max_sessions:
+        oldest = min(_sessions.items(), key=lambda item: item[1].last_used)[0]
+        del _sessions[oldest]
+
 
 def get_session(session_id: str) -> MopSession:
-    """Fetch a session, creating it at step 0 when missing."""
+    """Fetch a session, creating it at step 0 when missing.
+
+    Touches last_used. Purges TTL-expired sessions first (so dead
+    ones never evict live ones), then evicts least-recently-used
+    sessions past MOP_MAX_SESSIONS. No background sweeper: lazy purge
+    on access and on start is enough for this demo.
+    """
+    now = _session_clock()
+    ttl_s = get_session_ttl_min() * 60
     with _sessions_lock:
+        _purge_expired_sessions(now, ttl_s)
         session = _sessions.get(session_id)
         if session is None:
-            session = MopSession(session_id=session_id)
+            session = MopSession(session_id=session_id, last_used=now)
             _sessions[session_id] = session
+        else:
+            # Refresh recency: dict order breaks last_used ties in eviction.
+            del _sessions[session_id]
+            _sessions[session_id] = session
+            session.last_used = now
+        _evict_lru_sessions(get_max_sessions())
         return session
+
+
+def has_session(session_id: str) -> bool:
+    """True when the server knows this LIVE session id. Never creates one.
+
+    Purges TTL-expired sessions first, so an expired id reads as
+    unknown, but does not touch last_used: the existence probe must
+    not refresh TTL. The /mop/verify endpoint checks this BEFORE the
+    rate-limit guard and any Meta call, so a page holding a stale id
+    (e.g. after a server restart cleared _sessions) gets a 409 instead
+    of silently starting over at step 0 mid-procedure.
+    """
+    now = _session_clock()
+    ttl_s = get_session_ttl_min() * 60
+    with _sessions_lock:
+        _purge_expired_sessions(now, ttl_s)
+        return session_id in _sessions
+
+
+def drop_session(session_id: str) -> bool:
+    """Forget a session, if known. Returns True when one was dropped."""
+    with _sessions_lock:
+        return _sessions.pop(session_id, None) is not None
 
 
 def store_session_photo(session_id: str, image_bytes: bytes) -> MopSession:

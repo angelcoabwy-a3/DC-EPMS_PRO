@@ -1717,9 +1717,21 @@
                         </label>
                         <div class="mv-preview" data-mv-preview></div>
                         <label class="mv-field">
-                            <span class="mv-field-label">Operator readback <span class="mv-field-hint">(voice readback will fill this later)</span></span>
-                            <input type="text" data-mv-claim placeholder="e.g. Q8 closed" maxlength="120" autocomplete="off">
+                            <span class="mv-field-label">Operator readback <span class="mv-field-hint">(hold the mic button or try a sample)</span></span>
+                            <span class="mv-claim-col">
+                                <span class="mv-claim-row">
+                                    <input type="text" data-mv-claim placeholder="e.g. Q8 closed" maxlength="120" autocomplete="off">
+                                    <button type="button" class="btn btn-secondary btn-sm mv-mic-btn" data-mv-mic aria-label="Hold to record a voice readback" title="Hold to record (max 8 s)">Hold to talk</button>
+                                    <span class="mv-rec" data-mv-rec hidden></span>
+                                </span>
+                                <span class="mv-parsed" data-mv-parsed aria-live="polite"></span>
+                            </span>
                         </label>
+                        <div class="mv-voice-samples" data-mv-voice-section hidden>
+                            <div class="mv-field-label">Try a sample readback</div>
+                            <div class="mv-voice-row" data-mv-voice-samples></div>
+                            <div class="mv-voice-note">Synthetic voice (ElevenLabs)</div>
+                        </div>
                         <div class="mv-samples" data-mv-samples-section hidden>
                             <div class="mv-field-label">Try a sample photo</div>
                             <div class="mv-sample-row" data-mv-samples></div>

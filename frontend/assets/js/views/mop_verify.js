@@ -26,8 +26,14 @@ import { isDemoActive } from '../core/demo.js';
 
 const STEPS_URL = '/api/copilot/mop/steps';
 const VERIFY_URL = '/api/copilot/mop/verify';
+const TRANSCRIBE_URL = '/api/copilot/mop/transcribe';
+const SESSION_START_URL = '/api/copilot/mop/session/start';
+const SESSION_RESTART_URL = '/api/copilot/mop/session/restart';
 const SAMPLE_BASE = '/assets/demo_photos/';
+const SAMPLE_AUDIO_BASE = '/assets/demo_audio/';
 const MAX_FILE_BYTES = 12 * 1024 * 1024;
+const MAX_REC_SECONDS = 8;
+const REC_RATE = 24000;
 
 // Filenames under frontend/demo_photos/ (copies served from SAMPLE_BASE).
 // The server offers no directory listing, so the list is UI config;
@@ -38,6 +44,19 @@ const SAMPLE_FILES = [
     '03_step2.jpg',
     '07_mismatch_after_step2.jpg',
     '08_uncertain.jpg',
+];
+
+// Sample readbacks under frontend/assets/demo_audio/ (served from
+// SAMPLE_AUDIO_BASE). Same fixed-list pattern as the photos; labels
+// come from the names in code (humanizeReadbackName). Synthetic voice
+// (ElevenLabs) — the UI says so next to the buttons.
+const SAMPLE_AUDIO_FILES = [
+    'readback_s0_q8_off.wav',
+    'readback_s1_byp_on.wav',
+    'readback_s2_q8_on.wav',
+    'readback_s3_q9_off.wav',
+    'readback_s4_q7_off.wav',
+    'readback_s5_q5_off.wav',
 ];
 
 // ─── Module state ──────────────────────────────────────────────────
@@ -59,9 +78,18 @@ let _lastBody = null;     // last verify response (re-rendered across skeleton s
 let _zoomOn = true;       // demo "Zoom to breakers" toggle state
 let _samplesVisible = false; // probeSamples() found the sample photos
 let _keysWired = false;   // document keydown listener (registered once)
+let _keysUpWired = false; // document keyup listener for M release (once)
 let _demoListenerWired = false; // epms:demo-mode listener (registered once)
 let _clickWired = false;  // document click listener for dot popovers (once)
 let _openDot = null;      // data-step of the circle with an open popover
+let _rec = null;          // active recording { stream, ctx, processor, sink, chunks, source, startedAt, sampleRate }
+let _recTimer = null;     // auto-stop at MAX_REC_SECONDS
+let _recTickTimer = null; // recording indicator repaint
+let _transcribing = false;
+let _micDisabled = false; // permission denied or unavailable (samples still work)
+let _voiceVisible = false; // probeVoiceSamples() found at least one sample readback
+let _voiceFiles = null;   // HEAD-checked sample readbacks currently shown
+let _sampleAudio = null;  // { el, file } while a sample readback plays
 
 // ─── Pure helpers (testable) ───────────────────────────────────────
 function newSessionId() {
@@ -77,6 +105,75 @@ function newSessionId() {
 function humanizeSampleName(filename) {
     const stem = String(filename).replace(/\.[^.]*$/, '');
     return stem.replace(/_/g, ' ').replace(/([a-zA-Z])(\d)/g, '$1 $2');
+}
+
+function humanizeReadbackName(filename) {
+    const m = /^readback_s(\d+)_([a-z0-9]+)_(on|off)\.wav$/i.exec(String(filename).trim());
+    if (!m) return humanizeSampleName(filename);
+    return 'Step ' + Number(m[1]) + ': ' + m[2].toUpperCase() + ' ' + m[3].toUpperCase();
+}
+
+// Average one or more input channels down to mono. Pure.
+function mixdownToMono(channels) {
+    const list = (channels || []).filter((c) => c && c.length);
+    if (!list.length) return new Float32Array(0);
+    let len = list[0].length;
+    for (const c of list) len = Math.min(len, c.length);
+    const out = new Float32Array(len);
+    for (let i = 0; i < len; i++) {
+        let sum = 0;
+        for (const c of list) sum += c[i];
+        out[i] = sum / list.length;
+    }
+    return out;
+}
+
+// Linear resample between sample rates. Pure.
+function resampleLinear(samples, fromRate, toRate) {
+    if (!samples || !samples.length) return new Float32Array(0);
+    if (!(fromRate > 0) || !(toRate > 0) || fromRate === toRate) return samples.slice();
+    const ratio = fromRate / toRate;
+    const outLen = Math.max(1, Math.floor(samples.length / ratio));
+    const out = new Float32Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+        const pos = i * ratio;
+        const i0 = Math.floor(pos);
+        const frac = pos - i0;
+        const s0 = samples[i0] || 0;
+        const s1 = samples[Math.min(i0 + 1, samples.length - 1)] || 0;
+        out[i] = s0 + (s1 - s0) * frac;
+    }
+    return out;
+}
+
+// Float32 mono -> 16-bit PCM WAV bytes (44-byte header, no extra
+// chunks), exactly what POST /api/copilot/mop/transcribe accepts. Pure.
+function encodeWav(samples, sampleRate) {
+    const data = samples || new Float32Array(0);
+    const rate = sampleRate || REC_RATE;
+    const bytes = new Uint8Array(44 + data.length * 2);
+    const view = new DataView(bytes.buffer);
+    const ascii = (offset, text) => {
+        for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+    };
+    ascii(0, 'RIFF');
+    view.setUint32(4, 36 + data.length * 2, true);
+    ascii(8, 'WAVE');
+    ascii(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // mono
+    view.setUint32(24, rate, true);
+    view.setUint32(28, rate * 2, true); // byte rate
+    view.setUint16(32, 2, true); // block align
+    view.setUint16(34, 16, true); // bits
+    ascii(36, 'data');
+    view.setUint32(40, data.length * 2, true);
+    for (let i = 0; i < data.length; i++) {
+        const s = Math.max(-1, Math.min(1, data[i]));
+        view.setInt16(44 + i * 2, s < 0 ? Math.round(s * 32768) : Math.round(s * 32767), true);
+    }
+    return bytes;
 }
 
 function isFileTooLarge(size) {
@@ -123,16 +220,16 @@ function verdictCopy(verdict, stepId, advanced, completed) {
     switch (verdict) {
         case 'MATCH':
             return completed
-                ? 'MATCH — final step confirmed. Procedure complete.'
-                : 'MATCH — step ' + stepId + ' confirmed, step ' + (stepId + 1) + ' unlocked.';
+                ? 'MATCH: final step confirmed. Procedure complete.'
+                : 'MATCH: step ' + stepId + ' confirmed, step ' + (stepId + 1) + ' unlocked.';
         case 'MISMATCH':
-            return 'MISMATCH — step ' + stepId + ' not confirmed. Next step stays locked.';
+            return 'MISMATCH: step ' + stepId + ' not confirmed. Next step stays locked.';
         case 'UNCERTAIN':
-            return 'UNCERTAIN — the photo does not settle step ' + stepId + '. Take a new photo; next step stays locked.';
+            return 'UNCERTAIN: the photo does not settle step ' + stepId + '. Take a new photo; next step stays locked.';
         case 'NO_ANSWER':
-            return 'NO_ANSWER — no reading came back for step ' + stepId + '. Take a new photo; next step stays locked.';
+            return 'NO_ANSWER: no reading came back for step ' + stepId + '. Take a new photo; next step stays locked.';
         default:
-            return String(verdict) + ' — unexpected verdict for step ' + stepId + '.';
+            return String(verdict) + ': unexpected verdict for step ' + stepId + '.';
     }
 }
 
@@ -271,7 +368,7 @@ function renderCurrent() {
     }
     if (_completed) {
         el.innerHTML = '<div class="mv-current mv-complete">'
-            + _esc('Procedure complete — all 5 steps verified.') + '</div>';
+            + _esc('Procedure complete: all 5 steps verified.') + '</div>';
         return;
     }
     const record = _currentStepRecord();
@@ -325,11 +422,14 @@ async function loadProcedure() {
         return;
     }
     _stepsData = out.data;
+    _clearRetryCountdown();
+    _clearErrorCard();
     renderProcedureHead();
 }
 
 // ─── Verification panel ────────────────────────────────────────────
 function _setPhoto(blob, name) {
+    _stopSampleAudio();
     _clearPhoto();
     if (isDemoActive()) {
         // A new photo clears the stale result; the stage shows the new
@@ -397,6 +497,7 @@ function _setStatus(html) {
 function _clearClaim() {
     const claimInput = _hook('claim');
     if (claimInput) claimInput.value = '';
+    _setParsed('', '');
 }
 
 function _startElapsed() {
@@ -441,11 +542,24 @@ function _honourRetryAfter(seconds) {
             _updateVerifyButton();
             return;
         }
-        _setStatus('<span class="mv-running">' + _esc('Rate limited — retry in ' + formatCountdown(left)) + '</span>');
+        _setStatus('<span class="mv-running">' + _esc('Rate limited: retry in ' + formatCountdown(left)) + '</span>');
     };
     if (_retryTimer !== null) clearInterval(_retryTimer);
     _retryTimer = setInterval(paint, 1000);
     paint();
+}
+
+// Any successful server answer clears a stale rate-limit countdown
+// (e.g. the server restarted and its counters reset). Called on every
+// 200 from verify, transcribe and steps.
+function _clearRetryCountdown() {
+    _retryUntil = 0;
+    if (_retryTimer !== null) {
+        clearInterval(_retryTimer);
+        _retryTimer = null;
+    }
+    _setStatus('');
+    _updateVerifyButton();
 }
 
 async function runVerification() {
@@ -481,11 +595,22 @@ async function runVerification() {
         let body = null;
         try { body = await res.json(); } catch (_e) { /* falls through */ }
         _clearClaim();
+        _clearRetryCountdown();
+        _clearErrorCard();
         if (!body || typeof body !== 'object') {
             renderError('parse', { message: 'The server answered 200 with an unreadable body. No result shown.' });
         } else {
             applyResult(body);
         }
+        _updateVerifyButton();
+        return;
+    }
+    if (res.status === 409) {
+        _clearClaim();
+        renderError('session', {
+            message: 'This procedure session was reset on the server '
+                + '(for example after a restart). Press Restart procedure to begin again.',
+        });
         _updateVerifyButton();
         return;
     }
@@ -583,6 +708,373 @@ async function loadSample(filename) {
     _setPhoto(blob, filename);
 }
 
+// ─── Voice readback ─────────────────────────────────────────────────
+// Press-and-hold microphone (getUserMedia + Web Audio, downmixed to
+// mono, resampled to 24 kHz, encoded as 16-bit PCM WAV in the
+// browser) plus "Try a sample readback" buttons. Audio lives in
+// memory only: never browser storage, never anywhere except POST
+// /api/copilot/mop/transcribe. A transcript fills the Operator
+// readback field; Verify still runs only when the operator presses it.
+
+function _setParsed(state, text) {
+    const el = _hook('parsed');
+    if (!el) return;
+    if (state) el.setAttribute('data-state', state);
+    else el.removeAttribute('data-state');
+    el.textContent = text || '';
+}
+
+function _setRecIndicator(text) {
+    const el = _hook('rec');
+    if (el) {
+        if (text) {
+            el.removeAttribute('hidden');
+            el.textContent = text;
+        } else {
+            el.setAttribute('hidden', '');
+            el.textContent = '';
+        }
+    }
+    const mic = _hook('mic');
+    if (mic) {
+        if (text) mic.setAttribute('data-rec', 'on');
+        else mic.removeAttribute('data-rec');
+    }
+}
+
+function _micAvailable() {
+    try {
+        const md = (typeof navigator !== 'undefined') ? navigator.mediaDevices : null;
+        const gum = !!(md && typeof md.getUserMedia === 'function');
+        const AC = (typeof window !== 'undefined')
+            ? (window.AudioContext || window.webkitAudioContext)
+            : null;
+        return gum && !!AC;
+    } catch (_e) { return false; }
+}
+
+function _disableMic(reason) {
+    _micDisabled = true;
+    const mic = _hook('mic');
+    if (!mic) return;
+    mic.disabled = true;
+    mic.textContent = 'Mic unavailable';
+    if (reason) mic.title = reason;
+    mic.setAttribute('aria-label', 'Microphone unavailable. ' + (reason || 'Use a sample readback.'));
+}
+
+function _refreshMicAvailability() {
+    if (_micAvailable()) return;
+    _disableMic('This browser cannot record audio here. Use a sample readback below.');
+}
+
+function _setVoiceBusy(busy) {
+    const mic = _hook('mic');
+    if (mic && !_micDisabled) mic.disabled = !!busy;
+    const view = _view();
+    if (view) {
+        view.querySelectorAll('[data-voice-sample]').forEach((btn) => {
+            btn.disabled = !!busy;
+        });
+    }
+}
+
+function _paintRec() {
+    if (!_rec) {
+        _setRecIndicator('');
+        return;
+    }
+    const secs = Math.floor((Date.now() - _rec.startedAt) / 1000);
+    _setRecIndicator('● REC ' + secs + ' s');
+}
+
+function startRecording(source) {
+    if (_rec || _transcribing) return Promise.resolve(false);
+    if (!_micAvailable()) {
+        _disableMic('This browser cannot record audio here. Use a sample readback below.');
+        return Promise.resolve(false);
+    }
+    return navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+        if (_rec) {
+            stream.getTracks().forEach((t) => { try { t.stop(); } catch (_e) { /* released */ } });
+            return false;
+        }
+        const AC = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AC();
+        const src = ctx.createMediaStreamSource(stream);
+        const processor = ctx.createScriptProcessor(4096, 2, 1);
+        const chunks = [];
+        processor.onaudioprocess = (event) => {
+            try {
+                const input = event.inputBuffer;
+                const chans = [];
+                for (let c = 0; c < input.numberOfChannels; c++) {
+                    chans.push(new Float32Array(input.getChannelData(c)));
+                }
+                chunks.push(mixdownToMono(chans));
+            } catch (_e) { /* drop a bad buffer, keep recording */ }
+        };
+        const sink = ctx.createGain();
+        sink.gain.value = 0;
+        src.connect(processor);
+        processor.connect(sink);
+        sink.connect(ctx.destination);
+        _rec = {
+            stream,
+            ctx,
+            processor,
+            sink,
+            chunks,
+            source: source || 'pointer',
+            startedAt: Date.now(),
+            sampleRate: ctx.sampleRate || 48000,
+        };
+        _paintRec();
+        _recTickTimer = setInterval(_paintRec, 250);
+        _recTimer = setTimeout(() => stopRecording('auto'), MAX_REC_SECONDS * 1000);
+        return true;
+    }).catch((_e) => {
+        _disableMic('Microphone blocked: allow access and reload, or use a sample readback.');
+        return false;
+    });
+}
+
+function stopRecording(source, discard) {
+    if (!_rec) return;
+    if (source && source !== 'auto' && source !== _rec.source) return;
+    const rec = _rec;
+    _rec = null;
+    if (_recTimer !== null) {
+        clearTimeout(_recTimer);
+        _recTimer = null;
+    }
+    if (_recTickTimer !== null) {
+        clearInterval(_recTickTimer);
+        _recTickTimer = null;
+    }
+    _setRecIndicator('');
+    try { rec.processor.disconnect(); } catch (_e) { /* already torn down */ }
+    try { rec.sink.disconnect(); } catch (_e) { /* already torn down */ }
+    try { rec.ctx.close(); } catch (_e) { /* already closed */ }
+    try { rec.stream.getTracks().forEach((t) => t.stop()); } catch (_e) { /* released */ }
+    if (discard) return;
+    let total = 0;
+    for (const c of rec.chunks) total += c.length;
+    if (!total) {
+        _setParsed('bad', 'No audio captured. Say it again or type it.');
+        return;
+    }
+    const mono = new Float32Array(total);
+    let offset = 0;
+    for (const c of rec.chunks) {
+        mono.set(c, offset);
+        offset += c.length;
+    }
+    const bytes = encodeWav(resampleLinear(mono, rec.sampleRate, REC_RATE), REC_RATE);
+    transcribeWav(new Blob([bytes], { type: 'audio/wav' }), 'readback.wav');
+}
+
+async function transcribeWav(blob, filename) {
+    if (_transcribing) return;
+    if (!blob || !(blob.size > 0)) {
+        _setParsed('bad', 'No audio captured. Say it again or type it.');
+        return;
+    }
+    _transcribing = true;
+    _setVoiceBusy(true);
+    _setParsed('busy', 'Transcribing with Muse Voice');
+    const form = new FormData();
+    form.append('audio', blob, filename || 'readback.wav');
+    let res;
+    try {
+        res = await authFetch(TRANSCRIBE_URL, { method: 'POST', body: form });
+    } catch (_e) {
+        _transcribing = false;
+        _setVoiceBusy(false);
+        _setParsed('', '');
+        renderError('network', { message: 'Network error reaching the server. No transcript was produced.' });
+        return;
+    }
+    _transcribing = false;
+    _setVoiceBusy(false);
+    if (res.status === 200) {
+        let body = null;
+        try { body = await res.json(); } catch (_e) { /* falls through */ }
+        _clearRetryCountdown();
+        _clearErrorCard();
+        if (!body || typeof body !== 'object' || typeof body.transcript !== 'string') {
+            _setParsed('bad', 'Not understood: empty reply. Say it again or type it.');
+            return;
+        }
+        const claimInput = _hook('claim');
+        if (claimInput) claimInput.value = body.transcript;
+        if (body.claim && body.claim.label && body.claim.state) {
+            _setParsed('ok', 'Parsed: ' + body.claim.label + ' ' + body.claim.state);
+        } else {
+            _setParsed('bad', 'Not understood: '
+                + (body.rejection_reason || 'could not parse a claim')
+                + '. Say it again or type it.');
+        }
+        return;
+    }
+    if (res.status === 429) {
+        let body = {};
+        try { body = await res.json(); } catch (_e) { /* keep {} */ }
+        const headerSecs = Number(res.headers.get('Retry-After'));
+        const retrySecs = Number.isFinite(headerSecs) ? headerSecs : Number(body.retry_after_s);
+        _setParsed('', '');
+        renderError('ratelimit', {
+            limit: body.limit,
+            dailyCap: body.daily_cap,
+            metaCallMade: body.meta_call_made,
+            detail: body.detail,
+        });
+        _honourRetryAfter(retrySecs);
+        return;
+    }
+    if (res.status === 400) {
+        let detail = '';
+        try { detail = (await res.json()).detail || ''; } catch (_e) { /* keep '' */ }
+        _setParsed('', '');
+        renderError('badrequest', { message: detail || 'Bad request.' });
+        return;
+    }
+    let detail = '';
+    try {
+        const body = await res.json();
+        detail = (body && body.detail) || '';
+    } catch (_e) { /* keep '' */ }
+    _setParsed('', '');
+    renderError('transcribe-unavailable', {
+        message: detail || ('Transcription unavailable (HTTP ' + res.status + ').'),
+    });
+}
+
+function renderVoiceSamples(files) {
+    const wrap = _hook('voice-samples');
+    if (!wrap) return;
+    const list = files || SAMPLE_AUDIO_FILES;
+    wrap.innerHTML = list.map((file) => (
+        '<span class="mv-voice-item">'
+        + '<button type="button" class="btn btn-secondary btn-sm mv-voice-sample" data-voice-sample="'
+        + _esc(file) + '">' + _esc(humanizeReadbackName(file)) + '</button>'
+        + '<span class="mv-voice-status" data-voice-status="' + _esc(file) + '" hidden></span>'
+        + '</span>'
+    )).join('');
+    wrap.querySelectorAll('[data-voice-sample]').forEach((btn) => {
+        btn.addEventListener('click', () => loadVoiceSample(btn.getAttribute('data-voice-sample')));
+    });
+}
+
+function _setVoiceStatus(filename, text) {
+    const view = _view();
+    if (!view) return;
+    view.querySelectorAll('[data-voice-status]').forEach((el) => {
+        if (text && el.getAttribute('data-voice-status') === filename) {
+            el.removeAttribute('hidden');
+            el.textContent = text;
+        } else {
+            el.setAttribute('hidden', '');
+            el.textContent = '';
+        }
+    });
+}
+
+function _stopSampleAudio() {
+    if (!_sampleAudio) return;
+    const audio = _sampleAudio.el;
+    _sampleAudio = null;
+    try { audio.pause(); } catch (_e) { /* already stopped */ }
+    try {
+        audio.removeAttribute('src');
+        audio.load();
+    } catch (_e) { /* best-effort release */ }
+    _setVoiceStatus('', '');
+}
+
+function _playSampleAudio(filename) {
+    _stopSampleAudio();
+    let audio = null;
+    try {
+        audio = new Audio(SAMPLE_AUDIO_BASE + filename);
+    } catch (_e) {
+        return; // no audio surface: transcribe anyway, silently
+    }
+    _sampleAudio = { el: audio, file: filename };
+    _setVoiceStatus(filename, 'Playing sample');
+    const done = () => {
+        if (_sampleAudio && _sampleAudio.el === audio) {
+            _sampleAudio = null;
+            _setVoiceStatus('', '');
+        }
+    };
+    try {
+        if (typeof audio.addEventListener === 'function') {
+            audio.addEventListener('ended', done);
+            audio.addEventListener('error', done);
+        }
+        const played = audio.play();
+        if (played && typeof played.catch === 'function') {
+            played.catch(() => done());
+        }
+    } catch (_e) {
+        done();
+    }
+}
+
+function _setVoiceNoteVisible(visible) {
+    const note = _hook('voice-note');
+    if (!note) return;
+    if (visible) note.removeAttribute('hidden');
+    else note.setAttribute('hidden', '');
+}
+
+async function probeVoiceSamples() {
+    const section = _hook('voice-section');
+    if (!section) return;
+    const okFiles = [];
+    for (const file of SAMPLE_AUDIO_FILES) {
+        try {
+            const res = await fetch(SAMPLE_AUDIO_BASE + file, { method: 'HEAD' });
+            if (res && res.ok) okFiles.push(file);
+        } catch (_e) { /* missing: its button stays hidden */ }
+    }
+    if (!okFiles.length) {
+        _voiceVisible = false;
+        _voiceFiles = null;
+        section.setAttribute('hidden', '');
+        _setVoiceNoteVisible(false);
+        return;
+    }
+    _voiceVisible = true;
+    _voiceFiles = okFiles;
+    section.removeAttribute('hidden');
+    _setVoiceNoteVisible(true);
+    renderVoiceSamples(okFiles);
+}
+
+async function loadVoiceSample(filename) {
+    if (!filename || !SAMPLE_AUDIO_FILES.includes(filename)) return;
+    _playSampleAudio(filename);
+    if (_transcribing || _rec) return;
+    _setParsed('busy', 'Loading sample readback…');
+    let res;
+    try {
+        res = await fetch(SAMPLE_AUDIO_BASE + filename);
+    } catch (_e) {
+        _setParsed('', '');
+        renderError('voice-sample', { message: 'Could not load the sample readback (network error).' });
+        return;
+    }
+    if (!res || !res.ok) {
+        _setParsed('', '');
+        renderError('voice-sample', { message: 'Could not load the sample readback (HTTP ' + (res ? res.status : '—') + ').' });
+        return;
+    }
+    const blob = await res.blob();
+    transcribeWav(blob, filename);
+}
+
 // ─── Result panel ──────────────────────────────────────────────────
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -673,6 +1165,7 @@ function renderFooter(container, body) {
             + ' · ' + formatLatency(body.latency_s)
             + ' · ' + (body.sam_box_count ?? '—') + ' SAM boxes'
             + ' · left: ' + (left.method || '—') + ' / right: ' + (right.method || '—')
+            + (body.trace_id ? ' · trace ' + body.trace_id : '')
         ) + '</div>';
 }
 
@@ -712,7 +1205,7 @@ function renderDemoTracker() {
 function renderDemoCurrent(el) {
     if (_completed) {
         el.innerHTML = '<div class="mv-current-line mv-complete">'
-            + _esc('Procedure complete — all 5 steps verified.') + '</div>';
+            + _esc('Procedure complete: all 5 steps verified.') + '</div>';
     } else if (!_stepsData) {
         el.innerHTML = '';
     } else {
@@ -740,20 +1233,28 @@ function renderDemoResult(body) {
     const verdictText = verdictCopy(verdict, body.step_id, body.advanced, _completed);
     let html = '<div class="mv-banner" data-state="' + bannerState + '">'
         + '<div class="mv-banner-title mv-demo-verdict" title="' + _esc(verdictText) + '">' + _esc(verdictText) + '</div>';
+    let differingHtml = '';
     if (verdict === 'MISMATCH') {
         const differing = (body.differing_labels || []).map((label) => (
             '<span class="mv-chip" data-chip="crit">' + _esc(label) + '</span>'
         )).join(' ');
-        html += '<div class="mv-banner-labels">' + _esc('Differing: ') + differing + '</div>'
-            + '<div class="mv-hazard">' + _esc(body.hazard_if_wrong || '') + '</div>';
+        differingHtml = '<div class="mv-banner-labels">' + _esc('Differing: ') + differing + '</div>';
+        html += '<div class="mv-hazard">' + _esc(body.hazard_if_wrong || '') + '</div>';
     }
-    html += '<div class="mv-verdict-note">' + _esc('Computed in code from the photo readings') + '</div>'
+    html += '<div class="mv-banner-sub">' + differingHtml
+        + '<div class="mv-verdict-note">' + _esc('Computed in code from the photo readings') + '</div>'
+        + '</div>'
         + '</div>';
     if (contradictionCopy(body.contradiction)) {
         const c = body.contradiction || {};
         html += '<div class="mv-banner" data-state="contra">'
-            + '<div class="mv-contra-line">' + _esc('Operator: ' + (c.label || '—') + ' ' + (c.claimed || '—')) + '</div>'
-            + '<div class="mv-contra-line">' + _esc('Photo: ' + (c.label || '—') + ' ' + (c.observed || '—')) + '</div>'
+            + '<div class="mv-contra-row">'
+            + '<span class="mv-contra-part"><strong>' + _esc('Operator:') + '</strong> '
+            + _esc((c.label || '—') + ' ' + (c.claimed || '—')) + '</span>'
+            + '<span class="mv-contra-sep" aria-hidden="true">≠</span>'
+            + '<span class="mv-contra-part"><strong>' + _esc('Photo:') + '</strong> '
+            + _esc((c.label || '—') + ' ' + (c.observed || '—')) + '</span>'
+            + '</div>'
             + '</div>';
     }
     html += '<div data-mv-cards></div>';
@@ -978,6 +1479,14 @@ function renderClassicResult(body) {
     if (footHost) renderFooter(footHost, body);
 }
 
+// A successful request clears a stale error card (e.g. an old network
+// error left in the result host). Only error banners are cleared;
+// verdict banners are left untouched.
+function _clearErrorCard() {
+    const host = _hook('result');
+    if (host && host.querySelector('.mv-banner[data-state="err"]')) host.innerHTML = '';
+}
+
 function renderError(kind, info) {
     const host = _hook('result');
     if (!host) return;
@@ -985,18 +1494,29 @@ function renderError(kind, info) {
     let title = '';
     let bodyHtml = '';
     if (kind === 'ratelimit') {
-        title = 'Rate limited (429) — no Meta call was made';
+        title = 'Rate limited (429): no Meta call was made';
+        const limitText = data.limit === 'per_ip' ? 'per IP'
+            : (data.limit === 'daily_cap' ? 'daily cap' : (data.limit || '—'));
+        const madeText = data.metaCallMade === true ? 'made'
+            : (data.metaCallMade === false ? 'not made' : '—');
         bodyHtml = '<div class="mv-err-row"><span>Limit</span><strong>'
-            + _esc(data.limit || '—') + '</strong></div>'
+            + _esc(limitText) + '</strong></div>'
             + '<div class="mv-err-row"><span>Daily cap</span><strong>'
             + _esc(data.dailyCap ?? '—') + '</strong></div>'
-            + '<div class="mv-err-row"><span>Meta call made</span><strong>'
-            + _esc(data.metaCallMade === undefined ? '—' : String(data.metaCallMade)) + '</strong></div>'
+            + '<div class="mv-err-row"><span>Meta call</span><strong>'
+            + _esc(madeText) + '</strong></div>'
             + (data.detail ? '<div class="mv-err-detail">' + _esc(data.detail) + '</div>' : '');
+    } else if (kind === 'session') {
+        title = 'Session reset (409)';
+        bodyHtml = '<div class="mv-err-detail">' + _esc(data.message || '') + '</div>';
     } else if (kind === 'unavailable') {
         title = 'Verification unavailable (503)';
         bodyHtml = '<div class="mv-err-detail">' + _esc(data.message || '') + '</div>'
             + '<div class="mv-err-note">' + _esc('No result was produced. Nothing below is a reading.') + '</div>';
+    } else if (kind === 'transcribe-unavailable') {
+        title = 'Transcription unavailable (503)';
+        bodyHtml = '<div class="mv-err-detail">' + _esc(data.message || '') + '</div>'
+            + '<div class="mv-err-note">' + _esc('No transcript was produced. Nothing below is a reading.') + '</div>';
     } else if (kind === 'badrequest') {
         title = 'Rejected by the server (400)';
         bodyHtml = '<div class="mv-err-detail">' + _esc(data.message || '') + '</div>';
@@ -1005,6 +1525,9 @@ function renderError(kind, info) {
         bodyHtml = '<div class="mv-err-detail">' + _esc(data.message || '') + '</div>';
     } else if (kind === 'sample') {
         title = 'Sample photo';
+        bodyHtml = '<div class="mv-err-detail">' + _esc(data.message || '') + '</div>';
+    } else if (kind === 'voice-sample') {
+        title = 'Sample readback';
         bodyHtml = '<div class="mv-err-detail">' + _esc(data.message || '') + '</div>';
     } else if (kind === 'file') {
         title = 'Photo rejected';
@@ -1019,12 +1542,31 @@ function renderError(kind, info) {
 }
 
 // ─── Session ───────────────────────────────────────────────────────
+// Register _sessionId with the server (start) or swap it for a fresh
+// server id (restart). Best-effort: on any failure the local id is
+// kept and the next Verify reports the honest 409/429/network error.
+async function _registerSession(url, payload) {
+    try {
+        const res = await authFetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload || {}),
+        });
+        if (res.status !== 200) return;
+        const body = await res.json();
+        const id = body && body.session && body.session.session_id;
+        if (typeof id === 'string' && id) _sessionId = id;
+    } catch (_e) { /* kept local; Verify will say what is wrong */ }
+}
+
 function restartProcedure() {
     if (_running) return;
+    _stopSampleAudio();
     _clearPhoto();
     const fileInput = _hook('file');
     if (fileInput) fileInput.value = '';
     _clearClaim();
+    const oldId = _sessionId;
     _sessionId = newSessionId();
     _currentStep = 0;
     _blockedStep = null;
@@ -1047,6 +1589,7 @@ function restartProcedure() {
     renderProcedureHead();
     _setStatus('');
     _updateVerifyButton();
+    void _registerSession(SESSION_RESTART_URL, { session_id: oldId });
 }
 
 // ─── Demo presentation skeleton ─────────────────────────────────
@@ -1076,22 +1619,33 @@ function demoSkeletonHTML() {
         + '</section>'
         + '</div>'
         + '<div class="mv-controlbar">'
-        + '<div class="mv-controlbar-row">'
+        + '<div class="mv-controlbar-row mv-controlbar-main">'
+        + '<span class="mv-field-label">Operator readback</span>'
+        + '<input type="text" data-mv-claim aria-label="Operator readback" placeholder="e.g. Q8 closed" maxlength="120" autocomplete="off">'
+        + '<button type="button" class="btn btn-secondary btn-sm mv-mic-btn" data-mv-mic '
+        + 'aria-label="Hold to record a voice readback" title="Hold to record (max 8 s)">Hold to talk</button>'
+        + '<div class="mv-actions">'
+        + '<button type="button" class="btn" data-mv-verify-btn disabled>Verify</button>'
+        + '</div>'
+        + '<span class="mv-claim-status">'
+        + '<span class="mv-parsed" data-mv-parsed aria-live="polite"></span>'
+        + '<span class="mv-rec" data-mv-rec hidden></span>'
+        + '</span>'
+        + '</div>'
+        + '<div class="mv-controlbar-row mv-controlbar-samples">'
         + '<div class="mv-samples" data-mv-samples-section hidden>'
         + '<div class="mv-field-label">Try a sample photo</div>'
         + '<div class="mv-sample-row" data-mv-samples></div>'
         + '</div>'
-        + '<label class="mv-field">'
-        + '<span class="mv-field-label">Operator readback</span>'
-        + '<input type="text" data-mv-claim placeholder="e.g. Q8 closed" maxlength="120" autocomplete="off">'
-        + '</label>'
-        + '<div class="mv-actions">'
-        + '<button type="button" class="btn" data-mv-verify-btn disabled>Verify</button>'
+        + '<div class="mv-voice-samples" data-mv-voice-section hidden>'
+        + '<div class="mv-field-label">Try a sample readback</div>'
+        + '<div class="mv-voice-row" data-mv-voice-samples></div>'
         + '</div>'
         + '</div>'
         + '<div class="mv-controlbar-row mv-controlbar-sub">'
         + '<div class="mv-verify-note">Verification can take up to a minute depending on API load.</div>'
-        + '<div class="mv-keys-hint">Keys: 1–5 load sample · Enter verify · R restart</div>'
+        + '<div class="mv-keys-hint">Keys: 1–5 load sample · Enter verify · R restart · hold M to talk</div>'
+        + '<div class="mv-voice-note" data-mv-voice-note hidden>Synthetic voice (ElevenLabs)</div>'
         + '</div>'
         + '</div>'
         + '</div>';
@@ -1102,6 +1656,7 @@ function syncDemoLayout() {
     if (!view) return;
     const wantDemo = isDemoActive();
     if (wantDemo === _demoLayout) return;
+    stopRecording('auto', true);
     if (wantDemo) {
         const layout = view.querySelector('.mv-layout');
         if (!layout) return;
@@ -1131,6 +1686,12 @@ function syncDemoLayout() {
         const section = _hook('samples-section');
         if (section) section.removeAttribute('hidden');
         renderSamples();
+    }
+    if (_voiceVisible) {
+        const voiceSection = _hook('voice-section');
+        if (voiceSection) voiceSection.removeAttribute('hidden');
+        _setVoiceNoteVisible(true);
+        renderVoiceSamples(_voiceFiles);
     }
     if (_lastBody && _stepsData) renderResult(_lastBody);
 }
@@ -1228,9 +1789,10 @@ function _closestDot(target) {
 }
 
 // Demo-only shortcuts: 1-5 load the samples in shown order, Enter
-// verifies when enabled, R restarts. Silent when demo mode is off,
-// when the view is hidden, when focus sits in a text field, or when
-// focus sits on a tracker circle (there, Enter/Space opens details).
+// verifies when enabled, R restarts, hold M talks into the readback
+// (release stops). Silent when demo mode is off, when the view is
+// hidden, when focus sits in a text field, or when focus sits on a
+// tracker circle (there, Enter/Space opens details).
 function _onDemoKey(event) {
     if (!isDemoActive()) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -1250,6 +1812,10 @@ function _onDemoKey(event) {
         return;
     }
     if (_inTextField(event.target)) return;
+    if ((key === 'm' || key === 'M') && !event.repeat) {
+        startRecording('key');
+        return;
+    }
     if (typeof key === 'string' && key.length === 1 && key >= '1' && key <= '5') {
         const file = SAMPLE_FILES[Number(key) - 1];
         if (file && !_running) loadSample(file);
@@ -1267,6 +1833,14 @@ function _onDemoKey(event) {
     if (key === 'r' || key === 'R') {
         restartProcedure();
     }
+}
+
+// M release always stops a key-initiated recording (demo only).
+function _onDemoKeyUp(event) {
+    if (!isDemoActive()) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const key = event.key;
+    if (key === 'm' || key === 'M') stopRecording('key');
 }
 
 // ─── Wiring + lifecycle ────────────────────────────────────────────
@@ -1290,6 +1864,14 @@ function _wire() {
     }
     const verifyBtn = _hook('verify-btn');
     if (verifyBtn) verifyBtn.addEventListener('click', runVerification);
+    const micBtn = _hook('mic');
+    if (micBtn) {
+        micBtn.addEventListener('pointerdown', () => startRecording('pointer'));
+        micBtn.addEventListener('pointerup', () => stopRecording('pointer'));
+        micBtn.addEventListener('pointercancel', () => stopRecording('pointer'));
+        micBtn.addEventListener('pointerleave', () => stopRecording('pointer'));
+    }
+    _refreshMicAvailability();
     const restartBtn = _hook('restart');
     if (restartBtn) restartBtn.addEventListener('click', restartProcedure);
     const zoomToggle = _hook('zoom');
@@ -1302,6 +1884,10 @@ function _wire() {
     if (!_keysWired && typeof document !== 'undefined') {
         _keysWired = true;
         document.addEventListener('keydown', _onDemoKey);
+    }
+    if (!_keysUpWired && typeof document !== 'undefined') {
+        _keysUpWired = true;
+        document.addEventListener('keyup', _onDemoKeyUp);
     }
     if (!_clickWired && typeof document !== 'undefined') {
         _clickWired = true;
@@ -1322,9 +1908,11 @@ function initMopVerifyView() {
             _wire();
             if (firstActivation) {
                 _sessionId = newSessionId();
+                void _registerSession(SESSION_START_URL, { session_id: _sessionId });
                 renderProcedureHead();
                 loadProcedure();
                 probeSamples();
+                probeVoiceSamples();
             }
         },
     });
@@ -1337,6 +1925,8 @@ function reset() {
         clearInterval(_retryTimer);
         _retryTimer = null;
     }
+    stopRecording('auto', true);
+    _stopSampleAudio();
     _clearPhoto();
     _routeRegistered = false;
     _wired = false;
@@ -1353,6 +1943,10 @@ function reset() {
     _zoomOn = true;
     _samplesVisible = false;
     _openDot = null;
+    _transcribing = false;
+    _micDisabled = false;
+    _voiceVisible = false;
+    _voiceFiles = null;
 }
 
 // ─── Exports ───────────────────────────────────────────────────────
@@ -1360,6 +1954,16 @@ export { initMopVerifyView };
 export const __mop_verify_test__ = {
     newSessionId,
     humanizeSampleName,
+    humanizeReadbackName,
+    mixdownToMono,
+    resampleLinear,
+    encodeWav,
+    startRecording,
+    stopRecording,
+    transcribeWav,
+    loadVoiceSample,
+    renderVoiceSamples,
+    probeVoiceSamples,
     isFileTooLarge,
     parseNotes,
     cardState,
@@ -1385,7 +1989,11 @@ export const __mop_verify_test__ = {
     initMopVerifyView,
     reset,
     SAMPLE_FILES,
+    SAMPLE_AUDIO_FILES,
     MAX_FILE_BYTES,
+    MAX_REC_SECONDS,
+    REC_RATE,
+    TRANSCRIBE_URL,
     getState: () => ({
         sessionId: _sessionId,
         currentStep: _currentStep,
@@ -1397,6 +2005,10 @@ export const __mop_verify_test__ = {
         demoLayout: _demoLayout,
         hasResult: !!_lastBody,
         zoomOn: _zoomOn,
+        recording: !!_rec,
+        transcribing: _transcribing,
+        micDisabled: _micDisabled,
+        voiceVisible: _voiceVisible,
     }),
     setStepsData: (data) => { _stepsData = data; },
     setSession: (id, step) => { _sessionId = id; _currentStep = step; },

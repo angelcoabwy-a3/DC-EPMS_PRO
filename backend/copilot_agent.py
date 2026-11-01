@@ -22,7 +22,16 @@ reasoning_effort low, max_tokens 4000. No key is ever printed.
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import functools
+import io
 import json
+import logging
+import secrets
+import time
+import wave
+from collections.abc import Callable
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Request
@@ -34,15 +43,25 @@ try:  # package import (backend.copilot_agent)
     from .copilot_limits import (
         MetaLimitError,
         check_limits,
+        get_daily_cap,
+        get_daily_count,
+        get_ip_usage,
         record_meta_attempt,
         retry_after_for_ip,
         seconds_until_utc_midnight,
     )
     from .llm_providers import MetaProvider
     from .mop_verify import (
+        _CLAIM_BYP_RE,
+        _CLAIM_CLOSED_RE,
+        _CLAIM_OPEN_RE,
+        _CLAIM_Q_RE,
         MopInputError,
+        _parse_claim,
+        drop_session,
         get_mop_steps,
         get_session,
+        has_session,
         store_session_photo,
         validate_verify_inputs,
         verify_photo,
@@ -58,15 +77,25 @@ except ImportError:  # top-level import, as backend/main.py does it
     from copilot_limits import (  # type: ignore[no-redef]
         MetaLimitError,
         check_limits,
+        get_daily_cap,
+        get_daily_count,
+        get_ip_usage,
         record_meta_attempt,
         retry_after_for_ip,
         seconds_until_utc_midnight,
     )
     from llm_providers import MetaProvider  # type: ignore[no-redef]
     from mop_verify import (  # type: ignore[no-redef]
+        _CLAIM_BYP_RE,
+        _CLAIM_CLOSED_RE,
+        _CLAIM_OPEN_RE,
+        _CLAIM_Q_RE,
         MopInputError,
+        _parse_claim,
+        drop_session,
         get_mop_steps,
         get_session,
+        has_session,
         store_session_photo,
         validate_verify_inputs,
         verify_photo,
@@ -936,74 +965,215 @@ async def copilot_agent_investigate(payload: AgentInvestigateIn, request: Reques
     )
 
 
-def _limit_exceeded_response(exc: MetaLimitError, client_ip: str) -> JSONResponse:
+trace_logger = logging.getLogger("mop.trace")
+
+
+class _MopTrace:
+    """Per-request audit context for the mop.trace log (one line per request).
+
+    The route fills in fields as it goes; every response carries the
+    same trace_id the log line carries. Never holds image/audio bytes,
+    transcripts, headers, IPs or keys -- only counts and parsed values.
+    """
+
+    def __init__(self, event: str) -> None:
+        self.event = event
+        self.trace_id = secrets.token_hex(4)
+        self.started = time.perf_counter()
+        self.session_id: str | None = None
+        self.step: int | None = None
+        self.verdict = "-"
+        self.differing = "-"
+        self.claim = "-"
+        self.contradiction = "-"
+        self.meta_calls = 0
+        self.http = 500
+
+    def note(self, **fields: object) -> None:
+        for key, value in fields.items():
+            setattr(self, key, value)
+
+    def respond(
+        self,
+        status_code: int,
+        content: dict,
+        headers: dict[str, str] | None = None,
+    ) -> JSONResponse:
+        self.http = status_code
+        return JSONResponse(
+            status_code=status_code,
+            content={**content, "trace_id": self.trace_id},
+            headers=headers,
+        )
+
+    def emit(self, client_ip: str) -> None:
+        ms = int((time.perf_counter() - self.started) * 1000)
+        used, maximum = get_ip_usage(client_ip)
+        session = self.session_id[:8] if self.session_id else "-"
+        step = self.step if self.step is not None else "-"
+        trace_logger.info(
+            "MOP_TRACE trace=%s event=%s session=%s step=%s verdict=%s "
+            "differing=%s claim=%s contradiction=%s meta_calls=%s ms=%s "
+            "http=%s limit_ip=%s/%s daily=%s/%s",
+            self.trace_id,
+            self.event,
+            session,
+            step,
+            self.verdict,
+            self.differing,
+            self.claim,
+            self.contradiction,
+            self.meta_calls,
+            ms,
+            self.http,
+            used,
+            maximum,
+            get_daily_count(),
+            get_daily_cap(),
+        )
+
+
+_current_trace: contextvars.ContextVar[_MopTrace | None] = contextvars.ContextVar(
+    "mop_trace", default=None
+)
+
+
+def _mop_trace() -> _MopTrace:
+    trace = _current_trace.get()
+    if trace is None:  # pragma: no cover - routes always run under @_traced
+        raise RuntimeError("mop route called outside @_traced")
+    return trace
+
+
+def _traced(event: str):
+    """Emit exactly one MOP_TRACE line per handled mop request (F6)."""
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        async def wrapper(request: Request):
+            trace = _MopTrace(event)
+            token = _current_trace.set(trace)
+            try:
+                return await fn(request)
+            finally:
+                client = getattr(request, "client", None)
+                host = getattr(client, "host", None) or "unknown"
+                trace.emit(host if isinstance(host, str) else "unknown")
+                _current_trace.reset(token)
+
+        return wrapper
+
+    return decorator
+
+
+def _limit_exceeded_response(
+    exc: MetaLimitError, client_ip: str, trace_id: str | None = None
+) -> JSONResponse:
     """429 body identical to the agent endpoint (guard shared by MOP routes)."""
     if exc.limit == "daily_cap":
         retry_after_s = seconds_until_utc_midnight()
     else:
         retry_after_s = retry_after_for_ip(client_ip)
+    content: dict = {
+        "error": "limit_exceeded",
+        "limit": exc.limit,
+        "detail": exc.message,
+        "daily_cap": exc.daily_cap,
+        "meta_call_made": False,
+        "retry_after_s": retry_after_s,
+    }
+    if trace_id is not None:
+        content["trace_id"] = trace_id
     return JSONResponse(
         status_code=429,
-        content={
-            "error": "limit_exceeded",
-            "limit": exc.limit,
-            "detail": exc.message,
-            "daily_cap": exc.daily_cap,
-            "meta_call_made": False,
-            "retry_after_s": retry_after_s,
-        },
+        content=content,
         headers={"Retry-After": str(retry_after_s)},
     )
 
 
-def _bad_verify_request(detail: str) -> JSONResponse:
-    return JSONResponse(status_code=400, content={"error": "invalid_request", "detail": detail})
+def _bad_verify_request(detail: str, trace_id: str | None = None) -> JSONResponse:
+    content = {"error": "invalid_request", "detail": detail}
+    if trace_id is not None:
+        content["trace_id"] = trace_id
+    return JSONResponse(status_code=400, content=content)
 
 
 @agent_router.post("/mop/verify")
+@_traced("verify")
 async def copilot_mop_verify(request: Request):
     """Verify a training-panel photo against one MOP step.
 
     Multipart fields: image (photo bytes), step_id (0-5, 0 is the initial
     state), session_id, optional operator_claim text. Guarded exactly
-    like /agent-investigate: bad input -> 400 before the guard, exceeded
-    cap/rate -> 429 with no Meta call, missing key or Meta failure ->
-    503. One verify counts as one daily-cap Meta attempt, recorded
-    right before the SAM call inside verify_photo.
+    like /agent-investigate: bad input -> 400 before the guard, unknown
+    session -> 409 before the guard (no Meta call, no rate-limit
+    count), exceeded cap/rate -> 429 with no Meta call, missing key or
+    Meta failure -> 503. One verify counts as one daily-cap Meta
+    attempt, recorded right before the SAM call inside verify_photo.
     """
+    trace = _mop_trace()
     form = await request.form()
     upload = form.get("image")
     if upload is None or isinstance(upload, str):
-        return _bad_verify_request("multipart field 'image' with an uploaded photo is required")
+        trace.note(http=400, verdict="bad_request")
+        return _bad_verify_request(
+            "multipart field 'image' with an uploaded photo is required",
+            trace_id=trace.trace_id,
+        )
     image_bytes = await upload.read()
     raw_step = form.get("step_id")
     try:
         step_id = int(str(raw_step).strip())
     except (TypeError, ValueError):
-        return _bad_verify_request("step_id must be an integer 0-5")
+        trace.note(http=400, verdict="bad_request")
+        return _bad_verify_request("step_id must be an integer 0-5", trace_id=trace.trace_id)
     raw_session = form.get("session_id")
     if not isinstance(raw_session, str) or not raw_session.strip():
-        return _bad_verify_request("session_id must be a non-empty string")
+        trace.note(http=400, verdict="bad_request")
+        return _bad_verify_request("session_id must be a non-empty string", trace_id=trace.trace_id)
     session_id = raw_session.strip()
     raw_claim = form.get("operator_claim")
     if raw_claim is not None and not isinstance(raw_claim, str):
-        return _bad_verify_request("operator_claim must be text when given")
+        trace.note(http=400, verdict="bad_request")
+        return _bad_verify_request(
+            "operator_claim must be text when given", trace_id=trace.trace_id
+        )
     operator_claim = raw_claim.strip() if isinstance(raw_claim, str) and raw_claim.strip() else None
     try:
         validate_verify_inputs(step_id, image_bytes, session_id)
     except MopInputError as exc:
-        return _bad_verify_request(str(exc))
+        trace.note(http=400, verdict="bad_request")
+        return _bad_verify_request(str(exc), trace_id=trace.trace_id)
+    trace.note(session_id=session_id, step=step_id)
+    if not has_session(session_id):
+        # Stale page id (e.g. the server restarted and forgot it): 409
+        # before the guard and any Meta call, so no credits are spent.
+        # Never silently create a session or evaluate the client step.
+        trace.note(http=409, verdict="session_not_found")
+        return trace.respond(
+            409,
+            {
+                "error": "session_not_found",
+                "detail": (
+                    "Unknown procedure session. The server may have restarted "
+                    "and forgotten it; press Restart procedure to begin again."
+                ),
+                "meta_call_made": False,
+            },
+        )
     client_ip = request.client.host if request.client else "unknown"
     try:
         check_limits(client_ip)
     except MetaLimitError as exc:
-        return _limit_exceeded_response(exc, client_ip)
+        trace.note(http=429, verdict="rate_limited")
+        return _limit_exceeded_response(exc, client_ip, trace_id=trace.trace_id)
     try:
         MetaAgentClient()  # key check only; mop_verify builds its own requests
     except MetaAgentError as exc:
-        return JSONResponse(
-            status_code=503,
-            content={"error": "meta_unavailable", "detail": str(exc), "meta_call_made": False},
+        trace.note(http=503, verdict="verify_failed")
+        return trace.respond(
+            503,
+            {"error": "meta_unavailable", "detail": str(exc), "meta_call_made": False},
         )
     store_session_photo(session_id, image_bytes)
     try:
@@ -1011,29 +1181,359 @@ async def copilot_mop_verify(request: Request):
             verify_photo, step_id, image_bytes, operator_claim, session_id
         )
     except MopInputError as exc:
-        return _bad_verify_request(str(exc))
+        trace.note(http=400, verdict="bad_request")
+        return _bad_verify_request(str(exc), trace_id=trace.trace_id)
     except Exception as exc:
-        return JSONResponse(
-            status_code=503,
-            content={
+        # A daily-cap attempt was recorded inside verify_photo before
+        # the SAM call, but the exact call count died with the error.
+        trace.note(http=503, verdict="verify_failed", meta_calls=1)
+        return trace.respond(
+            503,
+            {
                 "error": "meta_unavailable",
                 "detail": f"verification failed: {exc}",
                 "meta_call_made": True,
             },
         )
-    return JSONResponse({**result, "meta_call_made": True})
+    parsed = result["claim"]
+    trace.note(
+        verdict=result["verdict"],
+        differing=",".join(result["differing_labels"]) or "-",
+        claim=(
+            "-"
+            if operator_claim is None
+            else (f"{parsed['label']}:{parsed['state']}" if parsed else "unparsed")
+        ),
+        contradiction="-"
+        if operator_claim is None
+        else ("yes" if result["contradiction"] else "no"),
+        meta_calls=result["meta_calls_made"],
+    )
+    return trace.respond(200, {**result, "meta_call_made": True})
 
 
 @agent_router.get("/mop/steps")
+@_traced("steps")
 async def copilot_mop_steps(request: Request):
-    """MOP steps for the UI. Same guard/429 as the agent endpoint.
+    """MOP steps for the UI. Quota-free: never counts, never 429s.
 
-    Static data: never records a daily-cap attempt and has no 503 path
-    (nothing here depends on Meta).
+    Static data: touches neither the per-IP limit nor the daily cap
+    (only verify and transcribe call Meta), and has no 503 path.
     """
+    trace = _mop_trace()
+    return trace.respond(200, get_mop_steps())
+
+
+def _fresh_session_id() -> str:
+    fresh = secrets.token_hex(8)
+    while has_session(fresh):
+        fresh = secrets.token_hex(8)
+    return fresh
+
+
+def _session_body(session_id: str, current_step: int, completed: bool) -> dict:
+    return {
+        "session": {
+            "session_id": session_id,
+            "current_step": current_step,
+            "completed": completed,
+        }
+    }
+
+
+@agent_router.post("/mop/session/start")
+@_traced("session_start")
+async def copilot_mop_session_start(request: Request):
+    """Start a procedure session the server remembers for later verifies.
+
+    Optional JSON body {"session_id": "<client id>"}: the server adopts
+    the proposed id for a fresh session at step 0, so activation and
+    server agree; without one the server mints an id. Quota-free like
+    steps (never counts, never 429s); never touches Meta.
+    """
+    trace = _mop_trace()
+    try:
+        data = await request.json()
+    except Exception:
+        data = None
+    if data is not None and not isinstance(data, dict):
+        trace.note(http=400, verdict="bad_request")
+        return _bad_verify_request("body must be a JSON object", trace_id=trace.trace_id)
+    proposed = (data or {}).get("session_id")
+    if proposed is not None and (
+        not isinstance(proposed, str) or not proposed.strip() or len(proposed.strip()) > 128
+    ):
+        trace.note(http=400, verdict="bad_request")
+        return _bad_verify_request(
+            "session_id must be a non-empty string of at most 128 characters",
+            trace_id=trace.trace_id,
+        )
+    if proposed is not None:
+        # Start always means step 0, even if the id is already known
+        # (e.g. the page re-activated without a restart).
+        drop_session(proposed.strip())
+        session = get_session(proposed.strip())
+    else:
+        session = get_session(_fresh_session_id())
+    trace.note(http=200, session_id=session.session_id)
+    return trace.respond(
+        200, _session_body(session.session_id, session.current_step, session.completed)
+    )
+
+
+@agent_router.post("/mop/session/restart")
+@_traced("restart")
+async def copilot_mop_session_restart(request: Request):
+    """Drop one session (if the server still has it) and mint a fresh id.
+
+    Optional JSON body {"session_id": "<old id>"} names the session to
+    forget; unknown or absent ids are fine -- restart is the recovery
+    path after a 409, so it never 409s itself. Quota-free like steps
+    (never counts, never 429s); never touches Meta.
+    """
+    trace = _mop_trace()
+    try:
+        data = await request.json()
+    except Exception:
+        data = None
+    if data is not None and not isinstance(data, dict):
+        trace.note(http=400, verdict="bad_request")
+        return _bad_verify_request("body must be a JSON object", trace_id=trace.trace_id)
+    old = (data or {}).get("session_id")
+    if old is not None and (not isinstance(old, str) or not old.strip() or len(old.strip()) > 128):
+        trace.note(http=400, verdict="bad_request")
+        return _bad_verify_request(
+            "session_id must be a non-empty string of at most 128 characters",
+            trace_id=trace.trace_id,
+        )
+    if old is not None:
+        drop_session(old.strip())
+    session = get_session(_fresh_session_id())
+    trace.note(http=200, session_id=session.session_id)
+    return trace.respond(
+        200, _session_body(session.session_id, session.current_step, session.completed)
+    )
+
+
+# ------------------------------------------------------- Voice readback
+
+TRANSCRIBE_MODEL = "muse-voice-transcribe-1.0"
+TRANSCRIBE_TIMEOUT_S = 60.0
+TRANSCRIBE_MAX_SECONDS = 10.0
+TRANSCRIBE_RATE = 24000
+
+TranscribeClient = Callable[[bytes, str], str]
+_default_transcribe_client: TranscribeClient | None = None
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_transcribe_wav(data: bytes) -> float:
+    """WAV bytes to duration seconds. Raises MopInputError (HTTP 400).
+
+    Strict PCM mono 16-bit @ 24 kHz, at most 10 seconds. Validated from
+    the header itself (RIFF/WAVE, PCM format, channels, rate, bits) and
+    the duration comes from the data size. Empty/truncated files fail.
+    """
+    if not isinstance(data, bytes) or not data:
+        raise MopInputError("audio must be a non-empty WAV file")
+    try:
+        with wave.open(io.BytesIO(data), "rb") as wav:
+            params = wav.getparams()
+    except (wave.Error, EOFError, ValueError) as exc:
+        raise MopInputError(f"audio is not a valid WAV file: {exc}") from exc
+    if params.comptype != "NONE":
+        raise MopInputError("audio must be WAV PCM (uncompressed)")
+    if params.nchannels != 1:
+        raise MopInputError(f"audio must be mono (1 channel), got {params.nchannels}")
+    if params.framerate != TRANSCRIBE_RATE:
+        raise MopInputError(f"audio must be {TRANSCRIBE_RATE} Hz, got {params.framerate} Hz")
+    if params.sampwidth != 2:
+        raise MopInputError(f"audio must be 16-bit, got {params.sampwidth * 8}-bit")
+    data_bytes = params.nframes * params.nchannels * params.sampwidth
+    if len(data) < 44 + data_bytes:
+        raise MopInputError("audio file is truncated: data is shorter than the header says")
+    duration_s = params.nframes / params.framerate
+    if duration_s > TRANSCRIBE_MAX_SECONDS:
+        raise MopInputError(
+            f"audio is {duration_s:.1f} s, longer than the {TRANSCRIBE_MAX_SECONDS:.0f} s limit"
+        )
+    return duration_s
+
+
+def _claim_rejection_reason(transcript: str) -> str:
+    """Why _parse_claim said None, using the parser's own patterns.
+
+    The verdict always comes from _parse_claim; this only phrases the
+    reason so the operator knows what to repeat.
+    """
+    labels = len(_CLAIM_Q_RE.findall(transcript or "")) + (
+        1 if _CLAIM_BYP_RE.search(transcript or "") else 0
+    )
+    states = (1 if _CLAIM_CLOSED_RE.search(transcript or "") else 0) + (
+        1 if _CLAIM_OPEN_RE.search(transcript or "") else 0
+    )
+    if labels == 0 and states == 0:
+        return "no breaker label or state word heard"
+    if labels == 0:
+        return "no breaker label heard (say Q1-Q9 or BYP)"
+    if states == 0:
+        return "no state word heard (say on, off, open or closed)"
+    if labels > 1:
+        return "more than one breaker label heard"
+    return "more than one state word heard"
+
+
+def _extract_transcript(data: dict) -> str:
+    """Transcript text from a Voice Transcribe body ("", when none).
+
+    Same path as scripts/probe_voice_readback.py: turns[].transcript
+    first, then top-level transcript/text.
+    """
+    parts = []
+    turns = data.get("turns")
+    if isinstance(turns, list):
+        for turn in turns:
+            if isinstance(turn, dict) and turn.get("transcript"):
+                parts.append(str(turn["transcript"]))
+    transcript = " / ".join(parts)
+    if not transcript:
+        for key in ("transcript", "text"):
+            if isinstance(data.get(key), str) and data[key].strip():
+                transcript = data[key].strip()
+                break
+    return transcript
+
+
+def _real_transcribe_client(wav_bytes: bytes, filename: str = "readback.wav") -> str:
+    """One WAV to Muse Voice Transcribe. Returns the transcript text.
+
+    Exact request shape from scripts/probe_voice_readback.py: POST
+    https://api.meta.ai/v1/asr/transcribe, multipart request(JSON
+    mode/model/audioEncoding) + audio(WAV), mode PUSH_TO_TALK. The
+    audio part carries the upload's own filename, like the probe sends
+    the file's own name. One attempt, no retries, 60 s timeout,
+    api.meta.ai only.
+    """
+    provider = MetaProvider()
+    if not provider.is_configured:
+        raise MetaAgentError("Meta API key not configured")
+    url = f"{provider.api_url}/asr/transcribe"
+    if urlparse(url).hostname != "api.meta.ai":
+        raise MetaAgentError(f"refusing non-Meta destination: {url}")
+    request_part = json.dumps(
+        {"mode": "PUSH_TO_TALK", "model": TRANSCRIBE_MODEL, "audioEncoding": "WAV"}
+    )
+    try:
+        resp = httpx.post(
+            url,
+            headers={"Authorization": f"Bearer {provider.api_key}"},
+            files=[
+                ("request", (None, request_part, "application/json")),
+                ("audio", (filename or "readback.wav", wav_bytes, "audio/wav")),
+            ],
+            timeout=TRANSCRIBE_TIMEOUT_S,
+        )
+    except Exception as exc:
+        raise MetaAgentError(f"{type(exc).__name__}: {exc}") from exc
+    if resp.status_code != 200:
+        raise MetaAgentError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise MetaAgentError(f"non-JSON body: {exc}") from exc
+    if not isinstance(data, dict):
+        raise MetaAgentError("JSON body is not an object")
+    transcript = _extract_transcript(data)
+    if not transcript:
+        logger.warning("transcribe: response had no transcript; top-level keys=%s", sorted(data))
+        raise MetaAgentError("transcription response had no transcript")
+    return transcript
+
+
+@agent_router.post("/mop/transcribe")
+@_traced("transcribe")
+async def copilot_mop_transcribe(request: Request):
+    """Transcribe one operator readback WAV to text plus a parsed claim.
+
+    Multipart field: audio (WAV PCM mono 16-bit @ 24 kHz, <= 10 s).
+    Guarded exactly like /mop/verify: bad input -> 400 before the
+    guard, exceeded cap/rate -> 429 with no Meta call, missing key or
+    Meta failure -> 503. One transcription counts as one daily-cap Meta
+    attempt, recorded right before the Meta call. Session-free: the
+    claim is only parsed here, never evaluated against a procedure.
+    """
+    trace = _mop_trace()
+    form = await request.form()
+    upload = form.get("audio")
+    if upload is None or isinstance(upload, str):
+        trace.note(http=400, verdict="bad_audio")
+        return _bad_verify_request(
+            "multipart field 'audio' with a WAV file is required", trace_id=trace.trace_id
+        )
+    wav_bytes = await upload.read()
+    raw_name = getattr(upload, "filename", "") or ""
+    base_name = raw_name.replace("\\", "/").split("/")[-1].strip().replace('"', "_")
+    audio_filename = base_name or "readback.wav"
+    try:
+        _validate_transcribe_wav(wav_bytes)
+    except MopInputError as exc:
+        trace.note(http=400, verdict="bad_audio")
+        return _bad_verify_request(str(exc), trace_id=trace.trace_id)
     client_ip = request.client.host if request.client else "unknown"
     try:
         check_limits(client_ip)
     except MetaLimitError as exc:
-        return _limit_exceeded_response(exc, client_ip)
-    return JSONResponse(get_mop_steps())
+        trace.note(http=429, verdict="rate_limited")
+        return _limit_exceeded_response(exc, client_ip, trace_id=trace.trace_id)
+    try:
+        MetaAgentClient()  # key check only; the transcribe client builds its own request
+    except MetaAgentError as exc:
+        trace.note(http=503, verdict="transcribe_failed")
+        return trace.respond(
+            503,
+            {"error": "meta_unavailable", "detail": str(exc), "meta_call_made": False},
+        )
+    record_meta_attempt()
+    trace.note(meta_calls=1)
+    client = _default_transcribe_client or _real_transcribe_client
+    started = time.perf_counter()
+    try:
+        transcript = await asyncio.to_thread(client, wav_bytes, audio_filename)
+    except Exception as exc:
+        trace.note(http=503, verdict="transcribe_failed")
+        return trace.respond(
+            503,
+            {
+                "error": "meta_unavailable",
+                "detail": f"transcription failed: {exc}",
+                "meta_call_made": True,
+            },
+        )
+    latency_s = round(time.perf_counter() - started, 1)
+    claim = _parse_claim(transcript)
+    if claim is None:
+        trace.note(claim="unparsed")
+        return trace.respond(
+            200,
+            {
+                "transcript": transcript,
+                "claim": None,
+                "rejection_reason": _claim_rejection_reason(transcript),
+                "latency_s": latency_s,
+                "model": TRANSCRIBE_MODEL,
+                "meta_call_made": True,
+            },
+        )
+    trace.note(claim=f"{claim['label']}:{claim['state']}")
+    return trace.respond(
+        200,
+        {
+            "transcript": transcript,
+            "claim": {"label": claim["label"], "state": claim["state"]},
+            "rejection_reason": None,
+            "latency_s": latency_s,
+            "model": TRANSCRIBE_MODEL,
+            "meta_call_made": True,
+        },
+    )
