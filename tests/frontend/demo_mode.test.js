@@ -24,6 +24,8 @@ import {
     setDemoState,
     guardRoute,
     applyDemoMode,
+    isDemoActive,
+    initDemoMode,
     DEMO_NOTE_TEXT,
 } from '/assets/js/core/demo.js';
 import { initRouter, registerRoute } from '/assets/js/core/router.js';
@@ -37,6 +39,7 @@ afterEach(() => {
     setDemoState(DEMO_OFF);
     __mop_verify_test__.reset();
     document.body.innerHTML = '';
+    document.documentElement.classList.remove('demo-booting');
 });
 
 function chromeFixture() {
@@ -1199,5 +1202,87 @@ describe('mop trace — footer shows the server trace id', () => {
         document.body.innerHTML = '<div id="foot"></div>';
         __mop_verify_test__.renderFooter(document.getElementById('foot'), MATCH_BODY_5);
         expect(document.getElementById('foot').textContent).not.toContain('trace');
+    });
+});
+
+describe('demo boot veil (P1) — no disallowed paint before the decision', () => {
+    it('index.html veils the page before first paint, with a 3 s fail-safe', () => {
+        const html = fs.readFileSync(path.join(process.cwd(), 'frontend/index.html'), 'utf8');
+        const headStart = html.indexOf('<head>');
+        const veil = html.indexOf("classList.add('demo-booting')");
+        expect(headStart).toBeGreaterThan(-1);
+        expect(veil).toBeGreaterThan(headStart);
+        // Very top of <head>: before the charset meta and the stylesheet.
+        expect(veil).toBeLessThan(html.indexOf('<meta charset'));
+        expect(veil).toBeLessThan(html.indexOf('rel="stylesheet"'));
+        // Fail-safe: unconditional removal on a bounded timer.
+        expect(html).toContain("classList.remove('demo-booting')");
+        expect(html).toContain('3000');
+    });
+
+    it('the stylesheet hides the body while the veil class is present', () => {
+        const css = fs.readFileSync(path.join(process.cwd(), 'frontend/assets/app.css'), 'utf8');
+        const i = css.indexOf('html.demo-booting body');
+        expect(i).toBeGreaterThan(-1);
+        expect(css.slice(i, css.indexOf('}', i))).toContain('display: none');
+    });
+
+    it('the veil lifts once demo mode is on', () => {
+        chromeFixture();
+        document.documentElement.classList.add('demo-booting');
+        expect(document.documentElement.classList.contains('demo-booting')).toBe(true);
+        setDemoState(DEMO_ON);
+        applyDemoMode();
+        expect(document.documentElement.classList.contains('demo-booting')).toBe(false);
+        expect(document.body.classList.contains('demo-mode')).toBe(true);
+    });
+
+    it('the veil lifts for ?demo=0 too', () => {
+        chromeFixture();
+        document.documentElement.classList.add('demo-booting');
+        setDemoState(resolveDemoState(null, '?demo=0'));
+        applyDemoMode();
+        expect(isDemoActive()).toBe(false);
+        expect(document.documentElement.classList.contains('demo-booting')).toBe(false);
+    });
+
+    it('a failed config fetch still lifts the veil (never left blank)', async () => {
+        chromeFixture();
+        document.documentElement.classList.add('demo-booting');
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async () => { throw new Error('down'); };
+        try {
+            await initDemoMode();
+        } finally {
+            globalThis.fetch = realFetch;
+        }
+        expect(isDemoActive()).toBe(false);
+        expect(document.documentElement.classList.contains('demo-booting')).toBe(false);
+    });
+});
+
+describe('demo tab title (P2)', () => {
+    it('names the demo surface while demo mode is active', () => {
+        const prev = document.title;
+        try {
+            chromeFixture();
+            setDemoState(DEMO_ON);
+            applyDemoMode();
+            expect(document.title).toBe('MOP Verification · DC-EPMS PRO');
+        } finally {
+            document.title = prev;
+        }
+    });
+
+    it('keeps the classic title with ?demo=0', () => {
+        const prev = document.title;
+        try {
+            chromeFixture();
+            setDemoState(resolveDemoState(null, '?demo=0'));
+            applyDemoMode();
+            expect(document.title).toBe('DC-EPMS PRO · a3semi Edge Operations');
+        } finally {
+            document.title = prev;
+        }
     });
 });

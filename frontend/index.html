@@ -1,6 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Demo boot veil (P1): hide everything until demo.js applies the
+         demo decision, so no disallowed view ever paints in demo mode.
+         Fail-safe: the veil always lifts after 3 s. -->
+    <script>
+        (function () {
+            try {
+                document.documentElement.classList.add('demo-booting');
+                setTimeout(function () {
+                    document.documentElement.classList.remove('demo-booting');
+                }, 3000);
+            } catch (e) { /* never break boot */ }
+        })();
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DC-EPMS PRO · a3semi Edge Operations</title>

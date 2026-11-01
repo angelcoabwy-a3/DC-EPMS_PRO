@@ -21,6 +21,8 @@
 
 const CONFIG_URL = '/assets/demo_config.json';
 const DEMO_NOTE_TEXT = 'Demo mode: only features built during the Meta hackathon are shown.';
+const CLASSIC_TITLE = 'DC-EPMS PRO · a3semi Edge Operations';
+const DEMO_TITLE = 'MOP Verification · DC-EPMS PRO';
 const FALLBACK_VIEW = 'mop-verify';
 
 // Header chips + counters + right-rail panels that belong to
@@ -179,6 +181,17 @@ function applyDemoMode() {
             header.appendChild(note);
         }
     }
+
+    // P1: lift the boot veil once the demo decision is applied. Both
+    // demo on and ?demo=0 land here, including the failure fallback.
+    try {
+        if (document.documentElement) document.documentElement.classList.remove('demo-booting');
+    } catch (_e) { /* never break boot */ }
+
+    // P2: the tab names the demo surface while demo mode is active.
+    try {
+        document.title = _active ? DEMO_TITLE : CLASSIC_TITLE;
+    } catch (_e) { /* title is cosmetic */ }
 }
 
 /**

@@ -8567,6 +8567,12 @@ rect.eng-charge { stroke: #2e7d4f !important; fill: #10231a; }
 .mv-actions .btn { min-width: 130px; }
 .mv-verify-note { font-size: 11px; color: var(--text-dim); margin: 0 0 8px; }
 
+/* Demo boot veil (P1): while demo.js has not applied the demo decision
+ * yet, nothing paints -- no disallowed view may flash in demo mode.
+ * Lifted by applyDemoMode(); the inline head script lifts it after 3 s
+ * if anything fails. */
+html.demo-booting body { display: none; }
+
 /* Hackathon demo mode: one line under the allowed views' headers. */
 .demo-note { font-size: 11px; color: var(--text-muted); letter-spacing: 0.3px; margin-top: 4px; }
 
