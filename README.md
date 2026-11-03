@@ -4,6 +4,8 @@
 
 **Live demo:** https://dc-epms-pro.onrender.com/ (demo mode: only the MOP Verification view is shown)
 
+**Demo video:** https://youtu.be/QxA8sZA_7t8
+
 **A second pair of eyes for every breaker operation.** At each step of a Method of Procedure (MOP), the technician photographs the breaker panel. Meta models read every breaker handle, code compares each reading with the procedure, and the next step stays locked until the panel matches, with the hazard written for that step. The technician can also read the step back by voice; Verify flags it when that claim and the photo disagree.
 
 ### Built during the hackathon vs. pre-existing
@@ -51,6 +53,7 @@ Each row is a separate kind of evidence; the counts are not merged.
 | Voice | Claim parsing and claim checks: 22 automated tests. Replay of sample readbacks s0 to s5: 6/6. Combined run: 11/13, where the 2 rejections ("BYP plus", "QA closet") are correct rejections |
 | Manual robustness batches | Rate limit (429 with no Meta call), server down, and session lost after a restart (409 with no Meta call), audited from the server trace log |
 | Deployment on Render | Demo mode load, Verify, transcription, and per-visitor rate limit checked from two networks |
+| Agentic investigator, live run | Both scenarios returned the expected cause, P1 and procedure (burst-utility-01: utility_loss via MOP-ATS-MONTHLY-001; burst-cooling-02: cooling_loss via EOP-COOLING-LOSS-001) within 6 model calls (limit 8), using 4 tools. The counter-evidence checklist item stayed unsettled, so the code capped confidence at medium |
 | Automated test suites | Backend 1565 passed, frontend 622 passed. These are the full suites and include tests of the pre-existing platform |
 
 ### Privacy
