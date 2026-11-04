@@ -204,6 +204,12 @@ class AgentEngine:
         # -- Route to Gemma or Claude -------------------------
         use_gemma = False
         if model_hint == "meta":
+            # Quota guard: unlike the /api/copilot/* routes, this path has
+            # no check_limits accounting, so Meta is opt-in per deployment.
+            # Default = disabled; no provider, no network unless enabled.
+            if os.environ.get("AGENT_META_ENABLED") != "1":
+                yield "[Meta backend disabled on this deployment]"
+                return
             # Meta Model API: dedicated provider, key-ready via META_API_KEY.
             async for token in self._stream_meta(augmented_query, max_tokens):
                 yield token
@@ -263,9 +269,12 @@ class AgentEngine:
             ],
         }
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client, client.stream(
-                "POST", url, json=payload, headers={"Content-Type": "application/json"}
-            ) as resp:
+            async with (
+                httpx.AsyncClient(timeout=120.0) as client,
+                client.stream(
+                    "POST", url, json=payload, headers={"Content-Type": "application/json"}
+                ) as resp,
+            ):
                 if resp.status_code != 200:
                     yield f"[Gemma error {resp.status_code}]"
                     return
