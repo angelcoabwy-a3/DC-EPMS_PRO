@@ -67,7 +67,8 @@ In this demo, procedure sessions live in server memory and reset when the server
 - Procedure sessions live in server memory and reset when the server restarts; the app then asks the user to restart the procedure.
 - Residential training panel, not a live UPS. The breakers represent a maintenance bypass cabinet and control nothing. This is a demonstration, not a safety device.
 - The panel geometry is calibrated to this one training panel.
-- The sample readbacks are synthetic voice samples, not a live operator.
+- The sample readbacks in `frontend/assets/demo_audio/` are synthetic voice clips generated with ElevenLabs (text-to-speech), not a live operator. They are pre-recorded files; the app does not call any TTS service. At runtime it only calls Meta models.
+- The demo video narration is synthetic voice generated with ElevenLabs (text-to-speech).
 
 ---
 
