@@ -6,7 +6,7 @@ Reproducible PostgreSQL seed for replaying recorded demo walkthroughs.
 
 | File | Captured | Contents |
 |---|---|---|
-| `postgres_demo_state_2026-05-09.sql` | 2026-05-09 ~20:30 UTC | 91 assets + 9 work orders. Snapshot taken right after the CO+I-style demo arc closed: three predictive_kalman P1 LOTO WOs across cooling / UPS / power distribution, all CET-signed. |
+| `postgres_demo_state_2026-05-09.sql` | 2026-05-09 ~20:30 UTC | 91 assets + 9 work orders. Snapshot taken right after the demo arc closed: three predictive_kalman P1 LOTO WOs across cooling / UPS / power distribution, all CET-signed. |
 
 ## The demo arc captured
 

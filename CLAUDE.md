@@ -3,7 +3,7 @@
 **Project**: DC-EPMS PRO (Edge Operations Platform for Tier IV AI factories)
 **Repository**: `C:\dev\DC-EPMS_PRO`
 **Maintainer**: Wilmer Y. Angel Beltran (a3semi - A-Cubed Semiconductor Systems Inc.)
-**Target**: CET role at Microsoft Cloud Operations + Innovation (CO+I), interview early August 2026.
+**Purpose**: founder-built reference platform for data center critical operations. All facility data is simulated.
 
 ## 🎯 What this project is
 
@@ -13,7 +13,7 @@ DC-EPMS PRO simulates **A3-Alpha Toronto Area** under **Path C2** (sealed 2026-0
 - Phase 2 (Building D target Q2 2026): **250 NVIDIA GB300 NVL144 racks @ 200 kW**, upstream 3-phase AC at 35 kVAC trifásico into MV Rectifier, 800 VDC unipolar TN-S downstream, SSCB 1-100 µs clearing per IEC 60947-2, BESS 2.5 MWh, full DLC retrofit to 12 VDC at GPU.
 - Rubin Ultra excluded from V9 scope.
 
-**🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in CO+I panel review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
+**🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in a design review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
 
 ## 📊 CURRENT STATE (synced 2026-06-12 — EDGE TRACK PHASE 2 DELIVERED; operator pivot to core dev)
 
@@ -116,7 +116,7 @@ HEAD:  EDGE TRACK PHASE 2 (2026-06-12, operator GO "punto 1, gateway-rs
        grounding (farm into site_model graph + Phase 2 design-sim
        telemetry channels + DAG/N-1 over Building D).
        Previous sync 2026-06-10: (a) repo hygiene -- ruff gate fix acf00b9, root
-       batch-era artifacts archived ca31e09, BMO runbooks 9abd84a,
+       batch-era artifacts archived ca31e09, demo runbooks 9abd84a,
        doc-syncs 585763f/1859aee/bf16ca1; (b) DIAGRAM REBUILD
        Batches 0-5: shared diagram kit + canonical node registry
        0b3726f, Power SLD + Phase 2 800 VDC branch 9b99b18, Cooling

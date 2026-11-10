@@ -37,8 +37,8 @@ These choices preserve the Deterministic Sandbox (per ADR-006): the AI does not 
 ### Positive
 
 - **Time saved: ~7 to 9 days**. The orphan provides ~80 percent of the implementation. S6 budget drops from 2 weeks to 2 to 3 days, freeing time for the Pre-Operational Briefing sprint S5.5a/b (W6.5 + W7) and Building D YAML expansion.
-- **Honest VRAM accounting carries forward**. The empirical 3.3 GB measurement is in the ADR record. When a Microsoft CO+I panel asks "why CPU instead of GPU for DPO?", the answer is structural and grounded: the 6 GB RTX 3060 cannot host base model + adapter + KV cache simultaneously without overflow.
-- **Manual trigger is defensible**. The narrative for interview is "I wanted to validate `approval_rate` stability before automating nightly. Capture is in place; training is manual today; infrastructure is ready to automate with APScheduler in V10". This demonstrates operational caution appropriate to Tier IV.
+- **Honest VRAM accounting carries forward**. The empirical 3.3 GB measurement is in the ADR record. When a reviewer asks "why CPU instead of GPU for DPO?", the answer is structural and grounded: the 6 GB RTX 3060 cannot host base model + adapter + KV cache simultaneously without overflow.
+- **Manual trigger is defensible**. The narrative is "I wanted to validate `approval_rate` stability before automating nightly. Capture is in place; training is manual today; infrastructure is ready to automate with APScheduler in V10". This demonstrates operational caution appropriate to Tier IV.
 - **Edge-local self-improvement preserved**. The DPO loop runs on the same machine as the rest of the stack. No cloud round-trip, no data egress.
 
 ### Negative / Trade-offs

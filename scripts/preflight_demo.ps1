@@ -1,7 +1,7 @@
 # =====================================================================
 # DC-EPMS PRO -- Pre-Flight Demo Verifier (docs/DEMO_SCRIPT.md v6 companion)
 #
-# Idempotent stack-readiness check before the CO+I demo. Run 15 min
+# Idempotent stack-readiness check before the demo. Run 15 min
 # before the panel. Refuses to declare GREEN if ANY check fails.
 #
 # Verifies (in order):

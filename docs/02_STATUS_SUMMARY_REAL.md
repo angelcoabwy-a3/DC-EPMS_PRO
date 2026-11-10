@@ -593,8 +593,8 @@ Antes de retomar DevOps Quick Wins o Sprint 6 Part A:
 | **D-B** | DPO training compute → **CPU bitsandbytes nightly** (preserva edge-local self-improvement, lentitud OK para nightly) | (incluido en 2B) | S6 |
 
 **Justificación operacional documentada**:
-- **1A**: sin Kalman operando, el argumento de reducción de falsos positivos en telemetría de misión crítica no es defendible en panel CO+I. S9 EKF confirmado como killed con esta integración.
-- **2B**: narrativa para entrevista — *"Quería validar approval_rate stability antes de automatizar nightly. Captura está, training es manual hoy. Infra lista para automatizar con APScheduler en V10"*. Demuestra cautela operacional.
+- **1A**: sin Kalman operando, el argumento de reducción de falsos positivos en telemetría de misión crítica no es defendible en una revisión técnica. S9 EKF confirmado como killed con esta integración.
+- **2B**: narrativa — *"Quería validar approval_rate stability antes de automatizar nightly. Captura está, training es manual hoy. Infra lista para automatizar con APScheduler en V10"*. Demuestra cautela operacional.
 - **D-B**: edge-local self-improvement es diferenciador central V9 vs cloud-genéricas. Lentitud irrelevante para nightly window.
 
 **Acciones derivadas**:
@@ -629,7 +629,7 @@ Antes de retomar DevOps Quick Wins o Sprint 6 Part A:
 **Acciones derivadas**:
 - ADR-004 a escribir en S5.5b H6 (originalmente DevOps Quick Wins, reasignado a S5.5b polish hour)
 - Sin trabajo de migration (agent_engine.py preserva vivo)
-- En entrevista: respuesta defendible — *"agent_copilot.py es el primary agent con tool calling para 6 herramientas; agent_engine.py mantiene path Cloud/Edge resilience con NeMo Guardrails como fallback de gobernanza"*
+- Respuesta defendible — *"agent_copilot.py es el primary agent con tool calling para 6 herramientas; agent_engine.py mantiene path Cloud/Edge resilience con NeMo Guardrails como fallback de gobernanza"*
 
 ### 13.4 Decisión 4 — MOPs markdown a YAML ejecutables
 
@@ -665,7 +665,7 @@ Tras Decisiones 1+3 RESOLVED, los siguientes ADRs (Architectural Decision Record
 - Overhead: 294 líneas, 2 refs — costo mínimo.
 
 **Consequences**:
-- ✅ Defendible en panel CO+I como arquitectura multi-LLM resilience
+- ✅ Defendible en revisión técnica como arquitectura multi-LLM resilience
 - ⚠️ Incrementa surface area de testing y mantenimiento
 - ⚠️ Requiere documentación clara para evitar confusión sobre cuál archivo es "el agente"
 
@@ -791,7 +791,7 @@ A3-Alpha tiene dos arquitecturas eléctricas distintas según fase de deployment
 | **Phase 1 (Buildings A/B actual)** | 480 VAC trifásico 2N estándar Tier IV con UPS Galaxy VX + chillers York YZ | **1.30** (Verde < 1.30) |
 | **Phase 2 (Building D Q2 2026)** | Upstream 3-phase AC (35 kVAC trifásico) → MV Rectifier → 800 VDC unipolar TN-S downstream. Ventaja operativa: rectificación balanceada, reducción de ripple en el rectificador, mitigación de armónicos reflejados a la red. | **1.15** (Verde < 1.15) |
 
-**Nota técnica importante**: la palabra "trifásico" aplica al **upstream AC**, no al bus DC. El downstream del MV Rectifier es DC unipolar TN-S (sin fases). Esta distinción es crítica para defendibilidad ante panel de Microsoft CO+I.
+**Nota técnica importante**: la palabra "trifásico" aplica al **upstream AC**, no al bus DC. El downstream del MV Rectifier es DC unipolar TN-S (sin fases). Esta distinción es crítica para defendibilidad ante una revisión técnica.
 
 **Config-driven thresholds** (Decisión I1 — `config/pue_targets.yml`):
 

@@ -8,7 +8,7 @@
 
 ## Context
 
-DC-EPMS PRO is a simulation of a Tier IV AI factory with critical electrical and mechanical systems: 800 VDC bus, 67 MW IT load, 2N power redundancy, N+1 cooling, hybrid sequential LOTO procedures, dual-path failover. In a real Microsoft CO+I deployment, an LLM agent that could **write** to these systems would be a catastrophic risk:
+DC-EPMS PRO is a simulation of a Tier IV AI factory with critical electrical and mechanical systems: 800 VDC bus, 67 MW IT load, 2N power redundancy, N+1 cooling, hybrid sequential LOTO procedures, dual-path failover. In a real hyperscale deployment, an LLM agent that could **write** to these systems would be a catastrophic risk:
 
 - A hallucinated CMMS work order that cites the wrong component could trigger a wrong LOTO and crash production workloads.
 - A streaming LLM that writes BMS setpoints during a thermal transient could amplify a fault into an outage.
@@ -43,7 +43,7 @@ This is enforced by:
 
 - **Defense in depth**. Even if a prompt-injection attack convinces the LLM to "write to the BMS", there is no code path that lets it. The capability does not exist in the running tool registry.
 - **Regulatory alignment**. The Deterministic Sandbox is what NIST AI RMF and IEC 62443 demand for OT-adjacent AI. The project can pass a paper audit on the architecture diagrams alone.
-- **Defensible interview narrative for Microsoft CO+I**. "How do you prevent the LLM from making a wrong decision in a 67 MW facility?" — the answer is structural, not policy.
+- **Defensible architecture narrative**. "How do you prevent the LLM from making a wrong decision in a 67 MW facility?" — the answer is structural, not policy.
 - **Predictable failure modes**. If LM Studio crashes, the consequence is "no new drafts" — never "a wrong write went out". Graceful degradation.
 - **Auditable**. `_provenance` field plus the Paperclip approval queue produces a complete forensic record.
 

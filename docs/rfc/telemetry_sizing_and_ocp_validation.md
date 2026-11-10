@@ -591,7 +591,7 @@ the 200 B/msg ceiling from sec 1.5). All seven gaps closed.
 
 * v0.9 score (pre-RFC): **3.75/5** (gaps #1-#7 open)
 * v1 score (post-RFC, all gaps resolved): **4.55/5**
-* CO+I panel threshold: **4.5/5**
+* Review threshold: **4.5/5**
 * **Status: PANEL-GRADE** (subject to operator approval of this RFC)
 
 The remaining 0.45 points are reserved for:

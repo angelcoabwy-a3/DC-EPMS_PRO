@@ -141,7 +141,7 @@
   S6  jul 16-22   T1.3 OBS rehearsals x3 + final take + edit;
                   hardening; tag v1.0.0 MVP (tag-is-not-closure
                   verified)
-  S7+ jul 23-aug  EXPLICIT BUFFER: interview prep, zero new code,
+  S7+ jul 23-aug  EXPLICIT BUFFER: demo prep, zero new code,
                   P0 fixes only
   ```
 
@@ -313,8 +313,8 @@
   ADR corrected to ADR-011.
 
 This document is the queued backlog after `v0.10.5-power-sld-v2`. Each
-tier is independently fundable — pick by available time, panel
-proximity, or career trajectory. Items are intentionally specific so
+tier is independently fundable — pick by available time or review
+proximity. Items are intentionally specific so
 review (mine, the panel's, or future Claude's) can verify the cut.
 
 ---
@@ -394,7 +394,7 @@ sensitivity) deferred — they don't affect demo quality.
 
 ## Tier 2 — Architectural Polish (~7-10 days, target: 2-3 weeks)
 
-For Senior+/Staff Engineer interview ammunition. The platform is
+For Senior+/Staff Engineer level review. The platform is
 demonstrable; the architecture has visible debt that a deep-dive
 reviewer can find in 30 seconds with DevTools.
 
@@ -769,7 +769,7 @@ testing strategy, ADR-006 acceptance checklist).
 
 ---
 
-## Epic 3 — Reactive Fleet Expansion (5 → 7 agents, post-CO+I demo)
+## Epic 3 — Reactive Fleet Expansion (5 → 7 agents, post-demo)
 
 **Status:** IN PROGRESS — Batches 3.A + 3.C delivered (6-agent fleet
 live); only 3.B (OT Security / Morpheus) deferred pending explicit
@@ -1139,7 +1139,7 @@ When ready, the Hermes orchestrator gets:
 
 ## Recommended sequencing
 
-For a CET interview at Microsoft CO+I in early August 2026:
+For the early August 2026 demo:
 
 ```
 NOW (this session)         T1.1-T1.6        ~8h     PANEL READINESS
@@ -1149,7 +1149,7 @@ NOW (this session)         T1.1-T1.6        ~8h     PANEL READINESS
 +4 weeks                   T3.3 (Diag ML)   3d      Multi-agent depth
 +5 weeks                   Hermes V1.0      ~5d     Confederation arrives
 
-INTERVIEW WINDOW           early August 2026
+DEMO WINDOW                early August 2026
 ```
 
 For continued V11 development without panel pressure: pick by

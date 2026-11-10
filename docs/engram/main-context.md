@@ -16,7 +16,7 @@
 
 - **Name:** DC-EPMS PRO — Edge Operations Platform for Tier IV AI factories.
 - **Maintainer:** Wilmer Y. Angel Beltran · a3semi (A-Cubed Semiconductor Systems Inc.).
-- **Target:** the CET (Critical Environment Technician / Critical Engineering) role at Microsoft Cloud Operations + Innovation (CO+I). Interview window: **early August 2026**.
+- **Purpose:** founder-built reference platform for critical environment operations. Demo window: **early August 2026**.
 - **Demonstrable scope (single laptop):** A3-Alpha Toronto Area under Path C2.
 
 ## 2. Path C2 posture (the physical reference design)
@@ -198,7 +198,7 @@ Both the Power & UPS SLD and the DLC P&ID carry an interactive L3 control layer:
 - **DC-EPMS-029c** (LOW) — `physics_engine.validate_site()` SHI rollup insensitive to some LOTO scenarios (chiller/cooling_tower/RPP). UPS + CDU LOTO do produce SHI delta; sufficient for demo. Target V10.
 - **WARNING-tier findings** in `docs/audit/E2E_Security_Orphan_Audit.md` — non-blocking, untriaged.
 - **OBS demo-recording** — descoped (Wilmer, 2026-05-17).
-- **CO+I demo readiness** — feature-complete; remaining work is delivery (DEMO_SCRIPT v5, 3× OBS rehearsals).
+- **Demo readiness** — feature-complete; remaining work is delivery (DEMO_SCRIPT v5, 3× OBS rehearsals).
 
 **Epic 2 (COMPLETE — `v0.13.0` "Proactive Edge", 2026-05-19) — The Optimizer.** Epic 1 closed the *reactive* fleet; Epic 2 closed the *proactive* complement. **The Optimizer** is a continuous-loop edge-agent that watches Hermes telemetry and PROPOSES chiller-LWT + cooling-tower-fan-VFD adjustments — never actuates. The load-bearing decision is the **Proposer Pattern** (ADR-006 anchored), enforced by 5 AST-invariant tests on `backend/optimizer.py`: no HTTP client, no FastAPI router, no `bms_connector`, no live `/api/bms/write` string, no `optimizer_routes` import. The ONLY path from a proposal to a BMS write is `POST /api/optimizer/approve/{id}` with the **operator's** SME_L6 claim — the Optimizer service has no actor_role and cannot reach the write path. Default OFF via `DC_EPMS_OPTIMIZER_ENABLED`. Full design + delivery in `docs/architecture/epic-2-optimizer.md`. Smoke-test verified live (default-OFF: HTTP 503 expected; ENABLED: HTTP 403 on `actor_role=TECH_L4` with the literal F3-4 RBAC message).
 

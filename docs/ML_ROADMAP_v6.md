@@ -639,7 +639,7 @@ committing to is not "deploy AI" — what we are committing to is
 existing physics engine cannot solve**, with the operational
 guarantees that Tier IV demands.
 
-This is the architecture I would defend in front of a Microsoft CO+I
+This is the architecture I would defend in front of an architecture
 review board, and it is the architecture I would deploy on a hyperscale
 fleet.
 

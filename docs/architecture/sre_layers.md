@@ -1,6 +1,6 @@
 # 5-Layer SRE Architecture Mapping — DC-EPMS PRO
 
-**Purpose**: This document maps the five Site Reliability Engineering operational layers that Microsoft Cloud Operations + Innovation (CO+I) and analogous hyperscale operators rely on, against the specific code, sprints, and standards in DC-EPMS PRO. The intent is to make defensible, evidence-grounded statements during interviews and architecture reviews — not marketing slides.
+**Purpose**: This document maps the five Site Reliability Engineering operational layers that Microsoft Cloud Operations + Innovation (CO+I) and analogous hyperscale operators rely on, against the specific code, sprints, and standards in DC-EPMS PRO. The intent is to make defensible, evidence-grounded statements during architecture reviews — not marketing slides.
 
 **Maintainer**: Wilmer Y. Angel Beltran, Lead Architect, a3semi
 **Last updated**: 2026-05-06 (Batch 3 DevOps Quick Wins closure)
@@ -211,7 +211,7 @@ All five layers operate without uplink. The full RAG corpus (20 docs ChromaDB + 
 
 ---
 
-## Defensible interview narrative (for Microsoft CO+I panel)
+## Defensible architecture narrative
 
 When asked "how does your platform support the operational lifecycle of a critical environment?", the layered framing above provides a structured answer. The candidate's value proposition:
 

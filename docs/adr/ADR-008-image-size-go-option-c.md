@@ -75,4 +75,4 @@ Specifically:
 - **Migration to Distroless final stage** — would shave ~80 to 120 MB and reduce attack surface. Operability impact: shell-less debugging requires `kubectl debug` or sidecar containers.
 - **Alpine base with musl libc** — would require validating sentence-transformers + FAISS + ChromaDB for musl compatibility. Empirical risk, not theoretical; needs a spike branch.
 - **Externalize RAG stack to companion container** — breaks edge-first autonomy as currently defined; would only be reconsidered if the deployment model changes (e.g., a tier of "thick edge" nodes that hold RAG and a tier of "thin edge" nodes that consume it).
-- **Multi-arch builds (amd64 + arm64)** for Graviton or Ampere edge appliances. Useful if Microsoft CO+I deploys ARM-based edge servers.
+- **Multi-arch builds (amd64 + arm64)** for Graviton or Ampere edge appliances. Useful if an operator deploys ARM-based edge servers.

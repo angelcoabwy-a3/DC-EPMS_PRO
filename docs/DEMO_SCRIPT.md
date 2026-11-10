@@ -1,7 +1,7 @@
 # DC-EPMS PRO — Canonical Demo Script v6.1 (2026-05-24, v0.16.0 "Procedure Architect Universal")
 
-**Audience:** Microsoft CO+I — Critical Environment Technician (CET)
-managers + infrastructure recruiters. Assume deep data-center fluency,
+**Audience:** critical environment operations managers and
+infrastructure engineers. Assume deep data-center fluency,
 low patience for hand-waving. Every claim is cited or shown.
 
 **Duration:** **6:30 walkthrough** (+ unlimited Q&A buffer).
@@ -381,7 +381,7 @@ toward the panel.
 
 ## Q&A — Anticipated Panel Questions (preview, prep in Phase 4)
 
-The following are the questions the CO+I panel is most likely to
+The following are the questions a review panel is most likely to
 ask. Tight answers ≤ 30s each. Full prep is Phase 4.
 
 1. **"What stops a malicious operator from editing the audit gate
@@ -428,7 +428,7 @@ ask. Tight answers ≤ 30s each. Full prep is Phase 4.
 - **Path C2 vocabulary fence**: `trifásico` applies ONLY to AC
   upstream of MV Rectifier (Phase 1 480 VAC, Phase 2 35 kVAC). The
   Phase 2 800 VDC bus is **unipolar TN-S** — saying "800 VDC
-  trifásico" is a credibility-destroying error in front of a CO+I
+  trifásico" is a credibility-destroying error in front of a review
   panel. Stay disciplined.
 - **No vaporware**: every screen shown is the live HMI. Every
   endpoint shown returns real bytes. The library pre-seed of 23

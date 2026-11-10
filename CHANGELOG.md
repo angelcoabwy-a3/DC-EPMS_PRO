@@ -418,7 +418,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Demo snapshot: 3 predictive_kalman P1 LOTO work orders (cooling / UPS / power
-  distribution), all CET-signed — the CO+I panel walkthrough state.
+  distribution), all CET-signed — the demo walkthrough state.
 
 ## [v0.9.9-tech-assist-view] - 2026-05-09
 
@@ -563,8 +563,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ADR-007 Sprint 6 simulator killed (DPO orphan reuse),
   ADR-008 GO-OPTION-C image size 1.54 GB Phase 1.
 - `docs/architecture/sre_layers.md`: 5-layer SRE mapping (Predictive,
-  Management, Safety, Post-Incident, Commissioning) for Microsoft CO+I
-  interview narrative; explicit gap declaration for V10 candidates
+  Management, Safety, Post-Incident, Commissioning) for the
+  architecture narrative; explicit gap declaration for V10 candidates
   (RCA agent, IST runner, Arc Flash boundary calculator).
 - `01_INSTRUCTIONS.md` regenerated as master instructions: Path C2
   baseline (67 MW, 368 racks), Hyperscale Override Protocol preserved,

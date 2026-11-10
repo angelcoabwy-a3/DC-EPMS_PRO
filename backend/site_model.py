@@ -2,7 +2,7 @@
 site_model.py — Site hierarchy + power/cooling chain analysis.
 
 Sprint S1a of the portfolio expansion. Cubre el gap identificado en
-la entrevista de Microsoft CO+I: "how is the data center composed in
+una revisión de arquitectura: "how is the data center composed in
 its specific locations?"
 
 Loads config/site_model.yml and exposes a query interface that

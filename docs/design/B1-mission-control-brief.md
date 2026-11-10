@@ -9,7 +9,7 @@
 
 B1 was originally scoped at 25-30 hours of three.js work. Without an explicit visual + interaction contract codified before code, the failure modes are:
 
-1. **Kitsch drift** — B1 ends up looking like a video game UI (rotating cubes, neon trails, lens flares) and the CO+I panel discounts the entire platform's credibility.
+1. **Kitsch drift** — B1 ends up looking like a video game UI (rotating cubes, neon trails, lens flares) and a reviewer discounts the entire platform's credibility.
 2. **Vacant scene** — B1 ends up as four white boxes with no information, *worse* than the existing 2D dashboard.
 3. **Performance trap** — B1 renders all 91 components with shaders and drops to 30 FPS on the demo laptop's RTX 3060 6 GB.
 4. **Scope creep** — "while I'm in three.js…" adds particle systems, custom shaders, post-processing, and the 25-hour budget becomes 60.
@@ -52,7 +52,7 @@ If during review someone says "let's add…" any of the following, the answer is
 - Anime-style speed lines or cyber-noir scan lines
 - Anything labeled "neon" or "futuristic" in the description
 
-These are kitsch markers. They subtract credibility from a CO+I evaluation.
+These are kitsch markers. They subtract credibility from a technical evaluation.
 
 ---
 

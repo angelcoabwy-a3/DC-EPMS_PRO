@@ -85,7 +85,7 @@ El briefing sintetiza datos de fuentes ya implementadas en el sistema (`physics_
 
 ## 5. Aclaración Eléctrica Crítica (Vocabulario Defendible)
 
-A3-Alpha tiene dos arquitecturas eléctricas distintas según fase de deployment. La precisión del vocabulario es crítica para defendibilidad ante panel Microsoft CO+I:
+A3-Alpha tiene dos arquitecturas eléctricas distintas según fase de deployment. La precisión del vocabulario es crítica para defendibilidad ante una revisión técnica:
 
 ### 5.1 Phase 1 — Buildings A/B Actual (deployed)
 
@@ -517,7 +517,7 @@ Después del paso 6 (PUE compute), el frontend renderiza:
 
 El gauge muestra el baseline activo explícitamente. Si solo está deployed Phase 1, muestra: *"Operating in Phase 1: 480 VAC trifásico 2N — target PUE < 1.30. Phase 2 (800 VDC Building D) target 1.15 will activate when deployed."*
 
-Esto **previene confusión del CET** (¿por qué mi target es 1.30 si NVIDIA dice 1.10?) y **arma respuesta defendible para entrevista** (sistema sabe distinguir su propia arquitectura).
+Esto **previene confusión del CET** (¿por qué mi target es 1.30 si NVIDIA dice 1.10?) y **arma una respuesta defendible ante una revisión** (sistema sabe distinguir su propia arquitectura).
 
 ---
 

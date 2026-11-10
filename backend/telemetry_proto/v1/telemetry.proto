@@ -84,7 +84,7 @@
 // "Trifasico" / "three_phase" applies ONLY to AC upstream of the MV
 // Rectifier. The 800 VDC downstream bus is UNIPOLAR TN-S; it has NO
 // phases. Saying "800 VDC trifasico" is a credibility-destroying
-// error in CO+I panel review.
+// error in a design review.
 //
 // The schema MAKES THE ERROR STRUCTURALLY IMPOSSIBLE:
 //

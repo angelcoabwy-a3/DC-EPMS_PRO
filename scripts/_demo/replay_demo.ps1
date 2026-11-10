@@ -1,7 +1,7 @@
 # =====================================================================
 #  scripts/_demo/replay_demo.ps1
 #  =====================================================================
-#  One-click demo state reset for the CO+I panel walkthrough.
+#  One-click demo state reset for the demo walkthrough.
 #
 #  What it does (in order):
 #    1. Verifies prerequisites (epms-db running, uvicorn reachable on 8080)

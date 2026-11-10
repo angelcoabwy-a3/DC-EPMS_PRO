@@ -91,7 +91,7 @@ message ElectricalReading {
 
 // CRITICAL: vocabulary fence -- AC schema vs DC schema MUST be
 // structurally distinct. Saying "800 VDC trifasico" is a credibility-
-// destroying error in CO+I panel review. The `oneof topology` makes
+// destroying error in a design review. The `oneof topology` makes
 // the mistake structurally impossible.
 message VoltageReading {
   oneof topology {

@@ -2,7 +2,7 @@
 
 **Author**: Wilmer Angel — CTO, A-Cubed Semiconductor Systems Inc.
 **Document version**: 5.0 (April 2026)
-**Audience**: Architecture review · Microsoft CO+I
+**Audience**: Architecture review
 
 ---
 
@@ -242,5 +242,5 @@ augmented reasoning. Attention is a powerful tool reserved for the
 correct sub-problem (anomaly detection on observed state), not bolted
 onto the safety-critical prediction path.
 
-This is the architecture I'd defend in front of a Microsoft CO+I review,
+This is the architecture I'd defend in an architecture review,
 and it's the architecture I'd deploy on a hyperscale fleet.

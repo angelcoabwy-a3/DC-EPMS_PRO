@@ -128,7 +128,7 @@ The system prompt explicitly instructs the LLM to:
 3. Explicitly state PPE requirements for electrical work
 4. Reference two-person rule for energized work
 
-## For your Microsoft CET portfolio
+## As a portfolio artifact
 
 The `a3semi_CET_Training_Manual.pdf` demonstrates:
 - **Domain expertise** - 20 professional procedures citing CSA Z462, NFPA 70E/110/72/2001, ASHRAE A2, IEC 62443, ISO 22301, AHRI 550/590, Schneider WP122
@@ -137,5 +137,5 @@ The `a3semi_CET_Training_Manual.pdf` demonstrates:
 - **Standards compliance** - every doc has traceable standard references
 - **Operational maturity** - MOP/EOP framework with pre-work, hazards, step-by-step, acceptance criteria, failure modes
 
-This is a tangible artifact you can attach to a Microsoft interview as
-evidence of CET capability beyond theoretical knowledge.
+This is a tangible artifact that shows CET capability beyond
+theoretical knowledge.

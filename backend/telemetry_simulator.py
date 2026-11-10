@@ -19,7 +19,7 @@ Channel coverage per component type (Phase 1 inventory today):
 Channel IDs are SCOPED per component:  "<canonical_id>:<metric>"
 so the same physical metric on different units stays distinct.
 
-Vocabulary fence (CO+I panel-grade):
+Vocabulary fence (review-grade):
   Phase 1 components emit 3-phase AC voltage (480 VAC trifásico).
   Phase 2 components (future, when site_model.yml grows) will emit
   DC bus single channel (800 VDC unipolar TN-S). Schema fields are

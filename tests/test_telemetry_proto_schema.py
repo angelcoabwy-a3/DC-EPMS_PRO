@@ -20,7 +20,7 @@ companion RFC ``docs/rfc/telemetry_sizing_and_ocp_validation.md``
 
 * **Vocabulary fence** -- DC unipolar messages MUST NOT carry phase
   fields. Saying "800 VDC trifasico" is a credibility-destroying
-  error in CO+I panel review; the schema's `oneof topology` makes
+  error in a design review; the schema's `oneof topology` makes
   the mistake structurally impossible, and these tests guard the
   fence at audit time.
 * **Strict SI units** -- forbidden suffixes (`_kpa`, `_celsius`,

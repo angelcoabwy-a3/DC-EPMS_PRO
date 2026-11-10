@@ -188,7 +188,7 @@ DOM event, picked up by `views/optimizer.js`.
 
 ## 9. Sequencing & dependencies
 
-**Target window:** post-CO+I demo (August 2026). Pre-demo focus stays on
+**Target window:** post-demo (August 2026). Pre-demo focus stays on
 delivery; Epic 2 is the next major architectural sprint.
 
 **Dependencies (status now):**

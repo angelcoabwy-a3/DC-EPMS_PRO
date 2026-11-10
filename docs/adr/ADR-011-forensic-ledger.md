@@ -26,7 +26,7 @@ the **infrastructure** that IEC 62443-3-3 SR 6.1 / SR 6.2 and NIST SP
 - Zero rollback capability — no `tests/test_rollback.py`, no `snapshot`
   primitive, no `revert` endpoint.
 
-For the Microsoft CO+I panel (target early August 2026), the question
+For a design review, the question
 *"how do you prove that a setpoint write was not tampered with after the
 fact, and how do you revert it if it was wrong?"* needs a structural
 answer, not a policy answer.
