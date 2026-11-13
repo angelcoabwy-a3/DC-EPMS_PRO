@@ -477,7 +477,12 @@ class PostgresCMMSRepository:
 #  Mock implementation (tests)
 # =====================================================================
 class MockCMMSRepository:
-    """In-memory dict-backed repository for tests without PostgreSQL."""
+    """In-memory dict-backed repository.
+
+    Used by the test-suite and, since release R1, by the no-database
+    deployment mode (see the CMMS block in backend/main.py lifespan).
+    State lives in the process and is lost on restart.
+    """
 
     def __init__(self) -> None:
         self._assets: dict[str, Asset] = {}
@@ -612,3 +617,8 @@ class MockCMMSRepository:
         updated = wo.model_copy(update=updates)
         self._work_orders[wo_id] = updated
         return updated
+
+
+# Release R1 -- production-facing name for the no-database mode. Same
+# class: the alias exists so a deployment log never says "Mock".
+InMemoryCMMSRepository = MockCMMSRepository

@@ -19,7 +19,15 @@ Invariants:
 
 from __future__ import annotations
 
+import pathlib
+import sys
+
 import pytest
+
+# Same import path as tests/test_smoke.py ("from main import app"): a
+# second import under the name backend.main would register the
+# Prometheus collectors twice (DC-EPMS-008 class of failure).
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "backend"))
 from fastapi import FastAPI, WebSocket
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -289,7 +297,7 @@ class TestMainAppLoginCookie:
     """Integration against the real app object (lifespan boot)."""
 
     def test_ungated_login_payload_is_unchanged(self):
-        from backend.main import app
+        from main import app
 
         with TestClient(app) as c:
             res = c.post(
@@ -306,7 +314,7 @@ class TestMainAppLoginCookie:
             assert c.get("/api/site/components").status_code == 200
 
     def test_gated_login_sets_httponly_cookie_and_unlocks_api(self, monkeypatch):
-        from backend.main import app
+        from main import app
 
         monkeypatch.setenv(ENV_REQUIRE_AUTH, "1")
         monkeypatch.setenv(ENV_PASSWORD_PREFIX + "MANAGER", "a-long-private-passphrase")
@@ -339,7 +347,7 @@ class TestMainAppLoginCookie:
             assert c.get("/api/site/components").status_code == 200
 
     def test_gated_cookie_is_secure_behind_https_proxy(self, monkeypatch):
-        from backend.main import app
+        from main import app
 
         monkeypatch.setenv(ENV_REQUIRE_AUTH, "1")
         monkeypatch.setenv(ENV_PASSWORD_PREFIX + "OPERATOR", "another-private-passphrase")

@@ -399,15 +399,42 @@ async def lifespan(app: FastAPI):
             agent = None
 
     # ─── Sprint 6: CMMS Core v1.0 init (Fase 2 + 3) ───────────────────
-    # Requires db_manager.pool (asyncpg). Seeds assets from site_model.yml
-    # then registers /api/cmms/* router.
+    # Uses db_manager.pool (asyncpg) when PostgreSQL is up. Seeds assets
+    # from site_model.yml then registers /api/cmms/* router.
+    #
+    # Release R1 -- no-database mode: without a pool the CMMS (and the
+    # Tech Assist / Multi-Agent / Optimizer routes wired below, which
+    # only need the repository object) used to be skipped entirely, so
+    # Maintenance, Rack Heatmap and Mission Control answered 404. They
+    # now run on the in-memory repository: same seeded assets, work
+    # orders live until the process restarts. Reported as
+    # backend="memory" by /api/cmms/health and labelled in the HMI.
+    # Opt out with DC_EPMS_CMMS_FALLBACK=off (restores the skip).
     try:
-        if db_manager is not None and db_manager.pool is not None:
-            from backend.cmms_repository import PostgresCMMSRepository
+        _cmms_pool = db_manager.pool if db_manager is not None else None
+        _cmms_memory_ok = (
+            os.environ.get("DC_EPMS_CMMS_FALLBACK", "memory").strip().lower()
+            == "memory"
+        )
+        if _cmms_pool is not None or _cmms_memory_ok:
+            from backend.cmms_repository import (
+                InMemoryCMMSRepository,
+                PostgresCMMSRepository,
+            )
             from backend.cmms_routes import register_cmms_routes
             from backend.cmms_seeder import seed_assets_from_site_model
 
-            _cmms_repo_instance = PostgresCMMSRepository(db_manager.pool)
+            if _cmms_pool is not None:
+                _cmms_repo_instance = PostgresCMMSRepository(_cmms_pool)
+                app.state.cmms_backend = "postgres"
+            else:
+                _cmms_repo_instance = InMemoryCMMSRepository()
+                app.state.cmms_backend = "memory"
+                log.warning(
+                    "[BOOT] CMMS running IN-MEMORY (PostgreSQL unavailable): "
+                    "assets seeded from site_model.yml, work orders are "
+                    "lost on restart",
+                )
             register_cmms_routes(app, _cmms_repo_instance)
 
             sm = globals().get("_site_model")
@@ -689,7 +716,10 @@ async def lifespan(app: FastAPI):
                     exc_info=True,
                 )
         else:
-            log.warning("[BOOT] CMMS skipped: db_manager pool unavailable")
+            log.warning(
+                "[BOOT] CMMS skipped: db_manager pool unavailable and "
+                "DC_EPMS_CMMS_FALLBACK != memory",
+            )
     except Exception as e:
         log.error("[BOOT] CMMS init failed: %s", e, exc_info=True)
 
@@ -1069,30 +1099,75 @@ async def get_telemetry(limit: int = 60):
         return JSONResponse({"rows": [], "error": str(e)[:200]})
 
 
+def _simulated_kpi_point() -> dict | None:
+    """KPI row from in-process sources, or None (never raises).
+
+    Returns None when the simulator is switched off -- the legacy
+    DB-poll deployment must not be shown synthetic values.
+    """
+    if os.environ.get("DC_EPMS_USE_SIMULATOR", "1").strip() != "1":
+        return None
+    try:
+        from backend import hermes as _hermes_tap
+        from backend.kpi_fallback import build_kpi_point
+
+        channels = _hermes_tap.latest_kalman_channels()
+        pue_phase_1 = None
+        try:
+            from backend.physics.pue import PUEConfig, compute_pue_both_phases
+
+            pue_phase_1 = compute_pue_both_phases(PUEConfig.get())["phase_1"].to_dict()
+        except Exception as e:
+            log.debug("kpi fallback: PUE snapshot unavailable: %s", e)
+        return build_kpi_point(channels, pue_phase_1)
+    except Exception as e:
+        log.warning("kpi fallback failed: %s", e)
+        return None
+
+
 # --------------------------------------------------------------
 # [FIX 5] /api/telemetry/latest  -  single object for UI cards.
 # --------------------------------------------------------------
 @app.get("/api/telemetry/latest")
 async def get_telemetry_latest():
-    """Single most-recent telemetry record for the dashboard KPI cards."""
+    """Single most-recent telemetry record for the dashboard KPI cards.
+
+    Source order (the response names which one answered):
+      1. "timescaledb" -- newest row of the ``telemetry`` table.
+      2. "simulator"   -- release R1 no-database mode: a row derived
+         from the in-process Path C2 simulator + Kalman tap and the
+         Phase 1 PUE physics snapshot (backend/kpi_fallback.py). Used
+         when the table is unreachable or empty and the simulator is
+         on (DC_EPMS_USE_SIMULATOR=1, the default).
+    """
+    db_error: str | None = None
     if not db_manager:
+        db_error = "DB unavailable"
+    else:
+        try:
+            rows = await db_manager.fetch_telemetry(limit=1)
+            if rows:
+                return JSONResponse(
+                    {
+                        "latest": rows[0],
+                        "ts": time.time(),
+                        "source": "timescaledb",
+                    }
+                )
+        except Exception as e:
+            log.warning("telemetry/latest failed: %s", e)
+            db_error = str(e)[:200]
+
+    point = _simulated_kpi_point()
+    if point is not None:
         return JSONResponse(
-            {"latest": None, "error": "DB unavailable"},
-            status_code=200,
+            {"latest": point, "ts": time.time(), "source": "simulator"}
         )
-    try:
-        rows = await db_manager.fetch_telemetry(limit=1)
-        latest = rows[0] if rows else None
-        return JSONResponse(
-            {
-                "latest": latest,
-                "ts": time.time(),
-                "source": "timescaledb",
-            }
-        )
-    except Exception as e:
-        log.warning("telemetry/latest failed: %s", e)
-        return JSONResponse({"latest": None, "error": str(e)[:200]})
+    if db_error is not None:
+        return JSONResponse({"latest": None, "error": db_error})
+    return JSONResponse(
+        {"latest": None, "ts": time.time(), "source": "timescaledb"}
+    )
 
 
 @app.get("/api/telemetry/stream")

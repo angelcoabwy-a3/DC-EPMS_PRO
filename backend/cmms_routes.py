@@ -87,6 +87,9 @@ async def cmms_health(request: Request) -> dict[str, Any]:
             "asset_count": len(assets),
             "open_work_order_count": len(open_wos),
             "facility": "A3-Alpha Toronto Area",
+            # Release R1: "postgres" | "memory" (no-database mode --
+            # work orders are lost on restart). The HMI labels it.
+            "backend": getattr(request.app.state, "cmms_backend", "postgres"),
         }
     except CMMSRepositoryError as e:
         return {"status": "degraded", "error": str(e)[:200]}
