@@ -2,7 +2,9 @@
 
 ## Meta Global AI Developer Hackathon: MOP Verification
 
-**Live demo:** https://dc-epms-pro.onrender.com/ (demo mode: only the MOP Verification view is shown)
+**Live demo (hackathon view, no login):** https://dc-epms-pro.onrender.com/?demo=1 (demo mode: only the MOP Verification view is shown)
+
+**Full application:** https://dc-epms-pro.onrender.com/ (login required; see `docs/DEPLOY_PUBLIC.md`). The full application is the pre-existing platform plus work done after the hackathon; it is not part of the hackathon submission.
 
 **Demo video:** https://youtu.be/QxA8sZA_7t8
 
@@ -77,7 +79,7 @@ In this demo, procedure sessions live in server memory and reset when the server
 
 **A-Cubed Semiconductor Systems Inc. (a3semi)** — EPMS platform for critical infrastructure monitoring and simulation.
 
-Simulated facility: **A3-Alpha** (Tier IV 2N, 40 MW, 118 x NVIDIA GB200 NVL72 racks — all simulated).
+Simulated facility: **A3-Alpha Toronto Area** (Tier IV 2N, 67 MW Path C2: Phase 1 = 118 x NVIDIA GB200 NVL72 racks at 142 kW on 480 VAC three-phase 2N; Phase 2 design = 250 x GB300 NVL144 racks at 200 kW on an 800 VDC unipolar TN-S bus — all simulated).
 
 **Version 1.0** — includes dual utility 2N simulation, What-If analysis, AI agent with RAG grounding, and MCP server for Claude Desktop integration. See `docs/DEMO_SCRIPT.md` for the demo flow.
 
@@ -85,14 +87,14 @@ Simulated facility: **A3-Alpha** (Tier IV 2N, 40 MW, 118 x NVIDIA GB200 NVL72 ra
 
 ## Quick start — 3 tiers
 
-### Tier 1 — Minimal (UI preview, ~60 MB, 2 min)
+### Tier 1 — Minimal (every view, no database, ~250 MB, 3 min)
 Just enough to see the dashboard and test the SPA.
 ```powershell
 cd DC-EPMS_PRO
 .\scripts\start.ps1 -Install -Minimal
 .\scripts\start.ps1
 ```
-Browse → `http://localhost:8080`. Status pills all show down (expected). Layout, KPIs (empty), PDF button work.
+Browse → `http://localhost:8080`. PostgreSQL / RAG / Gemma pills show down (expected). Every view works: the CMMS runs in memory and the Overview KPIs come from the in-process simulator (both labelled on screen). Sign in with a demo user, e.g. `manager` / `manager-demo` (local only; a public deployment must set its own passwords, see `docs/DEPLOY_PUBLIC.md`).
 
 ### Tier 2 — Full stack (~800 MB, 8 min)
 PostgreSQL + TimescaleDB + ChromaDB RAG + all features.
@@ -224,7 +226,7 @@ DC-EPMS_PRO/
 ## Hardware model (simulated facility)
 
 - 118 x NVIDIA GB200 NVL72 Blackwell racks @ 142 kW DLC = 16,756 kW nominal
-- Tier IV 2N 40 MW total facility capacity
+- Tier IV 2N, 67 MW total facility capacity (Path C2: 16.8 MW Phase 1 IT + 50 MW Phase 2 IT design)
 - DLC inlet 18C, outlet max 45C, flow 40 L/min glycol
 
 ## Author

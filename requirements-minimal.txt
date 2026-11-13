@@ -1,6 +1,6 @@
 # ══════════════════════════════════════════════════════════════
-#  DC-EPMS PRO — MINIMAL requirements (60 MB install)
-#  Just enough to boot the SPA and see the dashboard.
+#  DC-EPMS PRO — MINIMAL requirements (CPU-only, no torch)
+#  Every view boots; PostgreSQL / RAG / LLM report down gracefully.
 #  Services without dependencies report status:down gracefully.
 #
 #  Use this for:  UI preview, frontend development, demos
@@ -18,3 +18,17 @@ pyyaml==6.0.2
 reportlab==4.2.2
 nvidia-ml-py==12.560.30
 pillow==12.2.0
+
+# -- Release R1 (DC-EPMS-049): required for a COMPLETE boot ----------
+# Without these the app still answered /api/health but silently lost
+# the Procedure Generator + Architect library (numpy), GraphRAG and
+# with it the LOTO Auditor (networkx), the physics ODE scenarios
+# (scipy) and the edge telemetry ingest (protobuf). Same pins as
+# pyproject.toml. Still CPU-only and torch-free: this is the set a
+# small public instance (no PostgreSQL, no RAG, no LLM) should install.
+numpy>=1.26,<3.0
+scipy>=1.13,<2.0
+networkx==3.6.1
+protobuf>=6.31.1,<7
+sse-starlette>=2.0,<3.0
+starlette>=0.37.2,<0.39.0

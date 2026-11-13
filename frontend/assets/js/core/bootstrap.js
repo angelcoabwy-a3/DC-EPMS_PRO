@@ -95,9 +95,11 @@ const MODULES = {
     morpheus: {
         kind: 'placeholder',
         title: 'Morpheus OT Security',
-        sub: 'NVIDIA Morpheus - IEC 62443 cyber-physical correlation',
+        sub: 'PLANNED - not connected. OT traffic anomaly detection (IEC 62443 principles)',
         icon: '⌂', // house (security)
-        desc: 'NVIDIA Morpheus AI Sentinel monitors Modbus TCP and DNP3 traffic across IEC 62443 zones SL-0 to SL-3. Detects cyber-physical anomalies and triggers SOAR isolation on confidence >85% per SR 5.2.',
+        // Release R1: the previous text described this as a running
+        // system. Nothing here is deployed -- say so (honest scope).
+        desc: 'Not implemented. No NVIDIA Morpheus pipeline is deployed and no OT network traffic is inspected by this platform today. Planned scope (roadmap Epic 3.B): anomaly detection over the Modbus TCP edge-gateway traffic, mapped to IEC 62443 zones and conduits. The chips below only open the AI Assistant with a reference question.',
         chips: [
             'Explain IEC 62443 SL-2 zone isolation requirements.',
             'What Morpheus baseline Modbus log rate is normal?',
@@ -106,22 +108,27 @@ const MODULES = {
     },
     gemini: {
         kind: 'placeholder',
-        title: 'Gemini ER 1.6 Robot',
-        sub: 'Autonomous inspection - thermographic imaging, moisture detection',
+        title: 'Gemini Robotics-ER 1.6',
+        sub: 'PLANNED - not connected. Vision-language reading of gauges and panels',
         icon: '⚫', // circle (robot)
-        desc: 'NVIDIA Gemini ER 1.6 inspection robot. Performs scheduled thermographic rack scans, moisture detection on raised floor, cable management verification. Integrated via ROS2 with event-driven incident creation.',
+        // Release R1: corrected. Gemini Robotics-ER 1.6 is a Google
+        // vision-language MODEL, not an NVIDIA robot, and this
+        // platform has no robot and no integration with it.
+        desc: 'Not implemented. Gemini Robotics-ER 1.6 is a Google vision-language model for embodied reasoning (it reads instruments and reasons about a scene from images); it is not a robot, and this platform has no robot and no integration with the model today. Planned scope: photo-based instrument and panel reading as a draft observation for CET review. The chips below only open the AI Assistant with a reference question.',
         chips: [
-            'What anomalies can Gemini ER 1.6 detect on Blackwell racks?',
-            'Summarize robot IR thermography procedure for PDU inspection.',
-            'How does ROS2 integration publish incidents to PostgreSQL?',
+            'Summarize the IR thermography procedure for PDU inspection.',
+            'What should a CET verify on a breaker panel photo before a MOP step?',
+            'Which gauge readings matter on a CDU during a rounds inspection?',
         ],
     },
     omniverse: {
         kind: 'placeholder',
         title: 'NVIDIA Omniverse',
-        sub: 'Digital twin - physics-based facility visualization',
+        sub: 'PLANNED - not connected. USD / Omniverse export of the site model',
         icon: '◎', // bullseye
-        desc: 'NVIDIA Omniverse digital twin of A3-Alpha Toronto Area. Live-link to real-time telemetry via USD / Kit. Visualizes thermal flow, power distribution, and fault propagation scenarios.',
+        // Release R1: there is no Omniverse link. The 3D twin that
+        // DOES exist is Mission Control (three.js) -- point there.
+        desc: 'Not implemented. There is no NVIDIA Omniverse / USD live-link in this platform today. The working 3D view of A3-Alpha Toronto Area is Mission Control (three.js, in the navigation). Planned scope: export the site model as a USD stage that Omniverse can open. The chips below only open the AI Assistant with a reference question.',
         chips: [
             'Explain Omniverse Live-Link integration for EPMS.',
             'How does USD represent data center thermal zones?',
