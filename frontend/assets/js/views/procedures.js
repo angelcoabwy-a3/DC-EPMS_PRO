@@ -784,7 +784,10 @@ function _renderMarkdown(md) {
         if (inOl) { out.push('</ol>'); inOl = false; }
     };
     for (const ln of lines) {
-        const ulMatch = ln.match(/^- (.+)$/);
+        // Release R1: accept '* ' bullets too -- the deterministic MOP
+        // skeleton emits them, and they rendered as literal asterisks
+        // run together in one paragraph.
+        const ulMatch = ln.match(/^[-*] (.+)$/);
         const olMatch = ln.match(/^\d+\. (.+)$/);
         if (ulMatch) {
             if (inOl) { out.push('</ol>'); inOl = false; }

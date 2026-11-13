@@ -546,14 +546,35 @@ async function loadHistoricalTelemetry() {
         console.warn('historical telemetry load failed:', e);
     }
     // 2. Populate KPI cards from /api/telemetry/latest (single record)
+    const source = await refreshLatestKpi();
+    // Release R1 -- no-database mode: the "simulator" source is not
+    // pushed over the SSE (that carries channel_innovations), so poll
+    // it. The DB-backed source keeps its one-shot load, as before.
+    if (source === KPI_SOURCE_SIMULATOR && !_kpiPollStarted) {
+        _kpiPollStarted = true;
+        _intervals.push(setInterval(refreshLatestKpi, KPI_POLL_MS));
+    }
+}
+
+const KPI_SOURCE_SIMULATOR = 'simulator';
+const KPI_POLL_MS = 15000;
+let _kpiPollStarted = false;
+
+/** Fetch the latest KPI row, paint the cards, label the source.
+ *  Returns the source string ('' when no row was available). */
+async function refreshLatestKpi() {
     try {
         const resp = await fetch('/api/telemetry/latest');
-        if (resp.ok) {
-            const data = await resp.json();
-            if (data.latest) handleTelemetry(data.latest);
-        }
+        if (!resp.ok) return '';
+        const data = await resp.json();
+        if (!data || !data.latest) return '';
+        handleTelemetry(data.latest);
+        const note = document.getElementById('kpi-source-note');
+        if (note) note.hidden = data.source !== KPI_SOURCE_SIMULATOR;
+        return typeof data.source === 'string' ? data.source : '';
     } catch (e) {
         console.warn('latest telemetry fetch failed:', e);
+        return '';
     }
 }
 
@@ -712,9 +733,13 @@ export const __overview_test__ = {
     severityClass,
     addAdvisory,
     initOverviewView,
+    refreshLatestKpi,
+    loadHistoricalTelemetry,
+    kpiPollStarted: () => _kpiPollStarted,
     setIncidents: (rows) => { state.incidents = rows; },
     reset: () => {
         _initialized = false;
+        _kpiPollStarted = false;
         state.incidents = [];
         state.pueHistory = [];
         state.agentBuffer = '';

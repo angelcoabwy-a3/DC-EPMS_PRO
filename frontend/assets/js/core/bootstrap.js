@@ -22,6 +22,7 @@
 
 import { APP_VERSION } from './version.js';
 import { guardRoute } from './demo.js';
+import { navigationBlocked, requestLogin } from './auth_gate.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -193,6 +194,13 @@ function navigateTo(routeKey) {
         return;
     }
 
+    // Release R1: the legacy path below (placeholder stubs) needs the
+    // same session guard the router applies to registered routes.
+    if (navigationBlocked()) {
+        requestLogin();
+        return;
+    }
+
     // Update nav active state
     document.querySelectorAll('.nav-item').forEach((n) => {
         n.classList.toggle('active', n.dataset.route === routeKey);
@@ -263,6 +271,15 @@ function setupRouter() {
     });
 }
 
+/** Release R1 -- land on the route named by the URL hash (default
+ *  overview). main.js calls it right after a successful login: the
+ *  login gate had hidden every view, and nothing re-revealed one, so
+ *  the operator signed in to an empty main area until a nav click. */
+export function navigateToCurrentRoute() {
+    const fromHash = (window.location.hash || '').replace(/^#/, '');
+    navigateTo(fromHash || 'overview');
+}
+
 /** Public entry — called once from main.js after all routes register. */
 export function initBootstrap() {
     console.log(
@@ -282,6 +299,7 @@ export const __bootstrap_test__ = {
     navigateTo,
     renderPlaceholder,
     setupRouter,
+    navigateToCurrentRoute,
     stampAppVersion: _stampAppVersion,
     APP_VERSION,
 };

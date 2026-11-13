@@ -864,9 +864,25 @@ function _onToggleDetail(woId) {
     }
 }
 
+// Release R1 -- no-database mode. /api/cmms/health names the storage
+// backend; "memory" means work orders are lost on restart, and the
+// operator must be able to see that on the view itself. Best-effort:
+// a failed probe leaves the badge as it was.
+async function _refreshStorageBadge() {
+    const badge = document.querySelector('#view-maintenance [data-field="cmms-backend"]');
+    if (!badge) return;
+    try {
+        const r = await fetch(`${API_BASE}/api/cmms/health`);
+        if (!r.ok) return;
+        const body = await r.json();
+        badge.hidden = !(body && body.backend === 'memory');
+    } catch (_e) { /* keep the previous state */ }
+}
+
 // ─── Refresh cycle ────────────────────────────────────────────────
 async function _refresh() {
     if (!_isVisible) return;
+    _refreshStorageBadge();
     // v0.10.12: pick up handoff from the asset panel BEFORE the fetch so
     // the asset_id filter applies on this refresh.
     const focus = _consumeFocusHandoff();
@@ -1298,4 +1314,5 @@ export const __maintenance_test__ = {
     onHermesAlert: _onHermesAlert,
     setVisible(v) { _isVisible = v; },
     isWired: () => _hermesAlertHandler !== null,
+    refreshStorageBadge: _refreshStorageBadge,
 };

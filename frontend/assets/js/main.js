@@ -56,8 +56,9 @@ import { initQuantumView } from './views/quantum.js';
 import { initMopVerifyView } from './views/mop_verify.js';
 import { initLoginView, showLoginView, hideLoginView } from './views/login.js';
 import { hasValidToken, getClaims, onAuthChange } from './core/auth.js';
+import { armAuthGate } from './core/auth_gate.js';
 import { startQkdGate } from './core/qkd_gate.js';
-import { initBootstrap } from './core/bootstrap.js';
+import { initBootstrap, navigateToCurrentRoute } from './core/bootstrap.js';
 import { initDemoMode } from './core/demo.js';
 
 // Telemetry engine flag. core/telemetry_engine.js owns the SSE; this
@@ -172,13 +173,17 @@ function _applyAuthGate() {
 
 window.addEventListener('dc-epms-auth-granted', () => {
     _applyAuthGate();
+    // Release R1: reveal a view after sign-in (the gate hid them all).
+    navigateToCurrentRoute();
 });
 window.addEventListener('dc-epms-auth-required', () => {
     _applyAuthGate();
 });
 onAuthChange(() => _applyAuthGate());
 
-// Boot-time apply.
+// Boot-time apply. Arming makes the router refuse to reveal a view
+// without a session from here on (core/auth_gate.js).
+armAuthGate();
 _applyAuthGate();
 
 // Epic 10 Batch 4 -- start polling /api/qkd/status. When QBER

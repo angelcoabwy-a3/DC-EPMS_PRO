@@ -15,6 +15,7 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { guardRoute } from './demo.js';
+import { navigationBlocked, requestLogin } from './auth_gate.js';
 
 // routeId -> { viewId, activate(ctx) }
 const _routes = new Map();
@@ -52,6 +53,13 @@ export function navigateTo(routeId) {
     routeId = guardRoute(routeId);
     const handler = _routes.get(routeId);
     if (!handler) return false;
+    // Release R1: no session -> the login view, never the target
+    // view (closes the "/#route" bypass of the Epic 10 gate).
+    // Reported as handled so the caller does not fall back.
+    if (navigationBlocked()) {
+        requestLogin();
+        return true;
+    }
 
     document.querySelectorAll('.view').forEach(v => v.setAttribute('hidden', ''));
     const view = document.getElementById(handler.viewId);

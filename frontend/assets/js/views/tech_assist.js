@@ -363,6 +363,15 @@ async function _refreshLibrary() {
 
     try {
         const resp = await fetch(`${API_BASE}/api/tech-assist/documents`);
+        if (resp.status === 503) {
+            // Release R1: the ingester needs the RAG stack (ChromaDB +
+            // embeddings). On a deployment without it this is the
+            // expected posture, not a fault -- say so instead of a
+            // bare status code. Static template, no interpolation.
+            tbody.innerHTML = '<tr><td colspan="9" class="ta-empty">Knowledge library is not available on this deployment '
+                + '(the RAG service is not running, so documents cannot be indexed).</td></tr>';
+            return;
+        }
         if (!resp.ok) {
             tbody.innerHTML = `<tr><td colspan="9" class="ta-empty ta-error">HTTP ${resp.status}</td></tr>`;
             return;
