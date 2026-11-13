@@ -43,8 +43,14 @@ Runtime additions: DC_EPMS_REQUIRE_AUTH, DC_EPMS_JWT_SECRET (existing),
 OPEN (operator decisions): DC-EPMS-043 anomaly counter saturates on a
   healthy plant; DC-EPMS-051 PUE advisory thresholds; -052..-055.
   Full list: CHANGELOG "Release R1".
-NEXT: operator applies the patch, sets env on the host, eyeballs the
-  live views (S-VISUAL-01). Then R1.1 / R2-A..C per ROADMAP v11.23.
+RELEASE R2-A (same day, same branch): OT Security view replaces the
+  Morpheus stub. backend/ot_security.py + GET /api/ot-security/posture
+  (12 deterministic checks, read-only, no secrets in the payload) +
+  views/ot_security.js. NO traffic inspection: reported as finding
+  OT-NET-01. Floors after R2-A: pytest 1667 / vitest 680 (35 files).
+  DC-EPMS-056: DEPLOY_PUBLIC.md gave a non-hex ledger key recipe (fixed).
+NEXT: operator applies the bundle, sets env on the host, eyeballs the
+  live views (S-VISUAL-01). Then R1.1 / R2-B / R2-C per ROADMAP v11.23.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```

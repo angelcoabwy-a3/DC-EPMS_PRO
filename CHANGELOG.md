@@ -13,6 +13,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Release R2-A — OT Security view (2026-11-13)
+
+> Operator GO "OT Security". Replaces the Morpheus OT stub with a
+> read-only posture view built only on state the platform can prove
+> about itself. **No network traffic is inspected and no NVIDIA
+> Morpheus pipeline exists; the view states that permanently and
+> reports it as an open finding (OT-NET-01).** Same branch
+> `release/public-full-app`. Not tagged, not pushed.
+
+### Added
+
+- `backend/ot_security.py` + `GET /api/ot-security/posture`
+  (read-only, ADR-006; deterministic, no LLM, S-DET-01). Twelve
+  checks over five fact sections: access (session gate, JWT secret
+  source, accounts still on repository-default passwords), forensic
+  ledger (chain verification, HMAC key source, persistence), control
+  surface (writable BMS tags by protocol, connector audit buffer),
+  edge ingest counters, and what is not monitored. A section that
+  cannot be read fails closed. The response carries booleans, counts
+  and names only: no secret, password, hash or token.
+- `frontend/assets/js/views/ot_security.js` + styles + nav entry
+  "OT Security" (route `ot-security`). Severity is carried by a text
+  badge, never colour alone. Polls every 15 s only while visible.
+- `app.state.edge_channel_store`: the ingest store returned by
+  `register_telemetry_ingest` was discarded; it is now kept so its
+  counters can be reported.
+- IEC 62443-3-3 SR references on every check are a design-time
+  mapping by requirement title (SR 1.1, 1.2, 1.5, 2.1, 2.8, 3.5, 3.9,
+  5.1, 6.2). **Not a conformance assessment; verify the SR wording
+  against the standard before quoting it externally.**
+
+### Fixed
+
+- **DC-EPMS-056 (HIGH, documentation defect introduced in R1)** —
+  `docs/DEPLOY_PUBLIC.md` told the operator to set
+  `DC_EPMS_LEDGER_HMAC_KEY` to "32+ random characters" generated with
+  `token_urlsafe`. The ledger requires a HEX string of at least 32
+  bytes and raises at boot otherwise, which would have left the
+  public instance without a forensic ledger. Corrected to
+  `secrets.token_hex(32)`; the OT Security view now also shows the
+  key posture.
+
+### Findings the new view reports on this codebase (open by design)
+
+- OT-DEV-01: the edge gateway presents no device credential.
+- OT-NET-01: no OT traffic inspection.
+- OT-NET-02: `config/site_model.yml` assigns no zone or conduit.
+- OT-AUD-03 on any instance without PostgreSQL.
+
+### Verified (Linux, Python 3.13, no PostgreSQL)
+
+- pytest 1667 passed (+22), 0 failed, same 3 pre-existing errors.
+- vitest 680 passed across 35 files (+29).
+- Browser: view rendered on a default local instance (2 high,
+  5 medium, 1 low, 2 passing) and on a hardened gated instance
+  (0 high, 3 medium, 1 low, 6 passing), no failed request.
+
 ### Release R1 — public full-app deployment (2026-11-13)
 
 > **Theme:** make the whole platform runnable and honest on a public

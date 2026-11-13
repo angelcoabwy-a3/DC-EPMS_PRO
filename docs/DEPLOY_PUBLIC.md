@@ -47,15 +47,17 @@ Recommended:
 
 | Variable | Value | Why |
 |---|---|---|
-| `DC_EPMS_LEDGER_HMAC_KEY` | 32+ random characters | Otherwise ledger entries cannot be verified after a restart. |
+| `DC_EPMS_LEDGER_HMAC_KEY` | **hex** string, at least 64 hex digits (32 bytes) | Otherwise ledger entries cannot be verified after a restart. A non-hex or shorter value makes the ledger fail to start. |
 
 Already-existing variables that keep their meaning: `META_API_KEY`
 (MOP Verification), `DC_EPMS_OPTIMIZER_ENABLED`, `DC_EPMS_USE_SIMULATOR`.
 
-Generate a secret locally with:
+Generate the values locally. The ledger key MUST be hex; the JWT
+secret and the passwords can be any private string:
 
 ```
-python -c "import secrets; print(secrets.token_urlsafe(48))"
+python -c "import secrets; print(secrets.token_hex(32))"       # DC_EPMS_LEDGER_HMAC_KEY
+python -c "import secrets; print(secrets.token_urlsafe(48))"   # DC_EPMS_JWT_SECRET
 ```
 
 Set secrets in the hosting dashboard. Never commit them.
@@ -100,7 +102,10 @@ curl -s -o /dev/null -w "%{http_code}\n" https://<host>/lm/v1/models          # 
 ```
 
 Then in a browser: sign in as `manager`, open Overview, Power & UPS,
-Maintenance, Optimizer, Procedure Architect, Mission Control. Open
+Maintenance, Optimizer, Procedure Architect, Mission Control and
+OT Security. On a correctly configured host the OT Security view
+shows OT-AUTH-01, -02, -03 and OT-AUD-02 as PASS; if any of them
+fails, an environment variable from section 2 is missing. Open
 `/?demo=1` in a private window and confirm MOP Verification loads
 without a login.
 
