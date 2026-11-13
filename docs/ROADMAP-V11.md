@@ -1,8 +1,45 @@
 # DC-EPMS PRO — Roadmap V11
 
-- **Status**: v11.22 (2026-06-12) — **EDGE TRACK PHASE 2 DELIVERED** (operator pivot: core/operations development over demo polish) · gateway-rs speaks real Modbus TCP -> canonical v1 envelopes -> backend ingest, E2E live
+- **Status**: v11.23 (2026-11-13) — **RELEASE R1: PUBLIC FULL-APP DEPLOYMENT** (see the v11.23 block below; it re-bases this roadmap) · previous: v11.22 (2026-06-12) — **EDGE TRACK PHASE 2 DELIVERED** (operator pivot: core/operations development over demo polish) · gateway-rs speaks real Modbus TCP -> canonical v1 envelopes -> backend ingest, E2E live
 - **Decision-maker**: Wilmer Y. Angel Beltran (CET, Lead Architect a3semi)
-- **Locked**: 2026-05-10 · **Synced**: 2026-06-12 (v11.22)
+- **Locked**: 2026-05-10 · **Synced**: 2026-11-13 (v11.23)
+- **v11.23 sync (2026-11-13) — ROADMAP RE-BASE + RELEASE R1.**
+  Five months of drift since v11.22: the Meta hackathon work (Oct 26 -
+  Nov 4: MOP Verification, voice readback, forensic + agentic
+  investigator, Render deployment) was never recorded here, the
+  interview-driven schedule (early August 2026) has expired, and the
+  operator's direction moved to an MVP that serves both the portfolio
+  and an A-CUBED product. Everything below this block is HISTORY; the
+  live plan is the R-track table.
+
+  **R1 — public full-app deployment: DELIVERED 2026-11-13** on branch
+  `release/public-full-app` (4 code commits + doc-sync; CHANGELOG
+  "Release R1"). Operator decisions taken that day: the public URL
+  shows the full application; no-database mode; login mandatory.
+  Closing R1 still needs the OPERATOR: apply the patch series, set the
+  environment variables of `docs/DEPLOY_PUBLIC.md` on the host,
+  redeploy, and eyeball the live views (S-VISUAL-01). Until then R1 is
+  "delivered", not "closed".
+
+  | Track | Scope | Size (estimate, not a commitment) | Blocked on |
+  |---|---|---|---|
+  | **R1** | Public full-app deployment | done | operator: apply + env + eyeball |
+  | **R1.1** | Audit defects left open. DC-EPMS-043 anomaly counter (ISA-18.2 persistence rule, k-of-n), DC-EPMS-051 PUE advisory thresholds vs `pue_targets.yml`, DC-EPMS-052, -053, -054, session refresh + sign-out | 10-14 h | DC-EPMS-043 and -051 are policy decisions |
+  | **R2-A** | **OT Security view** (replaces the Morpheus stub; Epic 3.B re-scoped). Built ONLY on data the platform really has: session-gate and IAM posture, forensic-ledger chain verification, BMS write audit, Modbus edge-ingest statistics, zone/conduit map derived from the site model. No Morpheus pipeline, and the view must say so | 10-14 h | GO |
+  | **R2-B** | **Instrument Reading view** (replaces the Gemini stub). Photo of a gauge or panel -> Gemini Robotics-ER 1.6 (Google API) -> reading as a DRAFT observation for CET review (ADR-006). Reuses the MOP Verification rate limits | 8-12 h | a `GEMINI_API_KEY`, a budget cap, GO |
+  | **R2-C** | **USD export** (replaces the Omniverse stub). `GET /api/site/usd` renders the site model as a `.usda` stage; the view offers the download and links to Mission Control. Validated with `usd-core`; opening it in Omniverse cannot be verified without Omniverse | 6-8 h | GO |
+  | **R3** | Persistence + platform ops: managed PostgreSQL, edge channels into TimescaleDB, Kalman admission, supervised service, metrics (the v11.22 edge-track list) | unsized here | hosting budget decision |
+  | **R4** | MVP for infrastructure design engineers: generate a design from requirements (rack interior to utility entry: electrical, chilled water, diesel, fire, fibre) | not yet specified | a written spec |
+
+  Reality check on R2: the three stubs cannot be "completed" as they
+  were described (a Morpheus deployment, an inspection robot, an
+  Omniverse live-link) on this hardware or on a small public instance.
+  The R2 scopes above are what IS demonstrable. R2-C and R2-A need no
+  external account; R2-B needs a key.
+
+  Superseded by this block: MVP S5 (feature freeze) / S6 (OBS
+  rehearsals, `v1.0.0` tag) and the "interview target" framing. The
+  v11.22 "next edge bites" move to R3.
 - **v11.22 sync (2026-06-12) — EDGE TRACK PHASE 2 (operator GO, core
   development pivot).** Operator direction: no demo narration —
   develop the core/operations gaps. Gap analysis ranked real field

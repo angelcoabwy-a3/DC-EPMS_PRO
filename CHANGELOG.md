@@ -13,6 +13,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Release R1 — public full-app deployment (2026-11-13)
+
+> **Theme:** make the whole platform runnable and honest on a public
+> URL: mandatory login that actually gates the API, no PostgreSQL
+> required, and the two views that had shipped without any styling
+> finished. Driven by a clean-clone audit (boot + 23-view browser
+> sweep), not by the documented state. Commits `26f0318`, `e564246`,
+> `e0c8621`, `b2bab87` on branch `release/public-full-app`.
+> **Not tagged.** Not pushed from the authoring session (no push
+> access); delivered as a patch series.
+>
+> ID note: commit `26f0318` cites the PyJWT defect as "DC-EPMS-040".
+> That ID was already taken (CMMS re-approve guard). The canonical ID
+> is **DC-EPMS-050**; the commit message was left as written.
+
+### Fixed
+
+- **DC-EPMS-050 (HIGH)** — `PyJWT` was imported by
+  `backend/auth/jwt_handler.py` but declared nowhere. Clean install:
+  IAM store failed to seed, login answered 503. Declared in
+  `pyproject.toml` and the three `requirements*.txt`.
+- **DC-EPMS-042 (HIGH)** — the Epic 10 login gated the HMI only; every
+  API route, the SSE stream and the Hermes WebSocket were reachable
+  with no session. New `backend/auth/session_gate.py` (pure ASGI, http
+  + websocket), enabled by `DC_EPMS_REQUIRE_AUTH`; login sets an
+  httpOnly session cookie. Default OFF.
+- **DC-EPMS-044 (HIGH)** — without PostgreSQL the CMMS boot block was
+  skipped, and with it the Tech Assist, Multi-Agent, predictive
+  trigger and Optimizer routes (404 across four views). Falls back to
+  the in-memory repository; `/api/cmms/health` reports the backend.
+- **DC-EPMS-046 (HIGH)** — `views/optimizer.js` (113 classes) and
+  `views/procedures.js` (45 classes) had zero CSS rules and rendered
+  as browser-default HTML. Styled; a vitest class-coverage fence now
+  fails on any new unstyled `opt-` / `proc-` class.
+- **DC-EPMS-047 (HIGH)** — `/#route` bypassed the login view.
+  `core/auth_gate.js` + router/bootstrap guard.
+- **DC-EPMS-045 (MEDIUM)** — Overview KPI cards (hall temperature, IT
+  load, fleet) empty unless the external `scripts/simulator.py` wrote
+  the legacy table. `/api/telemetry/latest` falls back to an
+  in-process row (`backend/kpi_fallback.py`), source labelled.
+- **DC-EPMS-048 (MEDIUM)** — empty main area after sign-in until a nav
+  click.
+- **DC-EPMS-049 (MEDIUM)** — `requirements-minimal.txt` booted but
+  silently lost Procedure Generator, GraphRAG, LOTO Auditor and edge
+  ingest (numpy / networkx / scipy / protobuf missing).
+- **DC-EPMS-041 (LOW)** — pytest refused to configure / collect on a
+  fresh install (asyncio loop-scope + anyio alias deprecation under
+  `filterwarnings = error`).
+- Stub views (Morpheus OT, Gemini ER 1.6, Omniverse 3D) described
+  running systems that do not exist and mis-attributed Gemini
+  Robotics-ER (Google) to NVIDIA. Rewritten as "Not implemented" and
+  tagged `planned` in the nav.
+- README: 40 MW -> 67 MW Path C2; Tier 1 text matches behaviour.
+- Smaller HMI items: login form styling, Tech Assist 503 message,
+  Mission Control status chip hidden under the Building A card,
+  `* ` bullets in the procedure renderer.
+
+### Added
+
+- `DC_EPMS_PWD_<USERNAME>` password overrides; on a gated deployment a
+  user without one is not seeded (repo-default passwords refused).
+- `DC_EPMS_CMMS_FALLBACK` (`memory` default, `off` restores the skip).
+- `docs/DEPLOY_PUBLIC.md`.
+- `frontend/assets/demo_config.json` now `demo_mode: false`; the
+  hackathon view remains at `?demo=1` without a login.
+
+### Verified (authoring environment: Linux, Python 3.13, no PostgreSQL)
+
+- pytest: 1645 passed, 0 failed, 3 errors, 2 skipped, 5 deselected
+  (baseline before any change: 1568 passed, 1 failed, 3 errors). The
+  3 errors (`test_optimizer::TestProposerPatternInvariant`) predate
+  this work and are attributed to the environment (Python 3.13 / newer
+  pytest); the baseline failure (`test_skill_audit ... last_3_commits`)
+  was a shallow-clone artefact that cleared once the branch had three
+  commits. **Not re-verified on the project's Windows / Python 3.12
+  environment.** +76 tests.
+- vitest: 651 passed across 34 files (baseline 622 / 33). +29 tests.
+- Browser sweep (headless Chrome): 23 of 23 views render with no
+  failed API call other than the designed 503 postures (Optimizer OFF,
+  Tech Assist library without RAG). Repeated with the gate ON.
+- Clean virtualenv from `requirements-minimal.txt`: boots with no
+  missing-module error.
+
+### Open — found by the audit, NOT fixed (need an operator decision)
+
+- **DC-EPMS-043 (HIGH, alarm management)** — the ANOMALIES (60M)
+  counter saturates on a healthy plant. Measured: 30 unique channels
+  after 10 ticks, 128 after 60, 254 of 281 after 300, with no injected
+  anomaly and SHI 1.00. Cause is statistical, not calibration: a
+  single-sample 3-sigma test over 5 samples per tick gives about 1.35 %
+  false positives per channel per tick. Fix needs a persistence rule
+  (k-of-n) and changes `is_anomalous` semantics used by the predictive
+  trigger and edge healing — ISA-18.2 rationalization, operator call.
+- **DC-EPMS-051 (MEDIUM)** — Overview advisory thresholds are
+  hard-coded (warn > 1.30, crit > 1.40) while `config/pue_targets.yml`
+  says Phase 1 warn 1.45 / crit 1.60. The simulated PUE sits near
+  1.32-1.34, so the Overview shows a permanent "PUE trending upward"
+  banner while the PUE panel says "good".
+- **DC-EPMS-052 (LOW)** — LOTO Auditor registration raises NameError
+  (`_s2_service`) when GraphRAG fails to import (masked now that
+  networkx is in the minimal set).
+- **DC-EPMS-053 (LOW)** — ruff 0.9.x reports 6 errors in
+  `backend/shift_copilot.py` (UP017 x5) and `backend/llm_providers.py`
+  (UP035); CLAUDE.md claims 0. Not touched.
+- **DC-EPMS-054 (LOW)** — Mission Control is tagged `spike` in the nav
+  and `B1 PRODUCTION` in its header.
+- **DC-EPMS-055 (known)** — the site model carries 50 racks; headers
+  and the README state 118. Mission Control now shows 30 + 20.
+- Sessions last 1 hour with no refresh and no sign-out control.
+
 > **CHANGELOG reconstruction note (2026-05-16)**: the entries from
 > `v0.7.2-camino1` through `v0.10.13-modal-fix` below were reconstructed from
 > annotated git tags. The CHANGELOG was not maintained during the rapid

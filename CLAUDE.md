@@ -15,7 +15,41 @@ DC-EPMS PRO simulates **A3-Alpha Toronto Area** under **Path C2** (sealed 2026-0
 
 **🚨 Vocabulary discipline (CRITICAL — panel-grade fence)**: "trifásico" applies ONLY to AC upstream of MV Rectifier. The 800 VDC bus is **unipolar TN-S** (no phases). Saying "800 VDC trifásico" is a credibility-destroying error in a design review. Schema names MUST encode polarity: `voltage_v_phase_ab/bc/ca` for AC, `voltage_v_dc_bus` for DC. The v1 proto schema (`backend/telemetry_proto/v1/telemetry.proto`) enforces this structurally via `oneof topology { ac_three_phase | dc_unipolar }` — see `tests/test_telemetry_proto_schema.py::TestVocabularyFence`.
 
-## 📊 CURRENT STATE (synced 2026-06-12 — EDGE TRACK PHASE 2 DELIVERED; operator pivot to core dev)
+## 📊 CURRENT STATE (synced 2026-11-13 — RELEASE R1 delivered; blocks below this one are history)
+
+```
+RELEASE R1 — public full-app deployment (2026-11-13), branch
+release/public-full-app, NOT pushed / NOT tagged at sync time:
+  26f0318 Batch A  PyJWT declared (DC-EPMS-050) + session gate
+                   (backend/auth/session_gate.py, DC_EPMS_REQUIRE_AUTH,
+                   httpOnly cookie, DC_EPMS_PWD_<USER> overrides)
+  e564246 Batch B  no-database mode: CMMS in-memory fallback +
+                   /api/telemetry/latest simulator source
+                   (backend/kpi_fallback.py)
+  e0c8621 Batch C  Optimizer + Procedure Architect CSS (both had zero
+                   rules), core/auth_gate.js (hash bypass), post-login
+                   landing, labels, planned tags
+  b2bab87 Batch D  demo_mode false (?demo=1 keeps the hackathon view),
+                   requirements-minimal complete, honest stub texts,
+                   docs/DEPLOY_PUBLIC.md, README 67 MW
+Floors measured on Linux / Python 3.13 / no PostgreSQL (NOT yet
+re-run on the Windows / 3.12 workstation):
+  pytest 1645 passed (+76), 0 failed; 3 errors pre-existing in that
+         environment (test_optimizer AST fixtures, pytest/py3.13) —
+         re-check locally.
+  vitest 651 passed / 34 files (+29).
+Runtime additions: DC_EPMS_REQUIRE_AUTH, DC_EPMS_JWT_SECRET (existing),
+  DC_EPMS_PWD_<USER>, DC_EPMS_CMMS_FALLBACK. See docs/DEPLOY_PUBLIC.md.
+OPEN (operator decisions): DC-EPMS-043 anomaly counter saturates on a
+  healthy plant; DC-EPMS-051 PUE advisory thresholds; -052..-055.
+  Full list: CHANGELOG "Release R1".
+NEXT: operator applies the patch, sets env on the host, eyeballs the
+  live views (S-VISUAL-01). Then R1.1 / R2-A..C per ROADMAP v11.23.
+Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
+  that work predates this block and lives in README + git history.
+```
+
+## 📊 PREVIOUS STATE (synced 2026-06-12 — EDGE TRACK PHASE 2 DELIVERED; operator pivot to core dev)
 
 ```
 HEAD:  EDGE TRACK PHASE 2 (2026-06-12, operator GO "punto 1, gateway-rs
