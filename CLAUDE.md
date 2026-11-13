@@ -49,8 +49,18 @@ RELEASE R2-A (same day, same branch): OT Security view replaces the
   views/ot_security.js. NO traffic inspection: reported as finding
   OT-NET-01. Floors after R2-A: pytest 1667 / vitest 680 (35 files).
   DC-EPMS-056: DEPLOY_PUBLIC.md gave a non-hex ledger key recipe (fixed).
+RELEASE R2-C (same day, same branch): USD export replaces the
+  Omniverse stub. backend/usd_export.py + GET /api/site/usd (+/summary)
+  + views/usd_export.js. Static SCHEMATIC .usda (no coordinates in the
+  site model, no live-link, no telemetry). Validated with usd-core;
+  NOT opened in Omniverse. Floors: pytest 1705 / vitest 694 (36 files).
+UPS + MV AUDIT (operator question): NOT complete. DC-EPMS-057 Phase 1
+  sizing short ~6.7x per path (UPS 2.5 MW vs 16.76 MW); DC-EPMS-058 ATS
+  and 480 V gensets upstream of the 27.5 kV transformer; -059 no MV
+  switchgear / protection; -060 UPS B and XFMR B under-instrumented;
+  -061 site metadata 40/56 MW. Roadmap track R1.2.
 NEXT: operator applies the bundle, sets env on the host, eyeballs the
-  live views (S-VISUAL-01). Then R1.1 / R2-B / R2-C per ROADMAP v11.23.
+  live views (S-VISUAL-01). Then R1.1 / R1.2 / R2-B per ROADMAP v11.23.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```

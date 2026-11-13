@@ -13,6 +13,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Release R2-C — USD export (2026-11-13)
+
+> Operator GO "procede". Replaces the Omniverse 3D stub. **Static,
+> schematic export. There is no Omniverse live-link and no telemetry
+> in the stage; the view and the file both say so.** Same branch
+> `release/public-full-app`. Not tagged, not pushed.
+
+### Added
+
+- `backend/usd_export.py`: `build_usda(model)` renders
+  `config/site_model.yml` as an OpenUSD ASCII layer. One prim per
+  building, room, row and component (113 cubes), metadata as typed
+  `a3semi:meta:*` attributes, power and cooling chains as
+  `a3semi:powerFeeds` / `a3semi:coolingFeeds` relationships (54 + 24).
+  Pure text generation (no `pxr` at runtime), deterministic,
+  7-bit ASCII. A prim-path collision raises instead of overwriting.
+- `GET /api/site/usd` (download, `Content-Disposition` filename from
+  the site id) and `GET /api/site/usd/summary`. Read-only (ADR-006),
+  behind the session gate.
+- `frontend/assets/js/views/usd_export.js` + styles + nav entry
+  "USD Export" (route `usd-export`).
+- The layout is SCHEMATIC: the site model has no coordinates, so
+  positions are a deterministic grid and sizes are per asset type.
+  22 components have no building and are exported under `unplaced`.
+
+### Verified (Linux, Python 3.13, no PostgreSQL)
+
+- The generated layer opens with the USD runtime (`usd-core` 26.11):
+  113 Cube prims, 78 relationship targets, none dangling, Z-up,
+  metres. **Not opened in NVIDIA Omniverse or usdview: neither is
+  available in the authoring environment.**
+- Downloaded through the UI on a gated instance and re-opened.
+- pytest 1705 passed (+38), 0 failed, same 3 pre-existing errors.
+  The USD-runtime test is skipped when `usd-core` is not installed.
+- **DC-EPMS-062 (LOW, pre-existing, not fixed):**
+  `tests/test_subprocess_cleanup.py` reloads `main`; any test that
+  boots `main.app` afterwards fails with "Duplicated timeseries"
+  (Prometheus in-progress gauge). It was latent because no such test
+  sorted after it. The new route tests use a minimal app instead.
+- vitest 694 passed across 36 files (+14).
+
+### Open — UPS and medium-voltage audit (operator question, NOT fixed)
+
+Asked "is the UPS and MV module complete?". It is not. What exists:
+UPS one-line with Q1-Q5 discipline and IEC 62040-3 modes, UPS
+efficiency + battery physics, genset NFPA 110 sequence, Phase 2
+branch drawn as DESIGN, MOP-001 + T4-MOP-UPS-001. What does not
+close, verified against `config/site_model.yml` at this commit:
+
+- **DC-EPMS-057 (HIGH) — Phase 1 electrical sizing does not carry the
+  load.** Per path: UPS 2.5 MW, switchgear 480 V x 4000 A = 3.33 MVA,
+  gensets 2 x 2.75 MW = 5.5 MW. Phase 1 IT load is 16.76 MW (118
+  racks) and 7.1 MW even for the 50 racks actually modelled. In 2N
+  each path must carry the full load. The model is short by a factor
+  of about 6.7 on UPS capacity.
+- **DC-EPMS-058 (HIGH) — ATS and gensets sit on the wrong side of the
+  transformer.** `power_chains` reads utility 27.5 kV -> ATS -> xfmr
+  (27.5 kV to 480 V) -> switchgear. The ATS is declared 480 V /
+  4000 A and the gensets are 480 V machines, yet both are upstream of
+  the step-down transformer, i.e. at 27.5 kV.
+- **DC-EPMS-059 (MEDIUM) — medium voltage is a pair of nodes, not a
+  system.** No MV switchgear or breaker at 27.5 kV or 35 kV, no
+  protection relaying, no MV metering, no grounding scheme. Phase 2
+  is drawn but non-operable by design.
+- **DC-EPMS-060 (MEDIUM) — asymmetric instrumentation.** UPS A has 10
+  BMS tags, UPS B only its 5 breaker positions; transformer A has 3
+  tags, transformer B none. UPS telemetry carries SoC, runtime and
+  phase voltages but no load, output current or bypass state. There
+  is no UPS HAL adapter (Cummins, ASCO and Russelectric only).
+- **DC-EPMS-061 (LOW) — drift.** Site metadata still says
+  `it_capacity_mw: 40.0` / `total_capacity_mw: 56.0` (Path C2 is
+  67 MW). `PWR.XFMR_A.OIL_TEMP` exists while MOP-002 treats the
+  transformer as dry-type.
+
 ### Release R2-A — OT Security view (2026-11-13)
 
 > Operator GO "OT Security". Replaces the Morpheus OT stub with a
