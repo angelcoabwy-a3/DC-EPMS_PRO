@@ -3504,13 +3504,33 @@ except Exception as e:
 try:
     from backend.telemetry_ingest_routes import register_telemetry_ingest
 
-    register_telemetry_ingest(app)
+    # R2-A: keep the store reachable so the OT Security posture can
+    # report the ingest counters (it was previously discarded here).
+    app.state.edge_channel_store = register_telemetry_ingest(app)
     log.info(
         "[BOOT] Edge telemetry ingest mounted "
         "(POST /api/telemetry/ingest/proto + GET /api/telemetry/edge)"
     )
 except Exception as e:
     log.error("[BOOT] Edge telemetry ingest mount failed: %s", e, exc_info=True)
+
+# ==============================================================
+#  Release R2-A -- OT Security posture (read-only, ADR-006)
+# ==============================================================
+# Replaces the "Morpheus OT" stub with what the platform can prove
+# about itself: session gate, ledger chain, control-surface
+# inventory, edge ingest. No traffic inspection -- the endpoint says
+# so as a finding. See backend/ot_security.py.
+try:
+    from backend.ot_security import register_ot_security_routes
+
+    def _ot_security_bms():
+        return get_bms(PROJECT_ROOT) if BMS_AVAILABLE and get_bms else None
+
+    register_ot_security_routes(app, _ot_security_bms)
+    log.info("[BOOT] OT Security posture mounted (GET /api/ot-security/posture)")
+except Exception as e:
+    log.error("[BOOT] OT Security posture mount failed: %s", e, exc_info=True)
 
 
 # ==============================================================

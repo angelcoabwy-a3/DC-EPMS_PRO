@@ -9848,3 +9848,147 @@ table.opt-votes td {
 
 /* ── Planned (not yet built) views in the nav ────────────────────── */
 .nav-item-tag-planned { color: var(--text-dim); }
+
+
+/* ── OT Security posture (views/ot_security.js, release R2-A) ────── */
+.ots-disclaimer {
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    background: var(--bg-surface);
+    border: 1px dashed var(--border-strong);
+    border-radius: 4px;
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--text-muted);
+}
+.ots-summary {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+}
+.ots-tile {
+    padding: 12px 14px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-top: 3px solid var(--border-strong);
+    border-radius: 4px;
+}
+.ots-tile-val {
+    font-family: var(--font-mono);
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.ots-tile-lbl {
+    margin-top: 4px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--text-muted);
+}
+/* A tile is coloured only when its count is non-zero: an idle
+   severity must not shout. */
+.ots-tile-critical:not([data-count="0"]) { border-top-color: var(--crit); }
+.ots-tile-critical:not([data-count="0"]) .ots-tile-val { color: var(--crit); }
+.ots-tile-high:not([data-count="0"]) { border-top-color: var(--crit); }
+.ots-tile-high:not([data-count="0"]) .ots-tile-val { color: var(--crit); }
+.ots-tile-medium:not([data-count="0"]) { border-top-color: var(--warn); }
+.ots-tile-medium:not([data-count="0"]) .ots-tile-val { color: var(--warn); }
+.ots-tile-low:not([data-count="0"]) { border-top-color: var(--text-muted); }
+.ots-tile-pass { border-top-color: var(--ok); }
+.ots-tile-pass .ots-tile-val { color: var(--ok); }
+.ots-grid {
+    display: grid;
+    /* Access carries a three-column account table (user, role, badge):
+       it needs more room than the two key/value panels beside it. */
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 14px;
+}
+.ots-panel {
+    min-width: 0;
+    overflow-x: auto;
+    padding: 14px 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+.ots-panel-wide { grid-column: 1 / -1; }
+.ots-panel h3 {
+    margin: 0 0 12px;
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+}
+.ots-checks { list-style: none; margin: 0; padding: 0; }
+.ots-check {
+    padding: 10px 0 10px 12px;
+    border-bottom: 1px solid var(--border);
+    border-left: 2px solid var(--border-strong);
+    margin-bottom: 8px;
+}
+.ots-check:last-child { border-bottom: none; margin-bottom: 0; }
+.ots-check-fail { border-left-color: var(--warn); }
+.ots-check-pass { border-left-color: var(--ok); }
+.ots-check-hdr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+}
+.ots-check-id { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
+.ots-check-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.ots-check-detail { margin-top: 5px; font-size: 12px; line-height: 1.55; color: var(--text-muted); max-width: 96ch; }
+.ots-check-fix { margin-top: 5px; font-size: 12px; line-height: 1.55; color: var(--text); max-width: 96ch; }
+.ots-check-fix strong { font-weight: 600; }
+.ots-check-ref { margin-top: 5px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
+.ots-badge {
+    display: inline-block;
+    padding: 2px 7px;
+    border: 1px solid var(--border-strong);
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.ots-badge-critical { background: var(--crit); border-color: var(--crit); color: #fff; }
+.ots-badge-high { color: var(--crit); border-color: rgba(239, 68, 68, 0.6); }
+.ots-badge-medium { color: var(--warn); border-color: rgba(251, 191, 36, 0.5); }
+.ots-badge-low { color: var(--text-muted); }
+.ots-badge-pass { color: var(--ok); border-color: rgba(74, 222, 128, 0.45); }
+.ots-badge-info { color: var(--accent); border-color: var(--accent-line); }
+.ots-kv,
+.ots-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ots-kv td,
+.ots-table td { padding: 5px 8px 5px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+.ots-k { color: var(--text-muted); width: 46%; }
+.ots-v { color: var(--text); font-family: var(--font-mono); font-size: 11.5px; }
+.ots-table { margin-top: 10px; }
+.ots-table th {
+    text-align: left;
+    padding: 5px 8px 5px 0;
+    font-size: 9.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border-strong);
+}
+.ots-table th.ots-num,
+.ots-table td.ots-num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.ots-mono { font-family: var(--font-mono); font-size: 11px; }
+.ots-total td { font-weight: 700; color: var(--text); }
+.ots-sub { margin: 12px 0 0; font-size: 11.5px; color: var(--text-muted); }
+.ots-empty { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); }
+.ots-error { color: var(--crit); }
+.ots-foot { margin-top: 12px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-dim); }
+@media (max-width: 1100px) {
+    .ots-grid { grid-template-columns: minmax(0, 1fr); }
+    .ots-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}

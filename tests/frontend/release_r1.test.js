@@ -362,9 +362,12 @@ describe('R1 -- S-VISUAL-01 fence: emitted classes have CSS rules', () => {
         expect(html).toMatch(/id="login-password" type="password" autocomplete="current-password">/);
     });
 
-    it('the three stub views are tagged planned in the nav', () => {
+    it('the remaining stub views are tagged planned in the nav', () => {
         const html = readFileSync(resolve(ROOT, 'frontend/index.html'), 'utf8');
-        for (const route of ['morpheus', 'gemini', 'omniverse']) {
+        // R2-A replaced the morpheus stub with the OT Security view.
+        expect(html).not.toContain('data-route="morpheus"');
+        expect(html).toMatch(/<div class="nav-item" data-route="ot-security">.*?OT Security<\/div>/s);
+        for (const route of ['gemini', 'omniverse']) {
             const item = html.match(new RegExp(`<div class="nav-item" data-route="${route}">.*?</div>`, 's'));
             expect(item, route).not.toBeNull();
             expect(item[0]).toContain('nav-item-tag-planned');

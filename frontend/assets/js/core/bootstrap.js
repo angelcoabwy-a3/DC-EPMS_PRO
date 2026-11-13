@@ -95,11 +95,11 @@ const MODULES = {
     morpheus: {
         kind: 'placeholder',
         title: 'Morpheus OT Security',
-        sub: 'PLANNED - not connected. OT traffic anomaly detection (IEC 62443 principles)',
+        sub: 'SUPERSEDED - see the OT Security view. No traffic inspection is deployed',
         icon: '⌂', // house (security)
         // Release R1: the previous text described this as a running
         // system. Nothing here is deployed -- say so (honest scope).
-        desc: 'Not implemented. No NVIDIA Morpheus pipeline is deployed and no OT network traffic is inspected by this platform today. Planned scope (roadmap Epic 3.B): anomaly detection over the Modbus TCP edge-gateway traffic, mapped to IEC 62443 zones and conduits. The chips below only open the AI Assistant with a reference question.',
+        desc: 'This stub is no longer in the navigation: release R2-A replaced it with the OT Security view (platform posture self-checks). No NVIDIA Morpheus pipeline is deployed and no OT network traffic is inspected by this platform; the OT Security view reports that as an open finding against IEC 62443 principles. The chips below only open the AI Assistant with a reference question.',
         chips: [
             'Explain IEC 62443 SL-2 zone isolation requirements.',
             'What Morpheus baseline Modbus log rate is normal?',
