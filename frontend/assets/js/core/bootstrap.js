@@ -124,11 +124,11 @@ const MODULES = {
     omniverse: {
         kind: 'placeholder',
         title: 'NVIDIA Omniverse',
-        sub: 'PLANNED - not connected. USD / Omniverse export of the site model',
+        sub: 'SUPERSEDED - see the USD Export view. No Omniverse live-link exists',
         icon: '◎', // bullseye
         // Release R1: there is no Omniverse link. The 3D twin that
         // DOES exist is Mission Control (three.js) -- point there.
-        desc: 'Not implemented. There is no NVIDIA Omniverse / USD live-link in this platform today. The working 3D view of A3-Alpha Toronto Area is Mission Control (three.js, in the navigation). Planned scope: export the site model as a USD stage that Omniverse can open. The chips below only open the AI Assistant with a reference question.',
+        desc: 'This stub is no longer in the navigation: release R2-C replaced it with the USD Export view, which downloads the site model as a static, schematic OpenUSD stage. There is no NVIDIA Omniverse live-link in this platform; the working 3D view of A3-Alpha Toronto Area is Mission Control (three.js). The chips below only open the AI Assistant with a reference question.',
         chips: [
             'Explain Omniverse Live-Link integration for EPMS.',
             'How does USD represent data center thermal zones?',

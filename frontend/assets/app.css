@@ -9992,3 +9992,107 @@ table.opt-votes td {
     .ots-grid { grid-template-columns: minmax(0, 1fr); }
     .ots-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+
+/* ── USD Export (views/usd_export.js, release R2-C) ──────────────── */
+.usdx-notice {
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    background: var(--bg-surface);
+    border: 1px dashed rgba(251, 191, 36, 0.5);
+    border-radius: 4px;
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--text-muted);
+}
+.usdx-tiles {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+}
+.usdx-tile {
+    padding: 12px 14px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+.usdx-tile-val {
+    font-family: var(--font-mono);
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.usdx-tile-lbl {
+    margin-top: 4px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--text-muted);
+}
+.usdx-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+.usdx-download {
+    display: inline-block;
+    padding: 9px 18px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 4px;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-decoration: none;
+}
+.usdx-download:hover { background: var(--accent-hover); }
+.usdx-download:focus-visible { outline: 2px solid var(--neon-cyan); outline-offset: 2px; }
+.usdx-hint,
+.usdx-note { font-size: 11.5px; color: var(--text-muted); }
+.usdx-note { margin-bottom: 14px; }
+.usdx-panels {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    gap: 14px;
+}
+.usdx-panel {
+    min-width: 0;
+    padding: 14px 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+.usdx-panel h3 {
+    margin: 0 0 10px;
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+}
+.usdx-panel h3:not(:first-child) { margin-top: 16px; }
+.usdx-list { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.7; color: var(--text); }
+.usdx-mono { font-family: var(--font-mono); font-size: 11.5px; }
+.usdx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.usdx-table th {
+    text-align: left;
+    padding: 5px 8px 5px 0;
+    font-size: 9.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border-strong);
+}
+.usdx-table td { padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border); }
+.usdx-table th.usdx-num,
+.usdx-table td.usdx-num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.usdx-empty { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); }
+.usdx-error { color: var(--crit); }
+@media (max-width: 1100px) {
+    .usdx-panels { grid-template-columns: minmax(0, 1fr); }
+    .usdx-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

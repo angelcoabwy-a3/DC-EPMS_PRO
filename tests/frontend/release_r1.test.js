@@ -367,7 +367,10 @@ describe('R1 -- S-VISUAL-01 fence: emitted classes have CSS rules', () => {
         // R2-A replaced the morpheus stub with the OT Security view.
         expect(html).not.toContain('data-route="morpheus"');
         expect(html).toMatch(/<div class="nav-item" data-route="ot-security">.*?OT Security<\/div>/s);
-        for (const route of ['gemini', 'omniverse']) {
+        // R2-C replaced the omniverse stub with the USD Export view.
+        expect(html).not.toContain('data-route="omniverse"');
+        expect(html).toMatch(/<div class="nav-item" data-route="usd-export">.*?USD Export<\/div>/s);
+        for (const route of ['gemini']) {
             const item = html.match(new RegExp(`<div class="nav-item" data-route="${route}">.*?</div>`, 's'));
             expect(item, route).not.toBeNull();
             expect(item[0]).toContain('nav-item-tag-planned');

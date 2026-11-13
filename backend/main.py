@@ -3532,6 +3532,22 @@ try:
 except Exception as e:
     log.error("[BOOT] OT Security posture mount failed: %s", e, exc_info=True)
 
+# ==============================================================
+#  Release R2-C -- USD export of the site model (read-only, ADR-006)
+# ==============================================================
+# Replaces the "Omniverse 3D" stub. Static, SCHEMATIC .usda layer of
+# config/site_model.yml -- no live-link, no telemetry in the stage.
+# See backend/usd_export.py.
+try:
+    from site_model import get_site_model as _usd_get_site_model
+
+    from backend.usd_export import register_usd_export_routes
+
+    register_usd_export_routes(app, lambda: _usd_get_site_model(PROJECT_ROOT))
+    log.info("[BOOT] USD export mounted (GET /api/site/usd + /api/site/usd/summary)")
+except Exception as e:
+    log.error("[BOOT] USD export mount failed: %s", e, exc_info=True)
+
 
 # ==============================================================
 #  Entrypoint
