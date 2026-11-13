@@ -54,6 +54,11 @@ function renderLoggedInBanner(username, role) {
         + ')</span>';
 }
 
+// Indirection so vitest can observe the reload without navigating.
+let _reloadPage = () => {
+    try { window.location.reload(); } catch (_e) { /* non-browser harness */ }
+};
+
 async function submitLogin() {
     const u = $('login-username');
     const p = $('login-password');
@@ -70,6 +75,15 @@ async function submitLogin() {
         return;
     }
     renderLoggedInBanner(out.user.username, out.user.role);
+    // Release R1 -- gated deployment (DC_EPMS_REQUIRE_AUTH): the
+    // server just set the httpOnly session cookie. Views, the
+    // telemetry EventSource and the Hermes WebSocket already
+    // attempted their first calls without it (401), so reload once
+    // and let every surface boot with the session in place.
+    if (out.user.session === 'cookie') {
+        _reloadPage();
+        return;
+    }
     try {
         window.dispatchEvent(new CustomEvent('dc-epms-auth-granted', {
             detail: { user: out.user },
@@ -142,4 +156,5 @@ export const __login_view_test__ = {
     hideLoginView,
     hasValidToken,
     reset,
+    setReloadForTest(fn) { _reloadPage = fn; },
 };

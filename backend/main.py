@@ -860,6 +860,21 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+# --------------------------------------------------------------
+# Release R1 -- public-deployment session gate. OFF unless
+# DC_EPMS_REQUIRE_AUTH is truthy (local dev + test floors are
+# unchanged). When ON, every non-public route (http AND websocket)
+# needs a valid JWT via Bearer header or the httpOnly session
+# cookie set by POST /api/auth/login. See backend/auth/session_gate.py.
+# --------------------------------------------------------------
+from backend.auth.session_gate import (  # noqa: E402
+    COOKIE_NAME as _SESSION_COOKIE,
+    SessionGateMiddleware,
+    gate_enabled as _session_gate_enabled,
+)
+
+app.add_middleware(SessionGateMiddleware)
+
 
 # --------------------------------------------------------------
 # Stale-module guard: browsers heuristically cache ES modules and
@@ -2871,9 +2886,32 @@ async def post_auth_login(request: Request):
     username = body.get("username") or ""
     password = body.get("password") or ""
     try:
-        return login(store, username=username, password=password)
+        payload = login(store, username=username, password=password)
     except LoginError as exc:
         raise HTTPException(401, str(exc)) from exc
+    if not _session_gate_enabled():
+        return payload
+    # Gated deployment: mirror the JWT into an httpOnly cookie so
+    # EventSource / WebSocket / plain fetch (which cannot attach an
+    # Authorization header) authenticate too. "session": "cookie"
+    # tells the HMI to reload so every view boots with the session.
+    payload["session"] = "cookie"
+    response = JSONResponse(payload)
+    forwarded = request.headers.get("x-forwarded-proto", "")
+    is_https = (
+        request.url.scheme == "https"
+        or forwarded.split(",")[0].strip().lower() == "https"
+    )
+    response.set_cookie(
+        _SESSION_COOKIE,
+        payload["access_token"],
+        max_age=int(payload["expires_in"]),
+        httponly=True,
+        samesite="lax",
+        secure=is_https,
+        path="/",
+    )
+    return response
 
 
 @app.get("/api/auth/whoami")

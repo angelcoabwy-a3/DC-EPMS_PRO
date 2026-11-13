@@ -261,6 +261,50 @@ describe('Epic 10 -- views/login.js submitLogin', () => {
         window.removeEventListener('dc-epms-auth-granted', evSpy);
     });
 
+    it('gated deployment (session=cookie): reloads once, no auth-granted event', async () => {
+        mountLoginDOM();
+        document.getElementById('login-username').value = 'alice';
+        document.getElementById('login-password').value = 'pw';
+        const future = Math.floor(Date.now() / 1000) + 3600;
+        const tok = fakeJWT({
+            sub: 'u-1', username: 'alice', role: 'L1_OPERATOR',
+            iat: future - 3600, exp: future, jti: 'y',
+        });
+        vi.stubGlobal('fetch', vi.fn(async () => fakeResponse({
+            access_token: tok, token_type: 'bearer', expires_in: 3600,
+            user_id: 'u-1', username: 'alice', role: 'L1_OPERATOR',
+            session: 'cookie',
+        })));
+        const reloadSpy = vi.fn();
+        loginView.setReloadForTest(reloadSpy);
+        const evSpy = vi.fn();
+        window.addEventListener('dc-epms-auth-granted', evSpy);
+        await loginView.submitLogin();
+        expect(reloadSpy).toHaveBeenCalledTimes(1);
+        expect(evSpy).not.toHaveBeenCalled();
+        expect(auth.hasValidToken()).toBe(true);
+        window.removeEventListener('dc-epms-auth-granted', evSpy);
+    });
+
+    it('un-gated login never reloads the page', async () => {
+        mountLoginDOM();
+        document.getElementById('login-username').value = 'alice';
+        document.getElementById('login-password').value = 'pw';
+        const future = Math.floor(Date.now() / 1000) + 3600;
+        const tok = fakeJWT({
+            sub: 'u-1', username: 'alice', role: 'L1_OPERATOR',
+            iat: future - 3600, exp: future, jti: 'z',
+        });
+        vi.stubGlobal('fetch', vi.fn(async () => fakeResponse({
+            access_token: tok, token_type: 'bearer', expires_in: 3600,
+            user_id: 'u-1', username: 'alice', role: 'L1_OPERATOR',
+        })));
+        const reloadSpy = vi.fn();
+        loginView.setReloadForTest(reloadSpy);
+        await loginView.submitLogin();
+        expect(reloadSpy).not.toHaveBeenCalled();
+    });
+
     it('shows server error on 401', async () => {
         mountLoginDOM();
         document.getElementById('login-username').value = 'alice';

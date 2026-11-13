@@ -46,6 +46,7 @@ log = logging.getLogger(__name__)
 JWT_ALG = "HS256"
 DEFAULT_TTL_SECONDS = 3600  # 1 hour access token
 ENV_JWT_SECRET = "DC_EPMS_JWT_SECRET"
+ENV_PASSWORD_PREFIX = "DC_EPMS_PWD_"
 
 _PBKDF2_ITERS = 200_000
 _PBKDF2_SALT_BYTES = 16
@@ -251,8 +252,29 @@ def seed_demo_users() -> InMemoryUserStore:
         ("u-safety-b", "safety_b", "safety-demo-b", Role.SAFETY_OFFICER),
         ("u-manager", "manager", "manager-demo", Role.FACILITY_MANAGER),
     ]
+    # Release R1 -- per-user password override via environment:
+    #   DC_EPMS_PWD_<USERNAME>  (e.g. DC_EPMS_PWD_MANAGER).
+    # On a gated deployment (DC_EPMS_REQUIRE_AUTH truthy) a user
+    # WITHOUT an override is NOT seeded: the "<name>-demo" defaults
+    # are published in this repository and must never guard a
+    # public URL.
+    from backend.auth.session_gate import gate_enabled
+
+    gated = gate_enabled()
     store = InMemoryUserStore()
-    for user_id, username, password, role in seeds:
+    for user_id, username, default_password, role in seeds:
+        override = os.environ.get(ENV_PASSWORD_PREFIX + username.upper(), "")
+        if override:
+            password = override
+        elif gated:
+            log.warning(
+                "[IAM] %s%s not set on a gated deployment -- user %r "
+                "NOT seeded (repo-default password refused)",
+                ENV_PASSWORD_PREFIX, username.upper(), username,
+            )
+            continue
+        else:
+            password = default_password
         h, s = hash_password(password)
         store.add(User(
             user_id=user_id,
