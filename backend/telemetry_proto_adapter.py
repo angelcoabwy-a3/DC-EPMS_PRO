@@ -138,8 +138,8 @@ def quality_from_z_score(z: float) -> int:
 def _split_scope(channel_id: str) -> tuple[str, str]:
     """Return ``(component_id, metric)``.
 
-    A scoped id ``ups_a:voltage_v_phase_ab`` returns
-    ``("ups_a", "voltage_v_phase_ab")``. An unscoped id ``gpu_Tj_c``
+    A scoped id ``rpp_a_01:voltage_v_phase_ab`` returns
+    ``("rpp_a_01", "voltage_v_phase_ab")``. An unscoped id ``gpu_Tj_c``
     returns ``("gpu_Tj_c", "gpu_Tj_c")`` -- the channel acts as its
     own component, a degenerate but acceptable shape.
     """

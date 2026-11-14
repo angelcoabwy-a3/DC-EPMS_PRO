@@ -164,7 +164,7 @@ class AgentVerdict:
     verdict: str           # one of VALID_VERDICTS
     summary: str           # one-line headline
     reasoning: list[str]   # bullet points the operator can read
-    evidence_refs: list[str]   # provenance markers (e.g. "site_model:ups_a")
+    evidence_refs: list[str]   # provenance markers (e.g. "site_model:chiller_1")
     decision_time_ms: int
     # T3.3: optional advisory LLM narrative (Diagnostician only). Empty
     # for deterministic-only agents. NEVER an input to the verdict.

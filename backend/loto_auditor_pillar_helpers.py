@@ -306,8 +306,18 @@ def simulate_loto_measurements(
     target_id: str,
     target_type: str,
     target_path: str | None = None,
+    ups_path_remaining_kw: float | None = None,
 ) -> dict[str, Any]:
     """Apply LOTO simulation to baseline measurements.
+
+    ``ups_path_remaining_kw`` (DC-EPMS-068): UPS capacity the target's
+    path keeps with the target block out. On a block architecture (v2:
+    eight 2.5 MW blocks per path) a single-block LOTO is NOT a path
+    loss: if the remaining blocks still carry the full facility IT load
+    (``facility_it_kw``, the Tier IV requirement for one path) the path
+    stays online, nothing goes to battery, and only the block count
+    drops. When it is None, or the remaining capacity is short (legacy:
+    one UPS per path, remaining 0), the path-loss model below applies.
 
     Returns a NEW dict (does not mutate base). The simulation is conservative:
       - Force the affected component offline
@@ -328,7 +338,14 @@ def simulate_loto_measurements(
     target_lower = target_id.lower()
     type_lower = target_type.lower()
 
-    if type_lower == "ups":
+    if type_lower == "ups" and ups_path_remaining_kw is not None and (
+        ups_path_remaining_kw >= float(base.get("facility_it_kw", 16756.0))
+    ):
+        # Block-level LOTO: the path keeps N on the remaining blocks.
+        sim["ups_blocks_offline"] = int(base.get("ups_blocks_offline", 0)) + 1
+        sim["ups_path_remaining_kw"] = float(ups_path_remaining_kw)
+
+    elif type_lower == "ups":
         # Pillar 2 redundancy fields
         if "_a" in target_lower:
             sim["ups_a_online"] = False
@@ -516,7 +533,7 @@ def get_voltage_nominal(component: Any) -> float:
     try:
         meta = getattr(component, "metadata", {}) or {}
         # DC-EPMS-033 fix: site_model.yml uses "voltage_v" for some components
-        # (switchgear_b, transformer entries). Fallback to voltage_v when
+        # (switchgear and transformer entries). Fallback to voltage_v when
         # voltage_nominal is absent or zero.
         v = meta.get("voltage_nominal", 0.0)
         if not v:

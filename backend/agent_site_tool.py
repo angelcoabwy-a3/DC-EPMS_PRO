@@ -64,7 +64,7 @@ TOOL_DEFINITION = {
             "canonical_id": {
                 "type": "string",
                 "description": (
-                    "Canonical component identifier (e.g. chiller_1, ups_a, "
+                    "Canonical component identifier (e.g. chiller_1, rpp_a_01, "
                     "rack_a_01_05). Required for locate/power_chain/loto_impact. "
                     "Optional for search."
                 ),

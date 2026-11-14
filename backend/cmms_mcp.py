@@ -331,7 +331,8 @@ DRAFT_CMMS_WORK_ORDER_SCHEMA: dict = {
                     "type": "string",
                     "description": (
                         "Canonical component identifier from the unified "
-                        "graph (e.g. 'ups_a', 'chiller_1', 'rpp_b2')"
+                        "graph (e.g. 'chiller_1', 'rpp_b_02', 'genset_a_01'; "
+                        "list UPS ids with /api/site/components)"
                     ),
                 },
                 "issue_summary": {

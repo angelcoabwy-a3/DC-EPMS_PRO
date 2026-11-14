@@ -73,6 +73,10 @@ def _derive_path(canonical_id: str, _meta: dict[str, Any]) -> str | None:
     yard) return None. Phase 2 racks (Building D) tagged "_d_" are
     Path C2-P2; everything else Path 1 is C2-P1 by default.
     """
+    # DC-EPMS-068: the v2 site model states the path explicitly.
+    declared = str((_meta or {}).get("path", "")).strip().upper()
+    if declared in ("A", "B"):
+        return declared
     cid = canonical_id.lower()
     if "_a_" in cid or cid.endswith("_a"):
         return "A"
@@ -85,7 +89,12 @@ def _derive_path(canonical_id: str, _meta: dict[str, Any]) -> str | None:
 
 # ─── Redundancy pillar heuristic ──────────────────────────────────────
 def _derive_redundancy_pillar(asset_type: str, _meta: dict[str, Any]) -> str | None:
-    if asset_type in ("ups", "ats", "rpp", "busway", "transformer", "switchgear", "utility_intake"):
+    if asset_type in (
+        "ups", "ats", "rpp", "busway", "transformer", "switchgear", "utility_intake",
+        # DC-EPMS-068 v2 types (stored as asset_type "other" until a
+        # migration widens the CHECK constraint)
+        "mv_transfer_controller", "mv_switchgear",
+    ):
         return "2N"
     if asset_type in ("chiller", "pump", "cooling_tower_field", "cdu"):
         return "N+1"

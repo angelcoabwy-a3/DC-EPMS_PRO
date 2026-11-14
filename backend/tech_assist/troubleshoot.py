@@ -25,7 +25,7 @@ Architecture decisions:
   * Sync method core (gather_context) for testability; async wrapper
     for FastAPI route handler (LLM HTTP call requires async-safe).
   * Citations format inline in answer: [manual:DOC_ID p47] /
-    [WO:WO-...] / [asset:ups_a]. Operators can cross-check.
+    [WO:WO-...] / [asset:chiller_1]. Operators can cross-check.
   * Safety keyword detection mirrors rag_service.SAFETY_KEYWORDS so
     the response surfaces matching keywords for HMI banner rendering.
   * NO autonomous action — output is advisory; ADR-006 sandbox.

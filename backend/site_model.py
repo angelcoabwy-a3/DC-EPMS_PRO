@@ -365,8 +365,9 @@ class SiteModel:
         """All power feeds upstream of a component.
 
         For a 2N facility, results are grouped by feed_group:
-          'path_a': all paths that trace back through ats_a (utility OR gensets A)
-          'path_b': all paths that trace back through ats_b
+          'path_a': all paths through path A's transfer device (legacy
+                    ats_a, v2 mvtc_a): utility OR gensets A
+          'path_b': same for path B
         Each group has its alternative roots (utility + gensets) but counts
         as ONE redundant path from the operator's perspective.
 
@@ -391,17 +392,19 @@ class SiteModel:
             paths_to_roots,
         )
 
-        # Group by feed_group: a path belongs to "path_a" if it contains ats_a,
-        # "path_b" if it contains ats_b, "other" otherwise (e.g. fuel-only chains).
+        # Group by feed_group: a path belongs to "path_a" if it passes
+        # through path A's transfer device (legacy ats_a, v2 mvtc_a),
+        # "path_b" likewise, "other" otherwise (e.g. fuel-only chains).
+        # DC-EPMS-068: resolved by role, not by literal id.
+        try:
+            from site_roles import group_for_path, transfer_ids
+        except ImportError:  # imported as backend.site_model
+            from backend.site_roles import group_for_path, transfer_ids
+
+        transfers = transfer_ids(self)
         groups: dict[str, dict] = {}
         for path in paths_to_roots:
-            if "ats_a" in path:
-                group_key = "path_a"
-            elif "ats_b" in path:
-                group_key = "path_b"
-            else:
-                # Could be fuel chain or other ancillary; identify by root
-                group_key = f"other_{path[-1]}"
+            group_key = group_for_path(path, transfers) or f"other_{path[-1]}"
 
             if group_key not in groups:
                 groups[group_key] = {

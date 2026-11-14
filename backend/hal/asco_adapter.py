@@ -87,7 +87,9 @@ class AscoAdapter(HardwareAdapter):
         """
         Args:
             backend:   BAC0 client OR mock implementing BACnetBackend.
-            targets:   { "ats_a": {"address": "10.5.2.50", "device_id": 1001},
+            targets:   ATS ids of the LEGACY site model (the v2 closed design
+                       has no 480 V ATS; DC-EPMS-068), e.g.
+                       { "ats_a": {"address": "10.5.2.50", "device_id": 1001},
                          "ats_b": {"address": "10.5.2.51", "device_id": 1002} }
                        The address is the BACnet network address (IP); device_id
                        is the BACnet Object Identifier of the ATS device.

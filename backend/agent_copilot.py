@@ -294,6 +294,24 @@ async def tool_query_unified_graph(args: dict) -> dict:
     topology = await get_topology_state()
     nodes: dict = topology.get("hld_nodes", {})
 
+    # DC-EPMS-068: a site-model id (e.g. ups_a_03 or mv_xfmr_a on the
+    # v2 model) resolves to the HLD group that aggregates it.
+    requested_id = device_id
+    members: list[str] = []
+    if device_id not in nodes:
+        try:
+            import main as _main_mod  # type: ignore
+            from site_model import get_site_model as _gsm
+            from site_roles import hld_key as _hld_key, hld_members as _hld_members
+
+            _model = _gsm(_main_mod.PROJECT_ROOT)
+            mapped = _hld_key(_model, device_id)
+            if mapped and mapped in nodes:
+                device_id = mapped
+                members = _hld_members(_model, mapped)
+        except Exception:  # mapping is best-effort
+            pass
+
     if device_id not in nodes:
         return {
             "error": f"device '{device_id}' not in graph",
@@ -322,6 +340,18 @@ async def tool_query_unified_graph(args: dict) -> dict:
         "site_redundancy_mode": topology.get("redundancy_mode", "2N"),
         "site_health_index": topology.get("site_health"),
         "_data_source": "v5.2 topology endpoint + bms_connector",
+        **(
+            {
+                "requested_id": requested_id,
+                "hld_group_members": members,
+                "_note": (
+                    f"'{requested_id}' is aggregated in HLD node "
+                    f"'{device_id}'; metrics are for the group, not the block."
+                ),
+            }
+            if requested_id != device_id
+            else {}
+        ),
     }
 
 

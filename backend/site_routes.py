@@ -82,8 +82,13 @@ def get_model_info():
     ids = {c.canonical_id for c in m.list_components()}
     retired_present = [i for i in RETIRED_IDS if i in ids]
     variant = getattr(m, "variant", "legacy")
+    try:
+        from site_roles import role_summary
+    except ImportError:
+        from backend.site_roles import role_summary
     return {
         "variant": variant,
+        "roles": role_summary(m),
         "file": f"config/{m.yaml_path.name}",
         "components": len(ids),
         "verified_against_power_plant": variant == "v2",

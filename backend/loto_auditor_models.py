@@ -115,7 +115,10 @@ class LotoAuditRequest(BaseModel):
     )
     target_component_id: str = Field(
         ...,
-        description="Canonical component ID from site_model.yml (e.g. 'ups_a')",
+        description=(
+            "Canonical component ID from the loaded site model "
+            "(e.g. 'ups_a' on legacy, 'ups_a_01' on v2)"
+        ),
         min_length=1,
         max_length=128,
     )

@@ -206,6 +206,17 @@ class ShiftReportRequest(BaseModel):
 # ==============================================================
 #  Lifespan: init + cleanup
 # ==============================================================
+def _warmup_ups_id() -> str:
+    """First path A UPS id of the loaded site model (DC-EPMS-068)."""
+    try:
+        from site_model import get_site_model as _wu_get
+        from site_roles import primary_ups as _wu_primary
+
+        return _wu_primary(_wu_get(PROJECT_ROOT), "a") or "ups_a"
+    except Exception:  # warmup must never block boot
+        return "ups_a"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_manager, rag_service, agent
@@ -432,7 +443,7 @@ async def lifespan(app: FastAPI):
                 app.state.cmms_backend = "memory"
                 log.warning(
                     "[BOOT] CMMS running IN-MEMORY (PostgreSQL unavailable): "
-                    "assets seeded from site_model.yml, work orders are "
+                    "assets seeded from the loaded site model, work orders are "
                     "lost on restart",
                 )
             register_cmms_routes(app, _cmms_repo_instance)
@@ -770,8 +781,9 @@ async def lifespan(app: FastAPI):
         log.info("[BOOT] Pre-warming GraphRAG AI Models...")
         _wt0 = time.perf_counter()
         try:
-            # ups_a is a guaranteed-present component in site_model.yml.
-            _ = _s2.loto_with_knowledge("ups_a")
+            # DC-EPMS-068: the first path A UPS of whichever site model
+            # is loaded (ups_a on legacy, ups_a_01 on v2).
+            _ = _s2.loto_with_knowledge(_warmup_ups_id())
             _wt = time.perf_counter() - _wt0
             log.info("[BOOT] GraphRAG Ready (Warm) -- stage 1 completed in %.2fs", _wt)
         except Exception as e:
@@ -795,7 +807,7 @@ async def lifespan(app: FastAPI):
 
             _dry_request = _AuditRequest(
                 procedure_id="MOP-ATS-MONTHLY-001",
-                target_component_id="ups_a",
+                target_component_id=_warmup_ups_id(),
                 cet_on_duty="_warmup",
                 include_llm_summary=False,
             )
@@ -2229,7 +2241,11 @@ async def get_topology_state():
     # (In production this would alert; here we just include it in the response.)
     power_balance_ok = (balance_residual_a < 0.5) and (balance_residual_b < 0.5)
 
-    # HLD nodes (high-level facility view)
+    # HLD nodes (high-level facility view). These keys are an AGGREGATED
+    # namespace shared with the topology view and the copilot, not
+    # site-model ids: on the v2 model "ups_a" stands for the eight UPS
+    # blocks of path A and "xfmr_a" for mv_xfmr_a (backend/site_roles.py
+    # hld_key / hld_members; DC-EPMS-068).
     hld_nodes = {
         "utility_north": _node(
             util_severity,

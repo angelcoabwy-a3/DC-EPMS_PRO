@@ -418,6 +418,36 @@ class LotoAuditorAgent:
     #  Pillar 2: 2N Redundancy Survival (Batch 4.B implementation)
     # -------------------------------------------------------------------------
 
+    def _ups_path_remaining_kw(self, target_comp: Any, target_type: str) -> float | None:
+        """UPS kW left in the target's path with the target block out.
+
+        None when the target is not a UPS, has no path, or the path has
+        a single UPS (legacy model): the caller then keeps the
+        whole-path loss model. Ratings come from the site model
+        (``rated_kw``); a block without a rating counts as zero.
+        """
+        if target_type.lower() != "ups":
+            return None
+        try:
+            try:
+                from site_roles import path_of, ups_ids
+            except ImportError:
+                from backend.site_roles import path_of, ups_ids
+            p = path_of(target_comp)
+            if p is None:
+                return None
+            peers = [i for i in ups_ids(self.site_model, p) if i != target_comp.canonical_id]
+            if not peers:
+                return None
+            total = 0.0
+            for pid in peers:
+                meta = getattr(self.site_model.get_component(pid), "metadata", {}) or {}
+                total += float(meta.get("rated_kw") or 0.0)
+            return total
+        except Exception as e:  # pragma: no cover - defensive, model shape
+            log.warning("UPS block capacity lookup failed: %s", e)
+            return None
+
     def _check_pillar_2_redundancy(
         self,
         request: LotoAuditRequest,
@@ -450,12 +480,19 @@ class LotoAuditorAgent:
             sources["physics_engine_pre_loto"] = f"error: {e}"
             log.warning("Pre-LOTO physics validation failed: %s", e)
 
-        # 4. Simulate post-LOTO measurements
+        # 4. Simulate post-LOTO measurements. DC-EPMS-068: on a UPS block
+        # architecture pass the capacity the path keeps without the
+        # target block, so a single-block LOTO is not modelled as a
+        # whole-path loss.
+        ups_remaining = self._ups_path_remaining_kw(target_comp, target_type)
+        if ups_remaining is not None:
+            sources["site_model_ups_blocks"] = f"OK ({ups_remaining:.0f} kW remain in path)"
         post_measurements = simulate_loto_measurements(
             pre_measurements,
             target_id=target_id,
             target_type=target_type,
             target_path=target_path,
+            ups_path_remaining_kw=ups_remaining,
         )
 
         # 5. Post-LOTO physics validation
@@ -475,7 +512,13 @@ class LotoAuditorAgent:
             log.warning("Post-LOTO physics validation failed: %s", e)
 
         # 6. Determine path states from post-LOTO measurements
-        if target_path == "A":
+        block_level = "ups_blocks_offline" in post_measurements
+        if block_level and target_path in ("A", "B"):
+            # DC-EPMS-068: one block out, the path keeps N on its peers;
+            # the other path is untouched (still sharing load in 2N).
+            own = "block_loto_path_keeps_n"
+            path_a_state, path_b_state = (own, "normal") if target_path == "A" else ("normal", own)
+        elif target_path == "A":
             path_a_state = "loto_in_progress"
             path_b_state = (
                 "carrying_full_load" if shi_post >= self.SHI_DEFAULT_THRESHOLD else "degraded"

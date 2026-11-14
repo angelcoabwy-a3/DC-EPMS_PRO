@@ -15,7 +15,7 @@ Per ADR-006 Deterministic Sandbox:
 Production usage:
   from backend.cmms_repository import PostgresCMMSRepository
   repo = PostgresCMMSRepository(asyncpg_pool)
-  asset = await repo.get_asset_async("ups_a")
+  asset = await repo.get_asset_async("chiller_1")
   await repo.save_work_order_async(wo)
 
 Test usage:
