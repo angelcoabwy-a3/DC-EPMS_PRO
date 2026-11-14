@@ -90,6 +90,39 @@ Points to resolve before the site model is rebuilt (track R1.2):
   model when it is rebuilt.
 - The 800 VDC side (MV rectifier, SSCB, BESS) has no control panel.
 
+## 6. Addendum 2026-11-14: design closed, R3-B delivered
+
+The operator closed the open points of section 4: 8 x Vertiv Trinergy
+2500 per path, 9 x 2.5 MW generators at 13.8 kV per path, transfer in
+medium voltage, losses recomputed (259 kW per path in normal 2N, 518 kW
+with one path carrying everything). The model reproduces those numbers
+(`tests/test_device_control.py::TestClosedDesign`).
+
+Two points of the closed design do not hold arithmetically and are
+registered, not silently "fixed":
+
+1. **Generation N+1 (DC-EPMS-066).** The operator document sizes the
+   generator load per path at 20.5 to 23 MW and then counts "N = 8 units
+   = 20.0 MW". 20.0 MW is below the whole band, so with one set out the
+   path cannot carry its full demand. Options: 10 x 2.5 MW (N = 22.5),
+   8 + 1 x 2.75 MW (N = 22.0), or keep 9 x 2.5 MW and limit what cooling
+   the generators carry to at most about 2.7 MW per path.
+2. **Isolation rule (DC-EPMS-067).** "Residual capacity at least
+   16.76 MW" counts IT load only. Implemented as written; the capacity
+   tile shows the consequence.
+
+What the operator documents ask for and R3-B does NOT contain, with the
+reason:
+
+| Requested | Status | Why |
+|---|---|---|
+| Arc-flash incident energy, PPE category, approach distance | not built | needs fault level, clearing times, working distance, enclosure data; a figure without them would be invented |
+| Thermal model, survival time, thermal scenarios | not built | needs room volumes, thermal mass, cooling capacities |
+| Training mode that shows consequences (arc, trip) | partial | unsafe attempts are blocked and recorded (scenario MV-SW-005); consequences are not simulated |
+| Permit-to-work gate, LOTO auditor link | not built | roadmap R3-F |
+| IEC 61850 GOOSE / MMS bindings | not built | no IED or simulator to bind to |
+| Interlocks "per IEC 62271" | rules implemented, citation unverified | the standard was not re-read for this work |
+
 ## Sources
 
 - Vertiv Trinergy: https://www.vertiv.com/en-us/products-catalog/critical-power/uninterruptible-power-supplies-ups/vertiv-trinergy

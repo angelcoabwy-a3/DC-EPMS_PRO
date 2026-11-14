@@ -13,6 +13,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Release R3-B — Closed plant design, MV switching safety, scenario library (2026-11-14)
+
+> Operator closed the design (8 x Vertiv Trinergy 2500 and 9 x 2.5 MW
+  generators at 13.8 kV per path, MV transfer, 2N, Tier IV target) and
+  set safe medium-voltage switching as the first priority.
+  **The plant is SIMULATED**; the view and the API say so.
+
+- **Added** `config/power_plant.yml`: the closed design. The 25 percent
+  cooling and auxiliaries share is an assumption (the operator
+  documents leave it open).
+- **Changed** `backend/device_control.py`: roster built from the design
+  (16 UPS blocks, 2 MV transfer controllers, 18 generators); path
+  capacity checks (UPS and generation, N and N+1); UPS losses as
+  `P_out * (1 / eta - 1)` (259 kW per path in normal 2N, 518 kW with a
+  full path, 85 kW in Dynamic Online); Dynamic Online mode; UPS block
+  isolation that keeps N; transfer only with enough generation
+  synchronised. The R3-A roster from `site_model.yml` (one UPS, 480 V
+  ATS) is gone from the panels.
+- **Added** `backend/mv_switching.py`: pure interlock engine for a
+  generator bay (52-G, disconnector, earthing switch, LOTO), rules R1
+  to R10, fail-safe; forced switching procedures (only the next step
+  runs); two-person rule on earthing and LOTO.
+- **Added** `backend/power_scenarios.py` + `config/power_scenarios/`:
+  8 versioned executable scenarios run in a sandbox; a scenario fails
+  if an expected block does not happen.
+- **Added** routes `/api/mv/bays/{id}/procedure`,
+  `/api/mv/procedures/{id}/witness|step|abort`, `/api/power-scenarios`,
+  `/api/power-scenarios/{id}/run`.
+- **Changed** `views/device_control.js`: path tabs, capacity tiles, bay
+  indications, procedure stepper with in-panel witness, scenario
+  library.
+- **Tests**: +49 pytest, +11 vitest. Floors (Linux, Python 3.13, no
+  PostgreSQL): pytest 1800 passed / 3 pre-existing errors; vitest 728
+  passed / 37 files.
+- **Finding DC-EPMS-066 (HIGH, design, open):** 9 x 2.5 MW generators
+  give N but not N+1 once cooling is counted. Full-path demand is
+  21.5 MW with the 25 percent assumption; 8 sets give 20 MW. The
+  operator document's own band (20.5 to 23 MW) is above 20 MW
+  throughout. Needs 10 sets, or 2.75 MW sets (8 x 2.75 = 22 MW), or a
+  smaller cooling share on generators.
+- **Finding DC-EPMS-067 (MEDIUM, design, open):** the operator rule for
+  taking a generator out ("residual capacity at least 16.76 MW")
+  counts IT load only. The interlock implements the rule as written,
+  so it permits an isolation that leaves the path below its full
+  demand. The capacity tile shows it as "N: NOT MET".
+- **DC-EPMS-068 (MEDIUM, open):** two sources of truth. The panels use
+  `power_plant.yml`; the SLD, physics, telemetry and LOTO auditor
+  still use `site_model.yml` with the old design (DC-EPMS-057..061).
+- **Not done** (from the operator documents): arc-flash incident
+  energy and PPE category, thermal model and survival time, scenarios
+  TH-001 / TH-002 / COMB-001 (need the thermal model), protection
+  relays, utility-outage dynamics and battery discharge, permit-to-work
+  gate, link to the LOTO auditor, IEC 61850 bindings, HAL binding.
+  DC-EPMS-063, -064 and -065 remain open.
+
 ### Release R3-A — Power Controls: UPS, transfer and generator panels (2026-11-13)
 
 > Operator request: a readings and control panel per UPS, transfer

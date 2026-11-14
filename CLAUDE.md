@@ -70,6 +70,19 @@ RELEASE R3-A (same day, same branch): Power Controls view.
   surface; -064 shell not responsive; -065 /api/bms/write trusts a
   client-sent role. Design basis + findings on the operator's UPS 2N
   documents: docs/design/R3_POWER_CONTROLS_EVALUATION.md.
+RELEASE R3-B (2026-11-14, same branch): closed plant design + MV
+  switching safety + scenario library. config/power_plant.yml (8 x
+  Trinergy 2500 and 9 x 2.5 MW gens at 13.8 kV per path, MV transfer)
+  now drives the Power Controls roster (16 UPS, 2 MV transfer
+  controllers, 18 generators); site_model.yml is NOT migrated
+  (DC-EPMS-068). backend/mv_switching.py = pure interlock engine
+  R1-R10 + forced procedures + two-person rule. backend/
+  power_scenarios.py + config/power_scenarios/ = 8 sandbox scenarios.
+  Routes /api/mv/*, /api/power-scenarios*. Floors: pytest 1800 /
+  vitest 728 (37 files). Findings: DC-EPMS-066 generation has N but
+  not N+1 once cooling is counted (21.5 MW vs 8 x 2.5 = 20 MW);
+  -067 operator isolation rule counts IT load only. NOT done: arc
+  flash, thermal model, protection, HAL. Roadmap R3-D / R3-E / R3-F.
 NEXT: operator applies the bundle, sets env on the host, eyeballs the
   live views (S-VISUAL-01). Then R1.1 / R1.2 / R2-B per ROADMAP v11.23.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
