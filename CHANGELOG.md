@@ -13,6 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Power SLD "vida 1" (2026-11-14, `1ef07cf`)
+
+- Operator review of the C1 drawing: the numbers contradicted the
+  design (a 300 kW UPS, a 1,800 kVA transformer from the legacy
+  physics samples), breakers were text only, the MV switchgear and
+  unit substations were missing, labels collided.
+- `core/power_flow.js`: drawn numbers from the design (2N 50/50,
+  per-block load, losses at eta 0.97, kVA at pf 0.9). Same 259 kW
+  path losses as Power Controls. Design model, not metering.
+- SLD: ANSI 52-U / 52-GM drawn open, closed or in transfer; 13.8 kV
+  switchgear and 8 x 3.5 MVA unit substations; animated power flow
+  (speed scales with MW, colour by source, dead runs dimmed), MW
+  labels on the feeder, generator drop and UPS output.
+- Asset panel: UPS bank opens into its 8 blocks with N / N+1.
+- Fixes: label overlaps, standby generator no longer painted as a
+  fault by the DAG (a red or orange G can still come from telemetry
+  severity: the simulator's generator channels trip the anomaly
+  counter, see DC-EPMS-043).
+- Tests +15 vitest; vitest 773 / 40 files.
+
 ### DC-EPMS-068 lote C1 — Power SLD on the closed design (2026-11-14, `8fa0b96`)
 
 - The Power & UPS single-line diagram and its What-If DAG now draw the

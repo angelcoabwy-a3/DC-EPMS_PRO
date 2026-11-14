@@ -124,8 +124,13 @@ DC-EPMS-068 lote C1 (2026-11-14, 8fa0b96): Power SLD + What-If DAG on
   generator bus 9 sets with units_out / capacity / N / N+1;
   setUnitsOut in What-If). vitest 758 / 39 files. Next: lote C2 =
   topology HLD view, Mission Control, procedures + legacy-id fixtures.
-NEXT: operator applies the bundle, eyeballs the Power SLD (What-If
-  ticks), then GO for lote C2.
+SLD VIDA 1 (2026-11-14, 1ef07cf): core/power_flow.js (design-consistent
+  drawn numbers), 52-U / 52-GM breakers, mv_swgr + usub nodes,
+  animated flow by source, UPS bank block table in the asset panel.
+  vitest 773 / 40 files. Optional next: vida 2 (event timeline in
+  What-If, per-path status strip).
+NEXT: operator applies the bundle and eyeballs the Power SLD; then GO
+  for lote C2 (topology, Mission Control, procedures) or vida 2.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```
