@@ -37,7 +37,7 @@ import { setState } from './state.js';
 // Fenced against the YAML in tests/frontend/power_grid.test.js.
 export const PHASE1 = Object.freeze({
     itLoadPerPathKw: 16760,      // one path carrying 100 % of the IT load
-    ups: Object.freeze({ units: 8, unitKw: 2500, floorKw: 16760 }),
+    ups: Object.freeze({ units: 8, unitKw: 2500, floorKw: 16760, eta: 0.97 }),
     gen: Object.freeze({ units: 9, unitKw: 2750, floorKw: 21500 }),  // design total
 });
 
@@ -50,11 +50,15 @@ export const TOPOLOGY = {
     // generator bus: 9 x 2.75 MW at 13.8 kV (site model v2: genset_a_01..09)
     genset_a: { type: 'genset', path: 'A', sources: [],                        targets: ['mvtc_a'],
                 units: PHASE1.gen.units, unitKw: PHASE1.gen.unitKw, floorKw: PHASE1.gen.floorKw },
-    mvtc_a:   { type: 'mvtc',   path: 'A', sources: ['xfmr_a', 'genset_a'],   targets: ['ups_a'],
+    mvtc_a:   { type: 'mvtc',   path: 'A', sources: ['xfmr_a', 'genset_a'],   targets: ['mv_swgr_a'],
                 primary: 'xfmr_a', secondary: 'genset_a' },
+    // 13.8 kV MV main switchgear, then 8 unit substations 13.8 kV / 480 V
+    // (one per UPS block; site model v2: mv_swgr_a, unit_sub_a_01..08)
+    mv_swgr_a: { type: 'swgr',   path: 'A', sources: ['mvtc_a'],              targets: ['usub_a'] },
+    usub_a:   { type: 'xfmr',   path: 'A', sources: ['mv_swgr_a'],           targets: ['ups_a'] },
     batt_a:   { type: 'batt',   path: 'A', sources: [],                        targets: ['ups_a'] },
     // UPS bank: 8 x Trinergy 2500 kW (site model v2: ups_a_01..08)
-    ups_a:    { type: 'ups',    path: 'A', sources: ['mvtc_a'],                targets: ['rpp_a1'], battery: 'batt_a',
+    ups_a:    { type: 'ups',    path: 'A', sources: ['usub_a'],                targets: ['rpp_a1'], battery: 'batt_a',
                 units: PHASE1.ups.units, unitKw: PHASE1.ups.unitKw, floorKw: PHASE1.ups.floorKw },
     rpp_a1:   { type: 'rpp',    path: 'A', sources: ['ups_a'],                 targets: ['rpp_a2'] },
     rpp_a2:   { type: 'rpp',    path: 'A', sources: ['rpp_a1'],                targets: ['busway_a'] },
@@ -73,11 +77,15 @@ export const TOPOLOGY = {
     // generator bus: 9 x 2.75 MW at 13.8 kV (site model v2: genset_b_01..09)
     genset_b: { type: 'genset', path: 'B', sources: [],                        targets: ['mvtc_b'],
                 units: PHASE1.gen.units, unitKw: PHASE1.gen.unitKw, floorKw: PHASE1.gen.floorKw },
-    mvtc_b:   { type: 'mvtc',   path: 'B', sources: ['xfmr_b', 'genset_b'],   targets: ['ups_b'],
+    mvtc_b:   { type: 'mvtc',   path: 'B', sources: ['xfmr_b', 'genset_b'],   targets: ['mv_swgr_b'],
                 primary: 'xfmr_b', secondary: 'genset_b' },
+    // 13.8 kV MV main switchgear, then 8 unit substations 13.8 kV / 480 V
+    // (one per UPS block; site model v2: mv_swgr_b, unit_sub_b_01..08)
+    mv_swgr_b: { type: 'swgr',   path: 'B', sources: ['mvtc_b'],              targets: ['usub_b'] },
+    usub_b:   { type: 'xfmr',   path: 'B', sources: ['mv_swgr_b'],           targets: ['ups_b'] },
     batt_b:   { type: 'batt',   path: 'B', sources: [],                        targets: ['ups_b'] },
     // UPS bank: 8 x Trinergy 2500 kW (site model v2: ups_b_01..08)
-    ups_b:    { type: 'ups',    path: 'B', sources: ['mvtc_b'],                targets: ['rpp_b1'], battery: 'batt_b',
+    ups_b:    { type: 'ups',    path: 'B', sources: ['usub_b'],                targets: ['rpp_b1'], battery: 'batt_b',
                 units: PHASE1.ups.units, unitKw: PHASE1.ups.unitKw, floorKw: PHASE1.ups.floorKw },
     rpp_b1:   { type: 'rpp',    path: 'B', sources: ['ups_b'],                 targets: ['rpp_b2'] },
     rpp_b2:   { type: 'rpp',    path: 'B', sources: ['rpp_b1'],                targets: ['busway_b'] },
@@ -124,6 +132,8 @@ const TOPO_ORDER = [
     'util_a', 'util_b', 'batt_a', 'batt_b', 'genset_a', 'genset_b',
     'xfmr_a', 'xfmr_b',
     'mvtc_a', 'mvtc_b',
+    'mv_swgr_a', 'mv_swgr_b',
+    'usub_a', 'usub_b',
     'ups_a',  'ups_b',
     'rpp_a1', 'rpp_b1',
     'rpp_a2', 'rpp_b2',

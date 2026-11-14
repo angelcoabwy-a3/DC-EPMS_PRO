@@ -55,7 +55,9 @@ describe('C1 — topology', () => {
             expect(isTransfer(t.type)).toBe(true);
             expect(t.primary).toBe('xfmr_' + p);
             expect(t.secondary).toBe('genset_' + p);
-            expect(topo['ups_' + p].sources).toEqual(['mvtc_' + p]);
+            expect(topo['mvtc_' + p].targets).toEqual(['mv_swgr_' + p]);
+            expect(topo['mv_swgr_' + p].targets).toEqual(['usub_' + p]);
+            expect(topo['ups_' + p].sources).toEqual(['usub_' + p]);
         }
     });
 });
@@ -217,7 +219,7 @@ describe('C1 — transfer position text follows the DAG', () => {
         expect(pos()).toBe('OPEN · IN TRANSFER');
         vi.advanceTimersByTime(2000);
         applyGrid(getGridState());
-        expect(pos()).toBe('52-GM · GENERATORS');
+        expect(pos()).toBe('52-GM · GEN BUS');
         document.body.innerHTML = '';
     });
 });

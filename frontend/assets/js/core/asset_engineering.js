@@ -22,6 +22,8 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { escapeHTML } from './sanitize.js';
+import { pathFlows, fmtPower } from './power_flow.js';
+import { PHASE1 } from './power_grid.js';
 
 // ─── Pure state helpers ────────────────────────────────────────────
 
@@ -260,7 +262,7 @@ function _upsSection(node, qActual) {
         ? 'Live: mode + path from grid DAG · Q POSITIONS from BMS tags (PWR.UPS_x.Qn_POS) · VFI-SS-111 per nameplate'
         : 'Live: mode + path from grid DAG · breaker POSITIONS are mode-nominal (Q-state tags unavailable) · VFI-SS-111 per nameplate';
     return `<div class="eng-section" data-eng="ups">
-        <div class="sld-info-eyebrow">OPERATING MODE · IEC 62040-3 · GALAXY VX ONE-LINE</div>
+        <div class="sld-info-eyebrow">OPERATING MODE · IEC 62040-3 · BLOCK ONE-LINE (Q-BREAKER MODEL, LEGACY GALAXY VX TAGS)</div>
         <div class="eng-chips">${chips}</div>
         ${qAlarm}
         ${_upsMimic(mode, qActual)}
@@ -431,6 +433,49 @@ function _designSection(id) {
 const _P2_IDS = new Set(['util_d', 'mv_rect_d', 'sscb_d', 'dc_bus_d', 'bess_d', 'rpp_d1', 'rpp_d2', 'hall_d', 'gen_farm_d', 'mv_bus_d', 'stepup_d']);
 
 /**
+ * DC-EPMS-068 "vida 1": the UPS bank opened into its blocks. One row
+ * per installed Trinergy 2500 block: in service or out (What-If), its
+ * share of the path load, % of the 2.5 MW rating, operating mode, and
+ * the bank's N / N+1 against the 16.76 MW full-path load. Numbers come
+ * from core/power_flow.js (design model, not metering).
+ */
+export function upsBankSection(id, grid, itKw) {
+    const p = id.slice(4);
+    const node = grid?.[id] || {};
+    const f = pathFlows(grid, itKw)[p];
+    const units = PHASE1.ups.units;
+    const out = node.units_out || 0;
+    // VFI = IEC 62040-3 double conversion (the drawing's normal mode)
+    const mode = node.mode === 'battery' ? 'BATTERY'
+        : (node.mode === 'off' ? 'OFF' : 'VFI');
+    const rows = Array.from({ length: units }, (_, i) => {
+        const inSvc = i >= out;     // count-based, same as the SLD ticks
+        const kw = inSvc ? f.perBlockKw : 0;
+        const pct = inSvc ? (kw / PHASE1.ups.unitKw) * 100 : 0;
+        const bid = `ups_${p}_${String(i + 1).padStart(2, '0')}`;
+        return `<tr class="${inSvc ? '' : 'eng-blk-out'}" data-block="${bid}">
+            <td class="eng-mono">${bid}</td>
+            <td>${inSvc ? 'IN' : 'OUT'}</td>
+            <td class="eng-mono">${inSvc ? fmtPower(kw) : '—'}</td>
+            <td><span class="eng-bar"><span style="width:${Math.min(100, pct).toFixed(0)}%"></span></span> ${pct.toFixed(0)} %</td>
+            <td>${inSvc ? mode : '—'}</td></tr>`;
+    }).join('');
+    const tag = node.n1_ok ? 'N+1' : (node.n_ok ? 'N only' : 'BELOW N');
+    const cap = node.capacity_kw ?? units * PHASE1.ups.unitKw;
+    return `<div class="eng-section" data-eng="ups-bank">
+        <div class="sld-info-eyebrow">UPS BANK ${p.toUpperCase()} · ${units} × VERTIV TRINERGY 2500</div>
+        <div class="eng-bank-sum">
+            <span>Path load <b>${fmtPower(f.upsOutKw)}</b> (${(f.share * 100).toFixed(0)} %)</span>
+            <span>Capacity <b>${fmtPower(cap)}</b> · <b class="eng-n-${tag === 'N+1' ? 'ok' : (tag === 'N only' ? 'warn' : 'crit')}">${tag}</b></span>
+            <span>Losses <b>${fmtPower(f.lossKw)}</b> (η 97 %)</span>
+        </div>
+        <table class="eng-bank"><thead><tr><th>Block</th><th>Svc</th><th>Load</th><th>% rating</th><th>Mode</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+        ${_origin('Design model (config/power_plant.yml + DAG state). Blocks share the path load equally; not per-block metering.')}
+    </div>`;
+}
+
+/**
  * Engineering detail markup for one SLD asset.
  * @param {string} id     canonical asset id
  * @param {object} grid   full power_grid state (may be null)
@@ -444,7 +489,8 @@ export function engineeringSection(id, grid, meta, extras = {}) {
     if (id.startsWith('ups_')) {
         // SOC rides on the sibling battery node for the bar.
         const battNode = grid?.['batt_' + id.slice(4)];
-        return _upsSection({ ...(node || {}), soc: battNode?.soc ?? null }, extras.qStates || null);
+        const bank = /^ups_[ab]$/.test(id) ? upsBankSection(id, grid, extras.itKw) : '';
+        return bank + _upsSection({ ...(node || {}), soc: battNode?.soc ?? null }, extras.qStates || null);
     }
     if (id.startsWith('genset_')) {
         // closed design: the generator bus feeds the MV transfer

@@ -155,10 +155,13 @@ describe('T2.1 — views/power.js applyTopology()', () => {
             site_health: 0.91,
             power_balance: { ok: true },
         });
+        // power_flow.js owns the drawn power numbers: no hall loads in the
+        // fixture -> design default 16.76 MW IT, 50 % per path, eta 0.97
+        // -> 8.38 / 0.97 = 8.64 MW at the utility A incomer.
         expect(document.querySelector('[data-sld-metric="util_a-kw"]').textContent)
-            .toContain('1,000 kW');
+            .toBe('8.64 MW');
         expect(document.querySelector('[data-sld-metric="ups_a-mode"]').textContent)
-            .toBe('ONLINE');
+            .toBe('ONLINE · η 97 %');
         expect(document.getElementById('sld-banner-mode').textContent).toBe('2N');
         expect(document.getElementById('sld-meta').innerHTML).toContain('2N');
     });

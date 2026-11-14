@@ -31,6 +31,7 @@ import { registerRoute } from '../core/router.js';
 import { onHermesStream, getTopologyState, writeBmsTag } from '../services/api.js';
 import { subscribe, setState, getState } from '../core/state.js';
 import { toggleTrip, restoreAll, setUnitsOut, getTopology, PHASE1 } from '../core/power_grid.js';
+import { pathFlows, fmtPower, fmtApparent } from '../core/power_flow.js';
 import { escapeHTML } from '../core/sanitize.js';
 import {
     severityFromChannels, symbol, wire, sparkPoints, sparkPolyline,
@@ -49,6 +50,7 @@ import { budgetCaption, gensetFarmSizing, farmUnits } from '../core/power_budget
 let _initialized = false;
 let _unsubTelemetry = null;
 let _mode = 'live';   // 'live' | 'whatif' — set by the Phase 2 sandbox toggle
+let _itKw = null;     // facility Phase 1 IT load from the topology feed (power_flow)
 
 // SLD-node-id -> /api/topology/state hld_nodes key (registry-derived).
 const _NODE_MAP = sldToTopoMap();
@@ -84,34 +86,22 @@ function _applyTopology(data) {
         _setMetric('util_b-kw', Math.round(ub.metrics.kw ?? 0).toLocaleString() + ' kW');
         _setMetric('util_b-kv', (ub.metrics.kv ?? 27.5).toFixed(1) + ' kV');
     }
-    if (xa) {
-        _setMetric('xfmr_a-c', (xa.metrics.winding_c ?? 0).toFixed(0) + '°C');
-        _setMetric('xfmr_a-load', Math.round(xa.metrics.load_kva ?? 0).toLocaleString() + ' kVA');
-    }
-    if (xb) {
-        _setMetric('xfmr_b-c', (xb.metrics.winding_c ?? 0).toFixed(0) + '°C');
-        _setMetric('xfmr_b-load', Math.round(xb.metrics.load_kva ?? 0).toLocaleString() + ' kVA');
-    }
+    // Transformer / UPS / RPP loads come from core/power_flow.js
+    // (design-consistent: 8 x 2.5 MW blocks per path, eta 0.97). The
+    // physics engine's unit-level samples (a 300 kW "UPS", a 1,800 kVA
+    // transformer) contradicted the drawing and are not shown.
+    if (xa) _setMetric('xfmr_a-c', (xa.metrics.winding_c ?? 0).toFixed(0) + '°C');
+    if (xb) _setMetric('xfmr_b-c', (xb.metrics.winding_c ?? 0).toFixed(0) + '°C');
     if (upa) {
-        const eff = ((upa.metrics.eff ?? 0.96) * 100).toFixed(1);
-        _setMetric('ups_a-mode', upa.metrics.battery_on_load ? 'BATTERY' : 'ONLINE');
-        _setMetric('ups_a-load', Math.round(upa.metrics.load_kw ?? 0).toLocaleString() + ' kW · Eff ' + eff + '%');
+        _setMetric('ups_a-mode', upa.metrics.battery_on_load ? 'BATTERY' : 'ONLINE · η 97 %');
         _setMetric('batt_a-soc', 'SOC ' + Math.round((upa.metrics.soc ?? 1) * 100) + '%');
     }
     if (upb) {
-        const eff = ((upb.metrics.eff ?? 0.96) * 100).toFixed(1);
-        _setMetric('ups_b-mode', upb.metrics.battery_on_load ? 'BATTERY' : 'ONLINE');
-        _setMetric('ups_b-load', Math.round(upb.metrics.load_kw ?? 0).toLocaleString() + ' kW · Eff ' + eff + '%');
+        _setMetric('ups_b-mode', upb.metrics.battery_on_load ? 'BATTERY' : 'ONLINE · η 97 %');
         _setMetric('batt_b-soc', 'SOC ' + Math.round((upb.metrics.soc ?? 1) * 100) + '%');
     }
 
-    const rppA1 = nodes.rpp_a1, rppA2 = nodes.rpp_a2;
-    const rppB1 = nodes.rpp_b1, rppB2 = nodes.rpp_b2;
     const bwyA = nodes.busway_a, bwyB = nodes.busway_b;
-    if (rppA1) _setMetric('rpp_a1-kw', Math.round(rppA1.metrics.load_kw ?? 0).toLocaleString() + ' kW');
-    if (rppA2) _setMetric('rpp_a2-kw', Math.round(rppA2.metrics.load_kw ?? 0).toLocaleString() + ' kW');
-    if (rppB1) _setMetric('rpp_b1-kw', Math.round(rppB1.metrics.load_kw ?? 0).toLocaleString() + ' kW');
-    if (rppB2) _setMetric('rpp_b2-kw', Math.round(rppB2.metrics.load_kw ?? 0).toLocaleString() + ' kW');
     if (bwyA) {
         const overload = bwyA.metrics.overload ? ' ⚠ OVERLOAD' : '';
         _setMetric('busway_a-load', Math.round(bwyA.metrics.load_kw ?? 0).toLocaleString()
@@ -128,8 +118,8 @@ function _applyTopology(data) {
     // battery-on-load (52-U closed = UTILITY, 52-GM closed = GENERATORS).
     const atsA = (upa && upa.metrics.battery_on_load) ? 'GENSET' : 'UTILITY';
     const atsB = (upb && upb.metrics.battery_on_load) ? 'GENSET' : 'UTILITY';
-    _setMetric('mvtc_a-pos', atsA === 'GENSET' ? '52-GM · GENERATORS' : '52-U · UTILITY');
-    _setMetric('mvtc_b-pos', atsB === 'GENSET' ? '52-GM · GENERATORS' : '52-U · UTILITY');
+    _setMetric('mvtc_a-pos', atsA === 'GENSET' ? '52-GM · GEN BUS' : '52-U · UTILITY');
+    _setMetric('mvtc_b-pos', atsB === 'GENSET' ? '52-GM · GEN BUS' : '52-U · UTILITY');
     _setMetric('genset_a-state', atsA === 'GENSET' ? 'RUNNING' : 'STANDBY');
     _setMetric('genset_b-state', atsB === 'GENSET' ? 'RUNNING' : 'STANDBY');
 
@@ -139,6 +129,8 @@ function _applyTopology(data) {
         + (nodes.hall_2?.metrics.load_kw ?? 0)
         + (nodes.hall_3?.metrics.load_kw ?? 0);
     const pue = (itLoad > 0 && totalLoad > 0) ? (totalLoad / itLoad) : null;
+    _itKw = itLoad > 0 ? itLoad : null;
+    _applyFlow(getState('grid'));
 
     const totalEl = document.getElementById('sld-total-load');
     const pueEl = document.getElementById('sld-pue');
@@ -253,6 +245,10 @@ function _updateSparklines(channels) {
 // ════════════════════════════════════════════════════════════════
 const _FLAT = {
     tierX: { util: 150, xfmr: 268, gen: 392, ats: 602, ups: 820, pdu: 1052 },
+    // Phase 1 closed design (DC-EPMS-068): 52-U between the transformer
+    // and the generator junction; MV switchgear + unit substations
+    // between the transfer controller and the UPS bank.
+    p1: { u52: 330, swgr: 676, usub: 730 },
     spineY: { A: 232, B: 540 },
     phase2: { spineY: 880, headerY: 766, dividerY: 726, fenceX: 484 },
     // 50 MW track: genset farm row + power-budget caption block.
@@ -290,47 +286,84 @@ function _flatNode(id, type, label, x, y, metrics, opts = {}) {
 
 function _flatPath(suffix, S, energized) {
     const T = _FLAT.tierX;
+    const L = _FLAT.p1;                 // closed-design Phase 1 x positions
     const cls = energized; // 'pf-a' | 'pf-b'
     const genY = S - 116;
     const busY = S - 64;
-    const battY = S + 96;
-    // ── orthogonal wiring (spine + branches) ──
+    const gmY = S - 30;                 // 52-GM on the generator drop
+    const battY = S + 130;             // clears the UPS metric + sparkline rows
+    const X = suffix.toUpperCase();
+    const seg = (name, pts, extra = '') =>
+        wire(pts, `${cls} pf-seg${extra}`).replace('<path ', `<path data-seg="${suffix}:${name}" `);
+    // ── orthogonal wiring; every run carries data-seg for the flow layer ──
     const wires = [
-        wire([[T.util + 40, S], [T.ats - 40, S]], cls),          // utility spine -> MV transfer (52-U)
-        wire([[T.gen, genY + 23], [T.gen, busY - 5]], cls),       // genset -> paralleling bus
-        wire([[T.gen, busY + 5], [T.gen, S]], 'pf-cold'),         // bus -> spine (standby)
-        wire([[T.ats + 40, S], [T.ups - 40, S]], cls),            // MV transfer -> UPS bank (via MV swgr + unit subs)
-        wire([[T.ups - 40, S], [T.ups + 40, S]], cls),            // through UPS
-        wire([[T.ups + 40, S], [T.pdu - 40, S]], cls),            // UPS -> PDU
-        wire([[T.ups, battY - 23], [T.ups, S + 23]], cls),        // battery -> UPS
+        seg('util', [[T.util + 40, S], [T.xfmr - 14, S]]),
+        seg('xfmr', [[T.xfmr + 14, S], [L.u52 - 11, S]]),
+        seg('u52', [[L.u52 + 11, S], [T.gen, S]]),
+        seg('gen', [[T.gen, genY + 23], [T.gen, busY - 5]]),
+        seg('bus', [[T.gen, busY + 5], [T.gen, gmY - 11]]),
+        seg('gm', [[T.gen, gmY + 11], [T.gen, S]]),
+        seg('mv', [[T.gen, S], [T.ats - 40, S]]),
+        seg('mvtc', [[T.ats + 40, S], [L.swgr - 5, S]]),
+        seg('swgr', [[L.swgr + 5, S], [L.usub - 14, S]]),
+        seg('usub', [[L.usub + 14, S], [T.ups - 40, S]]),
+        seg('ups', [[T.ups + 40, S], [T.pdu - 40, S]]),
+        seg('batt', [[T.ups, battY - 23], [T.ups, S + 23]]),
     ].join('');
     // ── nodes ──
     const nodes = [
-        _flatNode('util_' + suffix, 'util', 'UTILITY ' + suffix.toUpperCase(),
+        _flatNode('util_' + suffix, 'util', 'UTILITY ' + X,
             T.util, S, [{ key: 'util_' + suffix + '-kv', text: '27.5 kV' },
                         { key: 'util_' + suffix + '-kw', text: '— kW' }]),
-        _flatNode('xfmr_' + suffix, 'xfmr', 'XFMR ' + suffix.toUpperCase(),
-            T.xfmr, S, [{ key: 'xfmr_' + suffix + '-load', text: '— kVA' },
+        _flatNode('xfmr_' + suffix, 'xfmr', 'XFMR ' + X,
+            T.xfmr, S, [{ key: 'xfmr_' + suffix + '-load', text: '— MVA' },
                         { key: 'xfmr_' + suffix + '-ratio', text: '27.5/13.8 kV' }]),
         _flatNode('genset_' + suffix, 'genset',
-            'GEN BUS ' + suffix.toUpperCase() + ` · ${PHASE1.gen.units} × ${PHASE1.gen.unitKw / 1000} MW`,
+            'GEN BUS ' + X + ` · ${PHASE1.gen.units} × ${PHASE1.gen.unitKw / 1000} MW`,
             T.gen, genY, [{ key: 'genset_' + suffix + '-state', text: 'STANDBY' }]),
-        _flatNode('par_bus_' + suffix, 'parbus', 'PARALLELING BUS · 13.8 kV · ANSI 25',
-            T.gen, busY, []),
-        _flatNode('mvtc_' + suffix, 'mvtc', 'MV TRANSFER ' + suffix.toUpperCase() + ' · 13.8 kV',
+        _flatNode('mvtc_' + suffix, 'mvtc', 'MV TRANSFER ' + X + ' · 13.8 kV',
             T.ats, S, [{ key: 'mvtc_' + suffix + '-pos', text: '52-U · UTILITY' }]),
         _flatNode('ups_' + suffix, 'ups',
-            'UPS BANK ' + suffix.toUpperCase() + ` · ${PHASE1.ups.units} × TRINERGY`,
+            'UPS BANK ' + X + ` · ${PHASE1.ups.units} × TRINERGY`,
             T.ups, S, [{ key: 'ups_' + suffix + '-mode', text: 'ONLINE' },
-                       { key: 'ups_' + suffix + '-load', text: '— kW' }]),
-        _flatNode('batt_' + suffix, 'batt', 'BATTERY ' + suffix.toUpperCase(),
+                       { key: 'ups_' + suffix + '-load', text: '— MW' }]),
+        _flatNode('batt_' + suffix, 'batt', 'BATTERY ' + X,
             T.ups, battY, [{ key: 'batt_' + suffix + '-soc', text: 'SOC 100%' }]),
-        _flatNode('rpp_' + suffix + '1', 'rpp', 'RPP / PDU ' + suffix.toUpperCase(),
+        _flatNode('rpp_' + suffix + '1', 'rpp', 'RPP / PDU ' + X,
             T.pdu, S, [{ key: 'rpp_' + suffix + '1-kw', text: '— kW' }]),
     ].join('');
+    // paralleling bus: label to the right so it never covers the G glyph
+    const parBus = `<g class="sld-node pf-node" data-sld-node="par_bus_${suffix}">`
+        + `<rect class="pf-sym pid-symbol pf-bus" data-sev="ok" x="${T.gen - 52}" y="${busY - 5}" width="104" height="10" rx="2"/>`
+        + `<text class="pf-sub-label" x="${T.gen + 60}" y="${busY + 4}">PARALLELING BUS · 13.8 kV · ANSI 25</text></g>`;
+    // 13.8 kV MV main switchgear (vertical bus bar) + unit substations
+    const mv = `<g class="sld-node pf-node" data-sld-node="mv_swgr_${suffix}">`
+        + `<rect class="pf-sym pid-symbol pf-bus" data-sev="ok" x="${L.swgr - 5}" y="${S - 26}" width="10" height="52" rx="2"/>`
+        + `<text class="pf-sub-label pf-center" x="${L.swgr}" y="${S + 56}">13.8 kV SWGR</text></g>`
+        + `<g class="sld-node pf-node" data-sld-node="usub_${suffix}">`
+        + `<circle class="pf-sym pid-symbol" data-sev="ok" cx="${L.usub}" cy="${S - 8}" r="14"/>`
+        + `<circle class="pf-sym pid-symbol" data-sev="ok" cx="${L.usub}" cy="${S + 8}" r="14"/>`
+        + `<text class="pf-sub-label pf-end" x="${L.usub + 16}" y="${S + 40}">${PHASE1.ups.units} × 3.5 MVA</text>`
+        + `<title>${PHASE1.ups.units} unit substations 13.8 kV / 480 V, 3.5 MVA each (sizing assumption, site model v2)</title></g>`;
+    // ANSI 52 breakers: 52-U on the utility incomer, 52-GM on the
+    // generator main. Drawn open or closed from the DAG (_applyFlow).
+    const brk = (id, label, x, y, labelX, anchor) =>
+        `<g class="pf-52" data-brk="${suffix}:${id}" data-state="closed">`
+        + `<rect class="pf-52-box" x="${x - 11}" y="${y - 11}" width="22" height="22" rx="2"/>`
+        + `<path class="pf-52-blade" d="M${x - 7} ${y + 7} L${x + 7} ${y - 7}"/>`
+        + `<text class="pf-52-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}">${label}</text></g>`;
+    const breakers = brk('u', '52-U', L.u52, S, L.u52, 'middle').replace(
+        `y="${S + 4}" text-anchor="middle">52-U`, `y="${S - 18}" text-anchor="middle">52-U`)
+        + brk('gm', '52-GM', T.gen, gmY, T.gen - 18, 'end');
+    // power-flow labels (filled by _applyFlow)
+    const flowTxt = (key, x, y, anchor = 'middle') =>
+        `<text class="pf-flow-label" data-flow="${suffix}:${key}" x="${x}" y="${y}" text-anchor="${anchor}"></text>`;
+    const labels = flowTxt('mv', (T.gen + T.ats - 40) / 2, S - 8)
+        + flowTxt('ups', (T.ups + 40 + T.pdu - 40) / 2, S - 8)
+        + flowTxt('gen', T.gen + 18, gmY - 16, 'start');
     const strips = _unitStrip('genset_' + suffix, T.gen, genY - 52)
         + _unitStrip('ups_' + suffix, T.ups, S - 52);
-    return `<g class="pf-pathgroup">${wires}${nodes}${strips}</g>`;
+    return `<g class="pf-pathgroup" data-path="${suffix}">${wires}${breakers}${mv}${parBus}${nodes}${labels}${strips}</g>`;
 }
 
 /**
@@ -636,6 +669,10 @@ function _renderFlatSld() {
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.classList.add('pf-svg');
     svg.innerHTML = _buildFlatMarkup();
+    // Paint the current DAG state at once (unit captions, breakers,
+    // flow) instead of waiting for the next grid change.
+    const g0 = getState('grid');
+    if (g0) _applyGrid(g0); else _applyFlow(null);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -817,20 +854,101 @@ function _applyGrid(grid) {
         const n = grid[node.dataset.sldNode];
         if (!n) return;
         let sev = 'ok';
-        if (n.tripped || n.alive === false) sev = 'critical';
+        if (n.type === 'genset' && !n.tripped) {
+            // A standby generator bus is healthy, not a fault: only a
+            // crank in progress or running on load is worth a colour.
+            sev = n.state === 'cranking' ? 'warning' : (n.alive ? 'warning' : 'ok');
+        } else if (n.tripped || n.alive === false) sev = 'critical';
         else if (n.on_battery || n.energized_by === 'genset') sev = 'warning';
         node.querySelectorAll('.pid-symbol').forEach((s) => s.setAttribute('data-sev', sev));
         node.classList.toggle('pf-tripped', !!n.tripped);
     });
     _applyUnits(grid);
+    _applyFlow(grid);
     // Transfer position from the DAG (What-If / Replay show the
     // simulated 52-U / 52-GM state, not the live telemetry guess).
     for (const p of ['a', 'b']) {
         const t = grid['mvtc_' + p];
         if (!t) continue;
         const txt = t.transferring ? 'OPEN · IN TRANSFER'
-            : (t.ats_pos === 'secondary' ? '52-GM · GENERATORS' : '52-U · UTILITY');
+            : (t.ats_pos === 'secondary' ? '52-GM · GEN BUS' : '52-U · UTILITY');
         _setMetric('mvtc_' + p + '-pos', txt);
+    }
+}
+
+// Flow layer: which runs are energized / carrying power, from which
+// source, how fast the dashes move (scales with MW), breaker states
+// and the drawn power numbers (core/power_flow.js).
+const _SEG_NODE = {
+    util: 'util', xfmr: 'xfmr', u52: 'xfmr', gen: 'genset', bus: 'genset',
+    gm: 'genset', mv: 'mvtc', mvtc: 'mvtc', swgr: 'mv_swgr', usub: 'usub', ups: 'ups',
+};
+
+function _applyFlow(gridIn) {
+    // No DAG snapshot yet (engine not initialised): draw the nominal plant.
+    const grid = gridIn || {};
+    const flows = pathFlows(grid, _itKw ?? undefined);
+    for (const p of ['a', 'b']) {
+        const f = flows[p];
+        const tc = grid['mvtc_' + p] || {};
+        const u52Closed = !tc.tripped && !tc.transferring && tc.ats_pos !== 'secondary';
+        const gmClosed = !tc.tripped && !tc.transferring && tc.ats_pos === 'secondary';
+        const src = f.source;   // 'util' | 'genset' | 'battery' | null
+        const carrying = {
+            util: src === 'util', xfmr: src === 'util', u52: src === 'util' && u52Closed,
+            gen: src === 'genset', bus: src === 'genset', gm: src === 'genset' && gmClosed,
+            mv: src === 'util' || src === 'genset', mvtc: src === 'util' || src === 'genset',
+            swgr: src === 'util' || src === 'genset', usub: src === 'util' || src === 'genset',
+            ups: f.upsOutKw > 0, batt: src === 'battery',
+        };
+        const mw = (f.upsInKw || f.upsOutKw) / 1000;
+        const dur = Math.max(0.6, 3.2 - mw * 0.25).toFixed(2) + 's';
+        document.querySelectorAll(`#view-power [data-seg^="${p}:"]`).forEach((el) => {
+            const name = el.dataset.seg.split(':')[1];
+            const node = grid[`${_SEG_NODE[name] ?? name}_${p}`];
+            let energized = name === 'batt' ? src === 'battery' : (node ? !!node.alive : true);
+            if (name === 'u52') energized = energized && u52Closed;
+            if (name === 'gm') energized = energized && gmClosed;
+            el.classList.toggle('pf-dead', !energized);
+            el.classList.toggle('pf-flow', !!carrying[name] && energized);
+            el.setAttribute('data-src', carrying[name] && energized ? (src || '') : '');
+            el.style.setProperty('--flow-dur', dur);
+        });
+        const setBrk = (id, closed) => {
+            const b = document.querySelector(`#view-power [data-brk="${p}:${id}"]`);
+            if (!b) return;
+            b.setAttribute('data-state', tc.transferring ? 'transfer' : (closed ? 'closed' : 'open'));
+            const blade = b.querySelector('.pf-52-blade');
+            if (blade) {
+                const r = b.querySelector('.pf-52-box');
+                const x = Number(r.getAttribute('x')) + 11, y = Number(r.getAttribute('y')) + 11;
+                blade.setAttribute('d', closed
+                    ? `M${x - 7} ${y + 7} L${x + 7} ${y - 7}`     // closed: blade across
+                    : `M${x - 7} ${y + 7} L${x + 1} ${y - 9}`);   // open: blade lifted
+            }
+        };
+        setBrk('u', u52Closed);
+        setBrk('gm', gmClosed);
+        const txt = (key, v) => {
+            const el = document.querySelector(`#view-power [data-flow="${p}:${key}"]`);
+            if (el) el.textContent = v;
+        };
+        txt('mv', src === 'util' || src === 'genset' ? fmtPower(f.upsInKw) : '');
+        txt('ups', f.upsOutKw > 0 ? fmtPower(f.upsOutKw) : '');
+        txt('gen', f.genKw > 0 ? `${fmtPower(f.genKw)} · ${f.genLoadPct.toFixed(0)} %` : '');
+        _setMetric(`util_${p}-kw`, src === 'util' ? fmtPower(f.upsInKw) : '0 kW');
+        _setMetric(`xfmr_${p}-load`, src === 'util' ? `${fmtApparent(f.xfmrKva)} of 25` : '0 MVA');
+        _setMetric(`ups_${p}-load`, f.upsOutKw > 0
+            ? `${fmtPower(f.upsOutKw)} · ${f.upsLoadPct.toFixed(0)} % of bank` : '0 MW');
+        _setMetric(`rpp_${p}1-kw`, fmtPower(f.rppKw) + ' ×2');
+        if (_mode !== 'live') {
+            const u = grid['ups_' + p] || {};
+            _setMetric(`ups_${p}-mode`, u.mode === 'battery' ? 'BATTERY'
+                : (u.mode === 'off' ? 'OFF' : 'ONLINE · η 97 %'));
+        }
+        const gs = grid['genset_' + p] || {};
+        _setMetric(`genset_${p}-state`, (gs.state || 'standby').toUpperCase().replace('_', ' ')
+            + (f.genKw > 0 ? ' · ON LOAD' : ''));
     }
 }
 
@@ -1056,6 +1174,8 @@ export const __power_test__ = {
     buildReplayToggle: _buildReplayToggle,
     loadLedgerMarkers: _loadLedgerMarkers,
     applyGrid: _applyGrid,
+    applyFlow: _applyFlow,
+    setItKw: (v) => { _itKw = v; },
     sparkPoints,
     updateSparklines: _updateSparklines,
     channelMatcher: _channelMatcher,
