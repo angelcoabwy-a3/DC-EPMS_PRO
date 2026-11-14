@@ -3504,7 +3504,8 @@ try:
     log.info(
         f"[Sprint S1b] Site routes mounted at /api/site "
         f"({len(_site_model.list_components())} components, "
-        f"{len(_site_model._location_by_id)} locations)"
+        f"{len(_site_model._location_by_id)} locations, "
+        f"model={getattr(_site_model, 'variant', 'legacy')})"
     )
 except ImportError as e:
     log.warning(f"[Sprint S1b] Site routes not loaded: {e}")

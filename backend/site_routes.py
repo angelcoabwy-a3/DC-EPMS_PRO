@@ -30,6 +30,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from site_model import (
     ComponentNotFoundError,
+    SiteModelConfigError,
     SiteModelError,
     get_site_model,
 )
@@ -55,7 +56,7 @@ def _model():
         )
     try:
         return get_site_model(_PROJECT_ROOT)
-    except SiteModelError as e:
+    except (SiteModelError, SiteModelConfigError) as e:
         log.exception("[site_routes] failed to load site model")
         raise HTTPException(status_code=500, detail=f"site model load failed: {e}") from e
 
@@ -66,6 +67,37 @@ router = APIRouter(prefix="/api/site", tags=["site"])
 # ─────────────────────────────────────────────────────────────────────────
 #  Metadata + tree navigation
 # ─────────────────────────────────────────────────────────────────────────
+# DC-EPMS-068: ids the closed design retired. Present in the legacy
+# model, absent in v2; consumers still using them degrade under v2.
+RETIRED_IDS = (
+    "ups_a", "ups_b", "ats_a", "ats_b",
+    "xfmr_a", "xfmr_b", "switchgear_a", "switchgear_b",
+)
+
+
+@router.get("/model")
+def get_model_info():
+    """Which site model the process runs on (DC-EPMS-068 flag)."""
+    m = _model()
+    ids = {c.canonical_id for c in m.list_components()}
+    retired_present = [i for i in RETIRED_IDS if i in ids]
+    variant = getattr(m, "variant", "legacy")
+    return {
+        "variant": variant,
+        "file": f"config/{m.yaml_path.name}",
+        "components": len(ids),
+        "verified_against_power_plant": variant == "v2",
+        "retired_ids_present": retired_present,
+        "migration_complete": False,
+        "note": (
+            "v2 is a migration preview: consumers on retired ids are not "
+            "ported yet (docs/design/DC-EPMS-068_MIGRATION.md)."
+            if variant == "v2"
+            else "legacy model (default); DC-EPMS-057..061 apply."
+        ),
+    }
+
+
 @router.get("/metadata")
 def get_metadata():
     """High-level facility info: name, classification, redundancy, capacity."""

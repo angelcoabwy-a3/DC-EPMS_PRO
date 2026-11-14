@@ -48,6 +48,7 @@ Integration points (Sprint S1b):
 from __future__ import annotations
 
 import logging
+import os
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -192,6 +193,7 @@ class SiteModel:
 
     def __init__(self, yaml_path: Path):
         self.yaml_path = yaml_path
+        self.variant = "legacy"  # set by get_site_model (DC-EPMS-068)
         self._raw: dict = {}
         self._site_id: str = ""
         self._site_display: str = ""
@@ -555,16 +557,88 @@ class SiteModel:
 # ─────────────────────────────────────────────────────────────────────────
 _global_model: SiteModel | None = None
 
+# DC-EPMS-068 (runtime switch). Which site model the process loads:
+#   unset / "legacy" -> config/site_model.yml (default, what Render runs)
+#   "v2"             -> config/site_model_v2.yml (closed Phase 1 design)
+# v2 is a MIGRATION PREVIEW: consumers that still use the retired ids
+# (ups_a/b, ats_a/b, xfmr_a/b, switchgear_a/b) degrade under it. See
+# docs/design/DC-EPMS-068_MIGRATION.md. Any other value fails closed.
+ENV_SITE_MODEL = "DC_EPMS_SITE_MODEL"
+SITE_MODEL_VARIANTS = ("legacy", "v2")
+_VARIANT_FILES = {"legacy": "site_model.yml", "v2": "site_model_v2.yml"}
+
+
+class SiteModelConfigError(RuntimeError):
+    """The requested site model variant cannot be loaded safely."""
+
+
+def site_model_variant() -> str:
+    """Variant selected by DC_EPMS_SITE_MODEL ("legacy" when unset)."""
+    raw = os.environ.get(ENV_SITE_MODEL, "").strip().lower()
+    if raw in ("", "legacy"):
+        return "legacy"
+    if raw == "v2":
+        return "v2"
+    raise SiteModelConfigError(
+        f"{ENV_SITE_MODEL}={raw!r} is not one of {SITE_MODEL_VARIANTS}"
+    )
+
+
+def site_model_path(project_root: Path, variant: str | None = None) -> Path:
+    v = variant or site_model_variant()
+    if v not in _VARIANT_FILES:
+        raise SiteModelConfigError(f"unknown site model variant {v!r}")
+    return project_root / "config" / _VARIANT_FILES[v]
+
+
+def verify_v2(project_root: Path) -> None:
+    """Refuse to run on a stale or invalid v2 file.
+
+    The v2 file is GENERATED from site_model.yml + power_plant.yml. If
+    either input changed and the file was not regenerated, or the
+    validator finds a problem (voltage mismatch, 2N loss, generation
+    below the ADR-013 floor), loading it would put a model that does
+    not match the closed design behind the HMI. Fail closed instead.
+    """
+    from backend.site_model_v2 import build, validate
+
+    cfg = project_root / "config"
+    try:
+        legacy = yaml.safe_load((cfg / "site_model.yml").read_text(encoding="utf-8"))
+        plant = yaml.safe_load((cfg / "power_plant.yml").read_text(encoding="utf-8"))
+        current = yaml.safe_load((cfg / "site_model_v2.yml").read_text(encoding="utf-8"))
+    except FileNotFoundError as e:
+        raise SiteModelConfigError(f"site model v2 input missing: {e.filename}") from e
+    if build(legacy, plant) != current:
+        raise SiteModelConfigError(
+            "config/site_model_v2.yml is stale: run scripts/build_site_model_v2.py"
+        )
+    problems = validate(current, plant)
+    if problems:
+        raise SiteModelConfigError(
+            f"site model v2 failed validation ({len(problems)}): {problems[0]}"
+        )
+
 
 def get_site_model(project_root: Path | None = None) -> SiteModel:
-    """Lazy-loaded singleton."""
+    """Lazy-loaded singleton; the variant comes from DC_EPMS_SITE_MODEL."""
     global _global_model
     if _global_model is None:
         if project_root is None:
             raise RuntimeError("site model not initialized; first call must pass project_root")
-        yaml_path = project_root / "config" / "site_model.yml"
-        _global_model = SiteModel(yaml_path)
-        _global_model.load()
+        variant = site_model_variant()
+        if variant == "v2":
+            verify_v2(project_root)
+        model = SiteModel(site_model_path(project_root, variant))
+        model.load()
+        model.variant = variant
+        if variant == "v2":
+            log.warning(
+                "[site_model] DC-EPMS-068 preview: running on site_model_v2.yml; "
+                "consumers on retired ids (ups_a/b, ats_a/b, xfmr_a/b, "
+                "switchgear_a/b) are not migrated yet"
+            )
+        _global_model = model
     return _global_model
 
 
