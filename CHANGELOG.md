@@ -13,6 +13,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deploy — public release live on Render (2026-11-14)
+
+- `master` fast-forwarded `2fa40c7..941f002` and pushed with
+  `release/public-full-app` by the operator from the Windows
+  workstation. Render (`dc-epms-pro.onrender.com`) runs `941f002`:
+  boot log shows the power plant control with 9 scenarios, OT
+  Security, USD export, CMMS in memory, warmup skipped, and the IAM
+  gate refusing repo-default passwords (only users with a
+  `DC_EPMS_PWD_<USER>` set are seeded).
+- Verified live: anonymous `GET /api/devices` -> `{"detail":
+  "authentication required"}`; `GET /api/health` -> 200 (public by
+  design for the platform health check).
+- Operator Windows floors (Python 3.12, `epms-db` down):
+  **pytest 1832 passed, 8 skipped** (7 PostgreSQL integration, 1
+  `pxr` absent), 0 failed; **vitest 728 / 37 files**. Browser flow
+  on the Power Controls view validated by the operator.
+- Security note: one pair of JWT / ledger secrets was printed in a
+  shared terminal transcript; the operator was told to rotate both
+  on Render. Treat any value seen outside Render as revoked.
+
+### Fix — DC-EPMS-071: public /api/health leaked internals (2026-11-14)
+
+- On a gated deployment the anonymous health payload showed
+  postgres / rag / gemma / gpu as `down` (absent by design, read as
+  a fault) and published the loopback LM Studio URL.
+- Now: gate on -> `status: "disabled"` + reason, `mode: "public"`,
+  no URL, no exception text, loopback LLM not probed. Gate off ->
+  unchanged. Overview header pills render `disabled` neutral.
+- Tests +9 pytest, +3 vitest. Linux floors: pytest 1838 / vitest
+  731 (37 files). NOT yet re-run on Windows; NOT yet deployed.
+
 ### Fix — DC-EPMS-069: boot warmup crashes the test run on AMD + Windows (2026-11-14)
 
 - **Found** on the operator workstation (Windows, Python 3.12, AMD
