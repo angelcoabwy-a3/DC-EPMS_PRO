@@ -56,6 +56,12 @@ Optional: `DC_EPMS_SKIP_WARMUP=1` skips the GraphRAG and LOTO warmup at
 boot (DC-EPMS-069). On a host without the embedding stack it only saves
 a failed import; on AMD + Windows it avoids a native crash in pyarrow.
 
+Do NOT set `DC_EPMS_SITE_MODEL` on the public host. Unset means the
+legacy model; `v2` is a migration preview (DC-EPMS-068) and several
+views still use the retired ids. Any value other than `legacy` or `v2`
+stops the site routes from mounting (fail closed). `GET
+/api/site/model` reports which model the process runs on.
+
 Generate the values locally. The ledger key MUST be hex; the JWT
 secret and the passwords can be any private string:
 

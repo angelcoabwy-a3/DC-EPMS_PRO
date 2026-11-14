@@ -13,6 +13,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### DC-EPMS-064 RESOLVED — phone layout (2026-11-14, `b101d1b`)
+
+- Target: iPhone 16 Pro Max and 17 Pro Max, 440 x 956 CSS px, safe
+  area 62 px top / 34 px bottom in portrait (third-party device
+  tables; not measured on a device).
+- Below 900 px: drawer navigation (`core/mobile_nav.js`), compact
+  header (logo + health dots), one scrolling column with the rail
+  under the view, safe-area padding (`viewport-fit=cover`), `100dvh`,
+  44 px nav targets, 16 px inputs, pinch zoom kept. SLD and P&ID keep
+  an 860 px drawing and pan sideways. Desktop unchanged.
+- Checked with headless Chrome at 440 x 956: no horizontal page
+  overflow on 22 views; Power Controls operable by tap, GEN-N1-001
+  PASS. NOT checked on a real iPhone (Safari rendering may differ).
+- Tests +11 vitest. Floors: vitest 742 / 38 files.
+
+### DC-EPMS-068 lote A — runtime switch (2026-11-14, `d90f4ef`)
+
+- `DC_EPMS_SITE_MODEL`: unset / `legacy` (default, the public host) or
+  `v2`. Unknown values raise `SiteModelConfigError` (fail closed).
+- v2 is refused when stale (rebuild from `site_model.yml` +
+  `power_plant.yml` differs from the committed file) or when the
+  validator reports a problem.
+- `GET /api/site/model` reports variant, file, components, retired
+  ids present. Boot log: `model=legacy|v2`.
+- Under v2 the backend boots with 177 components and the main routes
+  answer 200. Consumers on retired ids are NOT ported (lote B on).
+- Tests +20 pytest. Floors (Linux, Python 3.13): pytest 1858 passed,
+  3 pre-existing `test_optimizer` errors.
+
 ### Deploy — public release live on Render (2026-11-14)
 
 - `master` fast-forwarded `2fa40c7..941f002` and pushed with

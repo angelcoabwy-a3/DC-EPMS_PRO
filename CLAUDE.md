@@ -95,8 +95,22 @@ RELEASE R3-C (2026-11-14, same branch): DC-EPMS-066 + -067 RESOLVED
   Operator design docs live in docs/design/operator/. Proposed repo
   restructure mapped, not moved (docs/design/REPO_STRUCTURE_MAPPING.md).
   Floors: pytest 1826 / vitest 728 (37 files).
-NEXT: operator applies the bundle, sets env on the host, eyeballs the
-  live views (S-VISUAL-01). Then R1.1 / R1.2 / R2-B per ROADMAP v11.23.
+GO-LIVE (2026-11-14): master 696b66c pushed by the operator; Render
+  dc-epms-pro.onrender.com runs it with the login gate ON (anonymous
+  /api/* -> "authentication required"). DC-EPMS-071 RESOLVED (public
+  /api/health reports absent subsystems as "disabled", no loopback
+  URL). Windows floors: pytest 1832 passed / 8 skipped, vitest 728.
+DC-EPMS-064 RESOLVED (2026-11-14, b101d1b): phone layout below 900 px
+  (drawer nav core/mobile_nav.js, safe-area, 100dvh, 44 px targets),
+  checked headless at 440 x 956 (iPhone 16 / 17 Pro Max); NOT yet on a
+  real iPhone. Desktop unchanged.
+DC-EPMS-068 lote A (2026-11-14, d90f4ef): DC_EPMS_SITE_MODEL runtime
+  switch, legacy default; v2 verified (rebuild equality + validator)
+  before load, unknown value fails closed; GET /api/site/model. NOT
+  for the public host yet. Floors (Linux): pytest 1858 / vitest 742
+  (38 files). Next: lote B = backend consumers on retired ids.
+NEXT: operator applies the bundle, checks the phone view on the
+  iPhone, then GO for DC-EPMS-068 lote B.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```

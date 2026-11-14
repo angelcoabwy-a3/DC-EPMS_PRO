@@ -1,7 +1,8 @@
 # DC-EPMS-068: migration of the site model to the closed power design
 
 Status: **IN PROGRESS** (2026-11-14). Steps 1, 2, 4 (specification) and
-5 of the operator plan are done; steps 3, 4 (runtime), 6 and 7 are not.
+5 of the operator plan are done, plus the runtime switch (lote A);
+steps 3, 4 (runtime), 6 and 7 are not.
 
 ## What exists now
 
@@ -92,9 +93,13 @@ Per file (backend, frontend, config):
 
 ## Order of the remaining work (estimates, not commitments)
 
-1. **Runtime switch behind a flag**: `DC_EPMS_SITE_MODEL=v2` in
-   `get_site_model`, legacy stays default. Lets every consumer be
-   ported and tested one at a time. 2-3 h.
+1. **Runtime switch behind a flag**: DONE (lote A, 2026-11-14).
+   `DC_EPMS_SITE_MODEL` = unset / `legacy` (default) or `v2`; any other
+   value fails closed. v2 loads only if rebuilding it from
+   `site_model.yml` + `power_plant.yml` gives the committed file and
+   the validator is clean. `GET /api/site/model` reports the variant.
+   Under v2 the process boots (177 components) and the main routes
+   answer 200; consumers on retired ids are still unported.
 2. **Backend consumers** (13 files): LOTO auditor, site routes,
    telemetry simulator / proto adapter, copilot and agents (they quote
    ids in prompts and tools), CMMS seeds, ASCO HAL (no ATS in v2; the
