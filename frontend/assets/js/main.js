@@ -63,6 +63,7 @@ import { armAuthGate } from './core/auth_gate.js';
 import { startQkdGate } from './core/qkd_gate.js';
 import { initBootstrap, navigateToCurrentRoute } from './core/bootstrap.js';
 import { initDemoMode } from './core/demo.js';
+import { initMobileNav } from './core/mobile_nav.js';
 
 // Telemetry engine flag. core/telemetry_engine.js owns the SSE; this
 // stays a flag purely as a console kill-switch for debugging.
@@ -77,6 +78,8 @@ window.__epms = Object.freeze({
 });
 
 initRouter();
+// DC-EPMS-064: phone layout drawer (iPhone 16 / 17 Pro Max, 440 px)
+initMobileNav();
 initStaleness();
 initActivityStrip();
 initShiSparkline();

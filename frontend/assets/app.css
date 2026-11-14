@@ -10472,3 +10472,138 @@ table.opt-votes td {
 .dvc-floor dt { color: var(--text-muted); white-space: nowrap; }
 .dvc-floor dd { margin: 0; font-family: var(--font-mono); color: var(--text); text-align: right; }
 .dvc-floor-note { display: block; color: var(--text-dim); font-family: inherit; }
+
+/* ══════════════════════════════════════════════════════════════════
+   DC-EPMS-064 — phone layout (iPhone 16 / 17 Pro Max: 440 x 956 CSS px,
+   safe area 62 px top / 34 px bottom in portrait). Below 900 px:
+   single column, nav as an off-canvas drawer (core/mobile_nav.js),
+   the right rail stacks under the view, safe-area padding, 44 px
+   touch targets, 16 px inputs (no iOS focus zoom). Desktop untouched.
+   ══════════════════════════════════════════════════════════════════ */
+.nav-toggle,
+.nav-backdrop { display: none; }
+
+@media (max-width: 900px) {
+    html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+    body { height: 100dvh; }
+
+    .app-shell {
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        height: 100dvh;
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+    }
+
+    /* Header: toggle + logo + compact health dots. */
+    .app-header {
+        gap: 8px;
+        padding: calc(6px + env(safe-area-inset-top)) 12px 6px;
+        min-height: 52px;
+        flex-wrap: nowrap;
+        min-width: 0;
+    }
+    .app-header .facility-info { display: none; }
+    .app-header .logo { font-size: 14px; white-space: nowrap; }
+    .app-header .status-pill { padding: 6px; gap: 0; }
+    .app-header .status-pill .lbl { display: none; }
+    .app-header .status-pill .dot { width: 9px; height: 9px; }
+    .header-icon-btn { width: 36px; height: 36px; margin-left: 2px; flex: 0 0 auto; }
+    #epms-shortcuts-toggle { display: none; } /* no hardware keyboard on a phone */
+    .app-header .spacer { min-width: 0; }
+    .app-header { overflow: hidden; }
+
+    .nav-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        width: 44px;
+        height: 44px;
+        margin-left: -6px;
+        background: transparent;
+        border: 0;
+        border-radius: 8px;
+        color: var(--text);
+        cursor: pointer;
+    }
+    .nav-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .activity-strip { padding: 0 12px; gap: 16px; min-height: 32px; }
+
+    /* Main: one scrolling column; the rail follows the view. */
+    .app-main {
+        display: block;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+    .panel-main, .panel-side { overflow: visible; padding: 12px; min-width: 0; }
+    .panel-side { border-left: 0; border-top: 1px solid var(--border); }
+
+    /* Nav: off-canvas drawer. */
+    .panel-nav {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 1200;
+        width: min(84vw, 320px);
+        padding: calc(12px + env(safe-area-inset-top)) 12px calc(12px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));
+        overflow-y: auto;
+        transform: translateX(-105%);
+        transition: transform 0.22s ease;
+        box-shadow: none;
+        display: flex;
+        flex-direction: column;
+    }
+    .app-shell.nav-open .panel-nav {
+        transform: translateX(0);
+        box-shadow: 8px 0 24px rgba(0, 0, 0, 0.5);
+    }
+    .nav-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1100;
+        background: rgba(0, 0, 0, 0.55);
+    }
+    .app-shell.nav-open .nav-backdrop { display: block; }
+    .nav-item { min-height: 44px; font-size: 14px; padding: 10px 12px; }
+    .nav-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+    .app-footer {
+        padding: 6px 12px calc(6px + env(safe-area-inset-bottom));
+        min-height: 28px;
+        flex-wrap: wrap;
+    }
+    .app-footer [data-demo-chrome="footer-telemetry"] { display: none; }
+
+    /* Content never wider than the screen. */
+    .view { min-width: 0; max-width: 100%; }
+    .view img, .view svg, .view canvas, .view video { max-width: 100%; }
+    .view table { display: block; max-width: 100%; overflow-x: auto; }
+    .view pre { white-space: pre-wrap; word-break: break-word; }
+    .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+
+    /* Touch targets and no iOS zoom on focus. */
+    .btn, .view button, .view select { min-height: 40px; }
+    input, select, textarea { font-size: 16px; }
+
+    /* Toolbars and legends wrap instead of running off-screen. */
+    .pid-action-bar { flex-wrap: wrap; gap: 8px; }
+    .pid-legend { flex-wrap: wrap; row-gap: 4px; }
+    .pid-heat-controls { flex-wrap: wrap; }
+    /* SLD / P&ID: keep a readable drawing, pan sideways (pinch zoom stays on). */
+    .pid-canvas { padding: 8px; overscroll-behavior-x: contain; }
+    .pid-canvas .pid-svg { min-width: 860px; min-height: 0; }
+
+    /* Multi-column view layouts collapse to one column. */
+    .maintenance-kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .maintenance-split { grid-template-columns: minmax(0, 1fr); height: auto; }
+    .loto-action-bar { flex-wrap: wrap; }
+    .loto-action-bar > div { grid-template-columns: minmax(0, 1fr) !important; width: 100%; }
+}
+
+@media (max-width: 900px) and (prefers-reduced-motion: reduce) {
+    .panel-nav { transition: none; }
+}
