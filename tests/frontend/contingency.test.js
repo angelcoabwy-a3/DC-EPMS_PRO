@@ -29,7 +29,7 @@ describe('N1 — steadyStatePower()', () => {
 
     it('utility loss is ABSORBED degraded: the chain rides the genset', () => {
         const s = steadyStatePower(new Set(['util_a']));
-        expect(s.get('ats_a').alive).toBe(true);
+        expect(s.get('mvtc_a').alive).toBe(true);
         expect(s.get('ups_a').alive).toBe(true);
         expect(s.get('ups_a').energizedBy).toBe('genset');
         expect(s.get('ups_a').degraded).toBe(true);
@@ -38,8 +38,8 @@ describe('N1 — steadyStatePower()', () => {
         expect(s.get('ups_b').degraded).toBe(false);
     });
 
-    it('ATS loss is NOT absorbed: battery holdup is excluded from sustained survival', () => {
-        const s = steadyStatePower(new Set(['ats_a']));
+    it('MV transfer controller loss is NOT absorbed: battery holdup is excluded from sustained survival', () => {
+        const s = steadyStatePower(new Set(['mvtc_a']));
         expect(s.get('ups_a').alive).toBe(false);
         expect(s.get('rpp_a1').alive).toBe(false);
         expect(s.get('ddu_a6').alive).toBe(false);
@@ -136,16 +136,16 @@ describe('N1 — steadyStateCooling()', () => {
 //  N-1 sweeps
 // ════════════════════════════════════════════════════════════════
 describe('N1 — n1Power() / n1Cooling() sweeps', () => {
-    it('classifies utility as warning (degraded survivors), ATS as critical', () => {
+    it('classifies utility as warning (degraded survivors), MV transfer controller as critical', () => {
         const a = n1Power();
         expect(a.get('util_a').tone).toBe('warning');
         // The de-energized intermediate (xfmr) is REPORTED in lost,
         // but with zero load loss the tone stays warning.
         expect(a.get('util_a').lost).toEqual(['xfmr_a']);
         expect(a.get('util_a').degraded.length).toBeGreaterThan(0);
-        expect(a.get('ats_a').tone).toBe('critical');
-        expect(a.get('ats_a').lost).toContain('ups_a');
-        expect(a.get('ats_a').lost).toContain('ddu_a1');
+        expect(a.get('mvtc_a').tone).toBe('critical');
+        expect(a.get('mvtc_a').lost).toContain('ups_a');
+        expect(a.get('mvtc_a').lost).toContain('ddu_a1');
         // Leaf DDU failure hurts nobody else.
         expect(a.get('ddu_a1').tone).toBe('ok');
         // Battery is not a candidate (already excluded from survival).
@@ -185,7 +185,7 @@ describe('N1 — overlay on the Power SLD', () => {
         mountView();
         setN1(true);
         expect(n1Overlay.isAttached()).toBe(true);
-        const atsBadge = document.querySelector('[data-n1-badge="ats_a"]');
+        const atsBadge = document.querySelector('[data-n1-badge="mvtc_a"]');
         expect(atsBadge).not.toBeNull();
         expect(atsBadge.getAttribute('data-tone')).toBe('critical');
         expect(atsBadge.textContent).toMatch(/^N-1:\d+$/);

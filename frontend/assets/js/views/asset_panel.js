@@ -232,8 +232,9 @@ function _liveSampleFor(id, meta) {
         if (!node.alive) return 0;
         return 1800 + (Math.random() - 0.5) * 12;
     }
-    // ATS pos: encoded as 1=primary, 2=transferring, 3=secondary
-    if (node.type === 'ats') {
+    // Transfer position (MV transfer controller / legacy ATS):
+    // 1=primary, 2=transferring, 3=secondary
+    if (node.type === 'mvtc' || node.type === 'ats') {
         if (node.transferring)     return 2;
         return node.ats_pos === 'primary' ? 1 : 3;
     }

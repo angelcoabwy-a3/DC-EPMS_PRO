@@ -4,7 +4,7 @@
  * coverage (it had none), including the NEW genset NFPA 110 start
  * sequence and the UPS IEC 62040-3 operating-mode field.
  *
- * Fake timers drive the ATS 2 s transfer gap, the 0.8 s genset
+ * Fake timers drive the MV transfer 2 s transfer gap, the 0.8 s genset
  * crank, the 1.2 s cooldown and the 1 %/s battery decay.
  * ════════════════════════════════════════════════════════════════ */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -80,10 +80,10 @@ describe('S2 — Building D design chain in the DAG (MVP S2-C)', () => {
 });
 
 describe('B5 — power_grid genset NFPA 110 sequence', () => {
-    it('utility loss starts the sequence: ATS in transfer, genset CRANKING', () => {
+    it('utility loss starts the sequence: MV transfer controller in transfer, genset CRANKING', () => {
         tripNode('util_a');
         const g = getGridState();
-        expect(g.ats_a.transferring).toBe(true);
+        expect(g.mvtc_a.transferring).toBe(true);
         expect(g.genset_a.state).toBe('cranking');
         expect(g.genset_a.running).toBe(false);
         // UPS rides the gap on battery (IEC 62040-3 battery mode).
@@ -92,19 +92,19 @@ describe('B5 — power_grid genset NFPA 110 sequence', () => {
         expect(g.ups_a.alive).toBe(true);   // load never drops
     });
 
-    it('crank completes at 0.8 s; ATS closes onto the genset at 2 s', () => {
+    it('crank completes at 0.8 s; 52-GM closes onto the generator bus at 2 s', () => {
         tripNode('util_a');
         vi.advanceTimersByTime(800);
         let g = getGridState();
         expect(g.genset_a.state).toBe('running');
         expect(g.genset_a.running).toBe(true);
-        expect(g.ats_a.transferring).toBe(true);   // still inside the gap
+        expect(g.mvtc_a.transferring).toBe(true);   // still inside the gap
 
         vi.advanceTimersByTime(1200);   // t = 2.0 s
         g = getGridState();
-        expect(g.ats_a.transferring).toBe(false);
-        expect(g.ats_a.ats_pos).toBe('secondary');
-        expect(g.ats_a.alive).toBe(true);
+        expect(g.mvtc_a.transferring).toBe(false);
+        expect(g.mvtc_a.ats_pos).toBe('secondary');
+        expect(g.mvtc_a.alive).toBe(true);
         expect(g.ups_a.on_battery).toBe(false);
         expect(g.ups_a.mode).toBe('double_conversion');
         expect(g.ups_a.energized_by).toBe('genset');
@@ -117,7 +117,7 @@ describe('B5 — power_grid genset NFPA 110 sequence', () => {
         restoreNode('util_a');
         vi.advanceTimersByTime(1500);    // back-transfer completes
         let g = getGridState();
-        expect(g.ats_a.ats_pos).toBe('primary');
+        expect(g.mvtc_a.ats_pos).toBe('primary');
         expect(g.genset_a.running).toBe(false);
         expect(g.genset_a.state).toBe('cooldown');
 
@@ -141,20 +141,20 @@ describe('B5 — power_grid genset NFPA 110 sequence', () => {
 
 describe('B5 — power_grid UPS battery holdup + decay', () => {
     it('decays SOC at 1 %/s while on battery and recovers mode on restore', () => {
-        tripNode('ats_a');               // ATS dead -> UPS on battery for good
+        tripNode('mvtc_a');               // transfer controller dead -> UPS on battery for good
         let g = getGridState();
         expect(g.ups_a.mode).toBe('battery');
         vi.advanceTimersByTime(3000);
         g = getGridState();
         expect(g.batt_a.soc).toBe(97);
-        restoreNode('ats_a');
+        restoreNode('mvtc_a');
         g = getGridState();
         expect(g.ups_a.mode).toBe('double_conversion');
         expect(g.ups_a.on_battery).toBe(false);
     });
 
     it('UPS goes dark (mode off) when the battery is exhausted', () => {
-        tripNode('ats_a');
+        tripNode('mvtc_a');
         tripNode('batt_a');
         const g = getGridState();
         expect(g.ups_a.alive).toBe(false);
@@ -170,6 +170,6 @@ describe('B5 — power_grid UPS battery holdup + decay', () => {
         expect(g.genset_a.state).toBe('standby');
         expect(g.ups_a.mode).toBe('double_conversion');
         expect(g.batt_a.soc).toBe(100);
-        expect(g.ats_a.ats_pos).toBe('primary');
+        expect(g.mvtc_a.ats_pos).toBe('primary');
     });
 });

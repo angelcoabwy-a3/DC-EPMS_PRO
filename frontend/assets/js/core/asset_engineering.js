@@ -314,14 +314,19 @@ function _gensetSection(node, atsNode) {
 }
 
 // ── ATS: N/E source position mimic ────────────────────────────────
-function _atsSection(node) {
+function _atsSection(node, mv = false) {
     const pos = node?.transferring ? 'transfer' : (node?.ats_pos === 'secondary' ? 'emergency' : 'normal');
-    return `<div class="eng-section" data-eng="ats">
-        <div class="sld-info-eyebrow">TRANSFER POSITION · ASCO 7000</div>
+    // mv: closed-design MV transfer controller (52-U / 52-GM, 13.8 kV,
+    // open transition, vendor not selected). Legacy: 480 V ASCO ATS.
+    const eyebrow = mv ? 'MV TRANSFER · 52-U / 52-GM · 13.8 kV' : 'TRANSFER POSITION · ASCO 7000';
+    const srcN = mv ? '52-U · UTILITY' : 'N · UTILITY';
+    const srcE = mv ? '52-GM · GEN BUS' : 'E · GENSET';
+    return `<div class="eng-section" data-eng="${mv ? 'mvtc' : 'ats'}">
+        <div class="sld-info-eyebrow">${eyebrow}</div>
         <div class="eng-ats">
-            <span class="eng-ats-src${pos === 'normal' ? ' eng-on' : ''}">N · UTILITY</span>
+            <span class="eng-ats-src${pos === 'normal' ? ' eng-on' : ''}">${srcN}</span>
             <span class="eng-ats-sw${pos === 'transfer' ? ' eng-ats-gap' : ''}">${pos === 'transfer' ? '⇄ IN TRANSFER' : '→ LOAD'}</span>
-            <span class="eng-ats-src${pos === 'emergency' ? ' eng-on' : ''}">E · GENSET</span>
+            <span class="eng-ats-src${pos === 'emergency' ? ' eng-on' : ''}">${srcE}</span>
         </div>
         ${pos === 'transfer' ? '<div class="eng-warn">Load gap — open transition (2 s sim / 10 s NFPA 110 nameplate)</div>' : ''}
         ${_origin('Live: position + transfer state from grid DAG')}
@@ -442,9 +447,13 @@ export function engineeringSection(id, grid, meta, extras = {}) {
         return _upsSection({ ...(node || {}), soc: battNode?.soc ?? null }, extras.qStates || null);
     }
     if (id.startsWith('genset_')) {
-        const atsNode = grid?.['ats_' + id.slice(7)];
+        // closed design: the generator bus feeds the MV transfer
+        // controller (52-GM); legacy fixtures still name it ats_<p>.
+        const sfx = id.slice(7);
+        const atsNode = grid?.['mvtc_' + sfx] || grid?.['ats_' + sfx];
         return _gensetSection(node, atsNode);
     }
+    if (id.startsWith('mvtc_')) return _atsSection(node, true);
     if (id.startsWith('ats_')) return _atsSection(node);
     if (id.startsWith('xfmr_')) return _xfmrSection(node);
     if (id.startsWith('batt_')) return _battSection(node);

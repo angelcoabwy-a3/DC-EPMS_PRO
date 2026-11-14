@@ -30,12 +30,12 @@
  *      Click the action-bar button -> a 3-step animated sequence
  *      runs over ~10s using state.js as the source of truth:
  *        t=0     util_a + xfmr_a -> COLD (gray)
- *                ats_a transferring (amber pulse)
+ *                mvtc_a transferring (amber pulse)
  *                ups_a -> ON BATTERY (amber)
  *                batt_a SOC ticks down 1 %/s from 100 %
  *        t=4s    genset_a spins up (amber pulse, sld-line-batt)
- *        t=8s    ats_a connects to genset (amber line genset_a-ats_a
- *                animated; ats_a-ups_a now amber instead of cyan)
+ *        t=8s    mvtc_a closes 52-GM (amber line genset_a-mvtc_a
+ *                animated; mvtc_a-ups_a now amber instead of cyan)
  *                ups_a no longer on battery; batt SOC stops decay
  *        Reset  button restores nominal state instantly.
  *
@@ -57,7 +57,7 @@ const NODE_CATALOGUE = {
     // Path A
     util_a:    { type: 'util',     path: 'A' },
     xfmr_a:    { type: 'xfmr',     path: 'A' },
-    ats_a:     { type: 'ats',      path: 'A' },
+    mvtc_a:    { type: 'mvtc',     path: 'A' },   // MV transfer controller (DC-EPMS-068)
     genset_a:  { type: 'genset',   path: 'A' },
     ups_a:     { type: 'ups',      path: 'A' },
     batt_a:    { type: 'batt',     path: 'A' },
@@ -67,7 +67,7 @@ const NODE_CATALOGUE = {
     // Path B
     util_b:    { type: 'util',     path: 'B' },
     xfmr_b:    { type: 'xfmr',     path: 'B' },
-    ats_b:     { type: 'ats',      path: 'B' },
+    mvtc_b:    { type: 'mvtc',     path: 'B' },   // MV transfer controller (DC-EPMS-068)
     genset_b:  { type: 'genset',   path: 'B' },
     ups_b:     { type: 'ups',      path: 'B' },
     batt_b:    { type: 'batt',     path: 'B' },
@@ -101,18 +101,18 @@ const DRILL_TARGETS = {
 const LINE_CATALOGUE = {
     // Path A
     'util_a-xfmr_a':       { path: 'A', kind: 'flow' },
-    'xfmr_a-ats_a':        { path: 'A', kind: 'flow' },
-    'genset_a-ats_a':      { path: 'A', kind: 'cold' },          // standby until utility loss
-    'ats_a-ups_a':         { path: 'A', kind: 'flow' },
+    'xfmr_a-mvtc_a':       { path: 'A', kind: 'flow' },
+    'genset_a-mvtc_a':     { path: 'A', kind: 'cold' },          // standby until utility loss
+    'mvtc_a-ups_a':        { path: 'A', kind: 'flow' },
     'batt_a-ups_a':        { path: 'A', kind: 'battery-idle' },
     'ups_a-rpp_a1':        { path: 'A', kind: 'flow' },
     'rpp_a1-rpp_a2':       { path: 'A', kind: 'flow' },
     'rpp_a2-busway_a':     { path: 'A', kind: 'flow' },
     // Path B
     'util_b-xfmr_b':       { path: 'B', kind: 'flow' },
-    'xfmr_b-ats_b':        { path: 'B', kind: 'flow' },
-    'genset_b-ats_b':      { path: 'B', kind: 'cold' },
-    'ats_b-ups_b':         { path: 'B', kind: 'flow' },
+    'xfmr_b-mvtc_b':       { path: 'B', kind: 'flow' },
+    'genset_b-mvtc_b':     { path: 'B', kind: 'cold' },
+    'mvtc_b-ups_b':        { path: 'B', kind: 'flow' },
     'batt_b-ups_b':        { path: 'B', kind: 'battery-idle' },
     'ups_b-rpp_b1':        { path: 'B', kind: 'flow' },
     'rpp_b1-rpp_b2':       { path: 'B', kind: 'flow' },
@@ -228,9 +228,9 @@ function _setSimStatus(text, tone) {
 
 function _runSimulation() {
     // Trip util_a — the DAG engine cascades:
-    //   util_a -> xfmr_a (dies) -> ats_a (2s transfer, genset_a starts)
-    //                                -> ups_a goes on battery during gap
-    //                                -> ats_a back online via genset
+    //   util_a -> xfmr_a (dies) -> mvtc_a (52-U opens, 2 s gap, the
+    //             generator bus starts) -> ups_a on battery during the gap
+    //             -> 52-GM closes, mvtc_a back online via the generators
     tripNode('util_a');
     _setSimStatus('TRIP injected: util_a · cascading through DAG', 'warn');
     if (_btnReset) _btnReset.removeAttribute('hidden');

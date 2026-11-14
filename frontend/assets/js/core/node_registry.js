@@ -38,13 +38,17 @@
 
 /** @type {NodeEntry[]} */
 const ENTRIES = [
-    // ── Phase 1 power chain — path A (480 VAC, 3-phase) ──────────
+    // ── Phase 1 power chain — path A (closed design, DC-EPMS-068) ──
     { id: 'util_a',   label: 'UTILITY A',            type: 'util',   phase: 1, chain: 'power',   topo: 'utility_north', graph: ['utility_feed_a'],              channels: ['util_a', 'utility_north'] },
-    { id: 'xfmr_a',   label: 'XFMR A',               type: 'xfmr',   phase: 1, chain: 'power',   topo: 'xfmr_a',        graph: ['xfmr_a'],                      channels: ['xfmr_a'] },
-    { id: 'genset_a', label: 'GENSET A',             type: 'genset', phase: 1, chain: 'power',   topo: null,            graph: ['genset_a_01', 'genset_a_02'],  channels: ['genset_a'] },
-    { id: 'par_bus_a', label: 'PARALLELING BUS · N+1', type: 'parbus', phase: 1, chain: 'power', topo: null,            graph: [],                              channels: [] },
-    { id: 'ats_a',    label: 'ATS-A',                type: 'ats',    phase: 1, chain: 'power',   topo: null,            graph: ['ats_a'],                       channels: ['ats_a'] },
-    { id: 'ups_a',    label: 'UPS GALAXY VX A',      type: 'ups',    phase: 1, chain: 'power',   topo: 'ups_a',         graph: ['ups_a'],                       channels: ['ups_a'] },
+    { id: 'xfmr_a',   label: 'XFMR A · 27.5/13.8 kV', type: 'xfmr',   phase: 1, chain: 'power',   topo: 'xfmr_a',        graph: ['xfmr_a', 'mv_xfmr_a'],       channels: ['xfmr_a', 'mv_xfmr_a'] },
+    { id: 'genset_a', label: 'GEN BUS A · 9 × 2.75 MW', type: 'genset', phase: 1, chain: 'power', topo: null,            graph: ['genset_a_01', 'genset_a_02', 'genset_a_03', 'genset_a_04', 'genset_a_05', 'genset_a_06', 'genset_a_07', 'genset_a_08', 'genset_a_09'], channels: ['genset_a'] },
+    { id: 'par_bus_a', label: 'PARALLELING BUS · 13.8 kV', type: 'parbus', phase: 1, chain: 'power', topo: null,        graph: ['gen_bus_a'],                 channels: [] },
+    // MV transfer controller (52-U / 52-GM). graph lists the closed-design
+    // id first and the legacy 480 V ATS second (DC-EPMS-068).
+    { id: 'mvtc_a',   label: 'MV TRANSFER A',        type: 'mvtc',   phase: 1, chain: 'power',   topo: null,            graph: ['mvtc_a', 'ats_a'],           channels: ['mvtc_a', 'ats_a'] },
+    // UPS bank: 8 x Trinergy 2500. The ups_a prefix also matches the
+    // v2 block channels ups_a_NN (prefix discipline, matchesChannel).
+    { id: 'ups_a',    label: 'UPS BANK A · 8 × TRINERGY', type: 'ups', phase: 1, chain: 'power',   topo: 'ups_a',         graph: ['ups_a', 'ups_a_01', 'ups_a_02', 'ups_a_03', 'ups_a_04', 'ups_a_05', 'ups_a_06', 'ups_a_07', 'ups_a_08'], channels: ['ups_a'] },
     { id: 'batt_a',   label: 'BATTERY A',            type: 'batt',   phase: 1, chain: 'power',   topo: 'ups_a',         graph: [],                              channels: ['batt_a'] },
     { id: 'rpp_a1',   label: 'RPP / PDU A',          type: 'rpp',    phase: 1, chain: 'power',   topo: 'rpp_a1',        graph: ['rpp_a_01'],                    channels: ['rpp_a1'] },
     { id: 'rpp_a2',   label: 'RPP / PDU A2',         type: 'rpp',    phase: 1, chain: 'power',   topo: 'rpp_a2',        graph: ['rpp_a_02'],                    channels: ['rpp_a2'] },
@@ -52,11 +56,15 @@ const ENTRIES = [
 
     // ── Phase 1 power chain — path B (2N mirror) ─────────────────
     { id: 'util_b',   label: 'UTILITY B',            type: 'util',   phase: 1, chain: 'power',   topo: 'utility_south', graph: ['utility_feed_b'],              channels: ['util_b', 'utility_south'] },
-    { id: 'xfmr_b',   label: 'XFMR B',               type: 'xfmr',   phase: 1, chain: 'power',   topo: 'xfmr_b',        graph: ['xfmr_b'],                      channels: ['xfmr_b'] },
-    { id: 'genset_b', label: 'GENSET B',             type: 'genset', phase: 1, chain: 'power',   topo: null,            graph: ['genset_b_01', 'genset_b_02'],  channels: ['genset_b'] },
-    { id: 'par_bus_b', label: 'PARALLELING BUS · N+1', type: 'parbus', phase: 1, chain: 'power', topo: null,            graph: [],                              channels: [] },
-    { id: 'ats_b',    label: 'ATS-B',                type: 'ats',    phase: 1, chain: 'power',   topo: null,            graph: ['ats_b'],                       channels: ['ats_b'] },
-    { id: 'ups_b',    label: 'UPS GALAXY VX B',      type: 'ups',    phase: 1, chain: 'power',   topo: 'ups_b',         graph: ['ups_b'],                       channels: ['ups_b'] },
+    { id: 'xfmr_b',   label: 'XFMR B · 27.5/13.8 kV', type: 'xfmr',   phase: 1, chain: 'power',   topo: 'xfmr_b',        graph: ['xfmr_b', 'mv_xfmr_b'],       channels: ['xfmr_b', 'mv_xfmr_b'] },
+    { id: 'genset_b', label: 'GEN BUS B · 9 × 2.75 MW', type: 'genset', phase: 1, chain: 'power', topo: null,            graph: ['genset_b_01', 'genset_b_02', 'genset_b_03', 'genset_b_04', 'genset_b_05', 'genset_b_06', 'genset_b_07', 'genset_b_08', 'genset_b_09'], channels: ['genset_b'] },
+    { id: 'par_bus_b', label: 'PARALLELING BUS · 13.8 kV', type: 'parbus', phase: 1, chain: 'power', topo: null,        graph: ['gen_bus_b'],                 channels: [] },
+    // MV transfer controller (52-U / 52-GM). graph lists the closed-design
+    // id first and the legacy 480 V ATS second (DC-EPMS-068).
+    { id: 'mvtc_b',   label: 'MV TRANSFER B',        type: 'mvtc',   phase: 1, chain: 'power',   topo: null,            graph: ['mvtc_b', 'ats_b'],           channels: ['mvtc_b', 'ats_b'] },
+    // UPS bank: 8 x Trinergy 2500. The ups_b prefix also matches the
+    // v2 block channels ups_b_NN (prefix discipline, matchesChannel).
+    { id: 'ups_b',    label: 'UPS BANK B · 8 × TRINERGY', type: 'ups', phase: 1, chain: 'power',   topo: 'ups_b',         graph: ['ups_b', 'ups_b_01', 'ups_b_02', 'ups_b_03', 'ups_b_04', 'ups_b_05', 'ups_b_06', 'ups_b_07', 'ups_b_08'], channels: ['ups_b'] },
     { id: 'batt_b',   label: 'BATTERY B',            type: 'batt',   phase: 1, chain: 'power',   topo: 'ups_b',         graph: [],                              channels: ['batt_b'] },
     { id: 'rpp_b1',   label: 'RPP / PDU B',          type: 'rpp',    phase: 1, chain: 'power',   topo: 'rpp_b1',        graph: ['rpp_b_01'],                    channels: ['rpp_b1'] },
     { id: 'rpp_b2',   label: 'RPP / PDU B2',         type: 'rpp',    phase: 1, chain: 'power',   topo: 'rpp_b2',        graph: ['rpp_b_02'],                    channels: ['rpp_b2'] },

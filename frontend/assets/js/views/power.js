@@ -29,8 +29,8 @@
 
 import { registerRoute } from '../core/router.js';
 import { onHermesStream, getTopologyState, writeBmsTag } from '../services/api.js';
-import { subscribe, setState } from '../core/state.js';
-import { toggleTrip, restoreAll } from '../core/power_grid.js';
+import { subscribe, setState, getState } from '../core/state.js';
+import { toggleTrip, restoreAll, setUnitsOut, getTopology, PHASE1 } from '../core/power_grid.js';
 import { escapeHTML } from '../core/sanitize.js';
 import {
     severityFromChannels, symbol, wire, sparkPoints, sparkPolyline,
@@ -124,10 +124,12 @@ function _applyTopology(data) {
     }
 
     // ATS / genset state derived from UPS battery-on-load.
+    // MV transfer controller / generator bus state derived from UPS
+    // battery-on-load (52-U closed = UTILITY, 52-GM closed = GENERATORS).
     const atsA = (upa && upa.metrics.battery_on_load) ? 'GENSET' : 'UTILITY';
     const atsB = (upb && upb.metrics.battery_on_load) ? 'GENSET' : 'UTILITY';
-    _setMetric('ats_a-pos', atsA);
-    _setMetric('ats_b-pos', atsB);
+    _setMetric('mvtc_a-pos', atsA === 'GENSET' ? '52-GM · GENERATORS' : '52-U · UTILITY');
+    _setMetric('mvtc_b-pos', atsB === 'GENSET' ? '52-GM · GENERATORS' : '52-U · UTILITY');
     _setMetric('genset_a-state', atsA === 'GENSET' ? 'RUNNING' : 'STANDBY');
     _setMetric('genset_b-state', atsB === 'GENSET' ? 'RUNNING' : 'STANDBY');
 
@@ -259,7 +261,9 @@ const _FLAT = {
 };
 
 // Node types that are operable breakers — clickable in the control plane.
-const _BREAKER_TYPES = new Set(['ats', 'rpp']);
+// The MV transfer controller is NOT actuated from the SLD: supervised
+// switching lives in Power Controls (select-before-operate, ledger).
+const _BREAKER_TYPES = new Set(['rpp']);
 
 // One equipment node: kit symbol + name (above) + metric (below).
 // opts.breaker=false suppresses the control plane (Phase 2 design
@@ -292,10 +296,10 @@ function _flatPath(suffix, S, energized) {
     const battY = S + 96;
     // ── orthogonal wiring (spine + branches) ──
     const wires = [
-        wire([[T.util + 40, S], [T.ats - 40, S]], cls),          // utility spine -> ATS
+        wire([[T.util + 40, S], [T.ats - 40, S]], cls),          // utility spine -> MV transfer (52-U)
         wire([[T.gen, genY + 23], [T.gen, busY - 5]], cls),       // genset -> paralleling bus
         wire([[T.gen, busY + 5], [T.gen, S]], 'pf-cold'),         // bus -> spine (standby)
-        wire([[T.ats + 40, S], [T.ups - 40, S]], cls),            // ATS -> UPS
+        wire([[T.ats + 40, S], [T.ups - 40, S]], cls),            // MV transfer -> UPS bank (via MV swgr + unit subs)
         wire([[T.ups - 40, S], [T.ups + 40, S]], cls),            // through UPS
         wire([[T.ups + 40, S], [T.pdu - 40, S]], cls),            // UPS -> PDU
         wire([[T.ups, battY - 23], [T.ups, S + 23]], cls),        // battery -> UPS
@@ -306,14 +310,17 @@ function _flatPath(suffix, S, energized) {
             T.util, S, [{ key: 'util_' + suffix + '-kv', text: '27.5 kV' },
                         { key: 'util_' + suffix + '-kw', text: '— kW' }]),
         _flatNode('xfmr_' + suffix, 'xfmr', 'XFMR ' + suffix.toUpperCase(),
-            T.xfmr, S, [{ key: 'xfmr_' + suffix + '-load', text: '— kVA' }]),
-        _flatNode('genset_' + suffix, 'genset', 'GENSET ' + suffix.toUpperCase(),
+            T.xfmr, S, [{ key: 'xfmr_' + suffix + '-load', text: '— kVA' },
+                        { key: 'xfmr_' + suffix + '-ratio', text: '27.5/13.8 kV' }]),
+        _flatNode('genset_' + suffix, 'genset',
+            'GEN BUS ' + suffix.toUpperCase() + ` · ${PHASE1.gen.units} × ${PHASE1.gen.unitKw / 1000} MW`,
             T.gen, genY, [{ key: 'genset_' + suffix + '-state', text: 'STANDBY' }]),
-        _flatNode('par_bus_' + suffix, 'parbus', 'PARALLELING BUS · N+1',
+        _flatNode('par_bus_' + suffix, 'parbus', 'PARALLELING BUS · 13.8 kV · ANSI 25',
             T.gen, busY, []),
-        _flatNode('ats_' + suffix, 'ats', 'ATS-' + suffix.toUpperCase(),
-            T.ats, S, [{ key: 'ats_' + suffix + '-pos', text: 'UTILITY' }]),
-        _flatNode('ups_' + suffix, 'ups', 'UPS GALAXY VX ' + suffix.toUpperCase(),
+        _flatNode('mvtc_' + suffix, 'mvtc', 'MV TRANSFER ' + suffix.toUpperCase() + ' · 13.8 kV',
+            T.ats, S, [{ key: 'mvtc_' + suffix + '-pos', text: '52-U · UTILITY' }]),
+        _flatNode('ups_' + suffix, 'ups',
+            'UPS BANK ' + suffix.toUpperCase() + ` · ${PHASE1.ups.units} × TRINERGY`,
             T.ups, S, [{ key: 'ups_' + suffix + '-mode', text: 'ONLINE' },
                        { key: 'ups_' + suffix + '-load', text: '— kW' }]),
         _flatNode('batt_' + suffix, 'batt', 'BATTERY ' + suffix.toUpperCase(),
@@ -321,7 +328,31 @@ function _flatPath(suffix, S, energized) {
         _flatNode('rpp_' + suffix + '1', 'rpp', 'RPP / PDU ' + suffix.toUpperCase(),
             T.pdu, S, [{ key: 'rpp_' + suffix + '1-kw', text: '— kW' }]),
     ].join('');
-    return `<g class="pf-pathgroup">${wires}${nodes}</g>`;
+    const strips = _unitStrip('genset_' + suffix, T.gen, genY - 52)
+        + _unitStrip('ups_' + suffix, T.ups, S - 52);
+    return `<g class="pf-pathgroup">${wires}${nodes}${strips}</g>`;
+}
+
+/**
+ * DC-EPMS-068: one tick per installed unit of a bank (UPS blocks,
+ * generator sets), so the drawing cannot claim capacity the design
+ * does not have. Ticks reflect units out of service (What-If) and the
+ * caption carries capacity with N / N+1 from the DAG engine.
+ */
+function _unitStrip(id, x, y) {
+    const t = getTopology()[id];
+    if (!t || !t.units) return '';
+    const w = 9, gap = 3;
+    const total = t.units * w + (t.units - 1) * gap;
+    const x0 = x - total / 2;
+    const ticks = Array.from({ length: t.units }, (_, i) =>
+        `<rect class="pf-unit" data-unit-of="${id}" data-unit="${i}" data-out="0" `
+        + `x="${x0 + i * (w + gap)}" y="${y - 6}" width="${w}" height="12" rx="1.5">`
+        + `<title>${escapeHTML(id)} unit ${i + 1} of ${t.units}</title></rect>`).join('');
+    const cap = `<text class="pf-metric pf-unit-cap" data-sld-metric="${id}-cap" `
+        + `x="${x0 + total + 8}" y="${y + 4}" text-anchor="start">`
+        + `${((t.units * t.unitKw) / 1000).toFixed(2)} MW</text>`;
+    return `<g class="pf-unit-strip" data-units-for="${id}">${ticks}${cap}</g>`;
 }
 
 /**
@@ -578,8 +609,8 @@ function _setFarmLod(lod) {
 function _buildFlatMarkup() {
     const T = _FLAT.tierX;
     const tierLabels = [
-        ['UTILITY', T.util], ['GENSET / N+1', T.gen],
-        ['ATS / STS', T.ats], ['UPS 2N', T.ups], ['PDU / RPP', T.pdu],
+        ['UTILITY', T.util], ['GEN BUS 13.8 kV', T.gen],
+        ['MV TRANSFER', T.ats], ['UPS 2N', T.ups], ['PDU / RPP', T.pdu],
     ];
     const rails = tierLabels.map(([name, x]) =>
         `<line class="pf-tier-rail" x1="${x}" y1="48" x2="${x}" y2="690"/>`
@@ -655,6 +686,17 @@ function _onFlatClick(e) {
     }
     if (e.target.closest && e.target.closest('[data-farm-back]')) {
         _setFarmLod(0);
+        return;
+    }
+    // What-If: a unit tick takes one more unit of that bank out of
+    // service (in-service tick) or returns one (out-of-service tick).
+    const tick = e.target.closest && e.target.closest('.pf-unit');
+    if (tick) {
+        if (_mode !== 'whatif') return;
+        const bank = tick.dataset.unitOf;
+        const grid = getState('grid') || {};
+        const out = grid[bank]?.units_out || 0;
+        setUnitsOut(bank, tick.dataset.out === '1' ? out - 1 : out + 1);
         return;
     }
     const node = e.target.closest('.pf-node');
@@ -779,6 +821,38 @@ function _applyGrid(grid) {
         else if (n.on_battery || n.energized_by === 'genset') sev = 'warning';
         node.querySelectorAll('.pid-symbol').forEach((s) => s.setAttribute('data-sev', sev));
         node.classList.toggle('pf-tripped', !!n.tripped);
+    });
+    _applyUnits(grid);
+    // Transfer position from the DAG (What-If / Replay show the
+    // simulated 52-U / 52-GM state, not the live telemetry guess).
+    for (const p of ['a', 'b']) {
+        const t = grid['mvtc_' + p];
+        if (!t) continue;
+        const txt = t.transferring ? 'OPEN · IN TRANSFER'
+            : (t.ats_pos === 'secondary' ? '52-GM · GENERATORS' : '52-U · UTILITY');
+        _setMetric('mvtc_' + p + '-pos', txt);
+    }
+}
+
+/** Unit-bank ticks + capacity caption (DC-EPMS-068). */
+function _applyUnits(grid) {
+    document.querySelectorAll('#view-power .pid-svg .pf-unit-strip').forEach((strip) => {
+        const id = strip.dataset.unitsFor;
+        const n = grid[id];
+        const t = getTopology()[id];
+        if (!n || !t) return;
+        const out = n.units_out || 0;
+        strip.querySelectorAll('.pf-unit').forEach((tick) => {
+            const i = Number(tick.dataset.unit);
+            // count-based: the first `out` ticks read as out of service
+            tick.setAttribute('data-out', i < out ? '1' : '0');
+        });
+        const cap = strip.querySelector('.pf-unit-cap');
+        if (cap && n.capacity_kw != null) {
+            const tag = n.n1_ok ? 'N+1' : (n.n_ok ? 'N only' : 'BELOW N');
+            cap.textContent = `${(n.capacity_kw / 1000).toFixed(2)} MW · ${tag}`;
+            cap.setAttribute('data-level', n.n1_ok ? 'ok' : (n.n_ok ? 'warn' : 'crit'));
+        }
     });
 }
 

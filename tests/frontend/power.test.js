@@ -179,13 +179,14 @@ describe('T2.1 — views/power.js buildFlatMarkup() orthogonal SLD', () => {
     it('emits every 5-layer tier node for both 2N paths', () => {
         const svg = buildFlatMarkup();
         for (const id of [
-            'util_a', 'genset_a', 'par_bus_a', 'ats_a', 'ups_a', 'rpp_a1',
-            'util_b', 'genset_b', 'ats_b', 'ups_b', 'rpp_b1',
+            'util_a', 'genset_a', 'par_bus_a', 'mvtc_a', 'ups_a', 'rpp_a1',
+            'util_b', 'genset_b', 'mvtc_b', 'ups_b', 'rpp_b1',
         ]) {
             expect(svg).toContain(`data-sld-node="${id}"`);
         }
-        expect(svg).toContain('GENSET / N+1');
-        expect(svg).toContain('ATS / STS');
+        expect(svg).toContain('GEN BUS 13.8 kV');
+        expect(svg).toContain('MV TRANSFER');
+        expect(svg).not.toContain('ATS / STS');
     });
 
     it('routes every connector strictly orthogonally (no diagonals)', () => {
@@ -214,9 +215,10 @@ describe('T2.1 — views/power.js buildFlatMarkup() orthogonal SLD', () => {
         expect(svg.getAttribute('viewBox')).toBe('0 0 1200 1260');
     });
 
-    it('tags ATS + RPP nodes as operable breakers', () => {
+    it('tags RPP nodes as operable breakers; the MV transfer controller is not (Power Controls owns it)', () => {
         const svg = buildFlatMarkup();
-        expect(svg).toMatch(/data-sld-node="ats_a"[^>]*data-breaker="1"/);
+        expect(svg).toMatch(/data-sld-node="rpp_a1"[^>]*data-breaker="1"/);
+        expect(svg).not.toMatch(/data-sld-node="mvtc_a"[^>]*data-breaker="1"/);
         expect(svg).toMatch(/data-sld-node="rpp_a1"[^>]*data-breaker="1"/);
         // utility is NOT a breaker
         expect(svg).not.toMatch(/data-sld-node="util_a"[^>]*data-breaker/);
@@ -613,14 +615,14 @@ describe('L3-2 — views/power.js What-If sandbox', () => {
         mountView();
         renderFlatSld();
         applyGrid({
-            ats_a: { tripped: true, alive: false },
+            mvtc_a: { tripped: true, alive: false },
             ups_a: { tripped: false, alive: true, on_battery: true },
         });
-        const atsSym = document.querySelector('[data-sld-node="ats_a"] .pid-symbol');
+        const atsSym = document.querySelector('[data-sld-node="mvtc_a"] .pid-symbol');
         const upsSym = document.querySelector('[data-sld-node="ups_a"] .pid-symbol');
         expect(atsSym.getAttribute('data-sev')).toBe('critical');
         expect(upsSym.getAttribute('data-sev')).toBe('warning');
-        expect(document.querySelector('[data-sld-node="ats_a"]')
+        expect(document.querySelector('[data-sld-node="mvtc_a"]')
             .classList.contains('pf-tripped')).toBe(true);
     });
 

@@ -8,12 +8,20 @@
  *   and the cascade obeys physics:
  *
  *     - Standard nodes (xfmr, rpp, busway): if input dead, output dead.
- *     - ATS: 2-input merge. Primary lost  -> 2s transfer delay (output
- *            dead during the gap)  -> genset starts  -> secondary input
- *            takes over. Primary restored -> 1.5s back-transfer.
- *     - UPS: input lost  -> battery holdup (output stays alive) until
- *            SOC reaches 0  -> output dies.
- *     - Genset: alive only when ATS has called it to run.
+ *     - MV transfer controller (mvtc, DC-EPMS-068 closed design; was a
+ *            480 V ATS): 52-U utility incomer / 52-GM generator main,
+ *            open transition. Primary lost -> 2 s gap (output dead) ->
+ *            generator bus starts -> 52-GM closes. Primary restored ->
+ *            1.5 s back-transfer. Same engine rules as the old ATS;
+ *            the position field keeps its name (ats_pos).
+ *     - UPS bank: 8 x 2.5 MW blocks per path (config/power_plant.yml).
+ *            Input lost -> battery holdup until SOC 0. Blocks can be
+ *            taken out one by one (setUnitsOut): the bank stays alive
+ *            while one block is in service; capacity / N / N+1 are
+ *            published against the 16.76 MW full-path IT load.
+ *     - Generator bus: 9 x 2.75 MW at 13.8 kV per path. Alive only when
+ *            the transfer controller has called it; N / N+1 against
+ *            the 21.5 MW generation floor (ADR-013).
  *     - Battery: alive while SOC > 0 AND not tripped.
  *
  *   No external libs. State published via state.js's setState('grid', ...).
@@ -25,45 +33,61 @@
 
 import { setState } from './state.js';
 
-// ─── Topology — 18 nodes, directed edges via sources/targets ─────
+// ─── Closed Phase 1 design (config/power_plant.yml, ADR-013) ─────
+// Fenced against the YAML in tests/frontend/power_grid.test.js.
+export const PHASE1 = Object.freeze({
+    itLoadPerPathKw: 16760,      // one path carrying 100 % of the IT load
+    ups: Object.freeze({ units: 8, unitKw: 2500, floorKw: 16760 }),
+    gen: Object.freeze({ units: 9, unitKw: 2750, floorKw: 21500 }),  // design total
+});
+
+// ─── Topology — directed edges via sources/targets ───────────────
 export const TOPOLOGY = {
-    // Path A
-    util_a:   { type: 'util',   path: 'A', sources: [],                       targets: ['xfmr_a'] },
-    xfmr_a:   { type: 'xfmr',   path: 'A', sources: ['util_a'],               targets: ['ats_a'] },
-    genset_a: { type: 'genset', path: 'A', sources: [],                       targets: ['ats_a'] },
-    ats_a:    { type: 'ats',    path: 'A', sources: ['xfmr_a', 'genset_a'],   targets: ['ups_a'],
+    // Path A -- closed Phase 1 design (DC-EPMS-068, config/power_plant.yml)
+    util_a:   { type: 'util',   path: 'A', sources: [],                        targets: ['xfmr_a'] },
+    // utility transformer 27.5 / 13.8 kV (site model v2: mv_xfmr_a)
+    xfmr_a:   { type: 'xfmr',   path: 'A', sources: ['util_a'],                targets: ['mvtc_a'] },
+    // generator bus: 9 x 2.75 MW at 13.8 kV (site model v2: genset_a_01..09)
+    genset_a: { type: 'genset', path: 'A', sources: [],                        targets: ['mvtc_a'],
+                units: PHASE1.gen.units, unitKw: PHASE1.gen.unitKw, floorKw: PHASE1.gen.floorKw },
+    mvtc_a:   { type: 'mvtc',   path: 'A', sources: ['xfmr_a', 'genset_a'],   targets: ['ups_a'],
                 primary: 'xfmr_a', secondary: 'genset_a' },
-    batt_a:   { type: 'batt',   path: 'A', sources: [],                       targets: ['ups_a'] },
-    ups_a:    { type: 'ups',    path: 'A', sources: ['ats_a'],                targets: ['rpp_a1'],  battery: 'batt_a' },
-    rpp_a1:   { type: 'rpp',    path: 'A', sources: ['ups_a'],                targets: ['rpp_a2'] },
-    rpp_a2:   { type: 'rpp',    path: 'A', sources: ['rpp_a1'],               targets: ['busway_a'] },
-    busway_a: { type: 'busway', path: 'A', sources: ['rpp_a2'],               targets: ['ddu_a1', 'ddu_a2', 'ddu_a3', 'ddu_a4', 'ddu_a5', 'ddu_a6'] },
-    // 6 representative DDUs (Drop-Down Units) hanging off Busway A — each
-    // services one GB200 NVL72 rack with combined 480V power tap-off + DLC
-    // secondary loop hookup. 118 racks total per Path C2; we visualize 6.
-    ddu_a1:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
-    ddu_a2:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
-    ddu_a3:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
-    ddu_a4:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
-    ddu_a5:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
-    ddu_a6:   { type: 'ddu',    path: 'A', sources: ['busway_a'],             targets: [] },
-    // Path B (mirrored)
-    util_b:   { type: 'util',   path: 'B', sources: [],                       targets: ['xfmr_b'] },
-    xfmr_b:   { type: 'xfmr',   path: 'B', sources: ['util_b'],               targets: ['ats_b'] },
-    genset_b: { type: 'genset', path: 'B', sources: [],                       targets: ['ats_b'] },
-    ats_b:    { type: 'ats',    path: 'B', sources: ['xfmr_b', 'genset_b'],   targets: ['ups_b'],
+    batt_a:   { type: 'batt',   path: 'A', sources: [],                        targets: ['ups_a'] },
+    // UPS bank: 8 x Trinergy 2500 kW (site model v2: ups_a_01..08)
+    ups_a:    { type: 'ups',    path: 'A', sources: ['mvtc_a'],                targets: ['rpp_a1'], battery: 'batt_a',
+                units: PHASE1.ups.units, unitKw: PHASE1.ups.unitKw, floorKw: PHASE1.ups.floorKw },
+    rpp_a1:   { type: 'rpp',    path: 'A', sources: ['ups_a'],                 targets: ['rpp_a2'] },
+    rpp_a2:   { type: 'rpp',    path: 'A', sources: ['rpp_a1'],                targets: ['busway_a'] },
+    busway_a: { type: 'busway', path: 'A', sources: ['rpp_a2'],                targets: ['ddu_a1', 'ddu_a2', 'ddu_a3', 'ddu_a4', 'ddu_a5', 'ddu_a6'] },
+    ddu_a1:   { type: 'ddu',    path: 'A', sources: ['busway_a'],              targets: [] },
+    ddu_a2:   { type: 'ddu',    path: 'A', sources: ['busway_a'],              targets: [] },
+    ddu_a3:   { type: 'ddu',    path: 'A', sources: ['busway_a'],              targets: [] },
+    ddu_a4:   { type: 'ddu',    path: 'A', sources: ['busway_a'],              targets: [] },
+    ddu_a5:   { type: 'ddu',    path: 'A', sources: ['busway_a'],              targets: [] },
+    ddu_a6:   { type: 'ddu',    path: 'A', sources: ['busway_a'],              targets: [] },
+    // 6 representative DDUs per busway (118 GB200 racks in Path C2).
+    // Path B -- closed Phase 1 design (DC-EPMS-068, config/power_plant.yml)
+    util_b:   { type: 'util',   path: 'B', sources: [],                        targets: ['xfmr_b'] },
+    // utility transformer 27.5 / 13.8 kV (site model v2: mv_xfmr_b)
+    xfmr_b:   { type: 'xfmr',   path: 'B', sources: ['util_b'],                targets: ['mvtc_b'] },
+    // generator bus: 9 x 2.75 MW at 13.8 kV (site model v2: genset_b_01..09)
+    genset_b: { type: 'genset', path: 'B', sources: [],                        targets: ['mvtc_b'],
+                units: PHASE1.gen.units, unitKw: PHASE1.gen.unitKw, floorKw: PHASE1.gen.floorKw },
+    mvtc_b:   { type: 'mvtc',   path: 'B', sources: ['xfmr_b', 'genset_b'],   targets: ['ups_b'],
                 primary: 'xfmr_b', secondary: 'genset_b' },
-    batt_b:   { type: 'batt',   path: 'B', sources: [],                       targets: ['ups_b'] },
-    ups_b:    { type: 'ups',    path: 'B', sources: ['ats_b'],                targets: ['rpp_b1'],  battery: 'batt_b' },
-    rpp_b1:   { type: 'rpp',    path: 'B', sources: ['ups_b'],                targets: ['rpp_b2'] },
-    rpp_b2:   { type: 'rpp',    path: 'B', sources: ['rpp_b1'],               targets: ['busway_b'] },
-    busway_b: { type: 'busway', path: 'B', sources: ['rpp_b2'],               targets: ['ddu_b1', 'ddu_b2', 'ddu_b3', 'ddu_b4', 'ddu_b5', 'ddu_b6'] },
-    ddu_b1:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
-    ddu_b2:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
-    ddu_b3:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
-    ddu_b4:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
-    ddu_b5:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
-    ddu_b6:   { type: 'ddu',    path: 'B', sources: ['busway_b'],             targets: [] },
+    batt_b:   { type: 'batt',   path: 'B', sources: [],                        targets: ['ups_b'] },
+    // UPS bank: 8 x Trinergy 2500 kW (site model v2: ups_b_01..08)
+    ups_b:    { type: 'ups',    path: 'B', sources: ['mvtc_b'],                targets: ['rpp_b1'], battery: 'batt_b',
+                units: PHASE1.ups.units, unitKw: PHASE1.ups.unitKw, floorKw: PHASE1.ups.floorKw },
+    rpp_b1:   { type: 'rpp',    path: 'B', sources: ['ups_b'],                 targets: ['rpp_b2'] },
+    rpp_b2:   { type: 'rpp',    path: 'B', sources: ['rpp_b1'],                targets: ['busway_b'] },
+    busway_b: { type: 'busway', path: 'B', sources: ['rpp_b2'],                targets: ['ddu_b1', 'ddu_b2', 'ddu_b3', 'ddu_b4', 'ddu_b5', 'ddu_b6'] },
+    ddu_b1:   { type: 'ddu',    path: 'B', sources: ['busway_b'],              targets: [] },
+    ddu_b2:   { type: 'ddu',    path: 'B', sources: ['busway_b'],              targets: [] },
+    ddu_b3:   { type: 'ddu',    path: 'B', sources: ['busway_b'],              targets: [] },
+    ddu_b4:   { type: 'ddu',    path: 'B', sources: ['busway_b'],              targets: [] },
+    ddu_b5:   { type: 'ddu',    path: 'B', sources: ['busway_b'],              targets: [] },
+    ddu_b6:   { type: 'ddu',    path: 'B', sources: ['busway_b'],              targets: [] },
 
     // ── Phase 2 — Building D (Path C2 DESIGN, MVP S2) ──────────────
     // Mirrors site_model.yml Path D: 35 kV AC -> MV Rectifier ->
@@ -88,12 +112,18 @@ export const TOPOLOGY = {
     hall_d:     { type: 'hall',   path: 'D', sources: ['rpp_d1', 'rpp_d2'],      targets: [] },
 };
 
+/** Transfer devices: the closed-design MV transfer controller (and the
+ *  legacy 480 V ATS type, kept so older fixtures still evaluate). */
+export function isTransfer(type) { return type === 'mvtc' || type === 'ats'; }
+
+const TRANSFER_IDS = Object.keys(TOPOLOGY).filter((id) => isTransfer(TOPOLOGY[id].type));
+
 // Topological order — utility roots, then conditional sources, then chain.
 // Hand-coded (tiny graph, simpler than Kahn's at this scale).
 const TOPO_ORDER = [
     'util_a', 'util_b', 'batt_a', 'batt_b', 'genset_a', 'genset_b',
     'xfmr_a', 'xfmr_b',
-    'ats_a',  'ats_b',
+    'mvtc_a', 'mvtc_b',
     'ups_a',  'ups_b',
     'rpp_a1', 'rpp_b1',
     'rpp_a2', 'rpp_b2',
@@ -109,7 +139,7 @@ const TOPO_ORDER = [
 
 // Per-node mutable state (engine-private; published via setState)
 let _grid = null;
-let _atsTransferTimers = { ats_a: null, ats_b: null };
+let _atsTransferTimers = { mvtc_a: null, mvtc_b: null };
 let _battDecayTimers   = { batt_a: null, batt_b: null };
 let _gensetTimers      = { genset_a: null, genset_b: null };
 let _propagateScheduled = false;
@@ -133,7 +163,12 @@ function _initGrid() {
             alive: false,           // computed by propagate
             on_battery: false,      // ups only
             soc: 100,               // batt only
-            ats_pos: t.type === 'ats' ? 'primary' : null,
+            ats_pos: isTransfer(t.type) ? 'primary' : null,
+            // unit banks (UPS blocks / generator sets): how many are out
+            units_out: 0,
+            capacity_kw: null,
+            n_ok: null,
+            n1_ok: null,
             transferring: false,    // ats only
             running: false,         // genset only
             // genset NFPA 110 sequence: standby|cranking|running|cooldown
@@ -145,6 +180,10 @@ function _initGrid() {
             energized_by: null,     // 'util' | 'genset' | 'battery' | null
         };
     }
+}
+
+function _unitsIn(t, n) {
+    return t.units ? Math.max(0, t.units - (n.units_out || 0)) : 1;
 }
 
 // ─── Propagation core ─────────────────────────────────────────────
@@ -168,7 +207,8 @@ function _propagate() {
             n.energized_by = 'util';
         }
         else if (t.type === 'genset') {
-            n.alive = !!n.running;
+            // Generator bus: alive when called AND at least one set is in service.
+            n.alive = !!n.running && _unitsIn(t, n) > 0;
             n.energized_by = n.alive ? 'genset' : null;
             if (n.tripped) n.state = 'standby';
         }
@@ -202,7 +242,7 @@ function _propagate() {
             n.alive = n.soc > 0;
             n.energized_by = n.alive ? 'battery' : null;
         }
-        else if (t.type === 'ats') {
+        else if (isTransfer(t.type)) {
             const primary = _grid[t.primary];
             const secondary = _grid[t.secondary];
 
@@ -230,7 +270,13 @@ function _propagate() {
             const ats = _grid[t.sources[0]];
             const batt = _grid[t.battery];
 
-            if (ats.alive) {
+            if (t.units && _unitsIn(t, n) === 0) {
+                // every block of the bank out of service: no output
+                n.alive = false;
+                n.on_battery = false;
+                n.energized_by = null;
+                n.mode = 'off';
+            } else if (ats.alive) {
                 n.alive = true;
                 n.on_battery = false;
                 n.energized_by = ats.energized_by;
@@ -262,7 +308,18 @@ function _propagate() {
         }
     }
 
-    // Check ATS transfer triggers (mutates state, may schedule timers)
+    // Unit banks: capacity and N / N+1 against the design floors.
+    for (const id of TOPO_ORDER) {
+        const t = TOPOLOGY[id];
+        if (!t.units) continue;
+        const n = _grid[id];
+        const cap = n.tripped ? 0 : _unitsIn(t, n) * t.unitKw;
+        n.capacity_kw = cap;
+        n.n_ok = cap >= t.floorKw;
+        n.n1_ok = cap - t.unitKw >= t.floorKw;
+    }
+
+    // Check transfer triggers (mutates state, may schedule timers)
     _maybeTriggerTransfers();
     // Check UPS battery decay (mutates state, schedules 1Hz interval)
     _manageBatteryDecay();
@@ -285,7 +342,7 @@ function _scheduleProp() {
 // ─── ATS transfer logic (NFPA 110 Type 10 — 10s start; we fast-fwd to 2s) ─
 
 function _maybeTriggerTransfers() {
-    for (const atsId of ['ats_a', 'ats_b']) {
+    for (const atsId of TRANSFER_IDS) {
         const ats = _grid[atsId];
         const t = TOPOLOGY[atsId];
         const primary = _grid[t.primary];
@@ -389,7 +446,7 @@ export function initPowerGrid() {
     _propagate();
     const n = Object.keys(TOPOLOGY).length;
     const e = Object.values(TOPOLOGY).reduce((acc, t) => acc + t.targets.length, 0);
-    console.log(`[power_grid] DAG engine initialized: ${n} nodes, ${e} edges (Phase 1 + Building D design)`);
+    console.log(`[power_grid] DAG engine initialized: ${n} nodes, ${e} edges (Phase 1 closed design + Building D design)`);
 }
 
 export function tripNode(id) {
@@ -443,11 +500,28 @@ export function restoreAll() {
         if (n.type === 'batt')   { n.soc = 100;       n.alive = true;  }
         if (n.type === 'genset') { n.running = false; n.alive = false; n.state = 'standby'; }
         if (n.type === 'farm')   { n.running = false; n.alive = false; n.state = 'standby'; }
-        if (n.type === 'ats')    { n.ats_pos = 'primary'; }
+        if (isTransfer(n.type)) { n.ats_pos = 'primary'; }
+        n.units_out = 0;
         if (n.type === 'ups')    { n.on_battery = false; n.mode = 'double_conversion'; }
     }
     console.log('[power_grid] RESTORE ALL');
     _propagate();
+}
+
+/**
+ * Take `count` units of a bank out of service (UPS blocks, generator
+ * sets). Clamped to [0, units]. Returns false for non-bank nodes.
+ * What-If only: this never reaches the plant (ADR-006).
+ */
+export function setUnitsOut(id, count) {
+    if (!_grid || !_grid[id]) return false;
+    const t = TOPOLOGY[id];
+    if (!t.units) return false;
+    const c = Math.max(0, Math.min(t.units, Math.floor(Number(count) || 0)));
+    _grid[id].units_out = c;
+    console.log(`[power_grid] UNITS OUT -> ${id} = ${c}/${t.units}`);
+    _propagate();
+    return true;
 }
 
 export function getGridState()    { return _grid; }

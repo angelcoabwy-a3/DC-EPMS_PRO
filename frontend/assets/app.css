@@ -10607,3 +10607,12 @@ table.opt-votes td {
 @media (max-width: 900px) and (prefers-reduced-motion: reduce) {
     .panel-nav { transition: none; }
 }
+
+/* DC-EPMS-068 lote C1: unit-bank ticks on the Power SLD (UPS blocks,
+   generator sets). In service = path colour; out = hollow. */
+.pf-unit { fill: var(--accent); stroke: var(--accent); stroke-width: 1; opacity: 0.85; }
+.pf-unit[data-out="1"] { fill: transparent; stroke: var(--crit); opacity: 1; }
+.pwr-whatif .pf-unit { cursor: pointer; }
+.pf-unit-cap { text-anchor: start; }
+.pf-unit-cap[data-level="warn"] { fill: var(--warn); }
+.pf-unit-cap[data-level="crit"] { fill: var(--crit); }

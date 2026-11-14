@@ -1,17 +1,18 @@
 /* ════════════════════════════════════════════════════════════════
  * DC-EPMS PRO — frontend/assets/js/core/asset_metadata.js
  *
- * Realistic industrial metadata for the 18 SLD assets — Phase 1
+ * Industrial metadata for the SLD assets. Phase 1 power entries follow
+ * the closed design in config/power_plant.yml (DC-EPMS-068); other
+ * entries keep their earlier reference data — Phase 1
  * (deployed Buildings A/B at A3-Alpha Toronto Area). Replaces the
  * static `--- kW` placeholders with model + rating + last-PM +
  * vendor manual references.
  *
  * Source for ratings:
  *   - NVIDIA GB200 NVL72 reference design (2024 spec sheet)
- *   - Schneider Galaxy VX datasheet (2025 v4.1)
- *   - Eaton 2.5 MVA Dry-Type catalogue (vector group + impedance)
- *   - ASCO 7000-Series ATS spec (NFPA 110 Type 10 conformance)
- *   - Cummins QSK60-G6 standby genset technical data sheet
+ *   - (before DC-EPMS-068 the power entries cited Galaxy VX, a 2.5 MVA
+ *     dry-type, an ASCO 7000 ATS and a Cummins QSK60; those no longer
+ *     match the closed design and were removed)
  *   - C&D Technologies VRLA Pure Lead datasheet
  *   - Server Technology PRO4 RPP-class datasheet
  *   - Starline Track Busway 800A spec
@@ -21,20 +22,21 @@ const _common = (path) => ({
     util:    { type: 'Utility Feed',                     model: path === 'A' ? 'Hydro One MV Feed (North)' : 'Hydro One MV Feed (South)',
                rating: '27.5 kV three-phase · 50 MVA available',
                sparkline: { unit: 'MW',  baseline: 14.8, range: 1.4,  color: '#00E5FF' } },
-    xfmr:    { type: 'Step-Down Transformer',            model: 'Eaton 2.5 MVA Dry-Type',
-               rating: '27.5 kV → 480 V · 2.5 MVA',
+    // Closed Phase 1 design (config/power_plant.yml, DC-EPMS-068).
+    xfmr:    { type: 'Utility Transformer',              model: 'MV/MV · vendor not selected',
+               rating: '27.5 kV → 13.8 kV · 25 MVA (sizing assumption, site model v2)',
                sparkline: { unit: '°C',  baseline: 64,   range: 6,    color: '#FFB300' } },
-    genset:  { type: 'Standby Generator',                model: 'Cummins QSK60-G6 · diesel',
-               rating: '2.0 MW · 480 V 3-phase · NFPA 110 Type 10',
+    genset:  { type: 'Generator Bus (9 sets)',           model: 'MV standby sets · vendor not selected',
+               rating: '9 × 2.75 MW · 13.8 kV · N+1 on the 21.5 MW floor (ADR-013)',
                sparkline: { unit: 'rpm', baseline: 0,    range: 0,    color: '#FFB300' } },
-    ats:     { type: 'Automatic Transfer Switch',        model: 'ASCO 7000-Series · 4-pole bypass-isolation',
-               rating: '480 V · 1600 A · NFPA 110 Type 10 (10 s nameplate, fast-fwd 2 s in sim)',
+    mvtc:    { type: 'MV Transfer Controller',           model: '52-U utility incomer / 52-GM generator main · vendor not selected',
+               rating: '13.8 kV · open transition (2 s gap in sim)',
                sparkline: { unit: '',    baseline: 1,    range: 0,    color: '#00E5FF' } },
-    ups:     { type: 'Uninterruptible Power Supply',     model: 'Schneider Galaxy VX 750 kVA · double-conversion',
-               rating: '480 V · 750 kW · η ≥ 96.5% online · 5-min holdup',
-               sparkline: { unit: 'kW',  baseline: 612,  range: 24,   color: '#00E5FF' } },
-    batt:    { type: 'Battery Bank',                     model: 'C&D Technologies VRLA Pure Lead-Tin',
-               rating: '540 VDC · 264 cells · 5-min @ 750 kW',
+    ups:     { type: 'UPS Bank (8 blocks)',              model: 'Vertiv Trinergy 2500 · double conversion',
+               rating: '8 × 2.5 MW · 480 V · 20 MW per path · N+1 inside the path',
+               sparkline: { unit: 'kW',  baseline: 8380, range: 120,  color: '#00E5FF' } },
+    batt:    { type: 'Battery (per UPS block)',          model: 'chemistry not specified in config/power_plant.yml',
+               rating: '10 min at full load per block (operator design: 8 to 12 min)',
                sparkline: { unit: '%',   baseline: 100,  range: 0,    color: '#FFB300' } },
     rpp:     { type: 'Remote Power Panel',               model: 'Server Technology PRO4 · 24-circuit',
                rating: '480 V · 400 A · per-circuit metering',
@@ -59,61 +61,53 @@ export const ASSET_METADATA = {
     },
     xfmr_a: {
         ..._common('A').xfmr,
-        label: 'XFMR A',
+        label: 'XFMR A · 27.5/13.8 kV',
         details: [
-            { k: 'Impedance (Z%)',   v: '5.75 %' },
-            { k: 'Cooling',          v: 'AFWF (forced air + water cooled)' },
-            { k: 'Vector Group',     v: 'Dyn11' },
-            { k: 'Insulation Class', v: 'F (155 °C rise)' },
-            { k: 'Last PM',          v: '2026-02-20 — oil sample PASS' },
+            { k: 'Site model v2 id', v: 'mv_xfmr_a' },
+            { k: 'Sizing',           v: 'design total load at 0.9 PF, next 5 MVA (assumption, not vendor data)' },
+            { k: 'History',          v: 'simulated plant: no maintenance history' },
         ],
-        manuals: ['MOP-XFMR-001 — Hot-spot infrared scan (semi-annual)'],
+        manuals: [],
     },
     genset_a: {
         ..._common('A').genset,
-        label: 'Genset A',
+        label: 'Generator Bus A',
         details: [
-            { k: 'Class',            v: 'NFPA 110 Type 10 (10 s start, ≤30 s on bus)' },
-            { k: 'Fuel Capacity',    v: '5,000 gal — 72 h @ full load' },
-            { k: 'Hours (life)',     v: '142 / 25,000 h MTBO' },
-            { k: 'Last Run Test',    v: '2026-04-15 (30 min @ 100 % load)' },
-            { k: 'Cooling',          v: 'Closed-loop water + radiator' },
+            { k: 'Site model v2 ids', v: 'genset_a_01 … genset_a_09' },
+            { k: 'Paralleling',       v: '13.8 kV bus · ANSI 25 synchronising' },
+            { k: 'Withdrawal rule',   v: 'one set per path out at a time (ADR-013)' },
+            { k: 'History',           v: 'simulated plant: no run-hour records' },
         ],
-        manuals: ['MOP-GEN-WEEKLY-001 — Weekly no-load start (5 min)'],
+        manuals: [],
     },
-    ats_a: {
-        ..._common('A').ats,
-        label: 'ATS-A',
+    mvtc_a: {
+        ..._common('A').mvtc,
+        label: 'MV Transfer A',
         details: [
-            { k: 'Transfer Time',    v: '2.0 s (10 s nameplate, fast-fwd in sim)' },
-            { k: 'Inhibit Logic',    v: 'Bypass-isolation' },
-            { k: 'Cycles (life)',    v: '847 / 10,000 design' },
-            { k: 'Last Test',        v: '2026-04-08 (monthly transfer PASS)' },
+            { k: 'Breakers',  v: '52-U (utility) · 52-GM (generator main)' },
+            { k: 'Switching', v: 'supervised from Power Controls (select-before-operate, ledger)' },
+            { k: 'Replaces',  v: '480 V ATS of the legacy site model (DC-EPMS-058)' },
         ],
-        manuals: ['MOP-ATS-MONTHLY-001 — Monthly transfer test'],
+        manuals: [],
     },
     ups_a: {
         ..._common('A').ups,
-        label: 'UPS Galaxy VX A',
+        label: 'UPS Bank A',
         details: [
-            { k: 'Topology',         v: 'AC → DC → AC (true online)' },
-            { k: 'Firmware',         v: 'v4.1.2 (2026-03)' },
-            { k: 'Battery',          v: '480 V VRLA · 5 min @ 750 kW' },
-            { k: 'Last PM',          v: '2026-03-15 — battery impedance PASS' },
-            { k: 'Anomalies (30 d)', v: '0' },
+            { k: 'Site model v2 ids', v: 'ups_a_01 … ups_a_08' },
+            { k: 'Efficiency',        v: '0.97 double conversion · 0.99 Dynamic Online (model)' },
+            { k: 'Capacity rule',     v: 'N = 16.76 MW full-path IT load; one block out keeps N' },
+            { k: 'History',           v: 'simulated plant: no maintenance history' },
         ],
-        manuals: ['MOP-UPS-001 — Galaxy VX bypass + battery swap'],
+        manuals: [],
     },
     batt_a: {
         ..._common('A').batt,
-        label: 'Batt VRLA-A',
+        label: 'Batteries A',
         details: [
-            { k: 'Cell Count',          v: '264 cells (40 strings × 6.6 V)' },
-            { k: 'Chemistry',           v: 'VRLA Pure Lead-Tin' },
-            { k: 'Design Life',         v: '10 yr @ 25 °C ambient' },
-            { k: 'Last Discharge Test', v: '2026-02-12 (capacity 98 %)' },
+            { k: 'Holdup in sim', v: '1 % SOC per second while on battery (fast-forward)' },
         ],
-        manuals: ['MOP-BATT-001 — Quarterly impedance test'],
+        manuals: [],
     },
     rpp_a1: {
         ..._common('A').rpp,
@@ -163,61 +157,53 @@ export const ASSET_METADATA = {
     },
     xfmr_b: {
         ..._common('B').xfmr,
-        label: 'XFMR B',
+        label: 'XFMR B · 27.5/13.8 kV',
         details: [
-            { k: 'Impedance (Z%)',   v: '5.75 %' },
-            { k: 'Cooling',          v: 'AFWF' },
-            { k: 'Vector Group',     v: 'Dyn11' },
-            { k: 'Insulation Class', v: 'F (155 °C rise)' },
-            { k: 'Last PM',          v: '2026-02-22 — oil sample PASS' },
+            { k: 'Site model v2 id', v: 'mv_xfmr_b' },
+            { k: 'Sizing',           v: 'design total load at 0.9 PF, next 5 MVA (assumption, not vendor data)' },
+            { k: 'History',          v: 'simulated plant: no maintenance history' },
         ],
-        manuals: ['MOP-XFMR-001 — Hot-spot infrared scan'],
+        manuals: [],
     },
     genset_b: {
         ..._common('B').genset,
-        label: 'Genset B',
+        label: 'Generator Bus B',
         details: [
-            { k: 'Class',            v: 'NFPA 110 Type 10' },
-            { k: 'Fuel Capacity',    v: '5,000 gal — 72 h @ full load' },
-            { k: 'Hours (life)',     v: '156 / 25,000 h MTBO' },
-            { k: 'Last Run Test',    v: '2026-04-15 (30 min @ 100 % load)' },
-            { k: 'Cooling',          v: 'Closed-loop water + radiator' },
+            { k: 'Site model v2 ids', v: 'genset_b_01 … genset_b_09' },
+            { k: 'Paralleling',       v: '13.8 kV bus · ANSI 25 synchronising' },
+            { k: 'Withdrawal rule',   v: 'one set per path out at a time (ADR-013)' },
+            { k: 'History',           v: 'simulated plant: no run-hour records' },
         ],
-        manuals: ['MOP-GEN-WEEKLY-001 — Weekly no-load start'],
+        manuals: [],
     },
-    ats_b: {
-        ..._common('B').ats,
-        label: 'ATS-B',
+    mvtc_b: {
+        ..._common('B').mvtc,
+        label: 'MV Transfer B',
         details: [
-            { k: 'Transfer Time',    v: '2.0 s (sim fast-fwd)' },
-            { k: 'Inhibit Logic',    v: 'Bypass-isolation' },
-            { k: 'Cycles (life)',    v: '892 / 10,000 design' },
-            { k: 'Last Test',        v: '2026-04-08 (monthly PASS)' },
+            { k: 'Breakers',  v: '52-U (utility) · 52-GM (generator main)' },
+            { k: 'Switching', v: 'supervised from Power Controls (select-before-operate, ledger)' },
+            { k: 'Replaces',  v: '480 V ATS of the legacy site model (DC-EPMS-058)' },
         ],
-        manuals: ['MOP-ATS-MONTHLY-001 — Monthly transfer test'],
+        manuals: [],
     },
     ups_b: {
         ..._common('B').ups,
-        label: 'UPS Galaxy VX B',
+        label: 'UPS Bank B',
         details: [
-            { k: 'Topology',         v: 'AC → DC → AC' },
-            { k: 'Firmware',         v: 'v4.1.2 (2026-03)' },
-            { k: 'Battery',          v: '480 V VRLA · 5 min @ 750 kW' },
-            { k: 'Last PM',          v: '2026-03-15 — battery impedance PASS' },
-            { k: 'Anomalies (30 d)', v: '0' },
+            { k: 'Site model v2 ids', v: 'ups_b_01 … ups_b_08' },
+            { k: 'Efficiency',        v: '0.97 double conversion · 0.99 Dynamic Online (model)' },
+            { k: 'Capacity rule',     v: 'N = 16.76 MW full-path IT load; one block out keeps N' },
+            { k: 'History',           v: 'simulated plant: no maintenance history' },
         ],
-        manuals: ['MOP-UPS-001 — Galaxy VX bypass + battery swap'],
+        manuals: [],
     },
     batt_b: {
         ..._common('B').batt,
-        label: 'Batt VRLA-B',
+        label: 'Batteries B',
         details: [
-            { k: 'Cell Count',          v: '264 cells (40 strings × 6.6 V)' },
-            { k: 'Chemistry',           v: 'VRLA Pure Lead-Tin' },
-            { k: 'Design Life',         v: '10 yr @ 25 °C ambient' },
-            { k: 'Last Discharge Test', v: '2026-02-12 (capacity 99 %)' },
+            { k: 'Holdup in sim', v: '1 % SOC per second while on battery (fast-forward)' },
         ],
-        manuals: ['MOP-BATT-001 — Quarterly impedance test'],
+        manuals: [],
     },
     rpp_b1: {
         ..._common('B').rpp,

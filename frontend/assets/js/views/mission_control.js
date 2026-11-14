@@ -192,8 +192,8 @@ function _buildScene(width, height) {
     const fxEdgeMat = new THREE.LineBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.55 });
     const fixtures = [
         { pos: [-32,  1.5,  18], size: [4, 3, 4] },     // utility intake
-        { pos: [-22,  1.0,  22], size: [3, 2, 3] },     // ats_a
-        { pos: [-12,  1.0,  22], size: [3, 2, 3] },     // ats_b
+        { pos: [-22,  1.0,  22], size: [3, 2, 3] },     // mvtc_a (MV transfer, 13.8 kV)
+        { pos: [-12,  1.0,  22], size: [3, 2, 3] },     // mvtc_b (MV transfer, 13.8 kV)
         { pos: [ 12,  1.5,  22], size: [4, 3, 4] },     // gensets cluster
         { pos: [ 28,  2.0,  18], size: [5, 4, 5] },     // chiller plant
     ];

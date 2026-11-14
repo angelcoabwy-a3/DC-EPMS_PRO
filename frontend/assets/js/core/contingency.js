@@ -71,7 +71,8 @@ export function steadyStatePower(tripped = new Set()) {
             } else if (secondary?.alive) {
                 alive = true; energizedBy = secondary.energizedBy;
             }
-        } else if (t.type === 'ats') {
+        } else if (t.type === 'mvtc' || t.type === 'ats') {
+            // MV transfer controller (closed design) / legacy ATS
             const primary = out.get(t.primary);
             const secondary = out.get(t.secondary);
             if (primary?.alive) {
