@@ -13,6 +13,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Release R3-C — Generation N+1 on total load + site_model v2 (2026-11-14)
+
+> Operator document `Estructura_Repositorio_y_Resolucion_DC-EPMS_066_067_068.md`
+  (copied to `docs/design/operator/`).
+
+- **DC-EPMS-066 RESOLVED** (`613d32f`, ADR-013): generators 9 x 2.75 MW
+  at 13.8 kV per path. N = 24.75 MW, N+1 = 22.0 MW against the 21.5 MW
+  design total.
+- **DC-EPMS-067 RESOLVED** (`613d32f`, ADR-013): generation floor =
+  max(current total path load, computed full-path demand, design
+  total). Drives the withdrawal interlock (R10), the isolation goal and
+  the generation N / N+1 checks. Consequence: one generator per path
+  out at a time. The panel shows total-load and IT-only floors.
+- **Changed** generator ids `gen_p_NN` -> `genset_p_NN` to match the
+  site model. Scenarios bumped to 1.1.0; new `GEN-N1-001`.
+- **DC-EPMS-068 IN PROGRESS** (`d282904`): `backend/site_model_v2.py` +
+  `scripts/build_site_model_v2.py` generate `config/site_model_v2.yml`
+  (177 components) and `config/telemetry_mapping_v2.yml` (516 points,
+  symmetric) from `site_model.yml` + `power_plant.yml`; `--check` fails
+  on drift. The validator reproduces DC-EPMS-058 on the legacy model and
+  passes on v2. Runtime still on the legacy model: 13 backend, 10
+  frontend, 5 procedure and 39 test files reference retired ids
+  (`docs/design/DC-EPMS-068_MIGRATION.md`).
+- **DC-EPMS-060**: closed at specification level (symmetric points in
+  the telemetry mapping); runtime pending with 068.
+- **Not done, with reason**: physical repository restructure (mapped
+  instead, `docs/design/REPO_STRUCTURE_MAPPING.md`: digit-prefixed
+  folders are not importable, 214 Python files would move); incident
+  energy (no fault-level or clearing-time data; the IEEE 1584 documents
+  referenced in the operator tree were not received).
+- **Tests**: +26 pytest net (1826 passed / 3 pre-existing errors);
+  vitest 728 passed / 37 files (assertions updated).
+
 ### Release R3-B — Closed plant design, MV switching safety, scenario library (2026-11-14)
 
 > Operator closed the design (8 x Vertiv Trinergy 2500 and 9 x 2.5 MW
