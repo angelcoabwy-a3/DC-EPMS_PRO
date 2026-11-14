@@ -3548,6 +3548,39 @@ try:
 except Exception as e:
     log.error("[BOOT] USD export mount failed: %s", e, exc_info=True)
 
+# ==============================================================
+#  Release R3-A -- Power device control panels (UPS / transfer /
+#  generator): readings + supervised manual and remote switching
+# ==============================================================
+# SIMULATED devices (no field equipment bound). Commands need an
+# authenticated human with FACILITY_MANAGER, the device in REMOTE
+# authority, and select-before-operate; every action is chained into
+# the Forensic Ledger. ADR-006: no agent imports this module.
+# See backend/device_control.py.
+try:
+    from site_model import get_site_model as _dc_get_site_model
+
+    from backend.device_control import (
+        DeviceController,
+        register_device_control_routes,
+    )
+
+    def _device_controller():
+        ctl = getattr(app.state, "device_controller", None)
+        if ctl is None:
+            _sm = _dc_get_site_model(PROJECT_ROOT)
+            _components = (getattr(_sm, "_raw", None) or {}).get("components") or {}
+            if not _components:
+                return None
+            ctl = DeviceController.from_components(_components)
+            app.state.device_controller = ctl
+        return ctl
+
+    register_device_control_routes(app, _device_controller)
+    log.info("[BOOT] Device control mounted (GET /api/devices + authority/select/operate)")
+except Exception as e:
+    log.error("[BOOT] Device control mount failed: %s", e, exc_info=True)
+
 
 # ==============================================================
 #  Entrypoint
