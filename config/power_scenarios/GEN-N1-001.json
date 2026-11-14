@@ -1,0 +1,26 @@
+{
+  "scenario_id": "GEN-N1-001",
+  "version": "1.0.0",
+  "title": "Generator out for maintenance: N+1 against total load",
+  "category": "Generation_Redundancy",
+  "severity": "High",
+  "tier_iv_relevance": true,
+  "safety_critical": true,
+  "description": "DC-EPMS-066 / -067. One 2.75 MW set of path A is isolated: 8 x 2.75 = 22.0 MW still covers the 21.5 MW total load. A second isolation would leave 19.25 MW and must be refused, even though it is above the 16.76 MW IT load. Path B is unaffected.",
+  "preconditions": {"path": "a", "gen_available": 9},
+  "sequence": [
+    {"step": 1, "action": "authority", "targets": ["genset_a_05", "genset_a_06", "genset_b_05"], "mode": "REMOTE"},
+    {"step": 2, "action": "procedure", "target": "genset_a_05", "goal": "ISOLATE_FOR_MAINTENANCE"},
+    {"step": 3, "action": "procedure_start", "target": "genset_a_06", "goal": "ISOLATE_FOR_MAINTENANCE", "expect": "blocked", "reason_contains": "21.50 MW total load"},
+    {"step": 4, "action": "procedure", "target": "genset_b_05", "goal": "ISOLATE_FOR_MAINTENANCE"}
+  ],
+  "success_criteria": [
+    {"check": "bay", "target": "genset_a_05", "cb": "OPEN", "ds": "OPEN", "es": "CLOSED", "loto": true},
+    {"check": "bay", "target": "genset_a_06", "cb": "OPEN", "ds": "CLOSED", "es": "OPEN", "loto": false},
+    {"check": "path", "path": "a", "field": "gen_available_kw", "equals": 22000},
+    {"check": "path", "path": "a", "field": "gen_n_ok", "equals": true},
+    {"check": "path", "path": "a", "field": "gen_n_plus_1_ok", "equals": false},
+    {"check": "path", "path": "b", "field": "gen_available", "equals": 8}
+  ],
+  "audit": {"required_logging": ["user", "timestamp", "step", "result", "interlock_status"]}
+}

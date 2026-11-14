@@ -158,9 +158,13 @@ function renderSummary(s) {
             <div class="dvc-tile">
                 <div class="dvc-tile-lbl">Generation available</div>
                 <div class="dvc-tile-val">${escapeHTML(formatMw(s.gen_available_kw))} <small>MW</small></div>
-                <div class="dvc-tile-sub">${escapeHTML(String(s.gen_available))} of ${escapeHTML(String(s.gen_total))} bays in service ·
-                    full-path demand ${escapeHTML(formatMw(s.design_demand_kw))} MW</div>
+                <div class="dvc-tile-sub">${escapeHTML(String(s.gen_available))} of ${escapeHTML(String(s.gen_total))} bays in service</div>
                 <div class="dvc-checks">${check(s.gen_n_ok, 'N')}${check(s.gen_n_plus_1_ok, 'N+1')}</div>
+                <dl class="dvc-floor">
+                    <div><dt>Total load floor</dt><dd>${escapeHTML(formatMw(s.generation_floor_kw))} MW</dd></div>
+                    <div><dt>IT load only</dt><dd>${escapeHTML(formatMw(s.it_design_kw))} MW
+                        <span class="dvc-floor-note">(N+1 ${s.gen_n_plus_1_it_only_ok ? 'met' : 'not met'}, not used)</span></dd></div>
+                </dl>
             </div>
         </section>`;
 }

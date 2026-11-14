@@ -1,17 +1,17 @@
 {
   "scenario_id": "COMB-002",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Utility loss on path A with two generators failing to start",
   "category": "Combined",
   "severity": "Critical",
   "tier_iv_relevance": true,
   "safety_critical": false,
-  "description": "Seven of nine sets reach the bus (17.5 MW). In normal 2N operation path A draws about 10.7 MW, so the transfer is permitted. Honest limit: the scenario does not model the utility outage itself or the battery ride-through.",
+  "description": "Seven of nine 2.75 MW sets reach the bus (19.25 MW). In normal 2N operation path A draws about 10.7 MW, so the transfer is permitted. Honest limit: the scenario does not model the utility outage itself or the battery ride-through.",
   "preconditions": {
     "path": "a",
     "generators_failed": [
-      "gen_a_08",
-      "gen_a_09"
+      "genset_a_08",
+      "genset_a_09"
     ]
   },
   "sequence": [
@@ -24,20 +24,20 @@
     {
       "step": 2,
       "action": "authority",
-      "target": "gen_a_*",
+      "target": "genset_a_*",
       "mode": "REMOTE"
     },
     {
       "step": 3,
       "action": "command",
       "targets": [
-        "gen_a_01",
-        "gen_a_02",
-        "gen_a_03",
-        "gen_a_04",
-        "gen_a_05",
-        "gen_a_06",
-        "gen_a_07"
+        "genset_a_01",
+        "genset_a_02",
+        "genset_a_03",
+        "genset_a_04",
+        "genset_a_05",
+        "genset_a_06",
+        "genset_a_07"
       ],
       "command": "START"
     },
@@ -63,17 +63,17 @@
       "check": "path",
       "path": "a",
       "field": "gen_on_bus_kw",
-      "equals": 17500
+      "equals": 19250
     },
     {
       "check": "reading",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "label": "Load",
       "at_most": 100
     },
     {
       "check": "device_state",
-      "target": "gen_a_08",
+      "target": "genset_a_08",
       "equals": "STANDBY"
     }
   ],

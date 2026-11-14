@@ -94,7 +94,7 @@ def isolate(ctl, bay_id: str) -> None:
         ctl.execute_step(proc["procedure_id"], item["step"], "manager")
 
 
-GENS_A = [f"gen_a_{n:02d}" for n in range(1, 10)]
+GENS_A = [f"genset_a_{n:02d}" for n in range(1, 10)]
 
 
 class TestClosedDesign:
@@ -104,7 +104,7 @@ class TestClosedDesign:
         assert kinds.count(dc.KIND_GENERATOR) == 18
         assert kinds.count(dc.KIND_TRANSFER) == 2
         assert ctl.devices["ups_a_01"].model == "Trinergy 2500"
-        assert ctl.devices["gen_b_09"].voltage_v == 13800
+        assert ctl.devices["genset_b_09"].voltage_v == 13800
         assert set(ctl.bays) == {d.device_id for d in ctl.devices.values()
                                  if d.kind == dc.KIND_GENERATOR}
 
@@ -142,13 +142,32 @@ class TestClosedDesign:
         assert ctl.path_summary("a")["ups_losses_kw"] == 85
         assert ctl.path_summary("a")["ups_protected"] is True
 
-    def test_finding_generation_has_no_n_plus_1_at_full_path_demand(self, ctl):
-        """9 x 2.5 MW = 22.5 MW covers the 21.5 MW full-path demand
-        (N), but 8 x 2.5 MW = 20 MW does not (no N+1) with the 25
-        percent cooling assumption. Reported to the operator."""
+    def test_generation_n_plus_1_with_total_load(self, ctl):
+        """DC-EPMS-066 / -067 (operator decision 2026-11-14): 9 x 2.75 MW.
+        With one set out, 8 x 2.75 = 22.0 MW covers the 21.5 MW design
+        total (IT + 25 percent overhead). The computed full-path demand
+        is 21468 kW, so the operator's 21.5 MW figure governs."""
         s = ctl.path_summary("a")
+        assert s["gen_available_kw"] == 24750
         assert s["design_demand_kw"] == pytest.approx(21468, abs=2)
+        assert s["design_total_kw"] == 21500
+        assert s["generation_floor_kw"] == 21500
         assert s["gen_n_ok"] is True
+        assert s["gen_n_plus_1_ok"] is True
+        assert s["gen_n_plus_1_it_only_ok"] is True
+
+    def test_superseded_design_would_fail_the_total_load_rule(self, design, clock):
+        old = {**design, "generators": {**design["generators"], "rated_kw": 2500}}
+        s = dc.DeviceController.from_design(old, clock=clock, wall_clock=clock).path_summary("a")
+        assert s["gen_n_ok"] is True
+        assert s["gen_n_plus_1_ok"] is False          # 20.0 MW < 21.5 MW
+        assert s["gen_n_plus_1_it_only_ok"] is True   # what the old rule saw
+
+    def test_floor_follows_a_load_above_the_design_figure(self, design, clock):
+        heavy = {**design, "design_basis": {**design["design_basis"], "cooling_and_aux_fraction": 0.40}}
+        s = dc.DeviceController.from_design(heavy, clock=clock, wall_clock=clock).path_summary("a")
+        # 16760 * 1.40 + 518 = 23982 kW > 21500 kW
+        assert s["generation_floor_kw"] == pytest.approx(23982, abs=2)
         assert s["gen_n_plus_1_ok"] is False
 
     def test_design_validation(self, design):
@@ -170,12 +189,12 @@ class TestClosedDesign:
 class TestAuthority:
     def test_auto_and_local_refuse_remote_commands(self, ctl):
         with pytest.raises(dc.DeviceControlError) as exc:
-            ctl.select("gen_a_01", "START", "manager")
+            ctl.select("genset_a_01", "START", "manager")
         assert exc.value.status == 409
         assert "AUTO" in exc.value.detail
-        ctl.set_authority("gen_a_01", dc.AUTH_LOCAL, "manager")
+        ctl.set_authority("genset_a_01", dc.AUTH_LOCAL, "manager")
         with pytest.raises(dc.DeviceControlError) as exc:
-            ctl.select("gen_a_01", "START", "manager")
+            ctl.select("genset_a_01", "START", "manager")
         assert "LOCAL" in exc.value.detail
 
     def test_local_change_is_recorded_as_bench_simulation(self, ctl):
@@ -197,18 +216,18 @@ class TestAuthority:
         assert "AUTO" in next(iter(reasons))
 
     def test_local_blocks_a_switching_procedure(self, ctl):
-        ctl.set_authority("gen_a_01", dc.AUTH_LOCAL, "manager")
+        ctl.set_authority("genset_a_01", dc.AUTH_LOCAL, "manager")
         with pytest.raises(dc.DeviceControlError) as exc:
-            ctl.start_procedure("gen_a_01", mv.GOAL_ISOLATE, "manager")
+            ctl.start_procedure("genset_a_01", mv.GOAL_ISOLATE, "manager")
         assert "LOCAL" in exc.value.detail
 
 
 class TestSelectBeforeOperate:
     def test_select_changes_nothing(self, ctl):
-        remote(ctl, "gen_a_01")
-        sel = ctl.select("gen_a_01", "START", "manager")
+        remote(ctl, "genset_a_01")
+        sel = ctl.select("genset_a_01", "START", "manager")
         assert sel["expires_in_s"] == dc.SELECT_TTL_S
-        assert ctl.devices["gen_a_01"].state == dc.GEN_STANDBY
+        assert ctl.devices["genset_a_01"].state == dc.GEN_STANDBY
 
     def test_token_single_use_expiry_actor_and_device(self, ctl, clock):
         remote(ctl, "ups_a_01", "ups_a_02")
@@ -232,18 +251,18 @@ class TestSelectBeforeOperate:
         assert ctl.devices["ups_a_01"].state == dc.UPS_STATIC_BYPASS
 
     def test_authority_change_drops_a_pending_selection(self, ctl):
-        remote(ctl, "gen_a_01")
-        sel = ctl.select("gen_a_01", "START", "manager")
-        ctl.set_authority("gen_a_01", dc.AUTH_AUTO, "manager")
-        ctl.set_authority("gen_a_01", dc.AUTH_REMOTE, "manager")
+        remote(ctl, "genset_a_01")
+        sel = ctl.select("genset_a_01", "START", "manager")
+        ctl.set_authority("genset_a_01", dc.AUTH_AUTO, "manager")
+        ctl.set_authority("genset_a_01", dc.AUTH_REMOTE, "manager")
         with pytest.raises(dc.DeviceControlError):
-            ctl.operate("gen_a_01", sel["select_token"], "manager")
+            ctl.operate("genset_a_01", sel["select_token"], "manager")
 
     def test_interlocks_are_re_evaluated_at_operate(self, ctl, clock):
-        start(ctl, clock, *GENS_A[:5])
+        start(ctl, clock, *GENS_A[:4])  # 11.0 MW against 10.73 MW
         remote(ctl, "mvtc_a")
         sel = ctl.select("mvtc_a", "TRANSFER_TO_GENERATORS", "manager")
-        run(ctl, "gen_a_01", "STOP")  # bus drops to 10 MW after the select
+        run(ctl, "genset_a_01", "STOP")  # bus drops to 8.25 MW after the select
         with pytest.raises(dc.DeviceControlError) as exc:
             ctl.operate("mvtc_a", sel["select_token"], "manager")
         assert "synchronised" in exc.value.detail
@@ -306,40 +325,40 @@ class TestUpsBlocks:
 
 class TestGeneratorsAndTransfer:
     def test_start_sequence_closes_52g_after_synchronising(self, ctl, clock):
-        remote(ctl, "gen_a_01")
-        run(ctl, "gen_a_01", "START")
+        remote(ctl, "genset_a_01")
+        run(ctl, "genset_a_01", "START")
         clock.tick(dc.CRANK_TIME_S / 2)
-        snap = ctl.snapshot("gen_a_01")
+        snap = ctl.snapshot("genset_a_01")
         assert snap["state"] == dc.GEN_CRANKING
-        assert ctl.bays["gen_a_01"].cb == mv.OPEN
+        assert ctl.bays["genset_a_01"].cb == mv.OPEN
         clock.tick(dc.CRANK_TIME_S)
-        snap = ctl.snapshot("gen_a_01")
+        snap = ctl.snapshot("genset_a_01")
         assert snap["state"] == dc.GEN_RUNNING
-        assert ctl.bays["gen_a_01"].cb == mv.CLOSED
-        assert readings(ctl, "gen_a_01")["Output voltage"] == 13.8
+        assert ctl.bays["genset_a_01"].cb == mv.CLOSED
+        assert readings(ctl, "genset_a_01")["Output voltage"] == 13.8
 
     def test_stop_opens_52g_then_cools_down(self, ctl, clock):
-        start(ctl, clock, "gen_a_01")
-        run(ctl, "gen_a_01", "STOP")
-        assert ctl.bays["gen_a_01"].cb == mv.OPEN
-        assert ctl.snapshot("gen_a_01")["state"] == dc.GEN_COOLDOWN
+        start(ctl, clock, "genset_a_01")
+        run(ctl, "genset_a_01", "STOP")
+        assert ctl.bays["genset_a_01"].cb == mv.OPEN
+        assert ctl.snapshot("genset_a_01")["state"] == dc.GEN_COOLDOWN
         clock.tick(dc.COOLDOWN_TIME_S + 0.1)
-        assert ctl.snapshot("gen_a_01")["state"] == dc.GEN_STANDBY
+        assert ctl.snapshot("genset_a_01")["state"] == dc.GEN_STANDBY
 
     def test_transfer_needs_enough_generation_on_the_bus(self, ctl, clock):
         remote(ctl, "mvtc_a")
-        start(ctl, clock, *GENS_A[:4])  # 10 MW against 10.7 MW
+        start(ctl, clock, *GENS_A[:3])  # 8.25 MW against 10.73 MW
         with pytest.raises(dc.DeviceControlError) as exc:
             ctl.select("mvtc_a", "TRANSFER_TO_GENERATORS", "manager")
-        assert "10.0 MW synchronised" in exc.value.detail
-        start(ctl, clock, GENS_A[4])
+        assert "MW synchronised, below the 10.7 MW" in exc.value.detail
+        start(ctl, clock, GENS_A[3])
         run(ctl, "mvtc_a", "TRANSFER_TO_GENERATORS")
         snap = ctl.snapshot("mvtc_a")
         assert snap["state"] == dc.XFER_GENERATORS
         assert [i["value"] for i in snap["indications"]] == [mv.OPEN, mv.CLOSED]
-        assert ctl.snapshot("gen_a_01")["state"] == dc.GEN_ON_LOAD
-        # 10734 kW over 5 sets
-        assert readings(ctl, "gen_a_01")["Real power"] == pytest.approx(2147, abs=1)
+        assert ctl.snapshot("genset_a_01")["state"] == dc.GEN_ON_LOAD
+        # 10734 kW over 4 sets
+        assert readings(ctl, "genset_a_01")["Real power"] == pytest.approx(2684, abs=1)
 
     def test_other_path_generation_does_not_count(self, ctl, clock):
         start(ctl, clock, *[g.replace("_a_", "_b_") for g in GENS_A])
@@ -348,44 +367,44 @@ class TestGeneratorsAndTransfer:
             ctl.select("mvtc_a", "TRANSFER_TO_GENERATORS", "manager")
 
     def test_a_set_carrying_load_cannot_leave_the_path_short(self, ctl, clock):
-        start(ctl, clock, *GENS_A[:5])
+        start(ctl, clock, *GENS_A[:4])
         remote(ctl, "mvtc_a")
         run(ctl, "mvtc_a", "TRANSFER_TO_GENERATORS")
         with pytest.raises(dc.DeviceControlError) as exc:
-            ctl.select("gen_a_01", "STOP", "manager")
-        assert "Remaining sets would supply 10.0 MW" in exc.value.detail
-        start(ctl, clock, GENS_A[5])
-        run(ctl, "gen_a_01", "STOP")
+            ctl.select("genset_a_01", "STOP", "manager")
+        assert "Remaining sets would supply" in exc.value.detail
+        start(ctl, clock, GENS_A[4])
+        run(ctl, "genset_a_01", "STOP")
         run(ctl, "mvtc_a", "RETRANSFER_TO_UTILITY")
-        assert ctl.snapshot("gen_a_02")["state"] == dc.GEN_RUNNING
+        assert ctl.snapshot("genset_a_02")["state"] == dc.GEN_RUNNING
 
 
 class TestMvProcedures:
     def test_isolation_runs_step_by_step_with_a_witness(self, ctl):
-        remote(ctl, "gen_a_03")
-        isolate(ctl, "gen_a_03")
-        bay = ctl.bays["gen_a_03"]
+        remote(ctl, "genset_a_03")
+        isolate(ctl, "genset_a_03")
+        bay = ctl.bays["genset_a_03"]
         assert (bay.cb, bay.ds, bay.es, bay.loto) == (mv.OPEN, mv.OPEN, mv.CLOSED, True)
         assert ctl.path_summary("a")["gen_available"] == 8
-        snap = ctl.snapshot("gen_a_03")
+        snap = ctl.snapshot("genset_a_03")
         assert snap["status"]["text"] == "Isolated, earthed and locked out"
         start_cmd = next(c for c in snap["commands"] if c["command"] == "START")
         assert start_cmd["blocked_reason"] == "Bay is under LOTO."
 
     def test_only_the_next_step_can_run(self, ctl):
-        remote(ctl, "gen_a_03")
-        proc = ctl.start_procedure("gen_a_03", mv.GOAL_ISOLATE, "manager")
+        remote(ctl, "genset_a_03")
+        proc = ctl.start_procedure("genset_a_03", mv.GOAL_ISOLATE, "manager")
         with pytest.raises(dc.DeviceControlError) as exc:
             ctl.execute_step(proc["procedure_id"], 4, "manager")
         assert "sequence deviation" in exc.value.detail
-        assert ctl.bays["gen_a_03"].ds == mv.CLOSED
-        described = ctl.snapshot("gen_a_03")["switching"]["procedure"]
+        assert ctl.bays["genset_a_03"].ds == mv.CLOSED
+        described = ctl.snapshot("genset_a_03")["switching"]["procedure"]
         assert described["blocked_attempts"] == 1
         assert [s["status"] for s in described["steps"]] == ["next"] + ["locked"] * 4
 
     def test_two_person_rule(self, ctl, clock):
-        remote(ctl, "gen_a_03")
-        proc = ctl.start_procedure("gen_a_03", mv.GOAL_ISOLATE, "manager")
+        remote(ctl, "genset_a_03")
+        proc = ctl.start_procedure("genset_a_03", mv.GOAL_ISOLATE, "manager")
         pid = proc["procedure_id"]
         for step in (1, 2, 3):
             ctl.execute_step(pid, step, "manager")
@@ -403,11 +422,11 @@ class TestMvProcedures:
         with pytest.raises(dc.DeviceControlError) as exc:
             ctl.execute_step(pid, 4, "manager")
         assert "two-person rule" in exc.value.detail
-        assert ctl.bays["gen_a_03"].es == mv.OPEN
+        assert ctl.bays["genset_a_03"].es == mv.OPEN
 
     def test_stale_verification_blocks_the_earthing_switch(self, ctl, clock):
-        remote(ctl, "gen_a_03")
-        pid = ctl.start_procedure("gen_a_03", mv.GOAL_ISOLATE, "manager")["procedure_id"]
+        remote(ctl, "genset_a_03")
+        pid = ctl.start_procedure("genset_a_03", mv.GOAL_ISOLATE, "manager")["procedure_id"]
         for step in (1, 2, 3):
             ctl.execute_step(pid, step, "manager")
         clock.tick(mv.ABSENCE_VALID_S + 1)
@@ -417,56 +436,68 @@ class TestMvProcedures:
         assert exc.value.detail.startswith("R3")
 
     def test_another_operator_cannot_take_over(self, ctl):
-        remote(ctl, "gen_a_03")
-        pid = ctl.start_procedure("gen_a_03", mv.GOAL_ISOLATE, "manager")["procedure_id"]
+        remote(ctl, "genset_a_03")
+        pid = ctl.start_procedure("genset_a_03", mv.GOAL_ISOLATE, "manager")["procedure_id"]
         with pytest.raises(dc.DeviceControlError) as exc:
             ctl.execute_step(pid, 1, "someone_else")
         assert exc.value.status == 403
 
     def test_running_generator_cannot_be_isolated(self, ctl, clock):
-        start(ctl, clock, "gen_a_03")
+        start(ctl, clock, "genset_a_03")
         with pytest.raises(dc.DeviceControlError) as exc:
-            ctl.start_procedure("gen_a_03", mv.GOAL_ISOLATE, "manager")
+            ctl.start_procedure("genset_a_03", mv.GOAL_ISOLATE, "manager")
         assert "Stop the generator first" in exc.value.detail
 
-    def test_capacity_rule_limits_how_many_bays_go_out(self, ctl):
-        # 9 x 2.5 MW: two out leaves 17.5 MW (ok); a third would leave 15 MW.
-        remote(ctl, "gen_a_01", "gen_a_02", "gen_a_03")
-        isolate(ctl, "gen_a_01")
-        isolate(ctl, "gen_a_02")
+    def test_capacity_rule_uses_total_load(self, ctl):
+        """DC-EPMS-067: one bay out leaves 22.0 MW (>= 21.5 MW total);
+        a second would leave 19.25 MW. The superseded IT-only rule
+        (16.76 MW) would have let three bays go out."""
+        remote(ctl, "genset_a_01", "genset_a_02")
+        isolate(ctl, "genset_a_01")
+        assert ctl.path_summary("a")["gen_available_kw"] == 22000
         with pytest.raises(dc.DeviceControlError) as exc:
-            ctl.start_procedure("gen_a_03", mv.GOAL_ISOLATE, "manager")
-        assert "16.76 MW design load" in exc.value.detail
+            ctl.start_procedure("genset_a_02", mv.GOAL_ISOLATE, "manager")
+        assert "keeps 19.25 MW" in exc.value.detail
+        assert "21.50 MW total load" in exc.value.detail
+        goal = next(g for g in ctl.snapshot("genset_a_02")["switching"]["goals"]
+                    if g["goal"] == mv.GOAL_ISOLATE)
+        assert goal["permitted"] is False
+
+    def test_the_other_path_is_independent(self, ctl):
+        remote(ctl, "genset_a_01", "genset_b_01")
+        isolate(ctl, "genset_a_01")
+        isolate(ctl, "genset_b_01")
+        assert ctl.path_summary("b")["gen_n_plus_1_ok"] is False
 
     def test_one_procedure_per_bay_and_no_start_meanwhile(self, ctl):
-        remote(ctl, "gen_a_03")
-        ctl.start_procedure("gen_a_03", mv.GOAL_ISOLATE, "manager")
+        remote(ctl, "genset_a_03")
+        ctl.start_procedure("genset_a_03", mv.GOAL_ISOLATE, "manager")
         with pytest.raises(dc.DeviceControlError):
-            ctl.start_procedure("gen_a_03", mv.GOAL_ISOLATE, "manager")
+            ctl.start_procedure("genset_a_03", mv.GOAL_ISOLATE, "manager")
         with pytest.raises(dc.DeviceControlError) as exc:
-            ctl.select("gen_a_03", "START", "manager")
+            ctl.select("genset_a_03", "START", "manager")
         assert "procedure is in progress" in exc.value.detail
 
     def test_abort_keeps_positions_and_restore_recovers(self, ctl):
-        remote(ctl, "gen_a_03")
-        pid = ctl.start_procedure("gen_a_03", mv.GOAL_ISOLATE, "manager")["procedure_id"]
+        remote(ctl, "genset_a_03")
+        pid = ctl.start_procedure("genset_a_03", mv.GOAL_ISOLATE, "manager")["procedure_id"]
         ctl.execute_step(pid, 1, "manager")
         ctl.execute_step(pid, 2, "manager")
         ctl.abort_procedure(pid, "manager")
-        assert ctl.bays["gen_a_03"].ds == mv.OPEN
-        proc = ctl.start_procedure("gen_a_03", mv.GOAL_RESTORE, "manager")
+        assert ctl.bays["genset_a_03"].ds == mv.OPEN
+        proc = ctl.start_procedure("genset_a_03", mv.GOAL_RESTORE, "manager")
         assert [s["operation"] for s in proc["steps"]] == [mv.OP_CLOSE_DS]
         ctl.execute_step(proc["procedure_id"], 1, "manager")
-        assert ctl.bays["gen_a_03"].in_service
-        assert ctl.snapshot("gen_a_03")["switching"]["procedure"] is None
+        assert ctl.bays["genset_a_03"].in_service
+        assert ctl.snapshot("genset_a_03")["switching"]["procedure"] is None
 
     def test_isolated_bay_does_not_synchronise(self, ctl, clock):
         """Defence in depth: even if the engine ran, 52-G stays open."""
-        ctl.bays["gen_a_03"].ds = mv.OPEN
-        ctl.devices["gen_a_03"].state = dc.GEN_CRANKING
+        ctl.bays["genset_a_03"].ds = mv.OPEN
+        ctl.devices["genset_a_03"].state = dc.GEN_CRANKING
         clock.tick(dc.CRANK_TIME_S + 1)
         ctl.snapshot_all()
-        assert ctl.bays["gen_a_03"].cb == mv.OPEN
+        assert ctl.bays["genset_a_03"].cb == mv.OPEN
         assert ctl.path_summary("a")["gen_on_bus_kw"] == 0
 
     def test_transfer_controller_has_no_bay(self, ctl):
@@ -550,8 +581,8 @@ class TestRoutes:
     def test_mv_procedure_over_http_with_two_people(self, app_client):
         client, app, ctl = app_client
         mgr, safety = _bearer("manager"), _bearer("safety_a")
-        client.post("/api/devices/gen_a_03/authority", json={"authority": "REMOTE"}, headers=mgr)
-        started = client.post("/api/mv/bays/gen_a_03/procedure",
+        client.post("/api/devices/genset_a_03/authority", json={"authority": "REMOTE"}, headers=mgr)
+        started = client.post("/api/mv/bays/genset_a_03/procedure",
                               json={"goal": "ISOLATE_FOR_MAINTENANCE"}, headers=mgr)
         assert started.status_code == 200
         pid = started.json()["procedure"]["procedure_id"]
@@ -569,7 +600,7 @@ class TestRoutes:
         assert client.post(witness, json={"step": 5}, headers=safety).status_code == 200
         done = client.post(step, json={"step": 5}, headers=mgr).json()
         assert done["procedure"]["complete"] is True
-        assert ctl.bays["gen_a_03"].loto is True
+        assert ctl.bays["genset_a_03"].loto is True
 
         entries = asyncio.run(app.state.forensic_ledger.persistence.fetch_all())
         actions = [e.action for e in entries]
@@ -585,8 +616,8 @@ class TestRoutes:
         client, app, ctl = app_client
         app.state.user_store = seed_demo_users()
         mgr = _bearer("manager")
-        client.post("/api/devices/gen_a_03/authority", json={"authority": "REMOTE"}, headers=mgr)
-        pid = client.post("/api/mv/bays/gen_a_03/procedure", json={"goal": "ISOLATE_FOR_MAINTENANCE"},
+        client.post("/api/devices/genset_a_03/authority", json={"authority": "REMOTE"}, headers=mgr)
+        pid = client.post("/api/mv/bays/genset_a_03/procedure", json={"goal": "ISOLATE_FOR_MAINTENANCE"},
                           headers=mgr).json()["procedure"]["procedure_id"]
         for n in (1, 2, 3):
             client.post(f"/api/mv/procedures/{pid}/step", json={"step": n}, headers=mgr)
@@ -603,15 +634,15 @@ class TestRoutes:
         assert ok.status_code == 200
         assert "safety-demo" not in ok.text
         assert client.post(f"/api/mv/procedures/{pid}/step", json={"step": 4}, headers=mgr).status_code == 200
-        assert ctl.bays["gen_a_03"].es == mv.CLOSED
+        assert ctl.bays["genset_a_03"].es == mv.CLOSED
         entries = asyncio.run(app.state.forensic_ledger.persistence.fetch_all())
         assert all("password" not in str(e.payload).lower() for e in entries)
 
     def test_abort_over_http(self, app_client):
         client, _app, _ctl = app_client
         h = _bearer("manager")
-        client.post("/api/devices/gen_a_03/authority", json={"authority": "REMOTE"}, headers=h)
-        pid = client.post("/api/mv/bays/gen_a_03/procedure",
+        client.post("/api/devices/genset_a_03/authority", json={"authority": "REMOTE"}, headers=h)
+        pid = client.post("/api/mv/bays/genset_a_03/procedure",
                           json={"goal": "ISOLATE_FOR_MAINTENANCE"}, headers=h).json()["procedure"]["procedure_id"]
         assert client.post(f"/api/mv/procedures/{pid}/abort", json={}, headers=h).status_code == 200
         assert client.post(f"/api/mv/procedures/{pid}/step", json={"step": 1}, headers=h).status_code == 404

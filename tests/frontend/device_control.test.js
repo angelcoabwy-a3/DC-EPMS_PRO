@@ -22,7 +22,7 @@ const HOSTILE = '<img src=x onerror=alert(1)>';
 
 function gen(overrides = {}) {
     return Object.assign({
-        id: 'gen_a_01', kind: 'generator', display: 'Generator A1', path: 'a',
+        id: 'genset_a_01', kind: 'generator', display: 'Generator A1', path: 'a',
         vendor: '', model: '', authority: 'REMOTE', state: 'STANDBY',
         status: { tone: 'ok', text: 'Ready to start' },
         readings: [
@@ -53,7 +53,7 @@ function procedure(nextIndex, extra = {}) {
         ['APPLY_LOTO', 'Apply lockout / tagout', true, true],
     ];
     return Object.assign({
-        procedure_id: 'p1', bay_id: 'gen_a_01', goal: 'ISOLATE_FOR_MAINTENANCE',
+        procedure_id: 'p1', bay_id: 'genset_a_01', goal: 'ISOLATE_FOR_MAINTENANCE',
         goal_label: 'Isolate for maintenance', operator: 'manager', complete: false, blocked_attempts: 0,
         steps: ops.map(([operation, label, safety_gate, two_person], i) => ({
             step: i + 1, operation, label, safety_gate, two_person,
@@ -68,8 +68,9 @@ function summary(path = 'a', overrides = {}) {
         path, source: 'UTILITY', it_load_kw: 8380, it_design_kw: 16760,
         ups_in_service: 8, ups_total: 8, ups_capacity_kw: 20000, ups_n_ok: true, ups_n_plus_1_ok: true,
         ups_losses_kw: 259, ups_protected: true, demand_kw: 10734, design_demand_kw: 21468,
-        gen_available: 9, gen_total: 9, gen_available_kw: 22500, gen_on_bus_kw: 0,
-        gen_n_ok: true, gen_n_plus_1_ok: false,
+        gen_available: 9, gen_total: 9, gen_available_kw: 24750, gen_on_bus_kw: 0,
+        design_total_kw: 21500, generation_floor_kw: 21500,
+        gen_n_ok: true, gen_n_plus_1_ok: true, gen_n_plus_1_it_only_ok: true,
     }, overrides);
 }
 
@@ -130,7 +131,7 @@ describe('R3-B -- path tabs and capacity summary', () => {
 
     it('shows one path at a time and switches on click', async () => {
         const root = mount();
-        wire({}, payload([gen(), gen({ id: 'gen_b_01', display: 'Generator B1', path: 'b' })]));
+        wire({}, payload([gen(), gen({ id: 'genset_b_01', display: 'Generator B1', path: 'b' })]));
         await V.refresh();
         expect([...root.querySelectorAll('.dvc-card-title')].map((e) => e.textContent)).toEqual(['Generator A1']);
         root.querySelector('[data-path="b"]').click();
@@ -142,10 +143,12 @@ describe('R3-B -- path tabs and capacity summary', () => {
         const root = mount();
         root.innerHTML = V.renderSummary(summary());
         const checks = [...root.querySelectorAll('.dvc-check')].map((e) => e.textContent);
-        expect(checks).toEqual(['N: MET', 'N+1: MET', 'N: MET', 'N+1: NOT MET']);
+        expect(checks).toEqual(['N: MET', 'N+1: MET', 'N: MET', 'N+1: MET']);
         expect(root.textContent).toContain('20.00 MW');
         expect(root.textContent).toContain('259 kW');
-        expect(root.textContent).toContain('full-path demand 21.47 MW');
+        expect(root.textContent).toContain('24.75 MW');
+        const floor = [...root.querySelectorAll('.dvc-floor > div')].map((d) => `${d.querySelector('dt').textContent} ${d.querySelector('dd').textContent.replace(/\s+/g, ' ').trim()}`);
+        expect(floor).toEqual(['Total load floor 21.50 MW', 'IT load only 16.76 MW (N+1 met, not used)']);
     });
 
     it('flags a block on static bypass and a path on generators', () => {
@@ -237,7 +240,7 @@ describe('R3-A -- select before operate', () => {
     it('select shows the confirmation and sends no operate', async () => {
         const root = mount();
         const calls = wire({
-            'POST /api/devices/gen_a_01/select': () => jsonResponse({
+            'POST /api/devices/genset_a_01/select': () => jsonResponse({
                 select_token: 'tok-1', command: 'START', label: 'Start engine', description: 'Cranks.', expires_in_s: 30,
             }),
         });
@@ -252,8 +255,8 @@ describe('R3-A -- select before operate', () => {
     it('operate sends the token and reports the ledger entry', async () => {
         const root = mount();
         const calls = wire({
-            'POST /api/devices/gen_a_01/select': () => jsonResponse({ select_token: 'tok-1', command: 'START', label: 'Start engine', expires_in_s: 30 }),
-            'POST /api/devices/gen_a_01/operate': () => jsonResponse({ success: true, ledger_entry_id: 'abcdef12-3456' }),
+            'POST /api/devices/genset_a_01/select': () => jsonResponse({ select_token: 'tok-1', command: 'START', label: 'Start engine', expires_in_s: 30 }),
+            'POST /api/devices/genset_a_01/operate': () => jsonResponse({ success: true, ledger_entry_id: 'abcdef12-3456' }),
         });
         await V.refresh();
         root.querySelector('[data-command="START"]').click();
@@ -267,8 +270,8 @@ describe('R3-A -- select before operate', () => {
     it('says so when the action was not chained', async () => {
         const root = mount();
         wire({
-            'POST /api/devices/gen_a_01/select': () => jsonResponse({ select_token: 't', command: 'START', expires_in_s: 30 }),
-            'POST /api/devices/gen_a_01/operate': () => jsonResponse({ success: true, ledger_entry_id: null }),
+            'POST /api/devices/genset_a_01/select': () => jsonResponse({ select_token: 't', command: 'START', expires_in_s: 30 }),
+            'POST /api/devices/genset_a_01/operate': () => jsonResponse({ success: true, ledger_entry_id: null }),
         });
         await V.refresh();
         root.querySelector('[data-command="START"]').click();
@@ -282,7 +285,7 @@ describe('R3-A -- select before operate', () => {
         const root = mount();
         let now = 1_000_000;
         V.setNow(() => now);
-        wire({ 'POST /api/devices/gen_a_01/select': () => jsonResponse({ select_token: 't', command: 'START', expires_in_s: 30 }) });
+        wire({ 'POST /api/devices/genset_a_01/select': () => jsonResponse({ select_token: 't', command: 'START', expires_in_s: 30 }) });
         await V.refresh();
         root.querySelector('[data-command="START"]').click();
         await flush();
@@ -297,7 +300,7 @@ describe('R3-A -- select before operate', () => {
 
     it('shows the server reason on a refusal', async () => {
         const root = mount();
-        wire({ 'POST /api/devices/gen_a_01/select': () => jsonResponse({ detail: 'this action requires FACILITY_MANAGER; role L1_OPERATOR is insufficient.' }, 403) });
+        wire({ 'POST /api/devices/genset_a_01/select': () => jsonResponse({ detail: 'this action requires FACILITY_MANAGER; role L1_OPERATOR is insufficient.' }, 403) });
         await V.refresh();
         root.querySelector('[data-command="START"]').click();
         await flush();
@@ -308,7 +311,7 @@ describe('R3-A -- select before operate', () => {
 describe('R3-B -- medium-voltage switching procedure', () => {
     it('starting a procedure posts the goal', async () => {
         const root = mount();
-        const calls = wire({ 'POST /api/mv/bays/gen_a_01/procedure': () => jsonResponse({ success: true, procedure: procedure(0) }) });
+        const calls = wire({ 'POST /api/mv/bays/genset_a_01/procedure': () => jsonResponse({ success: true, procedure: procedure(0) }) });
         await V.refresh();
         root.querySelector('[data-goal="ISOLATE_FOR_MAINTENANCE"]').click();
         await flush();
@@ -438,8 +441,8 @@ describe('R3-B -- scenario library', () => {
             'POST /api/power-scenarios/MV-SW-001/run': () => jsonResponse({
                 scenario_id: 'MV-SW-001', version: '1.0.0', title: 'Safe isolation', passed: true,
                 blocked_events: 0, simulated_seconds: 0, ledger_entry_id: '12345678-aaaa',
-                steps: [{ step: 1, action: 'authority', what: 'REMOTE', target: 'gen_a_03', expected: 'ok', outcome: 'ok', detail: '', as_expected: true }],
-                criteria: [{ criterion: { check: 'bay', target: 'gen_a_03' }, actual: { loto: true }, passed: true }],
+                steps: [{ step: 1, action: 'authority', what: 'REMOTE', target: 'genset_a_03', expected: 'ok', outcome: 'ok', detail: '', as_expected: true }],
+                criteria: [{ criterion: { check: 'bay', target: 'genset_a_03' }, actual: { loto: true }, passed: true }],
             }),
         });
         await V.refresh();
@@ -518,7 +521,7 @@ describe('R3-B -- S-VISUAL-01 fence + wiring', () => {
         ['dvc-ev-refused', 'dvc-ev-normal', 'dvc-check', 'dvc-check-ok', 'dvc-check-bad', 'dvc-tile', 'dvc-tile-ok', 'dvc-tile-warn',
             'dvc-ind', 'dvc-ind-open', 'dvc-ind-closed', 'dvc-ind-applied', 'dvc-ind-clear',
             'dvc-step', 'dvc-step-done', 'dvc-step-next', 'dvc-step-locked', 'dvc-crit-ok', 'dvc-crit-bad',
-            'dvc-msg-ok', 'dvc-msg-crit'].forEach((c) => emitted.add(c));
+            'dvc-msg-ok', 'dvc-msg-crit', 'dvc-floor', 'dvc-floor-note'].forEach((c) => emitted.add(c));
         expect(emitted.size).toBeGreaterThanOrEqual(70);
         expect([...emitted].filter((c) => !defined.has(c)).sort()).toEqual([]);
     });

@@ -16,11 +16,14 @@ design_basis:
   it_load_per_path_kw: 16760      # one path carrying 100 percent
   normal_share: 0.5               # 2N normal operation: each path 50 percent
   paths: [a, b]
-  # ASSUMPTION (the operator documents leave it open, item 8.5): share
+  # Share
   # of cooling and auxiliaries the generators must also carry, as a
-  # fraction of IT load. 0.25 puts a full path at about 21.5 MW, inside
-  # the 20.5 to 23 MW band of the operator document.
+  # fraction of IT load. Confirmed at 0.25 by the operator on 2026-11-14.
   cooling_and_aux_fraction: 0.25
+  # Operator decision 2026-11-14 (DC-EPMS-067): design total load per
+  # path, IT + 25 percent overhead. The model uses the larger of this
+  # figure and its own computed full-path demand.
+  design_total_load_kw: 21500
 
 ups:
   vendor: Vertiv
@@ -36,8 +39,10 @@ ups:
 generators:
   vendor: ""                      # not selected by the operator
   model: ""
-  rated_kw: 2500
-  units_per_path: 9               # N+1: 8 x 2.5 = 20 MW
+  # Operator decision 2026-11-14 (DC-EPMS-066, ADR-013): 2.75 MW sets.
+  # N+1: 8 x 2.75 = 22.0 MW against 21.5 MW design total.
+  rated_kw: 2750
+  units_per_path: 9
   voltage_v: 13800
 
 transfer:

@@ -1,6 +1,6 @@
 {
   "scenario_id": "MV-SW-004",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Retransfer path A from generators to utility",
   "category": "MediumVoltage_Switching",
   "severity": "High",
@@ -20,18 +20,17 @@
     {
       "step": 2,
       "action": "authority",
-      "target": "gen_a_*",
+      "target": "genset_a_*",
       "mode": "REMOTE"
     },
     {
       "step": 3,
       "action": "command",
       "targets": [
-        "gen_a_01",
-        "gen_a_02",
-        "gen_a_03",
-        "gen_a_04",
-        "gen_a_05"
+        "genset_a_01",
+        "genset_a_02",
+        "genset_a_03",
+        "genset_a_04"
       ],
       "command": "START"
     },
@@ -49,7 +48,7 @@
     {
       "step": 6,
       "action": "command",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "command": "STOP",
       "expect": "blocked",
       "reason_contains": "Remaining sets"
@@ -63,7 +62,7 @@
     {
       "step": 8,
       "action": "command",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "command": "STOP"
     },
     {
@@ -80,12 +79,12 @@
     },
     {
       "check": "device_state",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "equals": "STANDBY"
     },
     {
       "check": "bay",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "cb": "OPEN",
       "ds": "CLOSED",
       "es": "OPEN",
@@ -93,7 +92,7 @@
     },
     {
       "check": "device_state",
-      "target": "gen_a_02",
+      "target": "genset_a_02",
       "equals": "RUNNING"
     }
   ],

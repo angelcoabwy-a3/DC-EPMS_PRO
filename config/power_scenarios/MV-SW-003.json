@@ -1,6 +1,6 @@
 {
   "scenario_id": "MV-SW-003",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Transfer path A from utility to generators",
   "category": "MediumVoltage_Switching",
   "severity": "Critical",
@@ -29,13 +29,13 @@
     {
       "step": 3,
       "action": "authority",
-      "target": "gen_a_*",
+      "target": "genset_a_*",
       "mode": "REMOTE"
     },
     {
       "step": 4,
       "action": "command",
-      "target": "gen_a_*",
+      "target": "genset_a_*",
       "command": "START"
     },
     {
@@ -58,14 +58,14 @@
     },
     {
       "check": "device_state",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "equals": "ON_LOAD"
     },
     {
       "check": "path",
       "path": "a",
       "field": "gen_on_bus_kw",
-      "equals": 22500
+      "equals": 24750
     },
     {
       "check": "device_state",

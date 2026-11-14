@@ -1,6 +1,6 @@
 {
   "scenario_id": "MV-SW-005",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "title": "Unsafe medium-voltage operations are blocked (training)",
   "category": "MediumVoltage_Switching",
   "severity": "Critical",
@@ -14,7 +14,7 @@
     {
       "step": 1,
       "action": "bay_attempt",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "operation": "CLOSE_ES",
       "expect": "blocked",
       "reason_contains": "R2"
@@ -22,13 +22,13 @@
     {
       "step": 2,
       "action": "authority",
-      "target": "gen_a_02",
+      "target": "genset_a_02",
       "mode": "REMOTE"
     },
     {
       "step": 3,
       "action": "command",
-      "target": "gen_a_02",
+      "target": "genset_a_02",
       "command": "START"
     },
     {
@@ -39,7 +39,7 @@
     {
       "step": 5,
       "action": "bay_attempt",
-      "target": "gen_a_02",
+      "target": "genset_a_02",
       "operation": "OPEN_DS",
       "expect": "blocked",
       "reason_contains": "R4"
@@ -47,13 +47,13 @@
     {
       "step": 6,
       "action": "bay_attempt",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "operation": "OPEN_DS"
     },
     {
       "step": 7,
       "action": "bay_attempt",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "operation": "CLOSE_ES",
       "expect": "blocked",
       "reason_contains": "R3"
@@ -61,7 +61,7 @@
     {
       "step": 8,
       "action": "bay_attempt",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "operation": "VERIFY_ABSENCE_OF_VOLTAGE"
     },
     {
@@ -72,7 +72,7 @@
     {
       "step": 10,
       "action": "bay_attempt",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "operation": "CLOSE_ES",
       "expect": "blocked",
       "reason_contains": "R3"
@@ -80,19 +80,19 @@
     {
       "step": 11,
       "action": "bay_attempt",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "operation": "VERIFY_ABSENCE_OF_VOLTAGE"
     },
     {
       "step": 12,
       "action": "bay_attempt",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "operation": "CLOSE_ES"
     },
     {
       "step": 13,
       "action": "bay_attempt",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "operation": "CLOSE_DS",
       "expect": "blocked",
       "reason_contains": "R8"
@@ -100,7 +100,7 @@
     {
       "step": 14,
       "action": "bay_attempt",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "operation": "CLOSE_CB",
       "expect": "blocked",
       "reason_contains": "R1"
@@ -108,19 +108,19 @@
     {
       "step": 15,
       "action": "authority",
-      "target": "gen_a_04",
+      "target": "genset_b_04",
       "mode": "REMOTE"
     },
     {
       "step": 16,
       "action": "procedure_start",
-      "target": "gen_a_04",
+      "target": "genset_b_04",
       "goal": "ISOLATE_FOR_MAINTENANCE"
     },
     {
       "step": 17,
       "action": "procedure_step",
-      "target": "gen_a_04",
+      "target": "genset_b_04",
       "number": 3,
       "expect": "blocked",
       "reason_contains": "sequence deviation"
@@ -128,25 +128,25 @@
     {
       "step": 18,
       "action": "procedure_step",
-      "target": "gen_a_04",
+      "target": "genset_b_04",
       "number": 1
     },
     {
       "step": 19,
       "action": "procedure_step",
-      "target": "gen_a_04",
+      "target": "genset_b_04",
       "number": 2
     },
     {
       "step": 20,
       "action": "procedure_step",
-      "target": "gen_a_04",
+      "target": "genset_b_04",
       "number": 3
     },
     {
       "step": 21,
       "action": "procedure_step",
-      "target": "gen_a_04",
+      "target": "genset_b_04",
       "number": 4,
       "expect": "blocked",
       "reason_contains": "two-person"
@@ -154,7 +154,7 @@
     {
       "step": 22,
       "action": "procedure_step",
-      "target": "gen_a_04",
+      "target": "genset_b_04",
       "number": 4,
       "witness": "operator",
       "expect": "blocked",
@@ -163,7 +163,7 @@
     {
       "step": 23,
       "action": "procedure_step",
-      "target": "gen_a_04",
+      "target": "genset_b_04",
       "number": 4,
       "witness": "witness"
     }
@@ -171,7 +171,7 @@
   "success_criteria": [
     {
       "check": "bay",
-      "target": "gen_a_01",
+      "target": "genset_a_01",
       "cb": "OPEN",
       "ds": "OPEN",
       "es": "CLOSED",
@@ -179,7 +179,7 @@
     },
     {
       "check": "bay",
-      "target": "gen_a_02",
+      "target": "genset_a_02",
       "cb": "CLOSED",
       "ds": "CLOSED",
       "es": "OPEN",
@@ -187,7 +187,7 @@
     },
     {
       "check": "bay",
-      "target": "gen_a_04",
+      "target": "genset_b_04",
       "cb": "OPEN",
       "ds": "OPEN",
       "es": "CLOSED",

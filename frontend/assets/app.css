@@ -10463,3 +10463,10 @@ table.opt-votes td {
 .dvc-crit-ok { color: var(--ok); }
 .dvc-crit-bad { color: var(--crit); }
 .dvc-ev-normal td { color: var(--text); }
+
+/* DC-EPMS-067: generation floor, total load versus IT-only */
+.dvc-floor { margin: 10px 0 0; display: grid; gap: 3px; font-size: 11px; }
+.dvc-floor > div { display: flex; justify-content: space-between; gap: 8px; }
+.dvc-floor dt { color: var(--text-muted); white-space: nowrap; }
+.dvc-floor dd { margin: 0; font-family: var(--font-mono); color: var(--text); text-align: right; }
+.dvc-floor-note { display: block; color: var(--text-dim); font-family: inherit; }

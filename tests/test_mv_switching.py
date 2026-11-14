@@ -28,7 +28,7 @@ RUNNING = mv.BayContext(
 
 
 def bay(**kw) -> mv.Bay:
-    return mv.Bay(bay_id="gen_a_01", **kw)
+    return mv.Bay(bay_id="genset_a_01", **kw)
 
 
 class TestFailSafe:
@@ -140,7 +140,7 @@ class TestApplyAndPlans:
             mv.plan("EXPLODE", bay())
 
     def test_witness_approval_expires(self):
-        proc = mv.Procedure("p", "gen_a_01", mv.GOAL_ISOLATE, "op", 0.0,
+        proc = mv.Procedure("p", "genset_a_01", mv.GOAL_ISOLATE, "op", 0.0,
                             steps=mv.plan(mv.GOAL_ISOLATE, bay()))
         proc.witnesses[3] = ("w", 10.0)
         assert proc.witness_ok(3, 20.0)

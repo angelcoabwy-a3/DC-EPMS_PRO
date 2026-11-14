@@ -36,7 +36,7 @@ LIBRARY = ps.load_library(PROJECT_ROOT / "config" / "power_scenarios")
 class TestLibrary:
     def test_library_content(self):
         assert sorted(LIBRARY) == [
-            "COMB-002", "MV-SW-001", "MV-SW-002", "MV-SW-003", "MV-SW-004",
+            "COMB-002", "GEN-N1-001", "MV-SW-001", "MV-SW-002", "MV-SW-003", "MV-SW-004",
             "MV-SW-005", "UPS-2N-001", "UPS-N1-001",
         ]
         for scenario in LIBRARY.values():
@@ -132,7 +132,7 @@ class TestRoutes:
     def test_list(self, client):
         c, _app = client
         body = c.get("/api/power-scenarios").json()
-        assert len(body["scenarios"]) == 8
+        assert len(body["scenarios"]) == 9
         assert "sandbox" in body["sandbox_notice"]
         first = body["scenarios"][0]
         assert {"scenario_id", "version", "title", "steps", "criteria", "safety_critical"} <= set(first)

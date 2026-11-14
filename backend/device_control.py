@@ -312,7 +312,7 @@ class DeviceController:
                 state=XFER_UTILITY, state_since=now,
             ))
             for n in range(1, int(gens["units_per_path"]) + 1):
-                device_id = f"gen_{path}_{n:02d}"
+                device_id = f"genset_{path}_{n:02d}"
                 ctl._add(Device(
                     device_id=device_id, kind=KIND_GENERATOR,
                     display=f"Generator {upper}{n}", path=path,
@@ -331,6 +331,17 @@ class DeviceController:
     @property
     def _it_design_kw(self) -> float:
         return _num(self.design["design_basis"]["it_load_per_path_kw"])
+
+    def _generation_floor_kw(self, path: str) -> float:
+        """DC-EPMS-067 (operator decision 2026-11-14): generation that
+        must remain available on a path. The larger of the current
+        total path load (IT + cooling + auxiliaries + UPS losses), the
+        computed full-path demand and the operator's design total."""
+        return max(
+            self._demand_kw(path),
+            self._demand_kw(path, self._it_design_kw),
+            _num(self.design["design_basis"].get("design_total_load_kw")),
+        )
 
     @property
     def _aux_fraction(self) -> float:
@@ -419,6 +430,7 @@ class DeviceController:
         gen_avail = sum(d.rated_kw for d in self._gens_available(path))
         gen_on_bus = sum(d.rated_kw for d in self._gens_on_bus(path))
         design_demand = self._demand_kw(path, self._it_design_kw)
+        floor = self._generation_floor_kw(path)
         return {
             "path": path,
             "source": XFER_GENERATORS if self._path_on_generators(path) else XFER_UTILITY,
@@ -439,8 +451,12 @@ class DeviceController:
             "gen_total": len(gens_all),
             "gen_available_kw": round(gen_avail),
             "gen_on_bus_kw": round(gen_on_bus),
-            "gen_n_ok": gen_avail >= design_demand,
-            "gen_n_plus_1_ok": gen_avail - gen_unit >= design_demand,
+            "design_total_kw": round(_num(self.design["design_basis"].get("design_total_load_kw"))),
+            "generation_floor_kw": round(floor),
+            "gen_n_ok": gen_avail >= floor,
+            "gen_n_plus_1_ok": gen_avail - gen_unit >= floor,
+            # IT-only view, kept for comparison with the superseded rule.
+            "gen_n_plus_1_it_only_ok": gen_avail - gen_unit >= self._it_design_kw,
         }
 
     # ── Interlocks for device commands ──────────────────────────────
@@ -798,9 +814,9 @@ class DeviceController:
             engine_stopped=stopped,
             engine_at_rated=dev.state in (GEN_RUNNING, GEN_ON_LOAD),
             voltage_present=not stopped,
-            # Operator rule: the path must keep at least the IT design
-            # load in available generation with this bay out.
-            path_keeps_capacity=remaining >= self._it_design_kw,
+            # DC-EPMS-067: with this bay out the path must keep its
+            # TOTAL load in available generation, not just the IT load.
+            path_keeps_capacity=remaining >= self._generation_floor_kw(dev.path),
         )
 
     def _goal_reason(self, dev: Device, goal: str) -> str | None:
@@ -811,9 +827,13 @@ class DeviceController:
             if dev.state != GEN_STANDBY:
                 return "Stop the generator first: the engine must be in standby."
             if not self._bay_context(dev).path_keeps_capacity:
+                remaining = sum(
+                    d.rated_kw for d in self._gens_available(dev.path) if d is not dev
+                )
                 return (
-                    "The path would be left below its "
-                    f"{self._it_design_kw / 1000:.2f} MW design load in available generation."
+                    f"With this bay out the path keeps {remaining / 1000:.2f} MW of generation, "
+                    f"below its {self._generation_floor_kw(dev.path) / 1000:.2f} MW total load "
+                    "(IT + cooling + auxiliaries + UPS losses)."
                 )
             return None
         if bay.in_service:
