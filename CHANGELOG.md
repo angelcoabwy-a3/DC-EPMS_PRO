@@ -13,6 +13,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Release R3-A — Power Controls: UPS, transfer and generator panels (2026-11-13)
+
+> Operator request: a readings and control panel per UPS, transfer
+  switch and generator, with manual switching and remote control.
+  **Devices are SIMULATED**; the view and the API say so.
+
+- **Added** `backend/device_control.py`: deterministic supervisory
+  model built from the site model (types `ups`, `ats`, `genset`).
+  Authority AUTO / REMOTE / LOCAL per device, select-before-operate
+  (single-use token, 30 s, bound to device and operator, interlocks
+  evaluated twice), role from the session token (FACILITY_MANAGER),
+  every authority change and operate attempt chained in the Forensic
+  Ledger (ADR-011). Routes: `GET /api/devices`, `GET /api/devices/{id}`,
+  `POST /api/devices/{id}/authority | select | operate`.
+- **Added** `frontend/assets/js/views/device_control.js` (route
+  `device-control`, nav "Power Controls") and `dvc-*` styles.
+- **Added** `docs/design/R3_POWER_CONTROLS_EVALUATION.md`: product
+  check (Vertiv, Schneider, Eaton) and findings on the operator's UPS
+  2N documents.
+- **Tests**: +46 pytest, +23 vitest. Floors (Linux, Python 3.13, no
+  PostgreSQL): pytest 1751 passed / 3 pre-existing errors; vitest 717
+  passed / 37 files.
+- **Not done**: no HAL binding, no protection functions, no panel for
+  the 800 VDC side, site model still on the old Phase 1 design.
+- **DC-EPMS-063 (MEDIUM, open):** the OT Security posture does not yet
+  inventory the device-control surface (it lists BMS writable tags
+  only). Add checks for it in R3-B.
+- **DC-EPMS-064 (LOW, open, pre-existing):** the application shell is
+  not responsive; at 390 px the sidebar leaves the content off-screen
+  on every view.
+- **DC-EPMS-065 (MEDIUM, open, pre-existing):** `/api/bms/write` and
+  `/api/bms/revert` take `actor_role` from the request body. With the
+  session gate on they still accept any authenticated user who sends
+  `SME_L6`. Move them to the token role, as device control does.
+
 ### Release R2-C — USD export (2026-11-13)
 
 > Operator GO "procede". Replaces the Omniverse 3D stub. **Static,

@@ -59,6 +59,17 @@ UPS + MV AUDIT (operator question): NOT complete. DC-EPMS-057 Phase 1
   and 480 V gensets upstream of the 27.5 kV transformer; -059 no MV
   switchgear / protection; -060 UPS B and XFMR B under-instrumented;
   -061 site metadata 40/56 MW. Roadmap track R1.2.
+RELEASE R3-A (same day, same branch): Power Controls view.
+  backend/device_control.py + GET /api/devices + POST
+  /api/devices/{id}/authority|select|operate + views/device_control.js.
+  SIMULATED devices (ups / ats / genset from the site model). Authority
+  AUTO/REMOTE/LOCAL, select-before-operate (30 s), FACILITY_MANAGER
+  from the session token, Forensic Ledger. No HAL binding. No agent may
+  import the module (test fence, ADR-006). Floors: pytest 1751 / vitest
+  717 (37 files). Open: DC-EPMS-063 OT Security does not inventory this
+  surface; -064 shell not responsive; -065 /api/bms/write trusts a
+  client-sent role. Design basis + findings on the operator's UPS 2N
+  documents: docs/design/R3_POWER_CONTROLS_EVALUATION.md.
 NEXT: operator applies the bundle, sets env on the host, eyeballs the
   live views (S-VISUAL-01). Then R1.1 / R1.2 / R2-B per ROADMAP v11.23.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
