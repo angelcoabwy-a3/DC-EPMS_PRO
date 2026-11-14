@@ -107,7 +107,11 @@ Per file (backend, frontend, config):
    stay with the frontend. ASCO HAL is legacy-only (no 480 V ATS in
    v2; binding a vendor to the MV transfer controller is a separate
    decision). Under v2, 5 tests fail on legacy-id fixtures.
-3. **Frontend** (10 files): node registry, power grid DAG and SLD
+3. **Frontend**: lote C1 DONE (2026-11-14): Power SLD + DAG on the
+   closed design (`mvtc_*`, UPS bank / generator bus unit ticks with
+   N / N+1). Remaining (C2): topology HLD view, Mission Control,
+   procedures view. Original estimate for the whole item:
+   **Frontend** (10 files): node registry, power grid DAG and SLD
    (largest: about 70 references), topology, mission control. The SLD
    must draw 8 UPS and 9 sets per path; it needs the level-of-detail
    pattern already used for the Building D farm. 12-18 h.

@@ -119,7 +119,13 @@ DC-EPMS-068 lote B (2026-11-14, 56c7124): backend/site_roles.py
   Floors (Linux): pytest 1886 / vitest 742. Under v2: 5 fixture
   failures (legacy ids). Next: lote C = frontend (node registry,
   power grid DAG, SLD with block LOD, topology), then procedures.
-NEXT: operator applies the bundle, then GO for lote C.
+DC-EPMS-068 lote C1 (2026-11-14, 8fa0b96): Power SLD + What-If DAG on
+  the closed design (mvtc_a/b replace ats_a/b; UPS bank 8 blocks and
+  generator bus 9 sets with units_out / capacity / N / N+1;
+  setUnitsOut in What-If). vitest 758 / 39 files. Next: lote C2 =
+  topology HLD view, Mission Control, procedures + legacy-id fixtures.
+NEXT: operator applies the bundle, eyeballs the Power SLD (What-If
+  ticks), then GO for lote C2.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```

@@ -13,6 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### DC-EPMS-068 lote C1 — Power SLD on the closed design (2026-11-14, `8fa0b96`)
+
+- The Power & UPS single-line diagram and its What-If DAG now draw the
+  closed Phase 1 design from `config/power_plant.yml` on every host
+  (Power Controls already did): utility 27.5 kV, transformer
+  27.5 / 13.8 kV, MV transfer controller 52-U / 52-GM (replaces the
+  480 V ATS), generator bus 9 x 2.75 MW, UPS bank 8 x Trinergy 2500.
+- One tick per installed unit, with capacity and N+1 / N only / BELOW
+  N. In What-If a tick takes a unit out or returns it. Live mode never
+  actuates from the SLD; the MV transfer controller is switched only
+  from Power Controls.
+- Live readings still come from whichever site model the backend runs
+  (legacy on the public host); the node registry maps both id sets.
+- NOT in C1: the 13.8 kV MV switchgear and the unit substations are
+  not drawn as separate nodes (the caption names the path), the
+  topology (HLD) view, Mission Control, procedures. Those are lote C2.
+- Pre-existing, not fixed: on the SLD the UPS load metric and the
+  battery label overlap slightly.
+- Tests +16 vitest; vitest 758 / 39 files.
+
 ### DC-EPMS-068 lote B — backend by role, not by literal id (2026-11-14, `56c7124`)
 
 - New `backend/site_roles.py` (pure): resolves the path transfer
