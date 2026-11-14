@@ -1,0 +1,109 @@
+{
+  "scenario_id": "MV-SW-004",
+  "version": "1.0.0",
+  "title": "Retransfer path A from generators to utility",
+  "category": "MediumVoltage_Switching",
+  "severity": "High",
+  "tier_iv_relevance": true,
+  "safety_critical": true,
+  "description": "After a transfer to generators, the path returns to utility. A set carrying load cannot be stopped before the retransfer if the rest cannot carry the path.",
+  "preconditions": {
+    "path": "a"
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "action": "authority",
+      "target": "mvtc_a",
+      "mode": "REMOTE"
+    },
+    {
+      "step": 2,
+      "action": "authority",
+      "target": "gen_a_*",
+      "mode": "REMOTE"
+    },
+    {
+      "step": 3,
+      "action": "command",
+      "targets": [
+        "gen_a_01",
+        "gen_a_02",
+        "gen_a_03",
+        "gen_a_04",
+        "gen_a_05"
+      ],
+      "command": "START"
+    },
+    {
+      "step": 4,
+      "action": "advance",
+      "seconds": 9
+    },
+    {
+      "step": 5,
+      "action": "command",
+      "target": "mvtc_a",
+      "command": "TRANSFER_TO_GENERATORS"
+    },
+    {
+      "step": 6,
+      "action": "command",
+      "target": "gen_a_01",
+      "command": "STOP",
+      "expect": "blocked",
+      "reason_contains": "Remaining sets"
+    },
+    {
+      "step": 7,
+      "action": "command",
+      "target": "mvtc_a",
+      "command": "RETRANSFER_TO_UTILITY"
+    },
+    {
+      "step": 8,
+      "action": "command",
+      "target": "gen_a_01",
+      "command": "STOP"
+    },
+    {
+      "step": 9,
+      "action": "advance",
+      "seconds": 31
+    }
+  ],
+  "success_criteria": [
+    {
+      "check": "device_state",
+      "target": "mvtc_a",
+      "equals": "UTILITY"
+    },
+    {
+      "check": "device_state",
+      "target": "gen_a_01",
+      "equals": "STANDBY"
+    },
+    {
+      "check": "bay",
+      "target": "gen_a_01",
+      "cb": "OPEN",
+      "ds": "CLOSED",
+      "es": "OPEN",
+      "loto": false
+    },
+    {
+      "check": "device_state",
+      "target": "gen_a_02",
+      "equals": "RUNNING"
+    }
+  ],
+  "audit": {
+    "required_logging": [
+      "user",
+      "timestamp",
+      "step",
+      "result",
+      "interlock_status"
+    ]
+  }
+}

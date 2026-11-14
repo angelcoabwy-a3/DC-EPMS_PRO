@@ -1,0 +1,85 @@
+{
+  "scenario_id": "MV-SW-003",
+  "version": "1.0.0",
+  "title": "Transfer path A from utility to generators",
+  "category": "MediumVoltage_Switching",
+  "severity": "Critical",
+  "tier_iv_relevance": true,
+  "safety_critical": true,
+  "description": "The transfer is refused while the generator bus cannot carry the path. With all nine sets synchronised, 52-U opens and 52-GM closes.",
+  "preconditions": {
+    "path": "a",
+    "source": "UTILITY"
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "action": "authority",
+      "target": "mvtc_a",
+      "mode": "REMOTE"
+    },
+    {
+      "step": 2,
+      "action": "command",
+      "target": "mvtc_a",
+      "command": "TRANSFER_TO_GENERATORS",
+      "expect": "blocked",
+      "reason_contains": "synchronised"
+    },
+    {
+      "step": 3,
+      "action": "authority",
+      "target": "gen_a_*",
+      "mode": "REMOTE"
+    },
+    {
+      "step": 4,
+      "action": "command",
+      "target": "gen_a_*",
+      "command": "START"
+    },
+    {
+      "step": 5,
+      "action": "advance",
+      "seconds": 9
+    },
+    {
+      "step": 6,
+      "action": "command",
+      "target": "mvtc_a",
+      "command": "TRANSFER_TO_GENERATORS"
+    }
+  ],
+  "success_criteria": [
+    {
+      "check": "device_state",
+      "target": "mvtc_a",
+      "equals": "GENERATORS"
+    },
+    {
+      "check": "device_state",
+      "target": "gen_a_01",
+      "equals": "ON_LOAD"
+    },
+    {
+      "check": "path",
+      "path": "a",
+      "field": "gen_on_bus_kw",
+      "equals": 22500
+    },
+    {
+      "check": "device_state",
+      "target": "mvtc_b",
+      "equals": "UTILITY"
+    }
+  ],
+  "audit": {
+    "required_logging": [
+      "user",
+      "timestamp",
+      "step",
+      "result",
+      "interlock_status"
+    ]
+  }
+}

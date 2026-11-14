@@ -1,0 +1,60 @@
+{
+  "scenario_id": "MV-SW-001",
+  "version": "1.0.0",
+  "title": "Safe isolation of generator A3 for maintenance",
+  "category": "MediumVoltage_Switching",
+  "severity": "Critical",
+  "tier_iv_relevance": true,
+  "safety_critical": true,
+  "description": "Forced sequence: open 52-G, open disconnector, verify absence of voltage, close earthing switch (two persons), apply LOTO (two persons). The path must keep its design load in available generation.",
+  "preconditions": {
+    "path": "a",
+    "generator": "gen_a_03",
+    "engine": "STANDBY"
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "action": "authority",
+      "target": "gen_a_03",
+      "mode": "REMOTE"
+    },
+    {
+      "step": 2,
+      "action": "procedure",
+      "target": "gen_a_03",
+      "goal": "ISOLATE_FOR_MAINTENANCE"
+    }
+  ],
+  "success_criteria": [
+    {
+      "check": "bay",
+      "target": "gen_a_03",
+      "cb": "OPEN",
+      "ds": "OPEN",
+      "es": "CLOSED",
+      "loto": true
+    },
+    {
+      "check": "path",
+      "path": "a",
+      "field": "gen_available",
+      "equals": 8
+    },
+    {
+      "check": "path",
+      "path": "a",
+      "field": "gen_available_kw",
+      "at_least": 16760
+    }
+  ],
+  "audit": {
+    "required_logging": [
+      "user",
+      "timestamp",
+      "step",
+      "result",
+      "interlock_status"
+    ]
+  }
+}

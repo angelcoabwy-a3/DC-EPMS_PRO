@@ -1,0 +1,73 @@
+{
+  "scenario_id": "UPS-2N-001",
+  "version": "1.0.0",
+  "title": "Complete loss of path A: path B carries 100 percent",
+  "category": "UPS_Redundancy",
+  "severity": "Critical",
+  "tier_iv_relevance": true,
+  "safety_critical": false,
+  "description": "Path A is lost. Path B carries the full 16.76 MW on eight blocks, keeps N+1, and its double-conversion losses rise to about 518 kW (16.76 MW x (1 / 0.97 - 1)).",
+  "preconditions": {
+    "share_per_path": 0.5
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "action": "path_loss",
+      "path": "a"
+    }
+  ],
+  "success_criteria": [
+    {
+      "check": "path",
+      "path": "b",
+      "field": "it_load_kw",
+      "equals": 16760
+    },
+    {
+      "check": "path",
+      "path": "b",
+      "field": "ups_n_ok",
+      "equals": true
+    },
+    {
+      "check": "path",
+      "path": "b",
+      "field": "ups_n_plus_1_ok",
+      "equals": true
+    },
+    {
+      "check": "path",
+      "path": "b",
+      "field": "ups_losses_kw",
+      "at_least": 510
+    },
+    {
+      "check": "path",
+      "path": "b",
+      "field": "ups_losses_kw",
+      "at_most": 525
+    },
+    {
+      "check": "reading",
+      "target": "ups_b_01",
+      "label": "Load",
+      "at_most": 100
+    },
+    {
+      "check": "path",
+      "path": "a",
+      "field": "it_load_kw",
+      "equals": 0
+    }
+  ],
+  "audit": {
+    "required_logging": [
+      "user",
+      "timestamp",
+      "step",
+      "result",
+      "interlock_status"
+    ]
+  }
+}

@@ -1,0 +1,45 @@
+# config/power_plant.yml
+# Phase 1 power plant design, CLOSED by the operator on 2026-11-13
+# (documents "Recomendacion Completa UPS 2N - Gemelo Digital" and
+# "Resumen Ejecutivo Gemelo Digital Tier IV / IEC 61850").
+#
+# This file drives the Power Controls panels and the scenario library.
+# config/site_model.yml still holds the OLD Phase 1 design (one 2.5 MW
+# UPS per path, 480 V ATS): DC-EPMS-057..061 stay open until the site
+# model is migrated to this design (roadmap R1.2).
+#
+# Scope: AC equipment only. The 800 VDC unipolar TN-S side of
+# Building D is not described here.
+version: 1
+
+design_basis:
+  it_load_per_path_kw: 16760      # one path carrying 100 percent
+  normal_share: 0.5               # 2N normal operation: each path 50 percent
+  paths: [a, b]
+  # ASSUMPTION (the operator documents leave it open, item 8.5): share
+  # of cooling and auxiliaries the generators must also carry, as a
+  # fraction of IT load. 0.25 puts a full path at about 21.5 MW, inside
+  # the 20.5 to 23 MW band of the operator document.
+  cooling_and_aux_fraction: 0.25
+
+ups:
+  vendor: Vertiv
+  model: Trinergy 2500
+  rated_kw: 2500
+  units_per_path: 8               # N+1 inside the path: 7 x 2.5 = 17.5 MW
+  voltage_v: 480
+  runtime_full_load_min: 10       # operator documents: 8 to 12 min
+  efficiency:
+    double_conversion: 0.97       # operator document section 2.1
+    dynamic_online: 0.99
+
+generators:
+  vendor: ""                      # not selected by the operator
+  model: ""
+  rated_kw: 2500
+  units_per_path: 9               # N+1: 8 x 2.5 = 20 MW
+  voltage_v: 13800
+
+transfer:
+  kind: mv_transfer_controller    # no 480 V ATS in this architecture
+  voltage_v: 13800

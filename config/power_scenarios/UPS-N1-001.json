@@ -1,0 +1,111 @@
+{
+  "scenario_id": "UPS-N1-001",
+  "version": "1.0.0",
+  "title": "One UPS block out: N+1 inside the path",
+  "category": "UPS_Redundancy",
+  "severity": "High",
+  "tier_iv_relevance": true,
+  "safety_critical": false,
+  "description": "One block of path A is isolated for maintenance. Seven blocks (17.5 MW) still cover the 16.76 MW design load. Isolating a second block must be refused.",
+  "preconditions": {
+    "path": "a",
+    "ups_in_service": 8
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "action": "authority",
+      "targets": [
+        "ups_a_01",
+        "ups_a_02"
+      ],
+      "mode": "REMOTE"
+    },
+    {
+      "step": 2,
+      "action": "command",
+      "target": "ups_a_01",
+      "command": "ISOLATE",
+      "expect": "blocked",
+      "reason_contains": "static bypass first"
+    },
+    {
+      "step": 3,
+      "action": "command",
+      "target": "ups_a_01",
+      "command": "TRANSFER_TO_BYPASS"
+    },
+    {
+      "step": 4,
+      "action": "command",
+      "target": "ups_a_01",
+      "command": "ISOLATE"
+    },
+    {
+      "step": 5,
+      "action": "command",
+      "target": "ups_a_02",
+      "command": "TRANSFER_TO_BYPASS"
+    },
+    {
+      "step": 6,
+      "action": "command",
+      "target": "ups_a_02",
+      "command": "ISOLATE",
+      "expect": "blocked",
+      "reason_contains": "N+1 already used"
+    },
+    {
+      "step": 7,
+      "action": "command",
+      "target": "ups_a_02",
+      "command": "RETURN_TO_DOUBLE_CONVERSION"
+    }
+  ],
+  "success_criteria": [
+    {
+      "check": "device_state",
+      "target": "ups_a_01",
+      "equals": "ISOLATED"
+    },
+    {
+      "check": "path",
+      "path": "a",
+      "field": "ups_in_service",
+      "equals": 7
+    },
+    {
+      "check": "path",
+      "path": "a",
+      "field": "ups_capacity_kw",
+      "equals": 17500
+    },
+    {
+      "check": "path",
+      "path": "a",
+      "field": "ups_n_ok",
+      "equals": true
+    },
+    {
+      "check": "path",
+      "path": "a",
+      "field": "ups_n_plus_1_ok",
+      "equals": false
+    },
+    {
+      "check": "path",
+      "path": "a",
+      "field": "ups_protected",
+      "equals": true
+    }
+  ],
+  "audit": {
+    "required_logging": [
+      "user",
+      "timestamp",
+      "step",
+      "result",
+      "interlock_status"
+    ]
+  }
+}

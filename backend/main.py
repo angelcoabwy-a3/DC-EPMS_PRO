@@ -3549,35 +3549,59 @@ except Exception as e:
     log.error("[BOOT] USD export mount failed: %s", e, exc_info=True)
 
 # ==============================================================
-#  Release R3-A -- Power device control panels (UPS / transfer /
-#  generator): readings + supervised manual and remote switching
+#  Release R3-A / R3-B -- Power plant supervisory control (UPS
+#  blocks, MV transfer controllers, generators, MV bay switching)
+#  and the executable scenario library
 # ==============================================================
-# SIMULATED devices (no field equipment bound). Commands need an
-# authenticated human with FACILITY_MANAGER, the device in REMOTE
-# authority, and select-before-operate; every action is chained into
-# the Forensic Ledger. ADR-006: no agent imports this module.
-# See backend/device_control.py.
+# SIMULATED plant built from config/power_plant.yml (closed design:
+# 8 x 2.5 MW UPS and 9 x 2.5 MW generators at 13.8 kV per path).
+# Commands need an authenticated human with FACILITY_MANAGER, the
+# device in REMOTE and select-before-operate; MV bay switching runs
+# only through forced procedures with a second person on the safety
+# gates. Everything is chained into the Forensic Ledger. ADR-006: no
+# agent imports these modules. See backend/device_control.py,
+# backend/mv_switching.py and backend/power_scenarios.py.
 try:
-    from site_model import get_site_model as _dc_get_site_model
-
     from backend.device_control import (
         DeviceController,
+        load_design,
         register_device_control_routes,
     )
+    from backend.power_scenarios import load_library, register_power_scenario_routes
+
+    _POWER_PLANT_PATH = PROJECT_ROOT / "config" / "power_plant.yml"
+    _POWER_SCENARIO_DIR = PROJECT_ROOT / "config" / "power_scenarios"
+
+    def _power_design():
+        design = getattr(app.state, "power_plant_design", None)
+        if design is None and _POWER_PLANT_PATH.exists():
+            design = load_design(_POWER_PLANT_PATH)
+            app.state.power_plant_design = design
+        return design
 
     def _device_controller():
         ctl = getattr(app.state, "device_controller", None)
         if ctl is None:
-            _sm = _dc_get_site_model(PROJECT_ROOT)
-            _components = (getattr(_sm, "_raw", None) or {}).get("components") or {}
-            if not _components:
+            design = _power_design()
+            if design is None:
                 return None
-            ctl = DeviceController.from_components(_components)
+            ctl = DeviceController.from_design(design)
             app.state.device_controller = ctl
         return ctl
 
+    def _power_scenario_library():
+        library = getattr(app.state, "power_scenario_library", None)
+        if library is None:
+            library = load_library(_POWER_SCENARIO_DIR)
+            app.state.power_scenario_library = library
+        return library
+
     register_device_control_routes(app, _device_controller)
-    log.info("[BOOT] Device control mounted (GET /api/devices + authority/select/operate)")
+    register_power_scenario_routes(app, _power_scenario_library, _power_design)
+    log.info(
+        "[BOOT] Power plant control mounted (/api/devices, /api/mv, "
+        "/api/power-scenarios; %d scenarios)", len(_power_scenario_library()),
+    )
 except Exception as e:
     log.error("[BOOT] Device control mount failed: %s", e, exc_info=True)
 

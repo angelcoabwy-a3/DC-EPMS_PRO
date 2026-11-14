@@ -1,0 +1,214 @@
+{
+  "scenario_id": "MV-SW-005",
+  "version": "1.0.0",
+  "title": "Unsafe medium-voltage operations are blocked (training)",
+  "category": "MediumVoltage_Switching",
+  "severity": "Critical",
+  "tier_iv_relevance": true,
+  "safety_critical": true,
+  "description": "Deliberate errors, each of which must be blocked and recorded: earthing a connected bay, earthing without verification, opening a disconnector with the breaker closed, closing the breaker on an earthed bay, skipping a step, executing a two-person step alone.",
+  "preconditions": {
+    "path": "a"
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "action": "bay_attempt",
+      "target": "gen_a_01",
+      "operation": "CLOSE_ES",
+      "expect": "blocked",
+      "reason_contains": "R2"
+    },
+    {
+      "step": 2,
+      "action": "authority",
+      "target": "gen_a_02",
+      "mode": "REMOTE"
+    },
+    {
+      "step": 3,
+      "action": "command",
+      "target": "gen_a_02",
+      "command": "START"
+    },
+    {
+      "step": 4,
+      "action": "advance",
+      "seconds": 9
+    },
+    {
+      "step": 5,
+      "action": "bay_attempt",
+      "target": "gen_a_02",
+      "operation": "OPEN_DS",
+      "expect": "blocked",
+      "reason_contains": "R4"
+    },
+    {
+      "step": 6,
+      "action": "bay_attempt",
+      "target": "gen_a_01",
+      "operation": "OPEN_DS"
+    },
+    {
+      "step": 7,
+      "action": "bay_attempt",
+      "target": "gen_a_01",
+      "operation": "CLOSE_ES",
+      "expect": "blocked",
+      "reason_contains": "R3"
+    },
+    {
+      "step": 8,
+      "action": "bay_attempt",
+      "target": "gen_a_01",
+      "operation": "VERIFY_ABSENCE_OF_VOLTAGE"
+    },
+    {
+      "step": 9,
+      "action": "advance",
+      "seconds": 121
+    },
+    {
+      "step": 10,
+      "action": "bay_attempt",
+      "target": "gen_a_01",
+      "operation": "CLOSE_ES",
+      "expect": "blocked",
+      "reason_contains": "R3"
+    },
+    {
+      "step": 11,
+      "action": "bay_attempt",
+      "target": "gen_a_01",
+      "operation": "VERIFY_ABSENCE_OF_VOLTAGE"
+    },
+    {
+      "step": 12,
+      "action": "bay_attempt",
+      "target": "gen_a_01",
+      "operation": "CLOSE_ES"
+    },
+    {
+      "step": 13,
+      "action": "bay_attempt",
+      "target": "gen_a_01",
+      "operation": "CLOSE_DS",
+      "expect": "blocked",
+      "reason_contains": "R8"
+    },
+    {
+      "step": 14,
+      "action": "bay_attempt",
+      "target": "gen_a_01",
+      "operation": "CLOSE_CB",
+      "expect": "blocked",
+      "reason_contains": "R1"
+    },
+    {
+      "step": 15,
+      "action": "authority",
+      "target": "gen_a_04",
+      "mode": "REMOTE"
+    },
+    {
+      "step": 16,
+      "action": "procedure_start",
+      "target": "gen_a_04",
+      "goal": "ISOLATE_FOR_MAINTENANCE"
+    },
+    {
+      "step": 17,
+      "action": "procedure_step",
+      "target": "gen_a_04",
+      "number": 3,
+      "expect": "blocked",
+      "reason_contains": "sequence deviation"
+    },
+    {
+      "step": 18,
+      "action": "procedure_step",
+      "target": "gen_a_04",
+      "number": 1
+    },
+    {
+      "step": 19,
+      "action": "procedure_step",
+      "target": "gen_a_04",
+      "number": 2
+    },
+    {
+      "step": 20,
+      "action": "procedure_step",
+      "target": "gen_a_04",
+      "number": 3
+    },
+    {
+      "step": 21,
+      "action": "procedure_step",
+      "target": "gen_a_04",
+      "number": 4,
+      "expect": "blocked",
+      "reason_contains": "two-person"
+    },
+    {
+      "step": 22,
+      "action": "procedure_step",
+      "target": "gen_a_04",
+      "number": 4,
+      "witness": "operator",
+      "expect": "blocked",
+      "reason_contains": "different person"
+    },
+    {
+      "step": 23,
+      "action": "procedure_step",
+      "target": "gen_a_04",
+      "number": 4,
+      "witness": "witness"
+    }
+  ],
+  "success_criteria": [
+    {
+      "check": "bay",
+      "target": "gen_a_01",
+      "cb": "OPEN",
+      "ds": "OPEN",
+      "es": "CLOSED",
+      "loto": false
+    },
+    {
+      "check": "bay",
+      "target": "gen_a_02",
+      "cb": "CLOSED",
+      "ds": "CLOSED",
+      "es": "OPEN",
+      "loto": false
+    },
+    {
+      "check": "bay",
+      "target": "gen_a_04",
+      "cb": "OPEN",
+      "ds": "OPEN",
+      "es": "CLOSED",
+      "loto": false
+    },
+    {
+      "check": "blocked_events",
+      "at_least": 9
+    }
+  ],
+  "training_mode": {
+    "allow_forced_errors": true,
+    "show_consequences": false
+  },
+  "audit": {
+    "required_logging": [
+      "user",
+      "timestamp",
+      "step",
+      "result",
+      "interlock_status"
+    ]
+  }
+}

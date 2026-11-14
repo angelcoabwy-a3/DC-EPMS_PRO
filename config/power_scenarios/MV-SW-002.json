@@ -1,0 +1,83 @@
+{
+  "scenario_id": "MV-SW-002",
+  "version": "1.0.0",
+  "title": "Return generator A3 to service after maintenance",
+  "category": "MediumVoltage_Switching",
+  "severity": "Critical",
+  "tier_iv_relevance": true,
+  "safety_critical": true,
+  "description": "Isolate, then restore: remove LOTO (two persons), open earthing switch, close disconnector. The set must start and synchronise afterwards.",
+  "preconditions": {
+    "path": "a",
+    "generator": "gen_a_03"
+  },
+  "sequence": [
+    {
+      "step": 1,
+      "action": "authority",
+      "target": "gen_a_03",
+      "mode": "REMOTE"
+    },
+    {
+      "step": 2,
+      "action": "procedure",
+      "target": "gen_a_03",
+      "goal": "ISOLATE_FOR_MAINTENANCE"
+    },
+    {
+      "step": 3,
+      "action": "command",
+      "target": "gen_a_03",
+      "command": "START",
+      "expect": "blocked",
+      "reason_contains": "LOTO"
+    },
+    {
+      "step": 4,
+      "action": "procedure",
+      "target": "gen_a_03",
+      "goal": "RETURN_TO_SERVICE"
+    },
+    {
+      "step": 5,
+      "action": "command",
+      "target": "gen_a_03",
+      "command": "START"
+    },
+    {
+      "step": 6,
+      "action": "advance",
+      "seconds": 9
+    }
+  ],
+  "success_criteria": [
+    {
+      "check": "bay",
+      "target": "gen_a_03",
+      "cb": "CLOSED",
+      "ds": "CLOSED",
+      "es": "OPEN",
+      "loto": false
+    },
+    {
+      "check": "device_state",
+      "target": "gen_a_03",
+      "equals": "RUNNING"
+    },
+    {
+      "check": "path",
+      "path": "a",
+      "field": "gen_available",
+      "equals": 9
+    }
+  ],
+  "audit": {
+    "required_logging": [
+      "user",
+      "timestamp",
+      "step",
+      "result",
+      "interlock_status"
+    ]
+  }
+}
