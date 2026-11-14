@@ -267,9 +267,11 @@ def public_no_db_client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("DC_EPMS_JWT_SECRET", "t" * 48)
     monkeypatch.setenv("DC_EPMS_USE_SIMULATOR", "1")
     monkeypatch.setenv("DC_EPMS_SKIP_WARMUP", "1")
-    monkeypatch.setattr(main_mod, "rag_service", None)
     monkeypatch.setattr(main_mod, "LM_STUDIO_URL", "http://127.0.0.1:1234")
     with TestClient(main_mod.app) as client:
+        # The lifespan (re)binds rag_service when chromadb is installed
+        # (operator Windows venv), so force "no RAG" AFTER startup.
+        monkeypatch.setattr(main_mod, "rag_service", None)
         yield client
 
 

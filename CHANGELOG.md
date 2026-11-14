@@ -42,7 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no URL, no exception text, loopback LLM not probed. Gate off ->
   unchanged. Overview header pills render `disabled` neutral.
 - Tests +9 pytest, +3 vitest. Linux floors: pytest 1838 / vitest
-  731 (37 files). NOT yet re-run on Windows; NOT yet deployed.
+  731 (37 files). Deployed in `610070e`.
+- Test-only follow-up: on the operator Windows venv (chromadb
+  installed) `TestPublicHealth` failed (`rag` reported `up`) because
+  the lifespan rebinds `rag_service` after the fixture patched it.
+  The fixture now forces "no RAG" after startup. Reproduced on Linux
+  with a fake `RAGService` bound in the lifespan: old fixture fails,
+  new one passes. Production behaviour was correct (Render has no
+  chromadb); the defect was in the test.
 
 ### Fix — DC-EPMS-069: boot warmup crashes the test run on AMD + Windows (2026-11-14)
 
