@@ -756,8 +756,17 @@ async def lifespan(app: FastAPI):
     #     procedure load, witness_engine introspection, pillar 3-6 logic,
     #     report aggregation). Effectively pre-runs the same work the
     #     first user audit will do.
-    _s2 = globals().get("_s2_service")
-    if _s2 is not None:
+    # DC-EPMS-069: DC_EPMS_SKIP_WARMUP=1 skips both warmup stages. The
+    # warmup imports sentence-transformers -> sklearn -> pyarrow, which
+    # dies with a native access violation on the operator's AMD Ryzen +
+    # Windows workstation (same family as DC-EPMS-001). Tests that boot
+    # the full lifespan set it; a host without the embedding stack
+    # (Render, requirements-minimal) loses nothing by setting it.
+    _skip_warmup = os.environ.get("DC_EPMS_SKIP_WARMUP", "").strip().lower() in ("1", "true", "yes", "on")
+    _s2 = None if _skip_warmup else globals().get("_s2_service")
+    if _skip_warmup:
+        log.info("[BOOT] Warmup skipped: DC_EPMS_SKIP_WARMUP is set.")
+    elif _s2 is not None:
         log.info("[BOOT] Pre-warming GraphRAG AI Models...")
         _wt0 = time.perf_counter()
         try:
@@ -775,8 +784,10 @@ async def lifespan(app: FastAPI):
 
     # Stage 2: dry-run audit to warm physics_engine + procedure_engine +
     # any remaining pillar lazy paths.
-    _loto_auditor = getattr(app.state, "loto_auditor", None)
-    if _loto_auditor is not None:
+    _loto_auditor = None if _skip_warmup else getattr(app.state, "loto_auditor", None)
+    if _skip_warmup:
+        pass
+    elif _loto_auditor is not None:
         log.info("[BOOT] Pre-warming LOTO Auditor pillars (dry-run)...")
         _wt0 = time.perf_counter()
         try:

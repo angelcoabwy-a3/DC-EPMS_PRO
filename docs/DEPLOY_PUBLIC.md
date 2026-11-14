@@ -52,6 +52,10 @@ Recommended:
 Already-existing variables that keep their meaning: `META_API_KEY`
 (MOP Verification), `DC_EPMS_OPTIMIZER_ENABLED`, `DC_EPMS_USE_SIMULATOR`.
 
+Optional: `DC_EPMS_SKIP_WARMUP=1` skips the GraphRAG and LOTO warmup at
+boot (DC-EPMS-069). On a host without the embedding stack it only saves
+a failed import; on AMD + Windows it avoids a native crash in pyarrow.
+
 Generate the values locally. The ledger key MUST be hex; the JWT
 secret and the passwords can be any private string:
 

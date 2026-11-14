@@ -137,6 +137,8 @@ def no_db_client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("DC_EPMS_CMMS_FALLBACK", raising=False)
     monkeypatch.delenv("DC_EPMS_REQUIRE_AUTH", raising=False)
     monkeypatch.setenv("DC_EPMS_USE_SIMULATOR", "1")
+    # DC-EPMS-069: the GraphRAG warmup crashes natively on AMD + Windows.
+    monkeypatch.setenv("DC_EPMS_SKIP_WARMUP", "1")
     with TestClient(main_mod.app) as client:
         yield client
 
@@ -197,3 +199,47 @@ class TestNoDatabaseApp:
         assert no_db_client.get("/api/tech-assist/documents").status_code != 404
         assert no_db_client.get("/api/optimizer/health").status_code != 404
         assert no_db_client.get("/api/optimizer/proposals").status_code != 404
+
+
+class TestWarmupSkip:
+    """DC-EPMS-069: DC_EPMS_SKIP_WARMUP=1 must keep the lifespan away
+    from the embedding stack (both warmup stages)."""
+
+    def test_skip_flag_bypasses_both_stages(self, monkeypatch: pytest.MonkeyPatch):
+        import main as main_mod
+
+        calls: list[str] = []
+
+        class _Spy:
+            def loto_with_knowledge(self, cid):
+                calls.append(f"graphrag:{cid}")
+
+            def audit(self, request):
+                calls.append("loto_audit")
+
+        monkeypatch.setattr(main_mod, "DBManager", None)
+        monkeypatch.setattr(main_mod, "db_manager", None)
+        monkeypatch.setattr(main_mod, "_s2_service", _Spy(), raising=False)
+        monkeypatch.setattr(main_mod.app.state, "loto_auditor", _Spy(), raising=False)
+        monkeypatch.setenv("DC_EPMS_SKIP_WARMUP", "1")
+        with TestClient(main_mod.app) as client:
+            assert client.get("/api/health").status_code == 200
+        assert calls == []
+
+    def test_without_the_flag_the_warmup_runs(self, monkeypatch: pytest.MonkeyPatch):
+        import main as main_mod
+
+        calls: list[str] = []
+
+        class _Spy:
+            def loto_with_knowledge(self, cid):
+                calls.append("graphrag")
+
+        monkeypatch.setattr(main_mod, "DBManager", None)
+        monkeypatch.setattr(main_mod, "db_manager", None)
+        monkeypatch.setattr(main_mod, "_s2_service", _Spy(), raising=False)
+        monkeypatch.setattr(main_mod.app.state, "loto_auditor", None, raising=False)
+        monkeypatch.delenv("DC_EPMS_SKIP_WARMUP", raising=False)
+        with TestClient(main_mod.app):
+            pass
+        assert calls == ["graphrag"]

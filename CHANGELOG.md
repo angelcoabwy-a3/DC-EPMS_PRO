@@ -13,6 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fix — DC-EPMS-069: boot warmup crashes the test run on AMD + Windows (2026-11-14)
+
+- **Found** on the operator workstation (Windows, Python 3.12, AMD
+  Ryzen) while applying the R3-C bundle: pytest stopped at about 48
+  percent with `Windows fatal exception: access violation` in
+  `pyarrow`, imported by the lifespan GraphRAG warmup
+  (`sentence_transformers -> transformers -> sklearn -> pyarrow`).
+  Same family as DC-EPMS-001.
+- **Cause, mine:** `tests/test_no_database_mode.py` (R1) and
+  `tests/test_ot_security.py` (R2-A) boot the full app lifespan. The
+  pre-existing suite never does. In the Linux sandbox the embedding
+  stack is not installed, the warmup failed softly and the problem
+  stayed hidden. The earlier "pytest passed" floors were therefore not
+  representative of the operator machine.
+- **Fixed:** `DC_EPMS_SKIP_WARMUP=1` skips both warmup stages; the two
+  fixtures set it. +2 tests prove the switch (spy on both stages).
+- **Still unverified:** the remaining 52 percent of the suite on the
+  Windows workstation, and the whole vitest run there.
+
 ### Release R3-C — Generation N+1 on total load + site_model v2 (2026-11-14)
 
 > Operator document `Estructura_Repositorio_y_Resolucion_DC-EPMS_066_067_068.md`

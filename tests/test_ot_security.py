@@ -236,6 +236,7 @@ def app_client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("DC_EPMS_LEDGER_HMAC_KEY", raising=False)
     for name in _USERS:
         monkeypatch.delenv(ENV_PASSWORD_PREFIX + name, raising=False)
+    monkeypatch.setenv("DC_EPMS_SKIP_WARMUP", "1")  # DC-EPMS-069
     with TestClient(main_mod.app) as client:
         yield client
 
@@ -306,6 +307,7 @@ class TestPostureEndpoint:
         from backend.auth.jwt_handler import _reset_ephemeral_secret_for_tests
 
         _reset_ephemeral_secret_for_tests()
+        monkeypatch.setenv("DC_EPMS_SKIP_WARMUP", "1")  # DC-EPMS-069
         with TestClient(main_mod.app) as c:
             assert c.get("/api/ot-security/posture").status_code == 401
             login = c.post(
