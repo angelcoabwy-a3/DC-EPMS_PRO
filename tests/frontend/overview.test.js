@@ -10,7 +10,7 @@
  * ════════════════════════════════════════════════════════════════ */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 
-import { __overview_test__ } from '/assets/js/views/overview.js';
+import { __overview_test__, healthPill } from '/assets/js/views/overview.js';
 import { isRegistered } from '/assets/js/core/router.js';
 
 const { updateKPIs, renderIncidents, renderSiteHealth, severityClass,
@@ -95,5 +95,36 @@ describe('T2.1 Vector 4b — views/overview.js SHI panel + routing', () => {
         document.body.innerHTML = '<div id="view-overview"></div>';
         initOverviewView();
         expect(isRegistered('overview')).toBe(true);
+    });
+});
+
+
+describe('DC-EPMS-071 — health pills tri-state', () => {
+    function pill() {
+        document.body.innerHTML = '<div class="status-pill" id="p"><span class="dot"></span><span class="lbl">x</span></div>';
+        return document.getElementById('p');
+    }
+    it('disabled renders neutral "off", never the red down state', () => {
+        const el = pill();
+        healthPill(el, { status: 'disabled', reason: 'not deployed on this host' }, 'RAG (0)', 'RAG');
+        expect(el.classList.contains('off')).toBe(true);
+        expect(el.classList.contains('down')).toBe(false);
+        expect(el.querySelector('.lbl').textContent).toBe('RAG · off');
+        expect(el.title).toBe('not deployed on this host');
+    });
+    it('up and down still map to the existing classes', () => {
+        const el = pill();
+        healthPill(el, { status: 'disabled' }, 'PostgreSQL');
+        healthPill(el, { status: 'up' }, 'PostgreSQL');
+        expect(el.classList.contains('up')).toBe(true);
+        expect(el.classList.contains('off')).toBe(false);
+        expect(el.hasAttribute('title')).toBe(false);
+        healthPill(el, { status: 'down' }, 'PostgreSQL');
+        expect(el.classList.contains('down')).toBe(true);
+    });
+    it('reason text is set as text, not markup (S-SEC-01)', () => {
+        const el = pill();
+        healthPill(el, { status: 'disabled', reason: '<img src=x onerror=alert(1)>' }, 'Gemma 4');
+        expect(el.querySelector('img')).toBeNull();
     });
 });

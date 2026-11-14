@@ -966,9 +966,26 @@ def _read_gpu_stats() -> dict:
 # ==============================================================
 #  Health
 # ==============================================================
+def _is_loopback_url(url: str) -> bool:
+    """True when ``url`` points at this host (127.x, localhost, ::1)."""
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).hostname or "").lower()
+    return host in ("localhost", "::1") or host.startswith("127.")
+
+
 @app.get("/api/health")
 async def health():
-    """Unified health check."""
+    """Unified health check.
+
+    DC-EPMS-071: on a gated (public) deployment the payload is
+    anonymous-readable, so it must not leak internal details. Absent
+    subsystems report ``disabled`` (not ``down``: they are absent by
+    design, not failing), the LM Studio URL and raw exception text are
+    omitted, and a loopback LLM endpoint is not probed. Local
+    development (gate off) keeps the full diagnostic payload.
+    """
+    public = _session_gate_enabled()
     checks: dict = {
         "service": "dc-epms-pro",
         "version": __version__,
@@ -976,9 +993,14 @@ async def health():
         "facility": FACILITY_NAME,
         "timestamp": time.time(),
     }
+    if public:
+        checks["mode"] = "public"
 
-    checks["postgres"] = {"status": "down", "latency_ms": None, "database": _PG_DB}
+    def _absent() -> dict:
+        return {"status": "disabled", "reason": "not deployed on this host"}
+
     if db_manager:
+        checks["postgres"] = {"status": "down", "latency_ms": None, "database": _PG_DB}
         t0 = time.time()
         try:
             ok = await db_manager.ping()
@@ -988,24 +1010,41 @@ async def health():
                 "latency_ms": round((time.time() - t0) * 1000, 2),
             }
         except Exception as e:
-            checks["postgres"]["error"] = str(e)[:200]
+            if not public:
+                checks["postgres"]["error"] = str(e)[:200]
+    elif public:
+        checks["postgres"] = _absent()
+    else:
+        checks["postgres"] = {"status": "down", "latency_ms": None, "database": _PG_DB}
 
-    checks["rag"] = {"status": "down", "docs": 0}
     if rag_service:
+        checks["rag"] = {"status": "down", "docs": 0}
         try:
             checks["rag"] = {"status": "up", "docs": rag_service.count()}
         except Exception as e:
-            checks["rag"]["error"] = str(e)[:200]
+            if not public:
+                checks["rag"]["error"] = str(e)[:200]
+    elif public:
+        checks["rag"] = _absent()
+    else:
+        checks["rag"] = {"status": "down", "docs": 0}
 
-    checks["gemma"] = {"status": "unknown", "url": LM_STUDIO_URL}
-    if agent:
-        try:
-            gemma_ok = await agent.probe_gemma()
-            checks["gemma"]["status"] = "up" if gemma_ok else "down"
-        except Exception as e:
-            checks["gemma"]["error"] = str(e)[:200]
+    if public and _is_loopback_url(LM_STUDIO_URL):
+        checks["gemma"] = _absent()
+    else:
+        checks["gemma"] = {"status": "unknown"}
+        if not public:
+            checks["gemma"]["url"] = LM_STUDIO_URL
+        if agent:
+            try:
+                gemma_ok = await agent.probe_gemma()
+                checks["gemma"]["status"] = "up" if gemma_ok else "down"
+            except Exception as e:
+                if not public:
+                    checks["gemma"]["error"] = str(e)[:200]
 
-    checks["gpu"] = _read_gpu_stats()
+    gpu = _read_gpu_stats()
+    checks["gpu"] = _absent() if public and gpu.get("source") == "unavailable" else gpu
     return JSONResponse(content=checks)
 
 

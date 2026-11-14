@@ -179,6 +179,8 @@ body {
 
 .app-header .status-pill.up .dot  { background: var(--ok); }
 .app-header .status-pill.down .dot { background: var(--crit); }
+.app-header .status-pill.off .dot  { background: var(--text-dim); }
+.app-header .status-pill.off .lbl  { opacity: 0.7; }
 
 /* ── B1 Phase 2 — Gray-box three.js spike ────────────────────────
    Mission Control SPIKE. Validates 4 acceptance criteria from

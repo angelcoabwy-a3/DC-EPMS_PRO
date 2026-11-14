@@ -252,3 +252,63 @@ def test_session_default_keeps_the_warmup_off():
     import os
 
     assert os.environ.get("DC_EPMS_SKIP_WARMUP") == "1"
+
+
+# ── DC-EPMS-071: public /api/health leaks no internals ─────────────
+@pytest.fixture
+def public_no_db_client(monkeypatch: pytest.MonkeyPatch):
+    """Gated (public) boot with no PostgreSQL, no RAG, loopback LLM."""
+    import main as main_mod
+
+    monkeypatch.setattr(main_mod, "DBManager", None)
+    monkeypatch.setattr(main_mod, "db_manager", None)
+    monkeypatch.delenv("DC_EPMS_CMMS_FALLBACK", raising=False)
+    monkeypatch.setenv("DC_EPMS_REQUIRE_AUTH", "1")
+    monkeypatch.setenv("DC_EPMS_JWT_SECRET", "t" * 48)
+    monkeypatch.setenv("DC_EPMS_USE_SIMULATOR", "1")
+    monkeypatch.setenv("DC_EPMS_SKIP_WARMUP", "1")
+    monkeypatch.setattr(main_mod, "rag_service", None)
+    monkeypatch.setattr(main_mod, "LM_STUDIO_URL", "http://127.0.0.1:1234")
+    with TestClient(main_mod.app) as client:
+        yield client
+
+
+class TestPublicHealth:
+    def test_anonymous_readable(self, public_no_db_client):
+        assert public_no_db_client.get("/api/health").status_code == 200
+
+    def test_absent_subsystems_report_disabled_not_down(self, public_no_db_client):
+        body = public_no_db_client.get("/api/health").json()
+        assert body["mode"] == "public"
+        for key in ("postgres", "rag", "gemma"):
+            assert body[key]["status"] == "disabled", key
+        assert body["gpu"]["status"] == "disabled"
+
+    def test_no_loopback_url_or_error_text(self, public_no_db_client):
+        raw = public_no_db_client.get("/api/health").text
+        assert "127.0.0.1" not in raw
+        assert "localhost" not in raw
+        assert "1234" not in raw
+        assert '"error"' not in raw
+
+    def test_local_mode_keeps_full_diagnostics(self, no_db_client):
+        body = no_db_client.get("/api/health").json()
+        assert "mode" not in body
+        assert body["postgres"]["status"] == "down"
+        assert "url" in body["gemma"]
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("http://127.0.0.1:1234", True),
+        ("http://localhost:1234/v1", True),
+        ("http://[::1]:1234", True),
+        ("https://llm.example.com", False),
+        ("not a url", False),
+    ],
+)
+def test_is_loopback_url(url, expected):
+    import main as main_mod
+
+    assert main_mod._is_loopback_url(url) is expected

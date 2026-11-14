@@ -81,16 +81,22 @@ async function checkHealth() {
         if (!resp.ok) throw new Error('health endpoint down');
         const h = await resp.json();
 
-        updatePill(els.healthPg(), h.postgres?.status === 'up', 'PostgreSQL');
-        updatePill(els.healthRag(), h.rag?.status === 'up', `RAG (${h.rag?.docs || 0})`);
-        updatePill(els.healthGemma(), h.gemma?.status === 'up', 'Gemma 4');
+        // DC-EPMS-071: 'disabled' = absent by design on this host
+        // (public deployment), rendered neutral, never as a red fault.
+        healthPill(els.healthPg(), h.postgres, 'PostgreSQL');
+        healthPill(els.healthRag(), h.rag, `RAG (${h.rag?.docs || 0})`, 'RAG');
+        healthPill(els.healthGemma(), h.gemma, 'Gemma 4');
 
         const gpu = h.gpu || {};
-        const gpuUp = gpu.source === 'nvml';
-        const gpuLbl = gpuUp
-            ? `GPU ${gpu.sm_pct || 0}% · ${gpu.temp_c || 0}°C`
-            : 'GPU offline';
-        updatePill(els.healthGpu(), gpuUp, gpuLbl);
+        if (gpu.status === 'disabled') {
+            healthPill(els.healthGpu(), gpu, 'GPU');
+        } else {
+            const gpuUp = gpu.source === 'nvml';
+            const gpuLbl = gpuUp
+                ? `GPU ${gpu.sm_pct || 0}% · ${gpu.temp_c || 0}°C`
+                : 'GPU offline';
+            updatePill(els.healthGpu(), gpuUp, gpuLbl);
+        }
     } catch (e) {
         console.warn('health check failed:', e);
         [els.healthPg(), els.healthRag(), els.healthGemma(), els.healthGpu()]
@@ -98,8 +104,23 @@ async function checkHealth() {
     }
 }
 
+export function healthPill(el, sub, label, offLabel = label) {
+    if (!el) return;
+    if (sub?.status === 'disabled') {
+        el.classList.remove('up', 'down');
+        el.classList.add('off');
+        el.title = sub.reason || 'not deployed on this host';
+        const lblEl = el.querySelector('.lbl');
+        if (lblEl) lblEl.textContent = `${offLabel} · off`;
+        return;
+    }
+    updatePill(el, sub?.status === 'up', label);
+}
+
 function updatePill(el, isUp, label) {
     if (!el) return;
+    el.classList.remove('off');
+    el.removeAttribute('title');
     el.classList.toggle('up', isUp);
     el.classList.toggle('down', !isUp);
     const lblEl = el.querySelector('.lbl');
