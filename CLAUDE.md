@@ -109,8 +109,17 @@ DC-EPMS-068 lote A (2026-11-14, d90f4ef): DC_EPMS_SITE_MODEL runtime
   before load, unknown value fails closed; GET /api/site/model. NOT
   for the public host yet. Floors (Linux): pytest 1858 / vitest 742
   (38 files). Next: lote B = backend consumers on retired ids.
-NEXT: operator applies the bundle, checks the phone view on the
-  iPhone, then GO for DC-EPMS-068 lote B.
+DC-EPMS-064 confirmed on a real iPhone by the operator.
+DC-EPMS-068 lote B (2026-11-14, 56c7124): backend/site_roles.py
+  resolves transfer / UPS blocks / utility transformer per path on
+  both variants; power_chain_for, LOTO pillar 2 (single UPS block
+  LOTO on v2 = PASS, legacy unchanged), warmup, copilot HLD mapping,
+  CMMS seeder ported. HLD display keys left for the frontend lote.
+  DC-EPMS-072 OPEN: 10 of 50 Phase 1 racks have a power chain.
+  Floors (Linux): pytest 1886 / vitest 742. Under v2: 5 fixture
+  failures (legacy ids). Next: lote C = frontend (node registry,
+  power grid DAG, SLD with block LOD, topology), then procedures.
+NEXT: operator applies the bundle, then GO for lote C.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```

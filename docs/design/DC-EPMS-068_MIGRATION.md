@@ -100,11 +100,13 @@ Per file (backend, frontend, config):
    the validator is clean. `GET /api/site/model` reports the variant.
    Under v2 the process boots (177 components) and the main routes
    answer 200; consumers on retired ids are still unported.
-2. **Backend consumers** (13 files): LOTO auditor, site routes,
-   telemetry simulator / proto adapter, copilot and agents (they quote
-   ids in prompts and tools), CMMS seeds, ASCO HAL (no ATS in v2; the
-   adapter maps to the MV transfer controller only if a vendor is
-   chosen). 8-12 h.
+2. **Backend consumers**: DONE (lote B, 2026-11-14). Role resolution in
+   `backend/site_roles.py`; ported `power_chain_for`, LOTO pillar 2
+   (block-level UPS LOTO), boot warmup, copilot HLD mapping, CMMS
+   seeder, tool texts. The HLD display keys in `get_topology_state`
+   stay with the frontend. ASCO HAL is legacy-only (no 480 V ATS in
+   v2; binding a vendor to the MV transfer controller is a separate
+   decision). Under v2, 5 tests fail on legacy-id fixtures.
 3. **Frontend** (10 files): node registry, power grid DAG and SLD
    (largest: about 70 references), topology, mission control. The SLD
    must draw 8 UPS and 9 sets per path; it needs the level-of-detail

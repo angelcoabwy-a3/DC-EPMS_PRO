@@ -13,6 +13,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### DC-EPMS-068 lote B — backend by role, not by literal id (2026-11-14, `56c7124`)
+
+- New `backend/site_roles.py` (pure): resolves the path transfer
+  device, UPS blocks and utility transformer per path from the loaded
+  model. Legacy: `ats_a`, `ups_a`, `xfmr_a`. v2: `mvtc_a`,
+  `ups_a_01..08`, `mv_xfmr_a`.
+- `power_chain_for` groups feeds by the transfer device (it was
+  hard-coded to `ats_a` / `ats_b`, so on v2 no rack had a path A / B
+  feed).
+- LOTO auditor pillar 2: a single UPS block LOTO on v2 keeps the path
+  (7 x 2.5 MW = 17.5 MW >= 16.76 MW full facility IT load) and now
+  passes; path state `block_loto_path_keeps_n`. On legacy (one UPS per
+  path) nothing changes: still a path loss and HARD_FAIL. Two blocks
+  out at once in the same path is NOT modelled (overlapping
+  maintenance check is still deferred, ADR-009).
+- Boot warmup, copilot `query_unified_graph` (maps `ups_a_04` or
+  `mv_xfmr_a` to its HLD group and lists the members), CMMS seeder
+  (declared path wins; MV transfer controller and MV switchgear are
+  2N), `GET /api/site/model` roles, tool descriptions.
+- NOT changed: the HLD aggregate keys of `get_topology_state`
+  (`utility_north`, `xfmr_a`, `ups_a` ...) are a display namespace
+  shared with the topology view; they move with the frontend lote.
+- Under `DC_EPMS_SITE_MODEL=v2` the full suite gives 5 failures, all
+  test fixtures written for legacy ids (`test_api_procedures` 3,
+  `test_site_integration` 2). Default (legacy) suite: all pass.
+- **DC-EPMS-072 (open, MEDIUM)**: only 10 of the 50 modelled Phase 1
+  racks carry a power chain, on BOTH variants. LOTO impact and rack
+  counts under-report. Fenced in `tests/test_site_roles.py`, not fixed.
+- DC-EPMS-064 confirmed by the operator on a real iPhone (2026-11-14).
+- Tests +28 pytest. Floors (Linux, Python 3.13): pytest 1886 passed,
+  3 pre-existing `test_optimizer` errors; vitest 742 / 38 files.
+
 ### DC-EPMS-064 RESOLVED — phone layout (2026-11-14, `b101d1b`)
 
 - Target: iPhone 16 Pro Max and 17 Pro Max, 440 x 956 CSS px, safe
