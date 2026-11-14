@@ -243,3 +243,12 @@ class TestWarmupSkip:
         with TestClient(main_mod.app):
             pass
         assert calls == ["graphrag"]
+
+
+def test_session_default_keeps_the_warmup_off():
+    """tests/conftest.py fence: every test that enters the real lifespan
+    (test_session_gate.TestRealApp, test_ot_security, ...) runs with the
+    warmup off unless it opts back in."""
+    import os
+
+    assert os.environ.get("DC_EPMS_SKIP_WARMUP") == "1"

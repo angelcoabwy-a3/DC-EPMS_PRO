@@ -29,8 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   representative of the operator machine.
 - **Fixed:** `DC_EPMS_SKIP_WARMUP=1` skips both warmup stages; the two
   fixtures set it. +2 tests prove the switch (spy on both stages).
-- **Still unverified:** the remaining 52 percent of the suite on the
-  Windows workstation, and the whole vitest run there.
+- **Second pass (same day):** the operator run then reached 73 percent
+  and died in `tests/test_session_gate.py::TestRealApp` (also mine, R1),
+  this time in FAISS AVX2. Fixed at the root: `tests/conftest.py` turns
+  the warmup off for the whole session; a test that wants it must opt
+  back in. Verified by emulation: stand-in `sentence_transformers`,
+  `faiss` and `pyarrow` modules that abort on import. Without the
+  conftest the run aborts like the workstation (exit 134); with it the
+  whole suite completes (1829 passed, 3 pre-existing errors that are a
+  pytest 9 deprecation of this sandbox).
+- **Operator workstation, 2026-11-14:** vitest 728 passed / 37 files.
+- **DC-EPMS-070 (LOW, pre-existing, open):** `tests/frontend/demo_mode.test.js`
+  prints six `ECONNREFUSED 127.0.0.1:3000` errors (a real fetch against
+  the happy-dom origin). Present on master `2fa40c7`; the tests pass.
 
 ### Release R3-C — Generation N+1 on total load + site_model v2 (2026-11-14)
 
