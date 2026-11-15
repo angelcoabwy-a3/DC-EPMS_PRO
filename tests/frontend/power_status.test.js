@@ -136,3 +136,73 @@ describe('Power view wiring', () => {
         vi.unstubAllGlobals();
     });
 });
+
+describe('HMI H4: alarm banner on the Power view', () => {
+    const DOM = '<div id="view-power"><div class="pid-action-bar"></div>'
+        + '<div class="pid-canvas"><svg class="pid-svg"></svg></div></div>';
+    const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+    afterEach(() => { vi.unstubAllGlobals(); });
+
+    it('What-If: sandbox alarms appear on a trip and ACK is local (no POST)', () => {
+        const fetchSpy = vi.fn(async () => ({ ok: false, status: 503, text: async () => '', json: async () => ({}) }));
+        vi.stubGlobal('fetch', fetchSpy);
+        document.body.innerHTML = DOM;
+        const { renderFlatSld, setMode, applyGrid, sandboxAlarms } = __power_test__;
+        renderFlatSld();
+        setMode('whatif');
+        applyGrid(getGridState());
+        const banner = document.getElementById('pwr-alarms');
+        expect(banner.dataset.source).toBe('sandbox');
+        expect(banner.textContent).toContain('No active alarms');
+        tripNode('util_a');
+        applyGrid(getGridState());
+        expect(banner.querySelector('[data-state="UNACK"]')).not.toBeNull();
+        expect(banner.textContent).toContain('Path A utility supply lost');
+        fetchSpy.mockClear();
+        banner.querySelector('[data-ack-all]').click();
+        expect(sandboxAlarms.snapshot().unacked).toBe(0);
+        expect(banner.querySelector('[data-state="UNACK"]')).toBeNull();
+        expect(fetchSpy).not.toHaveBeenCalled();
+        setMode('live');
+        expect(sandboxAlarms.snapshot().alarms).toEqual([]);
+    });
+
+    it('LIVE: banner shows backend alarms and ACK posts to the backend', async () => {
+        const live = {
+            alarms: [{ id: 'PATH_A_UNPROTECTED', priority: 'HIGH', state: 'UNACK',
+                message: 'Path A load not battery-backed', activated: '2026-11-15T02:00:00.123Z' }],
+            unacked: 1,
+        };
+        const fetchSpy = vi.fn(async (url, opts) => ({
+            ok: true, status: 200,
+            json: async () => (opts && opts.method === 'POST' ? { success: true } : live),
+        }));
+        vi.stubGlobal('fetch', fetchSpy);
+        document.body.innerHTML = DOM;
+        const { renderFlatSld, setMode, pollAlarms } = __power_test__;
+        renderFlatSld();
+        setMode('live');
+        await pollAlarms(true);
+        const banner = document.getElementById('pwr-alarms');
+        expect(banner.dataset.source).toBe('live');
+        expect(banner.textContent).toContain('Path A load not battery-backed');
+        banner.querySelector('[data-ack="PATH_A_UNPROTECTED"]').click();
+        await flush();
+        const post = fetchSpy.mock.calls.find(([, o]) => o && o.method === 'POST');
+        expect(post[0]).toBe('/api/alarms/PATH_A_UNPROTECTED/ack');
+    });
+
+    it('LIVE: refused ACK tells the operator to sign in', async () => {
+        vi.stubGlobal('fetch', vi.fn(async (url, opts) => (opts && opts.method === 'POST'
+            ? { ok: false, status: 401, text: async () => 'authentication required' }
+            : { ok: true, status: 200, json: async () => ({ alarms: [{ id: 'X', priority: 'LOW', state: 'UNACK', message: 'm' }], unacked: 1 }) })));
+        document.body.innerHTML = DOM;
+        const { renderFlatSld, setMode, pollAlarms } = __power_test__;
+        renderFlatSld();
+        setMode('live');
+        await pollAlarms(true);
+        document.querySelector('[data-ack="X"]').click();
+        await flush(); await flush(); await flush();
+        expect(document.getElementById('pwr-alarms').textContent).toContain('ACK refused');
+    });
+});

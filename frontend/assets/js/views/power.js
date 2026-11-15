@@ -37,6 +37,8 @@ import {
 } from '../core/power_flow.js';
 import { statusStrip, EventLog } from '../core/power_status.js';
 import { BREAKER_SCHEME, breakerText } from '../core/hmi_scheme.js';
+import { AlarmEngine, conditionsFromGrid, alarmBannerHtml } from '../core/alarm_state.js';
+import { apiFetch } from '../services/api.js';
 import { escapeHTML } from '../core/sanitize.js';
 import {
     severityFromChannels, symbol, wire, sparkPoints, sparkPolyline,
@@ -58,6 +60,14 @@ let _mode = 'live';   // 'live' | 'whatif' — set by the Phase 2 sandbox toggle
 let _itKw = null;     // facility Phase 1 IT load from the topology feed (power_flow)
 // vida 2: clocked event sequence derived from DAG snapshots
 const _eventLog = new EventLog();
+// HMI H4: sandbox alarms live in the browser (What-If only); live
+// alarms are the backend state of the simulated plant (/api/alarms).
+const _sandboxAlarms = new AlarmEngine();
+let _liveAlarms = null;
+let _alarmErr = '';    // live feed error
+let _ackErr = '';      // last refused ACK (kept until an ACK succeeds)
+let _alarmPollAt = 0;
+const ALARM_POLL_MS = 3000;
 let _clockTimer = null;
 
 // SLD-node-id -> /api/topology/state hld_nodes key (registry-derived).
@@ -228,6 +238,8 @@ function _onTelemetryFrame(payload) {
         _applyTelemetry(payload.channels);
         _updateSparklines(payload.channels);
     }
+    // HMI H4: live alarms ride the telemetry cadence (throttled).
+    _pollAlarms();
 }
 
 // ─── Micro-trend sparklines (shared kit tracker) ───────────────────
@@ -850,6 +862,15 @@ function _setMode(mode) {
     // Each sandbox session starts its own sequence at t = 0.
     _eventLog.reset(_mode === 'whatif' ? getState('grid') : null);
     _renderTimeline();
+    // Each sandbox session starts with a clean alarm list.
+    _sandboxAlarms.reset();
+    if (_mode === 'whatif') {
+        const g = getState('grid');
+        if (g) _sandboxAlarms.evaluate(conditionsFromGrid(g, _itKw ?? undefined));
+    } else {
+        _pollAlarms(true);
+    }
+    _renderAlarms();
     const view = document.getElementById('view-power');
     if (view) view.classList.toggle('pwr-whatif', _mode === 'whatif');
     const btn = document.getElementById('pwr-mode-toggle');
@@ -969,6 +990,14 @@ function _ensureVida2Panels() {
     strip.className = 'pwr-strip';
     strip.setAttribute('aria-label', 'Phase 1 path status');
     strip.setAttribute('data-scheme', BREAKER_SCHEME.id);
+    // HMI H4: alarm banner above the status strip.
+    const al = document.createElement('section');
+    al.id = 'pwr-alarms';
+    al.className = 'pwr-al';
+    al.setAttribute('aria-label', 'Alarm banner');
+    al.setAttribute('aria-live', 'polite');
+    al.addEventListener('click', _onAlarmClick);
+    anchor.parentNode.insertBefore(al, anchor);
     anchor.parentNode.insertBefore(strip, anchor);
     const tl = document.createElement('section');
     tl.id = 'pwr-timeline';
@@ -1002,6 +1031,61 @@ function _renderVida2(grid) {
     const strip = document.getElementById('pwr-status');
     if (strip) strip.innerHTML = statusStrip(grid, _itKw ?? undefined);
     _renderTimeline();
+    if (_mode === 'whatif') _sandboxAlarms.evaluate(conditionsFromGrid(grid, _itKw ?? undefined));
+    _renderAlarms();
+}
+
+// ── HMI H4: alarm banner ────────────────────────────────────────
+function _renderAlarms() {
+    const el = document.getElementById('pwr-alarms');
+    if (!el) return;
+    const sandbox = _mode === 'whatif';
+    el.dataset.source = sandbox ? 'sandbox' : 'live';
+    el.innerHTML = sandbox
+        ? alarmBannerHtml(_sandboxAlarms.snapshot(), { source: 'sandbox' })
+        : alarmBannerHtml(_liveAlarms, { source: 'live', error: _alarmErr || _ackErr });
+}
+
+async function _pollAlarms(force = false) {
+    const now = Date.now();
+    if (!force && now - _alarmPollAt < ALARM_POLL_MS) return;
+    _alarmPollAt = now;
+    try {
+        _liveAlarms = await apiFetch('/api/alarms', { credentials: 'same-origin' });
+        _alarmErr = '';
+    } catch (e) {
+        _alarmErr = 'Live alarms unavailable: ' + String(e.message || e).slice(0, 120);
+    }
+    if (_mode !== 'whatif') _renderAlarms();
+}
+
+async function _ackLive(path) {
+    try {
+        await apiFetch(path, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' }, body: '{}',
+        });
+        _ackErr = '';
+    } catch (e) {
+        _ackErr = /HTTP 40[13]/.test(String(e.message))
+            ? 'ACK refused: sign in with an operator account.'
+            : 'ACK failed: ' + String(e.message || e).slice(0, 120);
+    }
+    await _pollAlarms(true);
+}
+
+function _onAlarmClick(ev) {
+    const btn = ev.target.closest('button');
+    if (!btn) return;
+    const id = btn.dataset.ack;
+    const all = btn.dataset.ackAll;
+    if (_mode === 'whatif') {
+        if (all) _sandboxAlarms.ackAll(); else if (id) _sandboxAlarms.ack(id);
+        _renderAlarms();
+        return;
+    }
+    if (all) _ackLive('/api/alarms/ack-all');
+    else if (id) _ackLive(`/api/alarms/${encodeURIComponent(id)}/ack`);
 }
 
 // Flow layer: which runs are energized / carrying power, from which
@@ -1255,6 +1339,8 @@ function _activate() {
     // Baseline physics-validated topology — fetched once per activation,
     // NOT polled. Live updates arrive on the Hermes telemetry stream.
     _refresh();
+    _ensureVida2Panels();
+    _pollAlarms(true);
 }
 
 /** Public entry — called once from main.js at bootstrap. */
@@ -1317,6 +1403,10 @@ export const __power_test__ = {
     applyGrid: _applyGrid,
     applyFlow: _applyFlow,
     eventLog: _eventLog,
+    sandboxAlarms: _sandboxAlarms,
+    pollAlarms: _pollAlarms,
+    renderAlarms: _renderAlarms,
+    onAlarmClick: _onAlarmClick,
     setItKw: (v) => { _itKw = v; },
     sparkPoints,
     updateSparklines: _updateSparklines,

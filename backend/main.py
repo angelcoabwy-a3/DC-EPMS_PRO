@@ -3664,10 +3664,16 @@ try:
         return library
 
     register_device_control_routes(app, _device_controller)
+    # HMI H4: ISA-18.2 style alarm states over the same simulated plant.
+    from backend.alarm_engine import AlarmEngine
+    from backend.alarm_routes import register_alarm_routes
+
+    app.state.alarm_engine = AlarmEngine()
+    register_alarm_routes(app, _device_controller, app.state.alarm_engine)
     register_power_scenario_routes(app, _power_scenario_library, _power_design)
     log.info(
         "[BOOT] Power plant control mounted (/api/devices, /api/mv, "
-        "/api/power-scenarios; %d scenarios)", len(_power_scenario_library()),
+        "/api/power-scenarios, /api/alarms; %d scenarios)", len(_power_scenario_library()),
     )
 except Exception as e:
     log.error("[BOOT] Device control mount failed: %s", e, exc_info=True)
