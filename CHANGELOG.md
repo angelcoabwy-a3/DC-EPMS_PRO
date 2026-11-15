@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### T3b - sync-check supervised close + DC-EPMS-074 (2026-11-15)
+
+- Closed-transition close is now sync-check supervised: EXECUTE arms
+  it, the server closes 52-U at the computed instant of window entry
+  (up to 30 s, then cancels). Window ETA and armed banner in the
+  faceplate; `POST /api/devices/{id}/sync-cancel`.
+- Trigger: the operator's DRILL-04 run on Render failed on timing,
+  not on governor control.
+- **DC-EPMS-074 RESOLVED**: report SOE kept the authority event's own
+  `source` over the report label; now `origin`.
+- Ledger records the arming, not the later close instant (in the SOE).
+- pytest 1953 / vitest 847 (46 files).
+
 ### T3 - synchroscope and closed-transition training mode (2026-11-15, `5cb337a`, `b4e47a6`)
 
 - Operator decision: closed transition is a TRAINING MODE, off by

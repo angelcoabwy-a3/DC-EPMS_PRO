@@ -166,6 +166,10 @@ T3 (2026-11-15, 5cb337a / b4e47a6): closed transition = TRAINING MODE
   DRILL-04, synchroscope in the faceplate. pytest 1943 / vitest 845
   (46 files). Next: T4 (PDF report, relay indicators); AI instructor
   needs a provider decision.
+T3b (2026-11-15): sync-check supervised close (EXECUTE arms, server
+  closes at computed window entry, 30 s timeout, /sync-cancel), window
+  ETA in the faceplate, DC-EPMS-074 fixed (report SOE origin). Ledger
+  has the arming, not the close instant. pytest 1953 / vitest 847.
 NEXT: operator applies the bundle and eyeballs the Power SLD (strip +
   sequence in What-If); then GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
