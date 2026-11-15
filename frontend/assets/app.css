@@ -10797,3 +10797,6 @@ table.opt-votes td {
     .pwr-al-time { display: none; }
     .pwr-al-ack, .pwr-al-ack-all { min-height: 44px; min-width: 44px; }
 }
+/* DC-EPMS-073: freshness of the plant mirror behind the drawing. */
+.pwr-al-sync { color: #8a929c; font-weight: 500; letter-spacing: 0; }
+.pwr-al-sync[data-stale="1"] { color: #ffa726; }

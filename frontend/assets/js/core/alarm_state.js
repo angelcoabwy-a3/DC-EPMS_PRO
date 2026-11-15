@@ -146,6 +146,11 @@ export function alarmBannerHtml(snap, opts = {}) {
     const head = source === 'sandbox'
         ? 'ALARMS · SANDBOX (What-If, local ack, not logged)'
         : 'ALARMS · LIVE PLANT (simulated Power Controls)';
+    const synced = source === 'live' && opts.syncedAt instanceof Date
+        ? `<span class="pwr-al-sync" title="The drawing follows the Power Controls plant">SLD synced ${_clock(opts.syncedAt.toISOString())}</span>`
+        : (source === 'live'
+            ? '<span class="pwr-al-sync" data-stale="1" title="Plant not reachable: the drawing shows the nominal design">SLD nominal (plant not reachable)</span>'
+            : '');
     const alarms = (snap && snap.alarms) || [];
     const unacked = (snap && snap.unacked) || 0;
     const rows = alarms.slice(0, max).map((a) => {
@@ -165,6 +170,7 @@ export function alarmBannerHtml(snap, opts = {}) {
     const err = opts.error ? `<div class="pwr-al-err">${escapeHTML(opts.error)}</div>` : '';
     return `<div class="pwr-al-head" data-source="${source}"><span>${head}</span>`
         + `<span class="pwr-al-count">${unacked} unacknowledged</span>`
+        + synced
         + (unacked > 0 ? '<button type="button" class="pwr-al-ack-all" data-ack-all="1">ACK ALL</button>' : '')
         + `</div>${err}${rows}${more}${empty}`;
 }

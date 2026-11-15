@@ -39,6 +39,7 @@ import { statusStrip, EventLog } from '../core/power_status.js';
 import { BREAKER_SCHEME, breakerText } from '../core/hmi_scheme.js';
 import { AlarmEngine, conditionsFromGrid, alarmBannerHtml } from '../core/alarm_state.js';
 import { apiFetch } from '../services/api.js';
+import { mirrorGrid, plantModeLabel, isPlantSnapshot } from '../core/plant_mirror.js';
 import { escapeHTML } from '../core/sanitize.js';
 import {
     severityFromChannels, symbol, wire, sparkPoints, sparkPolyline,
@@ -68,6 +69,15 @@ let _alarmErr = '';    // live feed error
 let _ackErr = '';      // last refused ACK (kept until an ACK succeeds)
 let _alarmPollAt = 0;
 const ALARM_POLL_MS = 3000;
+// DC-EPMS-073: in LIVE the drawing follows the Power Controls plant.
+let _plant = null;
+let _plantAt = null;
+
+/** The grid the drawing shows: plant mirror in LIVE, the DAG otherwise. */
+function _effGrid(grid) {
+    if (_mode === 'live' && grid && _plant) return mirrorGrid(grid, _plant);
+    return grid;
+}
 let _clockTimer = null;
 
 // SLD-node-id -> /api/topology/state hld_nodes key (registry-derived).
@@ -224,6 +234,12 @@ function _applyTelemetry(channels) {
 async function _refresh() {
     try {
         _applyTopology(await getTopologyState());
+        // DC-EPMS-073: the physics topology carries its own UPS mode
+        // guess; the plant mirror wins when it is loaded.
+        if (_mode === 'live' && _plant) {
+            const g = getState('grid');
+            if (g) _applyGrid(_effGrid(g));
+        }
     } catch (e) {
         console.warn('[power] topology fetch failed:', e.message);
     }
@@ -760,7 +776,7 @@ function _renderFlatSld() {
     // Paint the current DAG state at once (unit captions, breakers,
     // flow) instead of waiting for the next grid change.
     const g0 = getState('grid');
-    if (g0) _applyGrid(g0); else _applyFlow(null);
+    if (g0) _applyGrid(_effGrid(g0)); else _applyFlow(null);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -959,7 +975,7 @@ function _applyGrid(grid) {
             // crank in progress or running on load is worth a colour.
             sev = n.state === 'cranking' ? 'warning' : (n.alive ? 'warning' : 'ok');
         } else if (n.tripped || n.alive === false) sev = 'critical';
-        else if (n.on_battery || n.energized_by === 'genset') sev = 'warning';
+        else if (n.on_battery || n.energized_by === 'genset' || n.plant_mode === 'static_bypass') sev = 'warning';
         node.querySelectorAll('.pid-symbol').forEach((s) => s.setAttribute('data-sev', sev));
         node.classList.toggle('pf-tripped', !!n.tripped);
     });
@@ -975,6 +991,8 @@ function _applyGrid(grid) {
         const txt = t.transferring ? 'OPEN · IN TRANSFER'
             : (t.ats_pos === 'secondary' ? '52-GM · GEN BUS' : '52-U · UTILITY');
         _setMetric('mvtc_' + p + '-pos', txt);
+        const upsLabel = plantModeLabel(grid['ups_' + p]);
+        if (upsLabel) _setMetric('ups_' + p + '-mode', upsLabel);
     }
 }
 
@@ -1043,20 +1061,36 @@ function _renderAlarms() {
     el.dataset.source = sandbox ? 'sandbox' : 'live';
     el.innerHTML = sandbox
         ? alarmBannerHtml(_sandboxAlarms.snapshot(), { source: 'sandbox' })
-        : alarmBannerHtml(_liveAlarms, { source: 'live', error: _alarmErr || _ackErr });
+        : alarmBannerHtml(_liveAlarms, { source: 'live', error: _alarmErr || _ackErr, syncedAt: _plantAt });
 }
 
 async function _pollAlarms(force = false) {
     const now = Date.now();
     if (!force && now - _alarmPollAt < ALARM_POLL_MS) return;
     _alarmPollAt = now;
-    try {
-        _liveAlarms = await apiFetch('/api/alarms', { credentials: 'same-origin' });
+    const [al, plant] = await Promise.allSettled([
+        apiFetch('/api/alarms', { credentials: 'same-origin' }),
+        apiFetch('/api/devices', { credentials: 'same-origin' }),
+    ]);
+    if (al.status === 'fulfilled') {
+        _liveAlarms = al.value;
         _alarmErr = '';
-    } catch (e) {
-        _alarmErr = 'Live alarms unavailable: ' + String(e.message || e).slice(0, 120);
+    } else {
+        _alarmErr = 'Live alarms unavailable: ' + String(al.reason?.message || al.reason).slice(0, 120);
     }
-    if (_mode !== 'whatif') _renderAlarms();
+    // DC-EPMS-073: no plant -> the drawing falls back to the nominal DAG.
+    if (plant.status === 'fulfilled' && isPlantSnapshot(plant.value)) {
+        _plant = plant.value;
+        _plantAt = new Date();
+    } else {
+        _plant = null;
+        _plantAt = null;
+    }
+    if (_mode !== 'whatif') {
+        const g = getState('grid');
+        if (g) _applyGrid(_effGrid(g));
+        _renderAlarms();
+    }
 }
 
 async function _ackLive(path) {
@@ -1365,7 +1399,7 @@ export function initPowerView() {
     _buildReplayToggle();
     // R2: arm the session black box (records Hermes + DAG planes).
     startRecording();
-    subscribe('grid', _applyGrid);
+    subscribe('grid', (g) => _applyGrid(_effGrid(g)));
     // T3.1: live severity from the Hermes telemetry stream — the legacy
     // 5 s setInterval poll is eradicated.
     _unsubTelemetry = onHermesStream('telemetry', _onTelemetryFrame);
@@ -1404,6 +1438,8 @@ export const __power_test__ = {
     applyFlow: _applyFlow,
     eventLog: _eventLog,
     sandboxAlarms: _sandboxAlarms,
+    effGrid: _effGrid,
+    hasPlant: () => !!_plant,
     pollAlarms: _pollAlarms,
     renderAlarms: _renderAlarms,
     onAlarmClick: _onAlarmClick,

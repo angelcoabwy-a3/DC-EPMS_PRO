@@ -206,3 +206,58 @@ describe('HMI H4: alarm banner on the Power view', () => {
         expect(document.getElementById('pwr-alarms').textContent).toContain('ACK refused');
     });
 });
+
+describe('DC-EPMS-073: LIVE drawing follows the Power Controls plant', () => {
+    const DOM = '<div id="view-power"><div class="pid-action-bar"></div>'
+        + '<div class="pid-canvas"><svg class="pid-svg"></svg></div></div>';
+    const devices = (xferA) => {
+        const d = [];
+        for (const p of ['a', 'b']) {
+            d.push({ id: `mvtc_${p}`, kind: 'transfer', path: p, state: p === 'a' ? xferA : 'UTILITY' });
+            for (let i = 1; i <= 9; i++) d.push({ id: `g_${p}${i}`, kind: 'generator', path: p, state: p === 'a' && xferA === 'GENERATORS' ? 'ON_LOAD' : 'STANDBY' });
+            for (let i = 1; i <= 8; i++) d.push({ id: `u_${p}${i}`, kind: 'ups', path: p, state: p === 'a' && i === 1 ? 'STATIC_BYPASS' : 'DOUBLE_CONVERSION' });
+        }
+        return {
+            devices: d,
+            paths: ['a', 'b'].map((p) => ({ path: p, ups_total: 8, ups_in_service: 8, gen_total: 9, gen_available: 9 })),
+        };
+    };
+    const stub = (plant) => vi.fn(async (url) => ({
+        ok: true, status: 200,
+        json: async () => (String(url).includes('/api/devices') ? plant : { alarms: [], unacked: 0 }),
+    }));
+    const brk = (k) => document.querySelector(`[data-brk="${k}"]`).getAttribute('data-state');
+    afterEach(() => { vi.unstubAllGlobals(); restoreAll(); });
+
+    it('transfer + bypass in Power Controls show on the LIVE drawing, not in What-If', async () => {
+        vi.stubGlobal('fetch', stub(devices('GENERATORS')));
+        document.body.innerHTML = DOM;
+        const { renderFlatSld, setMode, pollAlarms, applyGrid, effGrid } = __power_test__;
+        renderFlatSld();
+        setMode('live');
+        await pollAlarms(true);
+        expect(brk('a:u')).toBe('open');
+        expect(brk('a:gm')).toBe('closed');
+        expect(brk('b:u')).toBe('closed');
+        expect(document.querySelector('[data-sld-metric="ups_a-mode"]').textContent)
+            .toBe('BYPASS × 1');
+        expect(document.getElementById('pwr-alarms').textContent).toMatch(/SLD synced \d\d:\d\d:\d\d\.\d{3}/);
+        setMode('whatif');
+        applyGrid(effGrid(getGridState()));
+        expect(brk('a:u')).toBe('closed');
+    });
+
+    it('plant unreachable: nominal drawing and a stale marker', async () => {
+        vi.stubGlobal('fetch', vi.fn(async (url) => (String(url).includes('/api/devices')
+            ? { ok: false, status: 401, text: async () => 'authentication required' }
+            : { ok: true, status: 200, json: async () => ({ alarms: [], unacked: 0 }) })));
+        document.body.innerHTML = DOM;
+        const { renderFlatSld, setMode, pollAlarms, hasPlant } = __power_test__;
+        renderFlatSld();
+        setMode('live');
+        await pollAlarms(true);
+        expect(hasPlant()).toBe(false);
+        expect(brk('a:u')).toBe('closed');
+        expect(document.getElementById('pwr-alarms').textContent).toContain('SLD nominal (plant not reachable)');
+    });
+});

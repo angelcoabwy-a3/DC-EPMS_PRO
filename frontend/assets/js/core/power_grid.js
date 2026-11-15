@@ -200,7 +200,26 @@ function _unitsIn(t, n) {
 
 function _propagate() {
     if (!_grid) return;
+    _flow(_grid);
 
+    // Check transfer triggers (mutates state, may schedule timers)
+    _maybeTriggerTransfers();
+    // Check UPS battery decay (mutates state, schedules 1Hz interval)
+    _manageBatteryDecay();
+
+    // Publish full grid state (shallow clone — subscribers see new ref)
+    const snapshot = {};
+    for (const id of Object.keys(_grid)) snapshot[id] = { ..._grid[id] };
+    setState('grid', snapshot);
+}
+
+/**
+ * DC-EPMS-073: pure energy-flow pass over a grid object. No timers, no
+ * automatic transfer, no publish. Used by the engine (on its private
+ * grid) and by core/plant_mirror.js (on a copy built from the Power
+ * Controls plant).
+ */
+function _flow(_grid) {
     for (const id of TOPO_ORDER) {
         const t = TOPOLOGY[id];
         const n = _grid[id];
@@ -328,16 +347,21 @@ function _propagate() {
         n.n_ok = cap >= t.floorKw;
         n.n1_ok = cap - t.unitKw >= t.floorKw;
     }
+}
 
-    // Check transfer triggers (mutates state, may schedule timers)
-    _maybeTriggerTransfers();
-    // Check UPS battery decay (mutates state, schedules 1Hz interval)
-    _manageBatteryDecay();
-
-    // Publish full grid state (shallow clone — subscribers see new ref)
-    const snapshot = {};
-    for (const id of Object.keys(_grid)) snapshot[id] = { ..._grid[id] };
-    setState('grid', snapshot);
+/**
+ * DC-EPMS-073: copy a grid state and run the pure flow pass on it.
+ * Never touches the engine's own grid, never schedules timers.
+ */
+export function propagateStatic(grid) {
+    if (!grid) return null;
+    const g = {};
+    for (const id of Object.keys(TOPOLOGY)) {
+        g[id] = grid[id] ? { ...grid[id] } : null;
+    }
+    for (const id of Object.keys(g)) if (!g[id]) delete g[id];
+    _flow(g);
+    return g;
 }
 
 function _scheduleProp() {
