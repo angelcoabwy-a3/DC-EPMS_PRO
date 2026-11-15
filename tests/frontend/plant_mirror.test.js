@@ -93,6 +93,27 @@ describe('plant_mirror', () => {
         expect(mirrorGrid(base, null)).toBe(base);
     });
 
+    it('T1: utility lost with 52-U tripped -> dead bus, UPS on battery at the plant SOC', () => {
+        const p = plant({ xferA: 'OPEN' });
+        Object.assign(p.paths[0], { utility_ok: false, battery_soc_pct: 61.2, load_lost: false });
+        const g = mirrorGrid(getGridState(), p);
+        expect(g.util_a.tripped).toBe(true);
+        expect(g.mvtc_a.ats_pos).toBe('open');
+        expect(g.mvtc_a.tripped).toBe(true);
+        expect(g.mvtc_a.alive).toBe(false);
+        expect(g.ups_a.on_battery).toBe(true);
+        expect(g.batt_a.soc).toBeCloseTo(61.2);
+        expect(pathFlows(g).a.source).toBe('battery');
+    });
+
+    it('T1: load lost -> battery drawn empty, no UPS output', () => {
+        const p = plant({ xferA: 'OPEN' });
+        Object.assign(p.paths[0], { utility_ok: false, battery_soc_pct: 0, load_lost: true });
+        const g = mirrorGrid(getGridState(), p);
+        expect(g.ups_a.alive).toBe(false);
+        expect(pathFlows(g).a.source).toBe(null);
+    });
+
     it('propagateStatic leaves the engine state alone', () => {
         const base = getGridState();
         const g = propagateStatic({ ...base, util_a: { ...base.util_a, tripped: true } });

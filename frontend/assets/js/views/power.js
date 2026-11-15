@@ -40,6 +40,10 @@ import { BREAKER_SCHEME, breakerText } from '../core/hmi_scheme.js';
 import { AlarmEngine, conditionsFromGrid, alarmBannerHtml } from '../core/alarm_state.js';
 import { apiFetch } from '../services/api.js';
 import { mirrorGrid, plantModeLabel, isPlantSnapshot } from '../core/plant_mirror.js';
+import { ControlRoomAudio } from '../core/control_room_audio.js';
+import { plantPost, plantGet } from '../core/plant_client.js';
+import { faceplateHtml } from '../core/sbo_faceplate.js';
+import { trainingHtml } from '../core/training_view.js';
 import { escapeHTML } from '../core/sanitize.js';
 import {
     severityFromChannels, symbol, wire, sparkPoints, sparkPolyline,
@@ -72,6 +76,20 @@ const ALARM_POLL_MS = 3000;
 // DC-EPMS-073: in LIVE the drawing follows the Power Controls plant.
 let _plant = null;
 let _plantAt = null;
+// T2: training coach, SBO faceplate, control-room sounds.
+const _audio = new ControlRoomAudio();
+let _drills = [];
+let _trView = null;
+let _trSelected = '';
+let _trMsg = '';
+let _trTimer = null;
+let _fpTarget = null;
+let _fpMsg = '';
+let _fpTimer = null;
+const _fpPending = new Map();   // deviceId -> { token, label, expiresAt }
+let _seenUnack = new Set();
+let _prevXfer = {};
+let _prevSteps = 0;
 
 /** The grid the drawing shows: plant mirror in LIVE, the DAG otherwise. */
 function _effGrid(grid) {
@@ -840,6 +858,13 @@ function _onFlatClick(e) {
         setUnitsOut(bank, tick.dataset.out === '1' ? out - 1 : out + 1);
         return;
     }
+    // T2: 52-U / 52-GM open the MV transfer faceplate in LIVE.
+    const brk = e.target.closest && e.target.closest('.pf-52');
+    if (brk && _mode === 'live') {
+        const [p, which] = String(brk.dataset.brk || '').split(':');
+        if (which === 'u' || which === 'gm') _openFaceplate('mvtc_' + p);
+        return;
+    }
     const node = e.target.closest('.pf-node');
     if (!node) return;
     const id = node.dataset.sldNode;
@@ -859,6 +884,7 @@ function _onFlatClick(e) {
     } else {
         setState('selectedAsset', id);
     }
+    if (/^(mvtc|genset|ups)_[ab]$/.test(id)) _openFaceplate(id);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1015,6 +1041,23 @@ function _ensureVida2Panels() {
     al.setAttribute('aria-label', 'Alarm banner');
     al.setAttribute('aria-live', 'polite');
     al.addEventListener('click', _onAlarmClick);
+    // T2: training coach above the alarms, faceplate as a side panel.
+    const tr = document.createElement('section');
+    tr.id = 'pwr-training';
+    tr.className = 'pwr-tr';
+    tr.setAttribute('aria-label', 'Operator training');
+    tr.addEventListener('click', _onTrainingClick);
+    tr.addEventListener('change', (ev) => {
+        if (ev.target.dataset.trSelect) _trSelected = ev.target.value;
+    });
+    anchor.parentNode.insertBefore(tr, anchor);
+    const fp = document.createElement('aside');
+    fp.id = 'pwr-faceplate';
+    fp.className = 'pwr-fp';
+    fp.hidden = true;
+    fp.setAttribute('aria-label', 'Select-before-operate faceplate');
+    fp.addEventListener('click', _onFaceplateClick);
+    (document.getElementById('view-power') || anchor.parentNode).appendChild(fp);
     anchor.parentNode.insertBefore(al, anchor);
     anchor.parentNode.insertBefore(strip, anchor);
     const tl = document.createElement('section');
@@ -1066,7 +1109,8 @@ function _renderAlarms() {
 
 async function _pollAlarms(force = false) {
     const now = Date.now();
-    if (!force && now - _alarmPollAt < ALARM_POLL_MS) return;
+    const gap = _trView && _trView.active ? 900 : ALARM_POLL_MS;
+    if (!force && now - _alarmPollAt < gap) return;
     _alarmPollAt = now;
     const [al, plant] = await Promise.allSettled([
         apiFetch('/api/alarms', { credentials: 'same-origin' }),
@@ -1086,11 +1130,176 @@ async function _pollAlarms(force = false) {
         _plant = null;
         _plantAt = null;
     }
+    _soundCues();
     if (_mode !== 'whatif') {
         const g = getState('grid');
         if (g) _applyGrid(_effGrid(g));
         _renderAlarms();
     }
+    _renderFaceplate();
+}
+
+// ── T2: sound cues from plant / alarm changes ────────────────────
+function _soundCues() {
+    const unack = new Set(((_liveAlarms && _liveAlarms.alarms) || [])
+        .filter((a) => a.state === 'UNACK').map((a) => a.id));
+    const fresh = ((_liveAlarms && _liveAlarms.alarms) || [])
+        .filter((a) => a.state === 'UNACK' && !_seenUnack.has(a.id));
+    if (fresh.length) _audio.alarm(fresh.some((a) => a.priority === 'HIGH') ? 'HIGH' : 'MEDIUM');
+    _seenUnack = unack;
+    const xfer = {};
+    for (const d of ((_plant && _plant.devices) || [])) if (d.kind === 'transfer') xfer[d.id] = d.state;
+    for (const [id, st] of Object.entries(xfer)) {
+        if (_prevXfer[id] && _prevXfer[id] !== st) _audio.breaker(st !== 'OPEN');
+    }
+    _prevXfer = xfer;
+}
+
+// ── T2: training coach ───────────────────────────────────────────
+function _drillPath() {
+    const s = _trView && _trView.session;
+    return s ? s.drill.path : 'a';
+}
+
+function _renderTraining() {
+    const el = document.getElementById('pwr-training');
+    if (!el) return;
+    if (!_trSelected && _drills.length) _trSelected = _drills[0].id;
+    const ps = ((_plant && _plant.paths) || []).find((p) => p.path === _drillPath()) || null;
+    el.dataset.active = _trView && _trView.active ? '1' : '0';
+    el.innerHTML = trainingHtml({
+        drills: _drills, view: _trView, pathSummary: ps, selected: _trSelected,
+        message: _trMsg, soundOn: _audio.on, soundSupported: _audio.supported,
+    });
+}
+
+async function _loadTraining() {
+    const d = await plantGet('/api/training/drills');
+    if (d.ok) _drills = d.data.drills || [];
+    await _trainingTick();
+}
+
+async function _trainingTick() {
+    if (_trTimer) { clearTimeout(_trTimer); _trTimer = null; }
+    const r = await plantGet('/api/training/session');
+    if (r.ok) {
+        const before = _prevSteps;
+        _trView = r.data;
+        const done = _trView.session ? _trView.session.steps.filter((x) => x.done).length : 0;
+        if (done > before) _audio.chime();
+        _prevSteps = done;
+    }
+    if (_trView && _trView.active) {
+        await _pollAlarms(true);
+        _trTimer = setTimeout(_trainingTick, 1000);
+    }
+    _renderTraining();
+}
+
+async function _onTrainingClick(ev) {
+    const btn = ev.target.closest('button');
+    if (!btn) return;
+    if (btn.dataset.trSound) {
+        _audio.setOn(!_audio.on);
+        if (_audio.on) _audio.chime();
+        _renderTraining();
+        return;
+    }
+    if (btn.dataset.trReport) {
+        const r = await plantGet('/api/training/report');
+        if (!r.ok) { _trMsg = r.detail; _renderTraining(); return; }
+        _download(`${r.data.drill?.id || 'drill'}_report.json`, JSON.stringify(r.data, null, 2));
+        return;
+    }
+    let r = null;
+    if (btn.dataset.trStart) {
+        if (_mode !== 'live') _setMode('live');
+        r = await plantPost('/api/training/start', { drill_id: _trSelected });
+        _prevSteps = 0;
+    } else if (btn.dataset.trAbort) {
+        r = await plantPost('/api/training/abort');
+    } else if (btn.dataset.trReset) {
+        r = await plantPost('/api/training/reset');
+    }
+    if (!r) return;
+    _trMsg = r.ok ? '' : (r.status === 401 || r.status === 403
+        ? 'Refused: drills reset the shared plant and need a FACILITY_MANAGER session.' : r.detail);
+    await _trainingTick();
+    await _pollAlarms(true);
+}
+
+function _download(name, text) {
+    try {
+        const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (_e) { _trMsg = 'Download not available in this browser.'; _renderTraining(); }
+}
+
+// ── T2: select-before-operate faceplate ──────────────────────────
+function _openFaceplate(target) {
+    _fpTarget = target;
+    _fpMsg = '';
+    _renderFaceplate();
+    if (!_plant) _pollAlarms(true);
+}
+
+function _renderFaceplate() {
+    const el = document.getElementById('pwr-faceplate');
+    if (!el) return;
+    if (!_fpTarget || _mode !== 'live') { el.hidden = true; return; }
+    el.hidden = false;
+    el.innerHTML = faceplateHtml(_fpTarget, _plant, { pending: _fpPending, message: _fpMsg });
+    if (_fpPending.size && !_fpTimer) {
+        _fpTimer = setTimeout(() => {
+            _fpTimer = null;
+            const now = Date.now();
+            for (const [id, p] of _fpPending) if (p.expiresAt <= now) _fpPending.delete(id);
+            _renderFaceplate();
+        }, 1000);
+    }
+}
+
+async function _onFaceplateClick(ev) {
+    const btn = ev.target.closest('button');
+    if (!btn) return;
+    if (btn.dataset.fpClose) { _fpTarget = null; _fpPending.clear(); _renderFaceplate(); return; }
+    const url = (id, verb) => `/api/devices/${encodeURIComponent(id)}/${verb}`;
+    let r = null;
+    if (btn.dataset.fpAuth) {
+        r = await plantPost(url(btn.dataset.fpAuth, 'authority'), { authority: 'REMOTE' });
+    } else if (btn.dataset.fpSelect) {
+        const id = btn.dataset.fpSelect;
+        r = await plantPost(url(id, 'select'), { command: btn.dataset.fpCmd });
+        if (r.ok) {
+            _fpPending.set(id, {
+                token: r.data.select_token, label: r.data.label || btn.dataset.fpCmd,
+                command: btn.dataset.fpCmd,
+                expiresAt: Date.now() + 1000 * (Number(r.data.expires_in_s) || 30),
+            });
+        }
+    } else if (btn.dataset.fpExec) {
+        const id = btn.dataset.fpExec;
+        const p = _fpPending.get(id);
+        _fpPending.delete(id);
+        if (!p) return;
+        r = await plantPost(url(id, 'operate'), { select_token: p.token });
+        if (r.ok && p.command === 'START_GENERATORS') _audio.engineStart();
+    } else if (btn.dataset.fpCancel) {
+        _fpPending.delete(btn.dataset.fpCancel);
+        _renderFaceplate();
+        return;
+    }
+    if (!r) return;
+    _fpMsg = r.ok ? '' : (r.status === 401 || r.status === 403
+        ? 'Refused: commands need a FACILITY_MANAGER session.' : r.detail);
+    await _pollAlarms(true);
+    _renderFaceplate();
 }
 
 async function _ackLive(path) {
@@ -1137,7 +1346,8 @@ function _applyFlow(gridIn) {
     for (const p of ['a', 'b']) {
         const f = flows[p];
         const tc = grid['mvtc_' + p] || {};
-        const u52Closed = !tc.tripped && !tc.transferring && tc.ats_pos !== 'secondary';
+        const u52Closed = !tc.tripped && !tc.transferring
+            && tc.ats_pos !== 'secondary' && tc.ats_pos !== 'open';
         const gmClosed = !tc.tripped && !tc.transferring && tc.ats_pos === 'secondary';
         const src = f.source;   // 'util' | 'genset' | 'battery' | null
         const carrying = {
@@ -1375,6 +1585,7 @@ function _activate() {
     _refresh();
     _ensureVida2Panels();
     _pollAlarms(true);
+    _loadTraining();
 }
 
 /** Public entry — called once from main.js at bootstrap. */
@@ -1442,6 +1653,14 @@ export const __power_test__ = {
     hasPlant: () => !!_plant,
     pollAlarms: _pollAlarms,
     renderAlarms: _renderAlarms,
+    loadTraining: _loadTraining,
+    trainingTick: _trainingTick,
+    onTrainingClick: _onTrainingClick,
+    openFaceplate: _openFaceplate,
+    onFaceplateClick: _onFaceplateClick,
+    faceplatePending: _fpPending,
+    audio: _audio,
+    stopTraining: () => { if (_trTimer) clearTimeout(_trTimer); _trTimer = null; _trView = null; },
     onAlarmClick: _onAlarmClick,
     setItKw: (v) => { _itKw = v; },
     sparkPoints,

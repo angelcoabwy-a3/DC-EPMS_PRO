@@ -13,11 +13,13 @@
  *   UPS blocks in service  -> ups_x units_out
  *   UPS blocks on bypass   -> ups_x plant_mode = 'static_bypass'
  *   all blocks Dynamic Online -> plant_mode = 'dynamic_online'
+ *   utility lost (T1)      -> util_x tripped; transfer OPEN -> both
+ *                             mains open (52-U TRIP when ANSI 27)
+ *   battery SOC / load lost -> batt_x soc (0 when the load was lost)
  * then the pure flow pass of power_grid.js (propagateStatic).
  *
  * What the plant does NOT model is left as the base grid has it:
- * utility supply (no utility-loss command exists in Power Controls),
- * battery state of charge, Phase 2 Building D. Pure module: no DOM,
+ * Phase 2 Building D. Pure module: no DOM,
  * no fetch, never mutates its inputs, never writes to the plant.
  * ════════════════════════════════════════════════════════════════ */
 
@@ -47,11 +49,21 @@ export function mirrorGrid(baseGrid, plant) {
         const summary = plant.paths.find((s) => String(s.path).toLowerCase() === p);
         if (!devs.length || !summary) continue;
 
+        // T1: utility loss (ANSI 27) and the dead-bus OPEN state.
+        const util = g['util_' + p];
+        if (util && summary.utility_ok === false) util.tripped = true;
         const tc = g['mvtc_' + p];
         const xfer = devs.find((d) => d.kind === 'transfer');
         if (tc && xfer) {
-            tc.ats_pos = xfer.state === 'GENERATORS' ? 'secondary' : 'primary';
+            tc.ats_pos = xfer.state === 'GENERATORS' ? 'secondary'
+                : (xfer.state === 'OPEN' ? 'open' : 'primary');
             tc.transferring = false;
+            // 52-U tripped by ANSI 27 shows TRIP on the drawing.
+            tc.tripped = xfer.state === 'OPEN' && summary.utility_ok === false;
+        }
+        const batt = g['batt_' + p];
+        if (batt && summary.battery_soc_pct != null) {
+            batt.soc = summary.load_lost ? 0 : Number(summary.battery_soc_pct);
         }
 
         const gen = g['genset_' + p];

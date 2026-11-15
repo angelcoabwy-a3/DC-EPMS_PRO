@@ -23,7 +23,7 @@ const PATHS = ['a', 'b'];
 
 function _breakers(tc) {
     if (!tc) return { u: 'closed', gm: 'open' };
-    if (tc.transferring) return { u: 'open', gm: 'open' };
+    if (tc.transferring || tc.ats_pos === 'open') return { u: 'open', gm: 'open' };
     const onGen = tc.ats_pos === 'secondary';
     return { u: !tc.tripped && !onGen ? 'closed' : 'open', gm: !tc.tripped && onGen ? 'closed' : 'open' };
 }
