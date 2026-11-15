@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Training rubric v2 (2026-11-15)
+
+- Unplanned switching: a command outside the drill's
+  `procedure_commands` costs -10, like a refused command.
+- Steps with a `holds` condition show REVERTED / restored in the coach,
+  the report (`step_reverts`) and the SOE.
+- Trigger: operator DRILL-04 run (PASS 77) repeated the transfer cycle
+  after a clean close. Same run under v2 scores 10 points less.
+- pytest 1958 / vitest 869 (48 files).
+
 ### UI-1 - Power SLD fits the screen (2026-11-15)
 
 - Named views (Phase 1, Path A, Path B, Phase 2, Farm, All), wheel
