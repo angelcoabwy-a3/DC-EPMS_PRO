@@ -182,6 +182,12 @@ T4 (2026-11-15): printable report (core/training_print.js, browser
   on the SLD (core/relay_tags.js: 27 / 25 simulated, 50/51 59 87T N/M).
   pytest 1958 / vitest 878 / 49 files. AI instructor still needs a
   provider decision.
+L1 FIELD VIEW (2026-11-15): backend/mv_cubicle.py (52-U / 52-GM
+  draw-out cubicles, C1-C8), POST /api/devices/{id}/field, field view
+  core/field_switchgear.js (Layer 2 hardware look, ADR-014), DRILL-05.
+  pytest 1985 / vitest 886 / 50 files. Next lots from the master spec:
+  L2 transformer, L3 generator + fuel, L4 UPS bypass, L5 diagnostics,
+  L6 oscillography.
 NEXT: operator applies the bundle and eyeballs the Power SLD (strip +
   sequence in What-If); then GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;

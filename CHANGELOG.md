@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### L1 - field view of the 13.8 kV switchgear (2026-11-15)
+
+- Draw-out cubicles for 52-U / 52-GM (`backend/mv_cubicle.py`,
+  interlocks C1-C8): racking, closing spring, 86 lockout, padlock.
+  Remote, automatic and supervised closes all respect them.
+- `POST /api/devices/{id}/field` (ledger MV_SWITCHGEAR_FIELD_ACTION).
+- Field view (`core/field_switchgear.js`): Layer 2 hardware drawing
+  with animated mechanisms; SLD shows TEST / DISC / 86 / LOCKED.
+- DRILL-05: isolate 52-GM for maintenance. New alarms for racked-out
+  mains, 86 tripped, spring discharged with motor OFF.
+- ADR-014. pytest 1985 / vitest 886 (50 files).
+
 ### T4 - printable drill report + relay tags (2026-11-15)
 
 - "Print report (PDF)" in the coach: print-styled HTML report saved as
