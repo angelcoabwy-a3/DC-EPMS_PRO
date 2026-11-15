@@ -1,8 +1,8 @@
 {
   "id": "DRILL-04",
-  "version": 1,
+  "version": 2,
   "title": "Utility back on path A: closed-transition retransfer with the synchroscope (training mode)",
-  "summary": "TRAINING MODE, outside the A3 design (which retransfers in open transition). Path A is on generators and the utility is back. The generator bus runs fast and out of phase. Trim the governor until the slip is inside the window, close 52-U in parallel when the needle is inside +/-10 degrees (the ANSI 25 sync-check blocks the close otherwise; the controller then opens 52-GM), and stop the sets. An open-transition retransfer fails this drill.",
+  "summary": "TRAINING MODE, outside the A3 design (which retransfers in open transition). Path A is on generators and the utility is back. The generator bus runs fast and out of phase. Trim the governor until the slip is inside the window, then give the closed-transition close: it is sync-check supervised, so 52-U closes by itself the instant the needle and the slip are inside the window (it waits up to 30 s, then cancels). The controller then opens 52-GM. Stop the sets. An open-transition retransfer fails this drill.",
   "path": "a",
   "target_s": 90,
   "time_limit_s": 900,
@@ -21,7 +21,7 @@
      "check": {"type": "alarms_acked", "prefix": "PATH_A_"}},
     {"id": "TRIM", "text": "Trim the governor until the slip is within +/-0.10 Hz (MV transfer A: LOWER / RAISE)",
      "check": {"type": "sync_slip_within", "path": "a", "max_hz": 0.10}},
-    {"id": "CLOSE", "text": "Close 52-U in sync (MV transfer A: Closed-transition retransfer) with the needle in the window",
+    {"id": "CLOSE", "text": "Close 52-U in sync (MV transfer A: Closed-transition retransfer, then EXECUTE; it closes when the window comes, within 30 s)",
      "check": {"type": "event_seen", "event": "command", "field": "closed_transition", "value": true}},
     {"id": "STOP", "text": "Stop the generator bus (MV transfer A: Stop generator bus)",
      "check": {"type": "no_sets_running", "path": "a"}}

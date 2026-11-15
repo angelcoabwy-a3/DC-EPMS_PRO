@@ -82,3 +82,22 @@ describe('Power view: governor and needle (T3)', () => {
         expect(fp.querySelector('[data-sync-needle="mvtc_a"]').getAttribute('transform')).toMatch(/rotate\(-[0-9]/);
     });
 });
+
+describe('supervised close display (T3b)', () => {
+    it('ETA counts down from the server sample and says IN WINDOW at zero', async () => {
+        const { etaNow, etaText } = await import('/assets/js/core/synchroscope.js');
+        const s = { ...SYNC, window_eta_s: 12.4 };
+        expect(etaNow(s, 0, 2000)).toBeCloseTo(10.4);
+        expect(etaText(etaNow(s, 0, 20000))).toBe('IN WINDOW');
+        expect(etaText(null)).toMatch(/not reached/);
+        expect(etaNow({ ...s, live: false }, 0, 0)).toBe(null);
+    });
+    it('armed close shows the countdown and a cancel button', () => {
+        const h = synchroscopeHtml('mvtc_a', { ...SYNC, window_eta_s: 5, close_armed: true, close_remaining_s: 23.6 });
+        expect(h).toContain('SYNC CLOSE ARMED');
+        expect(h).toContain('24 s left');
+        expect(h).toContain('data-fp-synccancel="mvtc_a"');
+        expect(h).toContain('Window in 5.0 s');
+        expect(synchroscopeHtml('mvtc_a', SYNC)).not.toContain('SYNC CLOSE ARMED');
+    });
+});

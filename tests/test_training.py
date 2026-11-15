@@ -177,6 +177,30 @@ class TestDrill03UpsFault:
         assert steps_done(view) == ["ACK", "BYPASS", "ISOLATE"]
 
 
+class TestWindowEntry:
+    @pytest.mark.parametrize(("angle", "slip", "eta"), [
+        (5, 0.1, 0.0), (-150, 0.02, 140 / 7.2), (150, 0.25, 200 / 90),
+        (150, -0.25, 140 / 90), (-30, -0.05, 320 / 18), (90, 0.0, None),
+    ])
+    def test_eta(self, angle, slip, eta):
+        got = dc.window_entry_s(angle, slip)
+        if eta is None:
+            assert got is None
+        else:
+            assert got == pytest.approx(eta, abs=1e-6)
+
+
+class TestReportSource:
+    def test_dc_epms_074_event_source_kept_as_origin(self, world):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        report = mgr.abort("x", ctl, engine)["last_report"]
+        auth = [r for r in report["soe"] if r.get("event") == "authority"]
+        assert auth
+        assert {r["source"] for r in auth} == {"plant"}
+        assert {r["origin"] for r in auth} == {"remote"}
+
+
 class TestRubric:
     def test_score_floor_zero(self):
         s = tr.Session(drill={"target_s": 10}, operator="x", started_ms=0, events_mark=0,
@@ -266,22 +290,65 @@ class TestDrill04ClosedTransition:
         view = mgr.evaluate(ctl, engine)
         assert view["session"]["outcome"] == "PASS"
 
-    def test_out_of_phase_close_is_blocked_by_ansi25(self, world, clock):
+    def test_out_of_phase_execute_arms_and_closes_at_window_entry(self, world, clock):
         ctl, engine, mgr = world
         mgr.start("DRILL-04", "trainee", ctl, engine)
-        sel = ctl.select("mvtc_a", "CLOSED_TRANSITION_RETRANSFER", "trainee")
-        with pytest.raises(dc.DeviceControlError, match="ANSI 25 sync-check blocked"):
-            ctl.operate("mvtc_a", sel["select_token"], "trainee")
+        self._gov(ctl, -0.05, 4)                     # 60.05 Hz: 18 deg/s
+        a0 = ctl.synchro("a")["angle_deg"]
+        eta = dc.window_entry_s(a0, 0.05)
+        out = run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")
+        assert out["sync_close_armed"] is True
+        assert ctl.snapshot("mvtc_a")["synchro"]["close_armed"] is True
+        clock.tick(eta - 0.5)
         assert ctl.snapshot("mvtc_a")["state"] == dc.XFER_GENERATORS
-        assert any(e["event"] == "sync_check_block" for e in ctl._events)
+        clock.tick(0.9)                              # crosses the window edge
+        assert ctl.snapshot("mvtc_a")["state"] == dc.XFER_UTILITY
+        close = [e for e in ctl._events if e.get("closed_transition")][-1]
+        assert close["supervised"] is True
+        assert abs(close["angle_deg"]) == pytest.approx(10.0, abs=0.01)
+        # stamped at the computed instant, not at the poll
+        assert close["ts"] == pytest.approx(clock.t - 0.4, abs=0.01)
+        assert not [e for e in ctl._events if e["event"] == "refused"]
 
-    def test_in_window_but_slipping_fast_is_blocked(self, world, clock):
+    def test_slip_too_high_waits_then_times_out(self, world, clock):
         ctl, engine, mgr = world
         mgr.start("DRILL-04", "trainee", ctl, engine)
-        ctl.set_sync("a", 60.25, 2.0, "test")         # angle fine, slip 0.25 Hz
-        sel = ctl.select("mvtc_a", "CLOSED_TRANSITION_RETRANSFER", "trainee")
-        with pytest.raises(dc.DeviceControlError, match="slip"):
-            ctl.operate("mvtc_a", sel["select_token"], "trainee")
+        run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")    # 0.25 Hz slip
+        clock.tick(dc.SYNC_CLOSE_TIMEOUT_S + 1)
+        snap = ctl.snapshot("mvtc_a")
+        assert snap["state"] == dc.XFER_GENERATORS
+        assert snap["synchro"]["close_armed"] is False
+        cancel = [e for e in ctl._events if e["event"] == "sync_close_cancelled"][-1]
+        assert "no synchronism" in cancel["detail"]
+
+    def test_trim_while_armed_then_closes(self, world, clock):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")
+        self._gov(ctl, -0.05, 4)
+        clock.tick(dc.window_entry_s(ctl.synchro("a")["angle_deg"], 0.05) + 0.2)
+        assert ctl.snapshot("mvtc_a")["state"] == dc.XFER_UTILITY
+
+    def test_cancel_and_authority_change(self, world, clock):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")
+        with pytest.raises(dc.DeviceControlError, match="already armed"):
+            ctl.select("mvtc_a", "CLOSED_TRANSITION_RETRANSFER", "trainee")
+        ctl.cancel_sync_close("mvtc_a", "trainee")
+        assert ctl.synchro("a")["close_armed"] is False
+        with pytest.raises(dc.DeviceControlError):
+            ctl.cancel_sync_close("mvtc_a", "trainee")
+        run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")
+        ctl.set_authority("mvtc_a", dc.AUTH_AUTO, "x")
+        assert ctl.synchro("a")["close_armed"] is False
+
+    def test_window_eta_in_snapshot(self, world):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        sync = ctl.snapshot("mvtc_a")["synchro"]
+        # 150 deg, +0.25 Hz (90 deg/s): next window edge at 350 deg -> 2.22 s
+        assert sync["window_eta_s"] == pytest.approx(200 / 90, abs=0.05)
 
     def test_open_transition_fails_the_drill(self, world):
         ctl, engine, mgr = world

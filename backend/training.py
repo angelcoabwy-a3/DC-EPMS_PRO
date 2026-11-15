@@ -318,8 +318,12 @@ class TrainingManager:
         for e in list(ctl._events):
             if e.get("ts", 0) >= s.events_mark - 0.001:
                 ms = int(round(float(e["ts"]) * 1000))
-                soe.append({"ts": iso_ms(ms), "ts_ms": ms, "source": "plant",
-                            **{k: v for k, v in e.items() if k != "ts"}})
+                rest = {k: v for k, v in e.items() if k != "ts"}
+                # DC-EPMS-074: an event's own "source" (authority origin)
+                # must not overwrite the report's source label.
+                if "source" in rest:
+                    rest["origin"] = rest.pop("source")
+                soe.append({"ts": iso_ms(ms), "ts_ms": ms, "source": "plant", **rest})
         for j in engine.journal_since(s.started_ms - 5000):
             soe.append({"source": "alarm", **j})
         for d in s.done:

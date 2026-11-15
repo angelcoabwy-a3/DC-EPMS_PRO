@@ -10879,3 +10879,5 @@ table.opt-votes td {
 .sy-gov { clear: both; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-top: 6px; }
 .sy-gov span { color: #8a929c; margin-right: 4px; }
 .sy-note { clear: both; color: #8a929c; padding-top: 4px; }
+.sy-eta { color: #c3c8cf; font-variant-numeric: tabular-nums; }
+.sy-armed { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; padding: 3px 6px; border: 1px dashed #ffa726; border-radius: 4px; color: #ffa726; font-weight: 700; }

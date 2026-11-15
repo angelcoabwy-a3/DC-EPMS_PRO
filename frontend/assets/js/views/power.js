@@ -44,7 +44,7 @@ import { ControlRoomAudio } from '../core/control_room_audio.js';
 import { plantPost, plantGet } from '../core/plant_client.js';
 import { faceplateHtml } from '../core/sbo_faceplate.js';
 import { trainingHtml } from '../core/training_view.js';
-import { needleAngle, permissive } from '../core/synchroscope.js';
+import { needleAngle, permissive, etaNow, etaText } from '../core/synchroscope.js';
 import { escapeHTML } from '../core/sanitize.js';
 import {
     severityFromChannels, symbol, wire, sparkPoints, sparkPolyline,
@@ -1283,6 +1283,8 @@ function _syncFrame(nowMs = Date.now()) {
         el.setAttribute('transform', `rotate(${a.toFixed(1)} 60 60)`);
         const t = document.querySelector(`#pwr-faceplate [data-sync-angle="${id}"]`);
         if (t) t.textContent = `${a >= 0 ? '+' : ''}${a.toFixed(1)}°`;
+        const eta = document.querySelector(`#pwr-faceplate [data-sync-eta="${id}"]`);
+        if (eta) eta.textContent = etaText(etaNow(sync, _plantAtMs, nowMs));
         const lamp = document.querySelector(`#pwr-faceplate [data-sync-lamp="${id}"]`);
         if (lamp) {
             const ok = permissive(sync, a);
@@ -1329,6 +1331,8 @@ async function _onFaceplateClick(ev) {
         if (!p) return;
         r = await plantPost(url(id, 'operate'), { select_token: p.token });
         if (r.ok && p.command === 'START_GENERATORS') _audio.engineStart();
+    } else if (btn.dataset.fpSynccancel) {
+        r = await plantPost(url(btn.dataset.fpSynccancel, 'sync-cancel'));
     } else if (btn.dataset.fpGov) {
         r = await plantPost(url(btn.dataset.fpGov, 'governor'), { delta_hz: Number(btn.dataset.delta) });
     } else if (btn.dataset.fpCancel) {

@@ -5,7 +5,10 @@
  * The server sends angle and slip at each poll; between polls the
  * needle is extrapolated with the slip (360 x slip degrees per
  * second) so it turns smoothly. The permissive lamp shown here is a
- * display estimate: the server's sync-check decides at EXECUTE.
+ * display estimate: the server's sync-check decides. EXECUTE arms a
+ * sync-check supervised close: the server closes 52-U at the instant
+ * angle and slip are in the window (up to 30 s), so the operator's job
+ * is the governor, not the click timing.
  * Clockwise = generator bus faster than the utility.
  * ════════════════════════════════════════════════════════════════ */
 
@@ -26,6 +29,18 @@ export function needleAngle(sync, receivedAtMs, nowMs) {
 export function permissive(sync, angle) {
     return !!sync && !!sync.live && Math.abs(angle) <= sync.max_angle_deg
         && Math.abs(Number(sync.slip_hz)) <= sync.max_slip_hz;
+}
+
+/** Seconds until the window, from the last server sample (null = never). */
+export function etaNow(sync, receivedAtMs, nowMs) {
+    if (!sync || !sync.live || sync.window_eta_s == null) return null;
+    const left = Number(sync.window_eta_s) - Math.max(0, (nowMs - receivedAtMs) / 1000);
+    return left > 0 ? left : 0;
+}
+
+export function etaText(eta) {
+    if (eta == null) return 'Window: not reached at this slip';
+    return eta <= 0 ? 'IN WINDOW' : `Window in ${eta.toFixed(1)} s`;
 }
 
 const fmt = (v, d) => (Number(v) >= 0 ? '+' : '') + Number(v).toFixed(d);
@@ -55,12 +70,16 @@ export function synchroscopeHtml(deviceId, sync, angle = Number(sync?.angle_deg)
         + `<span>SLIP <b>${fmt(sync.slip_hz, 3)} Hz</b> (max ±${Number(sync.max_slip_hz).toFixed(2)})</span>`
         + `<span>Δφ <b data-sync-angle="${id}">${fmt(angle, 1)}°</b> (window ±${w.toFixed(0)}°)</span>`
         + `<span class="sy-lamp" data-sync-lamp="${id}" data-ok="${ok ? 1 : 0}">25 ${ok ? 'PERMIT' : 'BLOCK'}</span>`
+        + `<span class="sy-eta" data-sync-eta="${id}">${escapeHTML(etaText(sync.live ? sync.window_eta_s : null))}</span>`
+        + (sync.close_armed
+            ? `<span class="sy-armed">SYNC CLOSE ARMED · closes in window · ${Number(sync.close_remaining_s || 0).toFixed(0)} s left `
+              + `<button type="button" class="fp-btn" data-fp-synccancel="${id}">Cancel</button></span>` : '')
         + (sync.live ? '' : '<span class="sy-note">Not islanded: no phase drift</span>')
         + '</div>'
         + '<div class="sy-gov"><span>GOVERNOR</span>'
         + [-0.05, -0.01, 0.01, 0.05].map((d) => `<button type="button" class="fp-btn" data-fp-gov="${id}" `
             + `data-delta="${d}">${d < 0 ? 'LOWER' : 'RAISE'} ${Math.abs(d).toFixed(2)}</button>`).join('')
         + '</div>'
-        + '<div class="sy-note">Training mode, outside the A3 design. Lamp is a display estimate: '
-        + 'the server sync-check decides at EXECUTE.</div></div>';
+        + '<div class="sy-note">Training mode, outside the A3 design. EXECUTE arms a supervised close: '
+        + 'the server closes 52-U when angle and slip are in the window (30 s max). Lamp and ETA are display estimates.</div></div>';
 }

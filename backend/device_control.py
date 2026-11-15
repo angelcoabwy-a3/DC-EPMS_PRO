@@ -146,6 +146,7 @@ GOVERNOR_MIN_HZ = 59.5
 GOVERNOR_MAX_HZ = 60.5
 GOVERNOR_MAX_STEP_HZ = 0.05
 CLOSED_TRANSITION_OVERLAP_MS = 100   # model: 52-GM opens automatically
+SYNC_CLOSE_TIMEOUT_S = 30.0          # supervised close waits this long
 UPS_FAULT_INVERTER_OVERTEMP = "INVERTER_OVERTEMP"
 UPS_FAULTS = {
     UPS_FAULT_INVERTER_OVERTEMP: "Inverter over-temperature",
@@ -208,10 +209,10 @@ COMMANDS: dict[str, dict[str, tuple[str, str]]] = {
         ),
         "CLOSED_TRANSITION_RETRANSFER": (
             "Closed-transition retransfer (ANSI 25)",
-            "Training mode only. Closes 52-U in parallel with the generator "
-            "bus when the sync-check permits (angle and slip inside the "
-            "window); the controller then opens 52-GM after a momentary "
-            "overlap.",
+            "Training mode only. Sync-check supervised close: 52-U closes "
+            "in parallel with the generator bus at the instant angle and "
+            "slip are inside the window (waits up to 30 s, then cancels); "
+            "the controller then opens 52-GM after a momentary overlap.",
         ),
         "STOP_GENERATORS": (
             "Stop generator bus",
@@ -331,6 +332,8 @@ class DeviceController:
     gen_hz: dict[str, float] = field(default_factory=dict)
     sync_angle: dict[str, float] = field(default_factory=dict)
     _sync_at: float | None = None
+    # path -> {"device_id", "actor", "deadline"}: supervised close armed
+    _sync_close: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     # ── Construction ────────────────────────────────────────────────
     @classmethod
@@ -456,14 +459,62 @@ class DeviceController:
         last = self._sync_at
         self._sync_at = now
         dt = 0.0 if last is None else max(0.0, now - last)
-        if not dt:
-            return
+        t0 = now - dt
         for path in self.path_share:
+            pending = self._sync_close.get(path)
             if not self._islanded(path):
+                if pending:
+                    self._cancel_sync_close(path, "generator bus no longer islanded with utility present")
                 continue
             slip = self.gen_hz.get(path, UTILITY_HZ) - UTILITY_HZ
-            angle = self.sync_angle.get(path, 0.0) + 360.0 * slip * dt
-            self.sync_angle[path] = (angle + 180.0) % 360.0 - 180.0
+            a0 = self.sync_angle.get(path, 0.0)
+            if pending:
+                # Supervised close: earliest instant inside [t0, now] and
+                # before the deadline where angle AND slip are in window.
+                tau = window_entry_s(a0, slip)
+                limit = min(dt, pending["deadline"] - t0)
+                if abs(slip) <= SYNC_MAX_SLIP_HZ and tau is not None and tau <= limit:
+                    self._sync_close_now(path, t0 + tau, a0 + 360.0 * slip * tau, slip, now)
+                    continue
+                if now >= pending["deadline"]:
+                    self._cancel_sync_close(path, (
+                        f"no synchronism within {SYNC_CLOSE_TIMEOUT_S:.0f} s "
+                        f"(slip {slip:+.3f} Hz, max ±{SYNC_MAX_SLIP_HZ:.2f} Hz)"))
+            if dt:
+                angle = a0 + 360.0 * slip * dt
+                self.sync_angle[path] = (angle + 180.0) % 360.0 - 180.0
+
+    def _sync_close_now(self, path: str, at: float, angle: float, slip: float, now: float) -> None:
+        pending = self._sync_close.pop(path)
+        dev = self.devices[pending["device_id"]]
+        previous = dev.state
+        dev.state, dev.state_since = XFER_UTILITY, at
+        self.gen_hz[path], self.sync_angle[path] = UTILITY_HZ, 0.0
+        angle = (angle + 180.0) % 360.0 - 180.0
+        event = self._event(
+            "command", dev, pending["actor"], command="CLOSED_TRANSITION_RETRANSFER",
+            from_state=previous, to_state=dev.state, closed_transition=True,
+            supervised=True, angle_deg=round(angle, 1), slip_hz=round(slip, 3),
+            overlap_ms=CLOSED_TRANSITION_OVERLAP_MS,
+        )
+        # Stamp the event at the computed close instant, not the poll.
+        event["ts"] = round(self.wall_clock() - (now - at), 3)
+
+    def _cancel_sync_close(self, path: str, reason: str) -> None:
+        pending = self._sync_close.pop(path, None)
+        if pending:
+            self._event("sync_close_cancelled", self.devices[pending["device_id"]],
+                        pending["actor"], detail=reason)
+
+    def cancel_sync_close(self, device_id: str, actor: str) -> dict[str, Any]:
+        with self._lock:
+            self._advance()
+            dev = self._get(device_id)
+            if dev.kind != KIND_TRANSFER or dev.path not in self._sync_close:
+                raise DeviceControlError(409, "no supervised close is armed on this controller")
+            self._sync_close[dev.path]["actor"] = actor
+            self._cancel_sync_close(dev.path, f"cancelled by {actor}")
+            return {"device_id": device_id, "cancelled": True}
 
     def synchro(self, path: str) -> dict[str, Any]:
         gen_hz = self.gen_hz.get(path, UTILITY_HZ)
@@ -472,7 +523,13 @@ class DeviceController:
         live = self._islanded(path)
         ok_angle = abs(angle) <= SYNC_MAX_ANGLE_DEG
         ok_slip = abs(slip) <= SYNC_MAX_SLIP_HZ
+        pending = self._sync_close.get(path)
+        eta = window_entry_s(angle, slip) if live else None
         return {
+            "close_armed": bool(pending),
+            "close_remaining_s": (round(max(0.0, pending["deadline"] - self.clock()), 1)
+                                  if pending else None),
+            "window_eta_s": round(eta, 1) if eta is not None else None,
             "enabled": self.closed_transition,
             "live": live,
             "gen_hz": round(gen_hz, 3), "utility_hz": UTILITY_HZ,
@@ -713,6 +770,7 @@ class DeviceController:
             self._selections.clear()
             self._batt_at = None
             self._sync_at = None
+            self._sync_close.clear()
             event = {
                 "ts": round(self.wall_clock(), 3), "event": "plant_reset",
                 "device_id": "plant", "actor": actor,
@@ -846,6 +904,8 @@ class DeviceController:
                     return "Path is not on generators."
                 if not self.utility_ok.get(dev.path, True):
                     return "No utility voltage on the incomer (ANSI 27 picked up)."
+                if dev.path in self._sync_close:
+                    return "A supervised close is already armed: wait or cancel it."
                 return None
             if command == "STOP_GENERATORS":
                 if dev.state == XFER_GENERATORS:
@@ -1118,8 +1178,11 @@ class DeviceController:
             if previous == mode:
                 raise DeviceControlError(409, f"device is already in {mode}")
             dev.authority = mode
-            # A pending selection never survives an authority change.
+            # A pending selection never survives an authority change,
+            # and neither does an armed supervised close.
             self._drop_selections(device_id)
+            if dev.kind == KIND_TRANSFER and dev.path in self._sync_close:
+                self._cancel_sync_close(dev.path, "authority changed")
             # LOCAL is a key switch at the equipment. Moving it from
             # this API is a bench simulation and is recorded as such.
             source = "bench_simulation" if AUTH_LOCAL in (previous, mode) else "remote"
@@ -1190,12 +1253,19 @@ class DeviceController:
             if sel.command == "CLOSED_TRANSITION_RETRANSFER":
                 sync = self.synchro(dev.path)
                 if not sync["permissive"]:
-                    self._event("sync_check_block", dev, actor, angle_deg=sync["angle_deg"],
-                                slip_hz=sync["slip_hz"])
-                    raise DeviceControlError(409, (
-                        f"ANSI 25 sync-check blocked the close: angle {sync['angle_deg']:+.1f}° "
-                        f"(window ±{SYNC_MAX_ANGLE_DEG:.0f}°), slip {sync['slip_hz']:+.3f} Hz "
-                        f"(max ±{SYNC_MAX_SLIP_HZ:.2f} Hz). Select again."))
+                    # Sync-check supervised close: the command waits for
+                    # synchronism instead of being refused (as a real
+                    # 25-supervised close does); timeout cancels it.
+                    self._sync_close[dev.path] = {
+                        "device_id": dev.device_id, "actor": actor,
+                        "deadline": self.clock() + SYNC_CLOSE_TIMEOUT_S,
+                    }
+                    return self._event(
+                        "command", dev, actor, command=sel.command, from_state=previous,
+                        to_state=dev.state, sync_close_armed=True,
+                        timeout_s=SYNC_CLOSE_TIMEOUT_S, angle_deg=sync["angle_deg"],
+                        slip_hz=sync["slip_hz"],
+                    )
                 dev.state, dev.state_since = XFER_UTILITY, self.clock()
                 self.gen_hz[dev.path], self.sync_angle[dev.path] = UTILITY_HZ, 0.0
                 self._advance()
@@ -1406,6 +1476,24 @@ class DeviceController:
 
 
 # ── Pure helpers ────────────────────────────────────────────────────
+def window_entry_s(angle_deg: float, slip_hz: float,
+                   window_deg: float = SYNC_MAX_ANGLE_DEG) -> float | None:
+    """Seconds until the phase angle is inside +/-window (0 if already
+    inside), the needle turning at 360 x slip deg/s. None if it never
+    gets there (no slip and outside the window)."""
+    a = (float(angle_deg) + 180.0) % 360.0 - 180.0
+    if abs(a) <= window_deg:
+        return 0.0
+    rate = 360.0 * float(slip_hz)
+    if rate == 0:
+        return None
+    if rate > 0:
+        target = math.ceil((a + window_deg) / 360.0) * 360.0 - window_deg
+        return (target - a) / rate
+    target = math.floor((a - window_deg) / 360.0) * 360.0 + window_deg
+    return (a - target) / -rate
+
+
 def _num(value: Any) -> float:
     try:
         number = float(value)
@@ -1565,6 +1653,19 @@ def register_device_control_routes(
         except DeviceControlError as exc:
             raise _fail(exc) from exc
         return {"success": True, "event": event, "synchro": ctl.synchro(ctl.devices[device_id].path)}
+
+    @app.post("/api/devices/{device_id}/sync-cancel")
+    async def cancel_sync_close(
+        device_id: str, request: Request, payload: dict = Body(default={}),
+    ) -> dict[str, Any]:
+        """T3: cancel an armed sync-check supervised close."""
+        actor = authorise(request, payload or {})
+        ctl = _controller()
+        try:
+            out = ctl.cancel_sync_close(device_id, actor)
+        except DeviceControlError as exc:
+            raise _fail(exc) from exc
+        return {"success": True, **out}
 
     # ── MV switching procedures ─────────────────────────────────────
     @app.post("/api/mv/bays/{bay_id}/procedure")
