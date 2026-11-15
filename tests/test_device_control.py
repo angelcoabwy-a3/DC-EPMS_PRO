@@ -111,7 +111,7 @@ class TestClosedDesign:
     def test_no_480v_ats_in_the_roster(self, ctl):
         assert not any(i.startswith("ats") for i in ctl.devices)
         labels = [i["label"] for i in ctl.snapshot("mvtc_a")["indications"]]
-        assert labels == ["52-U utility incomer", "52-GM generator main"]
+        assert labels == ["52-U utility incomer", "52-GM generator main", "ANSI 27 incomer undervoltage"]
 
     def test_ups_n_plus_1_inside_the_path(self, ctl):
         s = ctl.path_summary("a")
@@ -355,7 +355,7 @@ class TestGeneratorsAndTransfer:
         run(ctl, "mvtc_a", "TRANSFER_TO_GENERATORS")
         snap = ctl.snapshot("mvtc_a")
         assert snap["state"] == dc.XFER_GENERATORS
-        assert [i["value"] for i in snap["indications"]] == [mv.OPEN, mv.CLOSED]
+        assert [i["value"] for i in snap["indications"]] == [mv.OPEN, mv.CLOSED, "NORMAL"]
         assert ctl.snapshot("genset_a_01")["state"] == dc.GEN_ON_LOAD
         # 10734 kW over 4 sets
         assert readings(ctl, "genset_a_01")["Real power"] == pytest.approx(2684, abs=1)

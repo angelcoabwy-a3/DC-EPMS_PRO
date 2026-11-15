@@ -88,6 +88,9 @@ _UPS_PROTECTING = (UPS_DOUBLE_CONVERSION, UPS_DYNAMIC_ONLINE)
 # ── MV transfer controller positions ────────────────────────────────
 XFER_UTILITY = "UTILITY"
 XFER_GENERATORS = "GENERATORS"
+# T1 (2026-11-15): both mains open, MV bus dead. Reached when ANSI 27
+# undervoltage on the utility incomer trips 52-U.
+XFER_OPEN = "OPEN"
 
 # ── Generator run states (NFPA 110 sequence used by power_grid.js) ──
 GEN_STANDBY = "STANDBY"
@@ -124,6 +127,19 @@ SIMULATION_NOTICE = (
 )
 
 EVENT_LOG_SIZE = 200
+
+# ── T1 training model constants (simulation assumptions, not vendor data)
+# Battery: usable energy per path = protecting blocks x rated_kw x
+# runtime_full_load_min (power_plant.yml); discharge linear in energy
+# at the IT load of the path; no Peukert / temperature / ageing (the
+# design file does not state the chemistry). Recharge linear, full in
+# BATTERY_RECHARGE_FULL_S once the MV bus is back.
+BATTERY_RECHARGE_FULL_S = 600.0
+BATTERY_LOW_FRACTION = 0.25
+UPS_FAULT_INVERTER_OVERTEMP = "INVERTER_OVERTEMP"
+UPS_FAULTS = {
+    UPS_FAULT_INVERTER_OVERTEMP: "Inverter over-temperature",
+}
 
 
 class DeviceControlError(Exception):
@@ -165,14 +181,20 @@ COMMANDS: dict[str, dict[str, tuple[str, str]]] = {
         ),
     },
     KIND_TRANSFER: {
+        "START_GENERATORS": (
+            "Start generator bus",
+            "Master start: sends the start signal to every set of the path "
+            "that is in standby, in service and not in LOCAL.",
+        ),
         "TRANSFER_TO_GENERATORS": (
             "Transfer to generators",
-            "Opens the utility incomer 52-U and closes the generator main "
-            "52-GM (open transition).",
+            "Opens the utility incomer 52-U (if closed) and closes the "
+            "generator main 52-GM (open transition).",
         ),
         "RETRANSFER_TO_UTILITY": (
             "Retransfer to utility",
-            "Opens 52-GM and closes 52-U (open transition).",
+            "Opens 52-GM (if closed) and closes 52-U (open transition). "
+            "Needs utility voltage on the incomer.",
         ),
     },
     KIND_GENERATOR: {
@@ -276,6 +298,12 @@ class DeviceController:
     _selections: dict[str, _Selection] = field(default_factory=dict)
     _events: deque = field(default_factory=lambda: deque(maxlen=EVENT_LOG_SIZE))
     _lock: threading.RLock = field(default_factory=threading.RLock)
+    # T1 plant conditions (per path unless noted)
+    utility_ok: dict[str, bool] = field(default_factory=dict)
+    battery_soc: dict[str, float] = field(default_factory=dict)
+    load_lost: dict[str, bool] = field(default_factory=dict)
+    faults: dict[str, str] = field(default_factory=dict)        # device_id -> fault
+    _batt_at: float | None = None
 
     # ── Construction ────────────────────────────────────────────────
     @classmethod
@@ -294,6 +322,9 @@ class DeviceController:
         for path in basis["paths"]:
             path = path.lower()
             ctl.path_share[path] = float(basis["normal_share"])
+            ctl.utility_ok[path] = True
+            ctl.battery_soc[path] = 1.0
+            ctl.load_lost[path] = False
             upper = path.upper()
             for n in range(1, int(ups["units_per_path"]) + 1):
                 ctl._add(Device(
@@ -381,6 +412,175 @@ class DeviceController:
                 dev.state, dev.state_since = GEN_ON_LOAD, now
             elif dev.state == GEN_ON_LOAD and not carrying:
                 dev.state, dev.state_since = GEN_RUNNING, now
+        self._advance_auto_transfer(now)
+        self._advance_battery(now)
+
+    # ── T1: AUTO transfer sequence, battery, load loss ──────────────
+    def _start_candidates(self, path: str, *, auto_only: bool) -> list[Device]:
+        out = []
+        for d in self._of(KIND_GENERATOR, path):
+            bay = self.bays[d.device_id]
+            if d.state != GEN_STANDBY or bay.loto or not bay.in_service:
+                continue
+            if self._bay_procedure(d.device_id) is not None:
+                continue
+            if d.authority == AUTH_LOCAL or (auto_only and d.authority != AUTH_AUTO):
+                continue
+            out.append(d)
+        return out
+
+    def _advance_auto_transfer(self, now: float) -> None:
+        """Transfer controller in AUTO with the MV bus dead: start the
+        sets that are in AUTO, close 52-GM once the synchronised sets
+        cover the path demand, or close 52-U again if the utility is
+        back first. Retransfer from generators is NOT automatic here
+        (manual, open transition)."""
+        for xfer in self._of_kind(KIND_TRANSFER):
+            if xfer.authority != AUTH_AUTO or xfer.state != XFER_OPEN:
+                continue
+            path = xfer.path
+            if self.utility_ok.get(path, True):
+                xfer.state, xfer.state_since = XFER_UTILITY, now
+                self._event("auto_transfer", xfer, "controller", to_state=XFER_UTILITY,
+                            detail="utility voltage restored: 52-U reclosed")
+                continue
+            for gen in self._start_candidates(path, auto_only=True):
+                gen.state, gen.state_since = GEN_CRANKING, now
+                self._event("auto_start", gen, "controller", to_state=GEN_CRANKING)
+            on_bus = sum(d.rated_kw for d in self._gens_on_bus(path))
+            if on_bus > 0 and on_bus >= self._demand_kw(path):
+                xfer.state, xfer.state_since = XFER_GENERATORS, now
+                self._event("auto_transfer", xfer, "controller", to_state=XFER_GENERATORS,
+                            detail="generator bus ready: 52-GM closed")
+
+    def _of_kind(self, kind: str) -> list[Device]:
+        return [d for d in self.devices.values() if d.kind == kind]
+
+    def _bus_energized(self, path: str) -> bool:
+        for xfer in self._of(KIND_TRANSFER, path):
+            if xfer.state == XFER_UTILITY:
+                return self.utility_ok.get(path, True)
+            if xfer.state == XFER_GENERATORS:
+                return bool(self._gens_on_bus(path))
+        return False
+
+    def _battery_energy_kwh(self, path: str) -> float:
+        runtime_min = _num(self.design["ups"].get("runtime_full_load_min"))
+        rated = sum(d.rated_kw for d in self._of(KIND_UPS, path) if d.state in _UPS_PROTECTING)
+        return rated * runtime_min / 60.0
+
+    def _battery_runtime_min(self, path: str) -> float:
+        """Minutes left on battery at the present IT load (model)."""
+        load = self._it_load_kw(path)
+        energy = self._battery_energy_kwh(path) * self.battery_soc.get(path, 1.0)
+        if load <= 0:
+            return 0.0
+        return energy / load * 60.0
+
+    def _advance_battery(self, now: float) -> None:
+        last = self._batt_at
+        self._batt_at = now
+        dt = 0.0 if last is None else max(0.0, now - last)
+        for path in self.path_share:
+            soc = self.battery_soc.get(path, 1.0)
+            if self._bus_energized(path):
+                if self.load_lost.get(path):
+                    self.load_lost[path] = False
+                    self._plant_event("load_restored", path, "controller")
+                if dt:
+                    self.battery_soc[path] = min(1.0, soc + dt / BATTERY_RECHARGE_FULL_S)
+                continue
+            if self.load_lost.get(path):
+                continue
+            carrying = self._ups_carrying(path)
+            unprotected = [d for d in carrying if d.state not in _UPS_PROTECTING]
+            if not carrying or unprotected:
+                reason = ("no UPS block carrying the load" if not carrying else
+                          f"{len(unprotected)} block(s) on static bypass with the MV bus dead")
+                self._latch_load_lost(path, reason)
+                continue
+            energy = self._battery_energy_kwh(path)
+            if dt and energy > 0:
+                soc -= self._it_load_kw(path) * dt / 3600.0 / energy
+            self.battery_soc[path] = max(0.0, soc)
+            if soc <= 0:
+                self._latch_load_lost(path, "battery exhausted (DC undervoltage)")
+
+    def _latch_load_lost(self, path: str, reason: str) -> None:
+        self.load_lost[path] = True
+        self._plant_event("load_lost", path, "controller", detail=reason)
+
+    def _plant_event(self, kind: str, path: str, actor: str, **extra: Any) -> dict[str, Any]:
+        event = {
+            "ts": round(self.wall_clock(), 3), "event": kind,
+            "device_id": f"path_{path}", "actor": actor, **extra,
+        }
+        self._events.append(event)
+        return event
+
+    # ── T1: training injections (simulation only, never field) ─────
+    def inject_utility_loss(self, path: str, actor: str) -> dict[str, Any]:
+        """Utility undervoltage on the incomer of ``path``. If 52-U is
+        closed, ANSI 27 trips it: the MV bus goes dead (state OPEN)."""
+        with self._lock:
+            self._advance()
+            if path not in self.path_share:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            if not self.utility_ok[path]:
+                raise DeviceControlError(409, "utility is already lost on this path")
+            self.utility_ok[path] = False
+            event = self._plant_event("utility_lost", path, actor, relay="27")
+            for xfer in self._of(KIND_TRANSFER, path):
+                if xfer.state == XFER_UTILITY:
+                    xfer.state, xfer.state_since = XFER_OPEN, self.clock()
+                    self._drop_selections(xfer.device_id)
+                    self._event("protection_trip", xfer, "protection", relay="27",
+                                breaker="52-U", detail="incomer undervoltage")
+            self._advance()
+            return event
+
+    def restore_utility(self, path: str, actor: str) -> dict[str, Any]:
+        with self._lock:
+            self._advance()
+            if path not in self.path_share:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            if self.utility_ok[path]:
+                raise DeviceControlError(409, "utility is already available on this path")
+            self.utility_ok[path] = True
+            event = self._plant_event("utility_restored", path, actor)
+            self._advance()
+            return event
+
+    def inject_ups_fault(self, device_id: str, fault: str, actor: str) -> dict[str, Any]:
+        with self._lock:
+            self._advance()
+            dev = self._get(device_id)
+            if dev.kind != KIND_UPS:
+                raise DeviceControlError(400, "faults can only be injected on UPS blocks")
+            if fault not in UPS_FAULTS:
+                raise DeviceControlError(400, f"fault must be one of {list(UPS_FAULTS)}")
+            if dev.state not in _UPS_PROTECTING:
+                raise DeviceControlError(409, "block is not on the inverter")
+            self.faults[device_id] = fault
+            return self._event("fault", dev, actor, fault=fault, detail=UPS_FAULTS[fault])
+
+    def reset(self, actor: str) -> dict[str, Any]:
+        """Back to the design's normal lineup (training reset)."""
+        with self._lock:
+            fresh = DeviceController.from_design(
+                self.design, clock=self.clock, wall_clock=self.wall_clock,
+            )
+            for name in ("devices", "bays", "procedures", "path_share", "utility_ok",
+                         "battery_soc", "load_lost", "faults"):
+                setattr(self, name, getattr(fresh, name))
+            self._selections.clear()
+            self._batt_at = None
+            event = {
+                "ts": round(self.wall_clock(), 3), "event": "plant_reset",
+                "device_id": "plant", "actor": actor,
+            }
+            self._events.append(event)
+            return event
 
     # ── Path physics ────────────────────────────────────────────────
     def _of(self, kind: str, path: str) -> list[Device]:
@@ -433,7 +633,13 @@ class DeviceController:
         floor = self._generation_floor_kw(path)
         return {
             "path": path,
-            "source": XFER_GENERATORS if self._path_on_generators(path) else XFER_UTILITY,
+            "source": (XFER_GENERATORS if self._path_on_generators(path) else
+                       XFER_UTILITY if self._bus_energized(path) else "NONE"),
+            "utility_ok": self.utility_ok.get(path, True),
+            "bus_energized": self._bus_energized(path),
+            "load_lost": self.load_lost.get(path, False),
+            "battery_soc_pct": round(self.battery_soc.get(path, 1.0) * 100, 1),
+            "battery_runtime_min": round(self._battery_runtime_min(path), 2),
             "it_load_kw": round(self._it_load_kw(path)),
             "it_design_kw": round(self._it_design_kw),
             "ups_in_service": len(self._ups_carrying(path)),
@@ -464,6 +670,9 @@ class DeviceController:
         """Why ``command`` cannot run now, or None when permitted.
         Authority is checked separately (``authority_reason``)."""
         if dev.kind == KIND_UPS:
+            fault = self.faults.get(dev.device_id)
+            if fault and command in ("ENTER_DYNAMIC_ONLINE", "RETURN_TO_DOUBLE_CONVERSION"):
+                return f"{UPS_FAULTS[fault]} active: the inverter cannot carry the load."
             if command == "ENTER_DYNAMIC_ONLINE":
                 return None if dev.state == UPS_DOUBLE_CONVERSION else "Block is not in double conversion."
             if command == "RETURN_TO_DOUBLE_CONVERSION":
@@ -487,8 +696,12 @@ class DeviceController:
             if command == "RETURN_TO_SERVICE":
                 return None if dev.state == UPS_ISOLATED else "Block is not isolated."
         elif dev.kind == KIND_TRANSFER:
+            if command == "START_GENERATORS":
+                if not self._start_candidates(dev.path, auto_only=False):
+                    return "No set is in standby, in service and out of LOCAL."
+                return None
             if command == "TRANSFER_TO_GENERATORS":
-                if dev.state != XFER_UTILITY:
+                if dev.state == XFER_GENERATORS:
                     return "Path is already on generators."
                 on_bus = sum(d.rated_kw for d in self._gens_on_bus(dev.path))
                 demand = self._demand_kw(dev.path)
@@ -499,7 +712,11 @@ class DeviceController:
                     )
                 return None
             if command == "RETRANSFER_TO_UTILITY":
-                return None if dev.state == XFER_GENERATORS else "Path is already on utility."
+                if dev.state == XFER_UTILITY:
+                    return "Path is already on utility."
+                if not self.utility_ok.get(dev.path, True):
+                    return "No utility voltage on the incomer (ANSI 27 picked up)."
+                return None
         elif dev.kind == KIND_GENERATOR:
             bay = self.bays[dev.device_id]
             if command == "START":
@@ -545,8 +762,11 @@ class DeviceController:
             eff = self._eff(dev.state)
             runtime_full = _num(self.design["ups"].get("runtime_full_load_min"))
             runtime = 0.0
+            soc = self.battery_soc.get(dev.path, 1.0)
             if dev.state in _UPS_PROTECTING and load_kw > 0:
-                runtime = runtime_full * dev.rated_kw / load_kw
+                runtime = runtime_full * dev.rated_kw / load_kw * soc
+            if self.load_lost.get(dev.path):
+                carrying, load_kw = False, 0.0
             return [
                 _r("Output load", load_kw, "kW", 0),
                 _r("Load", load_kw / dev.rated_kw * 100 if dev.rated_kw else 0.0, "%", 1),
@@ -554,18 +774,23 @@ class DeviceController:
                 _r("Output frequency", NOMINAL_HZ if carrying else 0.0, "Hz", 1),
                 _r("Efficiency (model)", eff * 100 if carrying else 0.0, "%", 1),
                 _r("Losses (model)", load_kw * (1.0 / eff - 1.0) if carrying else 0.0, "kW", 1),
-                _r("Battery state of charge", 100.0, "%", 0),
+                _r("Battery state of charge (model)", soc * 100, "%", 1),
                 _r("Battery runtime (estimate)", runtime, "min", 1),
             ]
         if dev.kind == KIND_TRANSFER:
             demand = self._demand_kw(dev.path)
             amps = demand * 1000 / (math.sqrt(3) * dev.voltage_v * POWER_FACTOR)
             on_bus = sum(d.rated_kw for d in self._gens_on_bus(dev.path))
+            live = self._bus_energized(dev.path)
+            if not live:
+                amps = 0.0
             return [
-                _r("Path demand", demand, "kW", 0),
+                _r("Path demand", demand if live else 0.0, "kW", 0),
                 _r("Bus current", amps, "A", 0),
-                _r("Bus voltage", dev.voltage_v / 1000, "kV", 1),
-                _r("Bus frequency", NOMINAL_HZ, "Hz", 1),
+                _r("Bus voltage", dev.voltage_v / 1000 if live else 0.0, "kV", 1),
+                _r("Bus frequency", NOMINAL_HZ if live else 0.0, "Hz", 1),
+                _r("Utility incomer voltage",
+                   dev.voltage_v / 1000 if self.utility_ok.get(dev.path, True) else 0.0, "kV", 1),
                 _r("Generators synchronised", len(self._gens_on_bus(dev.path)), "sets", 0),
                 _r("Generation on bus", on_bus, "kW", 0),
             ]
@@ -591,10 +816,13 @@ class DeviceController:
 
     def _indications(self, dev: Device) -> list[dict[str, str]]:
         if dev.kind == KIND_TRANSFER:
-            on_gens = dev.state == XFER_GENERATORS
             return [
-                {"label": "52-U utility incomer", "value": mv.OPEN if on_gens else mv.CLOSED},
-                {"label": "52-GM generator main", "value": mv.CLOSED if on_gens else mv.OPEN},
+                {"label": "52-U utility incomer",
+                 "value": mv.CLOSED if dev.state == XFER_UTILITY else mv.OPEN},
+                {"label": "52-GM generator main",
+                 "value": mv.CLOSED if dev.state == XFER_GENERATORS else mv.OPEN},
+                {"label": "ANSI 27 incomer undervoltage",
+                 "value": "NORMAL" if self.utility_ok.get(dev.path, True) else "PICKED UP"},
             ]
         if dev.kind == KIND_GENERATOR:
             return self.bays[dev.device_id].indications()
@@ -603,6 +831,13 @@ class DeviceController:
     def _status(self, dev: Device) -> dict[str, str]:
         """Operator-facing condition: tone is ok / warn / crit / info."""
         if dev.kind == KIND_UPS:
+            fault = self.faults.get(dev.device_id)
+            if fault and dev.state in _UPS_PROTECTING:
+                return {"tone": "crit", "text": f"{UPS_FAULTS[fault]}: transfer to bypass"}
+            if self.load_lost.get(dev.path) and dev.state in _UPS_CARRYING:
+                return {"tone": "crit", "text": "Output lost: critical load dropped"}
+            if (dev.state in _UPS_PROTECTING and not self._bus_energized(dev.path)):
+                return {"tone": "warn", "text": "On battery: MV bus dead"}
             if dev.state in _UPS_CARRYING and self._ups_block_load_kw(dev.path) > dev.rated_kw:
                 return {"tone": "crit", "text": "OVERLOAD: block above its rating"}
             return {
@@ -614,6 +849,10 @@ class DeviceController:
         if dev.kind == KIND_TRANSFER:
             if dev.state == XFER_UTILITY:
                 return {"tone": "ok", "text": "Path on utility"}
+            if dev.state == XFER_OPEN:
+                if not self.utility_ok.get(dev.path, True):
+                    return {"tone": "crit", "text": "52-U tripped (ANSI 27): MV bus dead"}
+                return {"tone": "crit", "text": "Both mains open: MV bus dead"}
             return {"tone": "warn", "text": "Path on generators"}
         bay = self.bays[dev.device_id]
         if bay.loto:
@@ -649,6 +888,7 @@ class DeviceController:
             "state": dev.state,
             "state_age_s": round(max(0.0, self.clock() - dev.state_since), 1),
             "status": self._status(dev),
+            "fault": self.faults.get(dev.device_id),
             "readings": self._readings(dev),
             "indications": self._indications(dev),
             "commands": commands,
@@ -781,8 +1021,20 @@ class DeviceController:
             # Second interlock evaluation: the plant may have moved.
             self._check(dev, sel.command)
             previous = dev.state
+            if sel.command == "START_GENERATORS":
+                started = self._start_candidates(dev.path, auto_only=False)
+                for gen in started:
+                    gen.state, gen.state_since = GEN_CRANKING, self.clock()
+                self._advance()
+                return self._event(
+                    "command", dev, actor, command=sel.command, from_state=previous,
+                    to_state=dev.state, started=[g.device_id for g in started],
+                )
             dev.state = _NEXT_STATE[sel.command]
             dev.state_since = self.clock()
+            if sel.command == "ISOLATE" and dev.device_id in self.faults:
+                # Training assumption: the isolated block is repaired.
+                del self.faults[dev.device_id]
             if sel.command == "STOP":
                 mv.apply(self.bays[device_id], mv.OP_OPEN_CB, self.clock())
             self._advance()

@@ -207,7 +207,21 @@ def conditions_from_plant(plant: dict[str, Any]) -> list[Condition]:
         src = f"path_{path}"
         ups_n = bool(p.get("ups_n_ok", True))
         gen_n = bool(p.get("gen_n_ok", True))
+        dead = p.get("bus_energized") is False
+        lost = bool(p.get("load_lost", False))
+        soc = float(p.get("battery_soc_pct", 100.0))
         out += [
+            Condition(f"PATH_{P}_UTILITY_LOST", p.get("utility_ok") is False, MEDIUM,
+                      f"Path {P} utility undervoltage (ANSI 27)", src),
+            Condition(f"PATH_{P}_MV_BUS_DEAD", dead, HIGH,
+                      f"Path {P} 13.8 kV bus dead (52-U and 52-GM open)", src),
+            Condition(f"PATH_{P}_ON_BATTERY", dead and not lost, HIGH,
+                      f"Path {P} UPS on battery ({soc:.0f} % SOC, "
+                      f"{float(p.get('battery_runtime_min', 0.0)):.1f} min left, model)", src),
+            Condition(f"PATH_{P}_BATTERY_LOW", dead and not lost and soc < 25.0, HIGH,
+                      f"Path {P} UPS battery below 25 %", src),
+            Condition(f"PATH_{P}_LOAD_LOST", lost, HIGH,
+                      f"Path {P} CRITICAL LOAD LOST", src),
             Condition(f"PATH_{P}_ON_GENERATORS", p.get("source") == "GENERATORS", MEDIUM,
                       f"Path {P} on generators", src),
             Condition(f"PATH_{P}_UNPROTECTED", not bool(p.get("ups_protected", True)), HIGH,
@@ -227,8 +241,12 @@ def conditions_from_plant(plant: dict[str, Any]) -> list[Condition]:
         status = d.get("status") or {}
         did = str(d.get("id"))
         if d.get("kind") == "ups":
-            out.append(Condition(f"DEV_{did}_OVERLOAD", status.get("tone") == "crit", HIGH,
-                                 f"{d.get('display', did)}: {status.get('text', 'overload')}", did))
+            overload = str(status.get("text", "")).startswith("OVERLOAD")
+            out.append(Condition(f"DEV_{did}_OVERLOAD", overload, HIGH,
+                                 f"{d.get('display', did)}: block above its rating", did))
+            out.append(Condition(f"DEV_{did}_INVERTER_FAULT", bool(d.get("fault")), HIGH,
+                                 f"{d.get('display', did)}: inverter fault "
+                                 f"({str(d.get('fault') or '').replace('_', ' ').lower()})", did))
         elif d.get("kind") == "generator":
             out.append(Condition(f"DEV_{did}_BAY_OOS", status.get("text") == "Bay not in service",
                                  LOW, f"{d.get('display', did)}: bay not in service", did))
