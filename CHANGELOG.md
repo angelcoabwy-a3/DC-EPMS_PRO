@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### T4 - printable drill report + relay tags (2026-11-15)
+
+- "Print report (PDF)" in the coach: print-styled HTML report saved as
+  PDF from the browser (`core/training_print.js`).
+- Report `integrity` block: the SHA-256 recorded in the Forensic
+  Ledger and what it covers.
+- Relay row per path on the Power SLD (`core/relay_tags.js`): 27 and 25
+  simulated; 50/51, 59, 87T identification only (N/M, no protection
+  model).
+- pytest 1958 / vitest 878 (49 files).
+
 ### Training rubric v2 (2026-11-15)
 
 - Unplanned switching: a command outside the drill's

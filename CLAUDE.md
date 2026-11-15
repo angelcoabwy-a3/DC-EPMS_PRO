@@ -177,6 +177,11 @@ UI-1 (2026-11-15): Power SLD at 100 % zoom. core/sld_viewport.js
 RUBRIC v2 (2026-11-15): procedure_commands per drill (unplanned
   switching = violation, -10), holds -> REVERTED / restored steps in
   coach, report and SOE. Drills bumped. pytest 1958 / vitest 869.
+T4 (2026-11-15): printable report (core/training_print.js, browser
+  print to PDF) + report integrity block (ledger SHA-256); relay tags
+  on the SLD (core/relay_tags.js: 27 / 25 simulated, 50/51 59 87T N/M).
+  pytest 1958 / vitest 878 / 49 files. AI instructor still needs a
+  provider decision.
 NEXT: operator applies the bundle and eyeballs the Power SLD (strip +
   sequence in What-If); then GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
