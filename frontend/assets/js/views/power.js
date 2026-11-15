@@ -32,6 +32,7 @@ import { onHermesStream, getTopologyState, writeBmsTag } from '../services/api.j
 import { subscribe, setState, getState } from '../core/state.js';
 import { toggleTrip, restoreAll, setUnitsOut, getTopology, PHASE1 } from '../core/power_grid.js';
 import { pathFlows, fmtPower, fmtApparent } from '../core/power_flow.js';
+import { statusStrip, EventLog } from '../core/power_status.js';
 import { escapeHTML } from '../core/sanitize.js';
 import {
     severityFromChannels, symbol, wire, sparkPoints, sparkPolyline,
@@ -51,6 +52,9 @@ let _initialized = false;
 let _unsubTelemetry = null;
 let _mode = 'live';   // 'live' | 'whatif' — set by the Phase 2 sandbox toggle
 let _itKw = null;     // facility Phase 1 IT load from the topology feed (power_flow)
+// vida 2: clocked event sequence derived from DAG snapshots
+const _eventLog = new EventLog();
+let _clockTimer = null;
 
 // SLD-node-id -> /api/topology/state hld_nodes key (registry-derived).
 const _NODE_MAP = sldToTopoMap();
@@ -771,6 +775,9 @@ function _setMode(mode) {
     // Entering the sandbox retires the N-1 shadow (it assumes the
     // intact topology the sandbox is about to mutate).
     if (_mode === 'whatif') _setN1(false);
+    // Each sandbox session starts its own sequence at t = 0.
+    _eventLog.reset(_mode === 'whatif' ? getState('grid') : null);
+    _renderTimeline();
     const view = document.getElementById('view-power');
     if (view) view.classList.toggle('pwr-whatif', _mode === 'whatif');
     const btn = document.getElementById('pwr-mode-toggle');
@@ -865,6 +872,8 @@ function _applyGrid(grid) {
     });
     _applyUnits(grid);
     _applyFlow(grid);
+    _eventLog.observe(grid);
+    _renderVida2(grid);
     // Transfer position from the DAG (What-If / Replay show the
     // simulated 52-U / 52-GM state, not the live telemetry guess).
     for (const p of ['a', 'b']) {
@@ -874,6 +883,52 @@ function _applyGrid(grid) {
             : (t.ats_pos === 'secondary' ? '52-GM · GEN BUS' : '52-U · UTILITY');
         _setMetric('mvtc_' + p + '-pos', txt);
     }
+}
+
+// ── vida 2: per-path status strip + clocked event sequence ──────
+function _ensureVida2Panels() {
+    const canvas = document.querySelector('#view-power .pid-canvas');
+    if (!canvas || document.getElementById('pwr-status')) return;
+    // The live view wraps the canvas in a flex row with the info panel;
+    // the strip and the sequence go above / below that whole row.
+    const anchor = canvas.closest('.sld-stage-row') || canvas;
+    const strip = document.createElement('div');
+    strip.id = 'pwr-status';
+    strip.className = 'pwr-strip';
+    strip.setAttribute('aria-label', 'Phase 1 path status');
+    anchor.parentNode.insertBefore(strip, anchor);
+    const tl = document.createElement('section');
+    tl.id = 'pwr-timeline';
+    tl.className = 'pwr-tl';
+    tl.innerHTML = '<div class="pwr-tl-head"><span>SEQUENCE OF EVENTS · WHAT-IF</span>'
+        + '<span class="pwr-tl-clock" id="pwr-tl-clock">t = —</span></div>'
+        + '<div class="pwr-tl-body" id="pwr-tl-body" aria-live="polite"></div>';
+    anchor.parentNode.insertBefore(tl, anchor.nextSibling);
+}
+
+function _renderTimeline() {
+    const body = document.getElementById('pwr-tl-body');
+    if (body) body.innerHTML = _eventLog.render();
+    const clock = document.getElementById('pwr-tl-clock');
+    const t = _eventLog.elapsed();
+    if (clock) clock.textContent = t === null ? 't = —' : `t = ${t.toFixed(1)} s`;
+    // The clock runs while a sequence is fresh (first 30 s), then stops.
+    const running = t !== null && t < 30 && _mode === 'whatif';
+    if (running && !_clockTimer) {
+        _clockTimer = setInterval(() => {
+            const c = document.getElementById('pwr-tl-clock');
+            const e = _eventLog.elapsed();
+            if (c && e !== null) c.textContent = `t = ${e.toFixed(1)} s`;
+            if (e === null || e >= 30 || _mode !== 'whatif') { clearInterval(_clockTimer); _clockTimer = null; }
+        }, 100);
+    }
+}
+
+function _renderVida2(grid) {
+    _ensureVida2Panels();
+    const strip = document.getElementById('pwr-status');
+    if (strip) strip.innerHTML = statusStrip(grid, _itKw ?? undefined);
+    _renderTimeline();
 }
 
 // Flow layer: which runs are energized / carrying power, from which
@@ -1175,6 +1230,7 @@ export const __power_test__ = {
     loadLedgerMarkers: _loadLedgerMarkers,
     applyGrid: _applyGrid,
     applyFlow: _applyFlow,
+    eventLog: _eventLog,
     setItKw: (v) => { _itKw = v; },
     sparkPoints,
     updateSparklines: _updateSparklines,
