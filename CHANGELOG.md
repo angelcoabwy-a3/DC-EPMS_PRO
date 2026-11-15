@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### DC-EPMS-073 RESOLVED - LIVE Power SLD follows the Power Controls plant (2026-11-15, `5d7d397`)
+
+- `core/plant_mirror.js` maps `GET /api/devices` onto a copy of the
+  DAG (transfer, generator bus, UPS blocks out, static bypass /
+  Dynamic Online caption); `core/power_grid.js` exposes the pure flow
+  pass as `propagateStatic`. LIVE only; What-If and Replay keep the
+  DAG; plant unreachable -> nominal drawing with a marker.
+- Not covered: Replay records the DAG, not the mirror; the N-1 shadow
+  evaluates the DAG. Utility loss, battery SOC and Building D are not
+  in the plant model.
+- vitest 823 / 44 files (backend unchanged).
+
 ### HMI H4 - alarm banner, ISA-18.2 states (2026-11-14, `b1ad2c4`)
 
 - `backend/alarm_engine.py` + `backend/alarm_routes.py`: alarm states
@@ -25,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and text, ms timestamps.
 - Honest scope: observation times, not field SOE; no shelving;
   priorities are a first rationalisation.
-- **DC-EPMS-073 (MEDIUM, open)**: the Power SLD drawing follows the
+- **DC-EPMS-073 (MEDIUM, resolved 2026-11-15 in `5d7d397`)**: the Power SLD drawing followed the
   browser DAG, not the Power Controls plant. A transfer or a UPS
   bypass done in Power Controls raises a live alarm on the banner,
   but the drawing does not show it.

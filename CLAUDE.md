@@ -146,9 +146,11 @@ HMI H2 + H3 (78d3c23): 52-U / 52-GM interlock, unit-sub 52-P / 52-S
 HMI H4 (b1ad2c4): backend/alarm_engine.py + alarm_routes.py
   (/api/alarms, ack, ack-all; L1_OPERATOR; ledger ALARM_ACK) + banner
   on the Power view (live = backend, What-If = local sandbox).
-  DC-EPMS-073 OPEN: SLD drawing follows the browser DAG, not the
-  Power Controls plant. Floors (Linux): pytest 1904 / vitest 812
-  (43 files).
+  Floors (Linux): pytest 1904 / vitest 812 (43 files).
+DC-EPMS-073 RESOLVED (2026-11-15, 5d7d397): core/plant_mirror.js maps
+  GET /api/devices onto a copy of the DAG (power_grid.propagateStatic);
+  LIVE drawing follows the Power Controls plant, What-If / Replay keep
+  the DAG. Replay and N-1 shadow still read the DAG. vitest 823 / 44.
 NEXT: operator applies the bundle and eyeballs the Power SLD (strip +
   sequence in What-If); then GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
