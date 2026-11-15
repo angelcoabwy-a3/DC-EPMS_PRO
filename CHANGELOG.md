@@ -13,6 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### T3 - synchroscope and closed-transition training mode (2026-11-15, `5cb337a`, `b4e47a6`)
+
+- Operator decision: closed transition is a TRAINING MODE, off by
+  default and labelled outside the A3 design (open transition stays
+  the design). 52-TIE not added.
+- Plant: generator bus frequency and phase angle against a 60 Hz
+  utility; CLOSED_TRANSITION_RETRANSFER with the ANSI 25 sync-check
+  evaluated at EXECUTE (training values: +/-10 deg, 0.10 Hz slip);
+  100 ms model overlap, then 52-GM opens. Governor raise / lower
+  (`POST /api/devices/{id}/governor`, direct, bounded, not ledgered).
+- DRILL-04: trim, close in sync, stop the sets; an open-transition
+  retransfer fails it.
+- HMI: synchroscope with governor buttons in the MV transfer
+  faceplate; needle extrapolated between polls, lamp is a display
+  estimate.
+- Checked live: out-of-phase close blocked, then PASS 90.
+- Floors (Linux): pytest 1943 passed (3 pre-existing optimizer
+  errors), vitest 845 / 46 files.
+
 ### T1 + T2 - operator training on the simulated plant (2026-11-15, `61531a8`, `41911fe`, `a166776`)
 
 - Plant (T1): utility loss per path with ANSI 27 trip of 52-U (new
