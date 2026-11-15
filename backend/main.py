@@ -2288,7 +2288,7 @@ async def get_topology_state():
                 "eff": elec.metrics.get("ups_efficiency_measured", 0.96) if elec else 0.96,
                 "active": True,
             },
-            "UPS Galaxy A",
+            "UPS Bank A (8 x Trinergy 2500)",
         ),
         "ups_b": _node(
             elec.severity if elec else "ok",
@@ -2299,7 +2299,7 @@ async def get_topology_state():
                 "eff": elec.metrics.get("ups_efficiency_measured", 0.96) if elec else 0.96,
                 "active": True,
             },
-            "UPS Galaxy B",
+            "UPS Bank B (8 x Trinergy 2500)",
         ),
         "hall_1": _node(
             it.severity if it else "ok",

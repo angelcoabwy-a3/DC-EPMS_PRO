@@ -56,10 +56,10 @@ function fmt1(v) { return (v == null) ? '—' : Number(v).toFixed(1); }
 const _HLD_NODES = [
     { id: 'utility_north', title: 'Utility North', sub: 'Feed A · 27.5 kV',      x: 40,  y: 50,  metrics: [{ key: 'utility_north-kw', text: '— kW' }] },
     { id: 'utility_south', title: 'Utility South', sub: 'Feed B · 27.5 kV',      x: 40,  y: 130, metrics: [{ key: 'utility_south-kw', text: '— kW' }] },
-    { id: 'xfmr_a',        title: 'XFMR A',        sub: '2.5 MVA · System A',    x: 220, y: 50,  metrics: [{ key: 'xfmr_a-winding', text: '—°C' }] },
-    { id: 'xfmr_b',        title: 'XFMR B',        sub: '2.5 MVA · System B',    x: 220, y: 130, metrics: [{ key: 'xfmr_b-winding', text: '—°C' }] },
-    { id: 'ups_a',         title: 'UPS Galaxy A',  sub: '750 kVA · System A',    x: 390, y: 50,  metrics: [{ key: 'ups_a-soc', text: 'SOC —%' }] },
-    { id: 'ups_b',         title: 'UPS Galaxy B',  sub: '750 kVA · System B',    x: 390, y: 130, metrics: [{ key: 'ups_b-soc', text: 'SOC —%' }] },
+    { id: 'xfmr_a',        title: 'XFMR A',        sub: '27.5/13.8 kV · Path A',  x: 220, y: 50,  metrics: [{ key: 'xfmr_a-winding', text: '—°C' }] },
+    { id: 'xfmr_b',        title: 'XFMR B',        sub: '27.5/13.8 kV · Path B',  x: 220, y: 130, metrics: [{ key: 'xfmr_b-winding', text: '—°C' }] },
+    { id: 'ups_a',         title: 'UPS Bank A',    sub: '8 × 2.5 MW · Path A',   x: 390, y: 50,  metrics: [{ key: 'ups_a-soc', text: 'SOC —%' }] },
+    { id: 'ups_b',         title: 'UPS Bank B',    sub: '8 × 2.5 MW · Path B',   x: 390, y: 130, metrics: [{ key: 'ups_b-soc', text: 'SOC —%' }] },
     { id: 'hall_1', large: true, physics: true, title: 'Hall 1', sub: '~40 racks GB200 (P1)', x: 580, y: 260, w: 150, h: 80,
       metrics: [{ key: 'hall_1-inlet', text: '— °C inlet' }, { key: 'hall_1-load', text: '— kW' }] },
     { id: 'hall_2', large: true, physics: true, title: 'Hall 2', sub: '~40 racks GB200 (P1)', x: 750, y: 260, w: 150, h: 80,
@@ -138,7 +138,7 @@ function _hldBuildingD() {
 /** Build the full HLD inner markup (kit-enforced orthogonal flows). */
 function _buildHldMarkup() {
     const sections =
-        `<text x="40" y="30" class="topo-section-lbl">ELECTRICAL · 2N DUAL UTILITY · 27.5 kV → 480 VAC 3-φ</text>`
+        `<text x="40" y="30" class="topo-section-lbl">ELECTRICAL · 2N DUAL UTILITY · 27.5 kV → 13.8 kV MV → 480 VAC 3-φ</text>`
         + `<text x="40" y="245" class="topo-section-lbl-r">CDU · DLC secondary loops · 100 L/min/rack</text>`
         + `<text x="40" y="445" class="topo-section-lbl">HEAT REJECTION · York YZ chillers · cooling tower</text>`;
 

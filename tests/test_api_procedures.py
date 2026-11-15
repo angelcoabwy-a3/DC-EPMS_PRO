@@ -70,9 +70,21 @@ def test_generate_rejects_bad_procedure_class():
 
 
 # ── /{id}/activate ────────────────────────────────────────────────────
+def _ups_id() -> str:
+    """First path A UPS of the model the process loads (DC-EPMS-068):
+    ups_a on legacy, ups_a_01 under DC_EPMS_SITE_MODEL=v2."""
+    import pathlib
+
+    from backend.site_model import get_site_model
+    from backend.site_roles import primary_ups
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    return primary_ups(get_site_model(root), "a") or "ups_a"
+
+
 def test_activate_with_l5_returns_200_active():
     gen = client.post("/api/procedures/generate",
-                      json={"asset_id": "ups_a", "procedure_class": "SOP"})
+                      json={"asset_id": _ups_id(), "procedure_class": "SOP"})
     draft = gen.json()
     resp = client.post(f"/api/procedures/{draft['procedure_id']}/activate",
                        json={"actor_role": "SENIOR_TECH_L5", "procedure": draft})
@@ -85,7 +97,7 @@ def test_activate_with_l5_returns_200_active():
 def test_activate_with_tech_l4_returns_403():
     """G5 key assertion: a Level IV promotion attempt is forbidden."""
     gen = client.post("/api/procedures/generate",
-                      json={"asset_id": "ups_a", "procedure_class": "SOP"})
+                      json={"asset_id": _ups_id(), "procedure_class": "SOP"})
     draft = gen.json()
     resp = client.post(f"/api/procedures/{draft['procedure_id']}/activate",
                        json={"actor_role": "TECH_L4", "procedure": draft})
@@ -94,7 +106,7 @@ def test_activate_with_tech_l4_returns_403():
 
 def test_activate_path_body_id_mismatch_returns_400():
     gen = client.post("/api/procedures/generate",
-                      json={"asset_id": "ups_a", "procedure_class": "SOP"})
+                      json={"asset_id": _ups_id(), "procedure_class": "SOP"})
     draft = gen.json()
     resp = client.post("/api/procedures/SOME-OTHER-ID/activate",
                        json={"actor_role": "SME_L6", "procedure": draft})

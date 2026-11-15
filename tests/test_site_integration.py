@@ -164,8 +164,13 @@ class TestSiteRoutes:
         assert "path_b" in groups
 
     def test_power_chain_for_yard_root_only_one_feed(self, client):
-        # ats_a is a path-A-only component; should have 1 feed group
-        r = client.get("/api/site/power-chain/ats_a")
+        # The path A transfer device (legacy ats_a, v2 mvtc_a; resolved by
+        # role, DC-EPMS-068) is path-A-only: one feed group.
+        from site_model import get_site_model
+        from site_roles import transfer_ids
+
+        tid = transfer_ids(get_site_model(PROJECT_ROOT))["a"]
+        r = client.get(f"/api/site/power-chain/{tid}")
         assert r.status_code == 200
         data = r.json()
         # ats_a is fed by utility_feed_a, genset_a_01, genset_a_02
@@ -352,7 +357,10 @@ class TestAgentSiteTool:
             project_root=PROJECT_ROOT,
         )
         assert r["success"] is True
-        assert r["count"] == 4
+        # legacy: 2 sets per path; v2 closed design: 9 per path (ADR-013)
+        from site_model import site_model_variant
+
+        assert r["count"] == {"legacy": 4, "v2": 18}[site_model_variant()]
 
     def test_search_combined_query_and_type(self):
         r = tool_query_site_model(

@@ -632,10 +632,58 @@ let _staleHandlerInstalled = false;
  *  that reveals the manual text input below. Every label + id flows
  *  through escapeHTML — defensive even though the source is a static
  *  module-level constant. */
+// DC-EPMS-068 lote C2: the electrical presets follow the site model
+// the backend runs (GET /api/site/model roles): legacy ups_a / ats_a /
+// xfmr_a, or v2 ups_a_01..08 / mvtc_a / mv_xfmr_a. Falls back to the
+// static list when the call fails (view stays network-independent).
+let _presets = ASSET_PRESETS;
+
+/** Pure: ASSET_PRESETS with the UPS / transfer / transformer group
+ *  rebuilt from the per-path roles of /api/site/model. */
+export function presetsForRoles(roles) {
+    if (!roles || !roles.a || !roles.b) return ASSET_PRESETS;
+    const items = [];
+    for (const p of ['a', 'b']) {
+        const r = roles[p];
+        const P = p.toUpperCase();
+        const multi = (r.ups || []).length > 1;
+        for (const id of r.ups || []) {
+            items.push({ id, label: multi ? `UPS ${P} block ${id.slice(-2)} (Path ${P})` : `UPS ${P} (Path ${P})` });
+        }
+        if (r.transfer) {
+            items.push({ id: r.transfer, label: r.transfer.startsWith('mvtc')
+                ? `MV transfer controller ${P} (52-U / 52-GM)` : `ATS ${P} (legacy 480 V)` });
+        }
+        if (r.utility_transformer) {
+            items.push({ id: r.utility_transformer, label: `Utility transformer ${P}` });
+        }
+    }
+    return ASSET_PRESETS.map((g, i) => (i === 0
+        ? { group: 'Electrical — UPS / Transfer / Transformers', items }
+        : g));
+}
+
+async function _loadRolePresets() {
+    try {
+        const res = await fetch('/api/site/model', { credentials: 'same-origin' });
+        if (!res.ok) return;
+        const body = await res.json();
+        _presets = presetsForRoles(body.roles);
+        const sel = document.querySelector('[data-proc-asset-select]');
+        if (sel) {
+            const keep = sel.value;
+            sel.innerHTML = _renderAssetSelect();
+            if ([...sel.options].some((o) => o.value === keep)) sel.value = keep;
+        }
+    } catch (_e) {
+        // network or parse failure: keep the static presets
+    }
+}
+
 function _renderAssetSelect() {
     const none = `<option value="${ASSET_NONE_VALUE}">`
         + '(none — site-wide procedure)</option>';
-    const groups = ASSET_PRESETS.map((g) => {
+    const groups = _presets.map((g) => {
         const opts = g.items.map(
             (it) => `<option value="${escapeHTML(it.id)}">`
                 + `${escapeHTML(it.label)}</option>`,
@@ -1412,6 +1460,7 @@ function _wireProceduresView() {
 
 async function _activate() {
     _wireProceduresView();
+    _loadRolePresets();
 }
 
 

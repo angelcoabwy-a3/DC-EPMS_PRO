@@ -1449,3 +1449,39 @@ describe('Option A — Save-to-library button', () => {
         expect(urls).toContain('/api/procedures/architect/save-to-library');
     });
 });
+
+// ── DC-EPMS-068 lote C2: electrical presets follow /api/site/model roles ──
+import { presetsForRoles } from '/assets/js/views/procedures.js';
+
+describe('C2 — asset presets from site model roles', () => {
+    const v2 = {
+        a: { transfer: 'mvtc_a', ups: Array.from({ length: 8 }, (_, i) => `ups_a_0${i + 1}`), utility_transformer: 'mv_xfmr_a' },
+        b: { transfer: 'mvtc_b', ups: Array.from({ length: 8 }, (_, i) => `ups_b_0${i + 1}`), utility_transformer: 'mv_xfmr_b' },
+    };
+    const legacy = {
+        a: { transfer: 'ats_a', ups: ['ups_a'], utility_transformer: 'xfmr_a' },
+        b: { transfer: 'ats_b', ups: ['ups_b'], utility_transformer: 'xfmr_b' },
+    };
+
+    it('v2: 16 UPS blocks, two MV transfer controllers, two utility transformers', () => {
+        const ids = presetsForRoles(v2)[0].items.map((i) => i.id);
+        expect(ids.filter((i) => i.startsWith('ups_')).length).toBe(16);
+        expect(ids).toContain('mvtc_a');
+        expect(ids).toContain('mv_xfmr_b');
+        expect(ids).not.toContain('ups_a');
+        expect(presetsForRoles(v2)[0].items.find((i) => i.id === 'mvtc_b').label)
+            .toContain('MV transfer controller B');
+    });
+
+    it('legacy: one UPS per path and the 480 V ATS labelled as legacy', () => {
+        const items = presetsForRoles(legacy)[0].items;
+        expect(items.map((i) => i.id)).toEqual(['ups_a', 'ats_a', 'xfmr_a', 'ups_b', 'ats_b', 'xfmr_b']);
+        expect(items[1].label).toContain('legacy');
+    });
+
+    it('missing roles keep the static presets; other groups are untouched', () => {
+        const base = presetsForRoles(null);
+        expect(presetsForRoles({ a: legacy.a })).toBe(base);
+        expect(presetsForRoles(v2).slice(1)).toEqual(base.slice(1));
+    });
+});

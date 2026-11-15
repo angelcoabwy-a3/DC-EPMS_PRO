@@ -80,7 +80,7 @@ const MODULES = {
     power: {
         kind: 'power',
         title: 'Power & UPS — Single-Line Diagram',
-        sub: '2N · UPS Galaxy VX · RPP · Starline busway',
+        sub: '2N · MV transfer 52-U / 52-GM · UPS bank 8 × Trinergy · RPP · busway',
     },
     cooling: {
         kind: 'cooling',
