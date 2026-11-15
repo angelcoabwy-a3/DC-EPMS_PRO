@@ -65,7 +65,7 @@ def steps_done(view):
 class TestLibrary:
     def test_three_valid_drills(self):
         drills = tr.load_drills(DRILLS)
-        assert sorted(drills) == ["DRILL-01", "DRILL-02", "DRILL-03"]
+        assert sorted(drills) == ["DRILL-01", "DRILL-02", "DRILL-03", "DRILL-04"]
 
     def test_validator_rejects_unknown_check(self):
         with pytest.raises(ValueError, match="unknown check"):
@@ -207,7 +207,7 @@ def bearer(name):
 class TestRoutes:
     def test_flow_and_ledger(self, client, clock):
         c, ctl, engine, _ = client
-        assert len(c.get("/api/training/drills").json()["drills"]) == 3
+        assert len(c.get("/api/training/drills").json()["drills"]) == 4
         assert c.post("/api/training/start", json={"drill_id": "DRILL-03"}).status_code == 403
         r = c.post("/api/training/start", json={"drill_id": "DRILL-03"}, headers=bearer("manager"))
         assert r.status_code == 200
@@ -238,3 +238,102 @@ class TestRoutes:
         c.post("/api/training/start", json={"drill_id": "DRILL-01"}, headers=bearer("manager"))
         assert c.post("/api/training/reset", headers=bearer("manager")).status_code == 409
         assert c.post("/api/training/abort", headers=bearer("manager")).json()["session"]["outcome"] == "ABORTED"
+
+
+class TestDrill04ClosedTransition:
+    def _gov(self, ctl, delta, n=1):
+        for _ in range(n):
+            ctl.adjust_governor("mvtc_a", delta, "trainee")
+
+    def test_trim_sync_close_stop_passes(self, world, clock):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        sync = ctl.snapshot("mvtc_a")["synchro"]
+        assert (sync["enabled"], sync["live"], sync["slip_hz"], sync["angle_deg"]) == (True, True, 0.25, 150.0)
+        engine.ack_all("trainee")
+        self._gov(ctl, -0.05, 4)                     # 60.25 -> 60.05 Hz
+        view = mgr.evaluate(ctl, engine)
+        assert [s["id"] for s in view["session"]["steps"] if s["done"]] == ["ACK", "TRIM"]
+        # 0.05 Hz slip = 18 deg/s: wait until the needle reaches the window
+        angle = ctl.snapshot("mvtc_a")["synchro"]["angle_deg"]
+        clock.tick(((360 - angle) % 360) / 18.0)
+        assert abs(ctl.snapshot("mvtc_a")["synchro"]["angle_deg"]) <= 10
+        out = run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")
+        assert out["closed_transition"] is True
+        assert ctl.snapshot("mvtc_a")["state"] == dc.XFER_UTILITY
+        assert ctl.path_summary("a")["load_lost"] is False
+        run(ctl, "mvtc_a", "STOP_GENERATORS")
+        view = mgr.evaluate(ctl, engine)
+        assert view["session"]["outcome"] == "PASS"
+
+    def test_out_of_phase_close_is_blocked_by_ansi25(self, world, clock):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        sel = ctl.select("mvtc_a", "CLOSED_TRANSITION_RETRANSFER", "trainee")
+        with pytest.raises(dc.DeviceControlError, match="ANSI 25 sync-check blocked"):
+            ctl.operate("mvtc_a", sel["select_token"], "trainee")
+        assert ctl.snapshot("mvtc_a")["state"] == dc.XFER_GENERATORS
+        assert any(e["event"] == "sync_check_block" for e in ctl._events)
+
+    def test_in_window_but_slipping_fast_is_blocked(self, world, clock):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        ctl.set_sync("a", 60.25, 2.0, "test")         # angle fine, slip 0.25 Hz
+        sel = ctl.select("mvtc_a", "CLOSED_TRANSITION_RETRANSFER", "trainee")
+        with pytest.raises(dc.DeviceControlError, match="slip"):
+            ctl.operate("mvtc_a", sel["select_token"], "trainee")
+
+    def test_open_transition_fails_the_drill(self, world):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        run(ctl, "mvtc_a", "RETRANSFER_TO_UTILITY")
+        view = mgr.evaluate(ctl, engine)
+        assert view["session"]["outcome"] == "FAIL"
+        assert "open-transition" in view["session"]["reason"]
+
+
+class TestClosedTransitionOffByDefault:
+    def test_command_refused_outside_training(self, world):
+        ctl, _, _ = world
+        ctl.set_authority("mvtc_a", dc.AUTH_REMOTE, "op")
+        cmd = next(c for c in ctl.snapshot("mvtc_a")["commands"]
+                   if c["command"] == "CLOSED_TRANSITION_RETRANSFER")
+        assert cmd["permitted"] is False
+        assert "open transition" in cmd["blocked_reason"]
+        assert ctl.snapshot("mvtc_a")["synchro"]["enabled"] is False
+
+    def test_governor_bounds(self, world):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        with pytest.raises(dc.DeviceControlError, match="within"):
+            ctl.adjust_governor("mvtc_a", 0.2, "trainee")
+        with pytest.raises(dc.DeviceControlError, match="number"):
+            ctl.adjust_governor("mvtc_a", "fast", "trainee")
+        for _ in range(20):
+            ctl.adjust_governor("mvtc_a", 0.05, "trainee")
+        assert ctl.synchro("a")["gen_hz"] == dc.GOVERNOR_MAX_HZ
+        ctl.set_authority("mvtc_a", dc.AUTH_AUTO, "x")
+        with pytest.raises(dc.DeviceControlError, match="REMOTE"):
+            ctl.adjust_governor("mvtc_a", -0.05, "trainee")
+
+    def test_reset_turns_the_mode_off(self, world):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        mgr.abort("x", ctl, engine)
+        ctl.reset("x")
+        assert ctl.closed_transition is False
+        assert ctl.synchro("a")["gen_hz"] == dc.UTILITY_HZ
+
+    def test_governor_route(self, monkeypatch, world):
+        monkeypatch.delenv("DC_EPMS_REQUIRE_AUTH", raising=False)
+        ctl, engine, mgr = world
+        app = FastAPI()
+        dc.register_device_control_routes(app, lambda: ctl)
+        mgr.start("DRILL-04", "manager", ctl, engine)
+        with TestClient(app) as c:
+            assert c.post("/api/devices/mvtc_a/governor", json={"delta_hz": -0.05}).status_code == 403
+            r = c.post("/api/devices/mvtc_a/governor", json={"delta_hz": -0.05}, headers=bearer("manager"))
+            assert r.status_code == 200
+            assert r.json()["synchro"]["gen_hz"] == 60.2
+            r = c.post("/api/devices/mvtc_a/governor", json={"delta_hz": 1}, headers=bearer("manager"))
+            assert r.status_code == 400

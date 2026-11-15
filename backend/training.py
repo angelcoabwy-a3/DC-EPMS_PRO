@@ -46,9 +46,11 @@ VIOLATION_EVENTS = ("refused", "procedure_blocked", "bay_blocked")
 CHECK_TYPES = (
     "alarms_acked", "gens_started_cover_demand", "gens_on_bus_cover_demand",
     "transfer_state", "device_state", "no_sets_running",
+    "sync_slip_within", "event_seen",
 )
-FAIL_TYPES = ("load_lost",)
-INJECT_TYPES = ("utility_loss", "utility_restore", "preset_on_generators", "ups_fault")
+FAIL_TYPES = ("load_lost", "command_used")
+INJECT_TYPES = ("utility_loss", "utility_restore", "preset_on_generators", "ups_fault",
+                "closed_transition_mode", "synchro")
 
 
 class TrainingError(Exception):
@@ -110,9 +112,26 @@ def _devices(plant: dict[str, Any], kind: str, path: str) -> list[dict[str, Any]
     return [d for d in plant.get("devices", []) if d.get("kind") == kind and d.get("path") == path]
 
 
-def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine) -> bool:
+def _events_since(events: list[dict[str, Any]], mark: float) -> list[dict[str, Any]]:
+    return [e for e in events if e.get("ts", 0) >= mark]
+
+
+def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
+          events: list[dict[str, Any]] | None = None) -> bool:
     kind = cond.get("type")
     path = cond.get("path")
+    if kind == "sync_slip_within":
+        xfer = next(iter(_devices(plant, "transfer", path)), {})
+        sync = xfer.get("synchro") or {}
+        return bool(sync.get("live")) and abs(float(sync.get("slip_hz", 99))) <= float(cond.get("max_hz", 0.1))
+    if kind == "event_seen":
+        # e.g. {"event": "command", "field": "closed_transition", "value": true}
+        for e in events or []:
+            if e.get("event") != cond.get("event"):
+                continue
+            if "field" not in cond or e.get(cond["field"]) == cond.get("value"):
+                return True
+        return False
     if kind == "alarms_acked":
         prefix = str(cond.get("prefix", ""))
         mine = [a for a in engine.alarms.values() if a.alarm_id.startswith(prefix)]
@@ -143,10 +162,15 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine) -> b
     return False
 
 
-def failed(conds: list[dict[str, Any]], plant: dict[str, Any]) -> str | None:
+def failed(conds: list[dict[str, Any]], plant: dict[str, Any],
+           events: list[dict[str, Any]] | None = None) -> str | None:
     for cond in conds:
         if cond.get("type") == "load_lost" and _path(plant, cond.get("path")).get("load_lost"):
             return f"critical load lost on path {str(cond.get('path')).upper()}"
+        if cond.get("type") == "command_used":
+            for e in events or []:
+                if e.get("event") == "command" and e.get("command") == cond.get("command"):
+                    return cond.get("reason") or f"{cond.get('command')} used"
     return None
 
 
@@ -209,6 +233,10 @@ class TrainingManager:
                     ctl.preset_on_generators(inj["path"], "training")
                 elif kind == "ups_fault":
                     ctl.inject_ups_fault(inj["device"], inj["fault"], "training")
+                elif kind == "closed_transition_mode":
+                    ctl.set_closed_transition(bool(inj.get("enabled", True)), "training")
+                elif kind == "synchro":
+                    ctl.set_sync(inj["path"], inj["gen_hz"], inj["angle_deg"], "training")
             self.session = Session(drill=drill, operator=operator,
                                    started_ms=self._now_ms(), events_mark=mark)
             self.last_report = None
@@ -224,17 +252,18 @@ class TrainingManager:
             plant = ctl.snapshot_all()
             engine.evaluate(conditions_from_plant(plant))
             now = self._now_ms()
+            events = _events_since(list(ctl._events), s.events_mark)
             steps = s.drill["steps"]
             while len(s.done) < len(steps):
                 step = steps[len(s.done)]
-                if not check(step["check"], plant, engine):
+                if not check(step["check"], plant, engine, events):
                     break
                 s.done.append({"id": step["id"], "text": step["text"], "t_ms": now - s.started_ms})
             s.violations = [
                 e for e in list(ctl._events)
                 if e.get("event") in VIOLATION_EVENTS and e.get("ts", 0) >= s.events_mark
             ]
-            reason = failed(s.drill.get("fail") or [], plant)
+            reason = failed(s.drill.get("fail") or [], plant, events)
             if reason:
                 self._finish(s, "FAIL", reason, now)
             elif len(s.done) == len(steps):

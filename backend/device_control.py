@@ -136,6 +136,16 @@ EVENT_LOG_SIZE = 200
 # BATTERY_RECHARGE_FULL_S once the MV bus is back.
 BATTERY_RECHARGE_FULL_S = 600.0
 BATTERY_LOW_FRACTION = 0.25
+# T3 closed-transition training (OFF by default; the A3 design is open
+# transition). Sync-check settings are training values, not a relay
+# setting file: angle window, maximum slip, governor range and step.
+UTILITY_HZ = 60.0
+SYNC_MAX_ANGLE_DEG = 10.0
+SYNC_MAX_SLIP_HZ = 0.10
+GOVERNOR_MIN_HZ = 59.5
+GOVERNOR_MAX_HZ = 60.5
+GOVERNOR_MAX_STEP_HZ = 0.05
+CLOSED_TRANSITION_OVERLAP_MS = 100   # model: 52-GM opens automatically
 UPS_FAULT_INVERTER_OVERTEMP = "INVERTER_OVERTEMP"
 UPS_FAULTS = {
     UPS_FAULT_INVERTER_OVERTEMP: "Inverter over-temperature",
@@ -195,6 +205,13 @@ COMMANDS: dict[str, dict[str, tuple[str, str]]] = {
             "Retransfer to utility",
             "Opens 52-GM (if closed) and closes 52-U (open transition). "
             "Needs utility voltage on the incomer.",
+        ),
+        "CLOSED_TRANSITION_RETRANSFER": (
+            "Closed-transition retransfer (ANSI 25)",
+            "Training mode only. Closes 52-U in parallel with the generator "
+            "bus when the sync-check permits (angle and slip inside the "
+            "window); the controller then opens 52-GM after a momentary "
+            "overlap.",
         ),
         "STOP_GENERATORS": (
             "Stop generator bus",
@@ -309,6 +326,11 @@ class DeviceController:
     load_lost: dict[str, bool] = field(default_factory=dict)
     faults: dict[str, str] = field(default_factory=dict)        # device_id -> fault
     _batt_at: float | None = None
+    # T3 closed-transition training
+    closed_transition: bool = False
+    gen_hz: dict[str, float] = field(default_factory=dict)
+    sync_angle: dict[str, float] = field(default_factory=dict)
+    _sync_at: float | None = None
 
     # ── Construction ────────────────────────────────────────────────
     @classmethod
@@ -330,6 +352,8 @@ class DeviceController:
             ctl.utility_ok[path] = True
             ctl.battery_soc[path] = 1.0
             ctl.load_lost[path] = False
+            ctl.gen_hz[path] = UTILITY_HZ
+            ctl.sync_angle[path] = 0.0
             upper = path.upper()
             for n in range(1, int(ups["units_per_path"]) + 1):
                 ctl._add(Device(
@@ -419,6 +443,93 @@ class DeviceController:
                 dev.state, dev.state_since = GEN_RUNNING, now
         self._advance_auto_transfer(now)
         self._advance_battery(now)
+        self._advance_sync(now)
+
+    # ── T3: generator bus vs utility (synchroscope model) ──────────
+    def _islanded(self, path: str) -> bool:
+        """Generator bus carrying the path with utility voltage present
+        on the open incomer: the two sides can drift in phase."""
+        return self._path_on_generators(path) and self.utility_ok.get(path, True) \
+            and bool(self._gens_on_bus(path))
+
+    def _advance_sync(self, now: float) -> None:
+        last = self._sync_at
+        self._sync_at = now
+        dt = 0.0 if last is None else max(0.0, now - last)
+        if not dt:
+            return
+        for path in self.path_share:
+            if not self._islanded(path):
+                continue
+            slip = self.gen_hz.get(path, UTILITY_HZ) - UTILITY_HZ
+            angle = self.sync_angle.get(path, 0.0) + 360.0 * slip * dt
+            self.sync_angle[path] = (angle + 180.0) % 360.0 - 180.0
+
+    def synchro(self, path: str) -> dict[str, Any]:
+        gen_hz = self.gen_hz.get(path, UTILITY_HZ)
+        slip = gen_hz - UTILITY_HZ
+        angle = self.sync_angle.get(path, 0.0)
+        live = self._islanded(path)
+        ok_angle = abs(angle) <= SYNC_MAX_ANGLE_DEG
+        ok_slip = abs(slip) <= SYNC_MAX_SLIP_HZ
+        return {
+            "enabled": self.closed_transition,
+            "live": live,
+            "gen_hz": round(gen_hz, 3), "utility_hz": UTILITY_HZ,
+            "slip_hz": round(slip, 3), "angle_deg": round(angle, 1),
+            "max_angle_deg": SYNC_MAX_ANGLE_DEG, "max_slip_hz": SYNC_MAX_SLIP_HZ,
+            "permissive": bool(live and ok_angle and ok_slip),
+            "governor_min_hz": GOVERNOR_MIN_HZ, "governor_max_hz": GOVERNOR_MAX_HZ,
+            "governor_max_step_hz": GOVERNOR_MAX_STEP_HZ,
+            "note": "Training sync-check values, not a relay setting file.",
+        }
+
+    def set_closed_transition(self, enabled: bool, actor: str) -> dict[str, Any]:
+        with self._lock:
+            self._advance()
+            self.closed_transition = bool(enabled)
+            event = {"ts": round(self.wall_clock(), 3), "event": "closed_transition_mode",
+                     "device_id": "plant", "actor": actor, "enabled": self.closed_transition}
+            self._events.append(event)
+            return event
+
+    def set_sync(self, path: str, gen_hz: float, angle_deg: float, actor: str) -> dict[str, Any]:
+        """Training preset of the generator bus frequency and angle."""
+        with self._lock:
+            self._advance()
+            if path not in self.path_share:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            self.gen_hz[path] = min(GOVERNOR_MAX_HZ, max(GOVERNOR_MIN_HZ, float(gen_hz)))
+            self.sync_angle[path] = (float(angle_deg) + 180.0) % 360.0 - 180.0
+            return self._plant_event("sync_preset", path, actor,
+                                     gen_hz=self.gen_hz[path], angle_deg=self.sync_angle[path])
+
+    def adjust_governor(self, device_id: str, delta_hz: float, actor: str) -> dict[str, Any]:
+        """Governor raise / lower from the synchronising panel. A direct
+        control (no select-before-operate), as raise / lower switches
+        are; bounded per step and in range."""
+        with self._lock:
+            self._advance()
+            dev = self._get(device_id)
+            if dev.kind != KIND_TRANSFER:
+                raise DeviceControlError(400, "the governor is adjusted from the MV transfer controller")
+            reason = self.authority_reason(dev)
+            if reason:
+                raise DeviceControlError(409, reason)
+            if not self.closed_transition:
+                raise DeviceControlError(409, "closed-transition training mode is off")
+            if not self._islanded(dev.path):
+                raise DeviceControlError(409, "generator bus is not carrying the path with utility present")
+            try:
+                delta = float(delta_hz)
+            except (TypeError, ValueError):
+                raise DeviceControlError(400, "delta_hz must be a number") from None
+            if not math.isfinite(delta) or abs(delta) > GOVERNOR_MAX_STEP_HZ or delta == 0:
+                raise DeviceControlError(400, f"delta_hz must be non-zero and within ±{GOVERNOR_MAX_STEP_HZ} Hz")
+            path = dev.path
+            before = self.gen_hz.get(path, UTILITY_HZ)
+            self.gen_hz[path] = round(min(GOVERNOR_MAX_HZ, max(GOVERNOR_MIN_HZ, before + delta)), 3)
+            return self._event("governor", dev, actor, from_hz=before, to_hz=self.gen_hz[path])
 
     # ── T1: AUTO transfer sequence, battery, load loss ──────────────
     def _start_candidates(self, path: str, *, auto_only: bool) -> list[Device]:
@@ -596,10 +707,12 @@ class DeviceController:
                 self.design, clock=self.clock, wall_clock=self.wall_clock,
             )
             for name in ("devices", "bays", "procedures", "path_share", "utility_ok",
-                         "battery_soc", "load_lost", "faults"):
+                         "battery_soc", "load_lost", "faults", "closed_transition",
+                         "gen_hz", "sync_angle"):
                 setattr(self, name, getattr(fresh, name))
             self._selections.clear()
             self._batt_at = None
+            self._sync_at = None
             event = {
                 "ts": round(self.wall_clock(), 3), "event": "plant_reset",
                 "device_id": "plant", "actor": actor,
@@ -725,6 +838,15 @@ class DeviceController:
                 if not self._start_candidates(dev.path, auto_only=False):
                     return "No set is in standby, in service and out of LOCAL."
                 return None
+            if command == "CLOSED_TRANSITION_RETRANSFER":
+                if not self.closed_transition:
+                    return ("Closed transition is a training mode and is off: the A3 design "
+                            "retransfers in open transition.")
+                if dev.state != XFER_GENERATORS:
+                    return "Path is not on generators."
+                if not self.utility_ok.get(dev.path, True):
+                    return "No utility voltage on the incomer (ANSI 27 picked up)."
+                return None
             if command == "STOP_GENERATORS":
                 if dev.state == XFER_GENERATORS:
                     return "Path is on generators: retransfer to utility first."
@@ -819,7 +941,9 @@ class DeviceController:
                 _r("Path demand", demand if live else 0.0, "kW", 0),
                 _r("Bus current", amps, "A", 0),
                 _r("Bus voltage", dev.voltage_v / 1000 if live else 0.0, "kV", 1),
-                _r("Bus frequency", NOMINAL_HZ if live else 0.0, "Hz", 1),
+                _r("Bus frequency",
+                   (self.gen_hz.get(dev.path, NOMINAL_HZ) if self._path_on_generators(dev.path)
+                    else NOMINAL_HZ) if live else 0.0, "Hz", 2),
                 _r("Utility incomer voltage",
                    dev.voltage_v / 1000 if self.utility_ok.get(dev.path, True) else 0.0, "kV", 1),
                 _r("Generators synchronised", len(self._gens_on_bus(dev.path)), "sets", 0),
@@ -927,6 +1051,8 @@ class DeviceController:
         }
         if dev.kind == KIND_GENERATOR:
             snap["switching"] = self._switching(dev)
+        if dev.kind == KIND_TRANSFER:
+            snap["synchro"] = self.synchro(dev.path)
         return snap
 
     def _switching(self, dev: Device) -> dict[str, Any]:
@@ -1060,6 +1186,23 @@ class DeviceController:
                 return self._event(
                     "command", dev, actor, command=sel.command, from_state=previous,
                     to_state=dev.state, started=[g.device_id for g in started],
+                )
+            if sel.command == "CLOSED_TRANSITION_RETRANSFER":
+                sync = self.synchro(dev.path)
+                if not sync["permissive"]:
+                    self._event("sync_check_block", dev, actor, angle_deg=sync["angle_deg"],
+                                slip_hz=sync["slip_hz"])
+                    raise DeviceControlError(409, (
+                        f"ANSI 25 sync-check blocked the close: angle {sync['angle_deg']:+.1f}° "
+                        f"(window ±{SYNC_MAX_ANGLE_DEG:.0f}°), slip {sync['slip_hz']:+.3f} Hz "
+                        f"(max ±{SYNC_MAX_SLIP_HZ:.2f} Hz). Select again."))
+                dev.state, dev.state_since = XFER_UTILITY, self.clock()
+                self.gen_hz[dev.path], self.sync_angle[dev.path] = UTILITY_HZ, 0.0
+                self._advance()
+                return self._event(
+                    "command", dev, actor, command=sel.command, from_state=previous,
+                    to_state=dev.state, closed_transition=True, angle_deg=sync["angle_deg"],
+                    slip_hz=sync["slip_hz"], overlap_ms=CLOSED_TRANSITION_OVERLAP_MS,
                 )
             if sel.command == "STOP_GENERATORS":
                 stopped = self._running_sets(dev.path)
@@ -1407,6 +1550,21 @@ def register_device_control_routes(
              "requested_entry_id": requested_id},
         )
         return {"success": True, "event": event, "ledger_entry_id": result_id}
+
+    @app.post("/api/devices/{device_id}/governor")
+    async def adjust_governor(
+        device_id: str, request: Request, payload: dict = Body(...),
+    ) -> dict[str, Any]:
+        """T3: governor raise / lower (closed-transition training mode).
+        Direct control, recorded in the plant event log (not the
+        Forensic Ledger: one entry per click would flood it)."""
+        actor = authorise(request, payload)
+        ctl = _controller()
+        try:
+            event = ctl.adjust_governor(device_id, payload.get("delta_hz"), actor)
+        except DeviceControlError as exc:
+            raise _fail(exc) from exc
+        return {"success": True, "event": event, "synchro": ctl.synchro(ctl.devices[device_id].path)}
 
     # ── MV switching procedures ─────────────────────────────────────
     @app.post("/api/mv/bays/{bay_id}/procedure")
