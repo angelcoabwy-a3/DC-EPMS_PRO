@@ -12,6 +12,7 @@
  * ════════════════════════════════════════════════════════════════ */
 
 import { escapeHTML } from './sanitize.js';
+import { synchroscopeHtml } from './synchroscope.js';
 
 /** Devices behind an SLD element: breaker group, node id or path bank. */
 export function devicesFor(target, plant) {
@@ -66,6 +67,7 @@ export function faceplateHtml(target, plant, { pending = new Map(), nowMs = Date
             + `<span class="fp-auth-tag">${escapeHTML(d.authority || '')}</span></div>`
             + `<div class="fp-status">${escapeHTML(d.status?.text || '')}</div>`
             + (ind ? `<div class="fp-inds">${ind}</div>` : '')
+            + (d.kind === 'transfer' && d.synchro ? synchroscopeHtml(d.id, d.synchro) : '')
             + _commands(d, pending, nowMs) + '</div>';
     }).join('');
     return `<div class="fp-head"><span>${escapeHTML(head)} · SELECT then EXECUTE</span>`

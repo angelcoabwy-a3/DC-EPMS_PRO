@@ -44,6 +44,7 @@ import { ControlRoomAudio } from '../core/control_room_audio.js';
 import { plantPost, plantGet } from '../core/plant_client.js';
 import { faceplateHtml } from '../core/sbo_faceplate.js';
 import { trainingHtml } from '../core/training_view.js';
+import { needleAngle, permissive } from '../core/synchroscope.js';
 import { escapeHTML } from '../core/sanitize.js';
 import {
     severityFromChannels, symbol, wire, sparkPoints, sparkPolyline,
@@ -76,6 +77,8 @@ const ALARM_POLL_MS = 3000;
 // DC-EPMS-073: in LIVE the drawing follows the Power Controls plant.
 let _plant = null;
 let _plantAt = null;
+let _plantAtMs = 0;
+let _syncRaf = null;
 // T2: training coach, SBO faceplate, control-room sounds.
 const _audio = new ControlRoomAudio();
 let _drills = [];
@@ -1126,6 +1129,7 @@ async function _pollAlarms(force = false) {
     if (plant.status === 'fulfilled' && isPlantSnapshot(plant.value)) {
         _plant = plant.value;
         _plantAt = new Date();
+        _plantAtMs = Date.now();
     } else {
         _plant = null;
         _plantAt = null;
@@ -1255,6 +1259,7 @@ function _renderFaceplate() {
     if (!_fpTarget || _mode !== 'live') { el.hidden = true; return; }
     el.hidden = false;
     el.innerHTML = faceplateHtml(_fpTarget, _plant, { pending: _fpPending, message: _fpMsg });
+    _syncAnimate();
     if (_fpPending.size && !_fpTimer) {
         _fpTimer = setTimeout(() => {
             _fpTimer = null;
@@ -1263,6 +1268,40 @@ function _renderFaceplate() {
             _renderFaceplate();
         }, 1000);
     }
+}
+
+// T3: turn the synchroscope needles between polls (display only).
+function _syncFrame(nowMs = Date.now()) {
+    const devs = (_plant && _plant.devices) || [];
+    let live = false;
+    document.querySelectorAll('#pwr-faceplate [data-sync-needle]').forEach((el) => {
+        const id = el.dataset.syncNeedle;
+        const sync = (devs.find((d) => d.id === id) || {}).synchro;
+        if (!sync) return;
+        live = live || !!sync.live;
+        const a = needleAngle(sync, _plantAtMs, nowMs);
+        el.setAttribute('transform', `rotate(${a.toFixed(1)} 60 60)`);
+        const t = document.querySelector(`#pwr-faceplate [data-sync-angle="${id}"]`);
+        if (t) t.textContent = `${a >= 0 ? '+' : ''}${a.toFixed(1)}°`;
+        const lamp = document.querySelector(`#pwr-faceplate [data-sync-lamp="${id}"]`);
+        if (lamp) {
+            const ok = permissive(sync, a);
+            lamp.dataset.ok = ok ? '1' : '0';
+            lamp.textContent = `25 ${ok ? 'PERMIT' : 'BLOCK'}`;
+        }
+    });
+    return live;
+}
+
+function _syncAnimate() {
+    if (_syncRaf || typeof requestAnimationFrame !== 'function') return;
+    const step = () => {
+        _syncRaf = null;
+        const el = document.getElementById('pwr-faceplate');
+        if (!el || el.hidden) return;
+        if (_syncFrame()) _syncRaf = requestAnimationFrame(step);
+    };
+    _syncRaf = requestAnimationFrame(step);
 }
 
 async function _onFaceplateClick(ev) {
@@ -1290,6 +1329,8 @@ async function _onFaceplateClick(ev) {
         if (!p) return;
         r = await plantPost(url(id, 'operate'), { select_token: p.token });
         if (r.ok && p.command === 'START_GENERATORS') _audio.engineStart();
+    } else if (btn.dataset.fpGov) {
+        r = await plantPost(url(btn.dataset.fpGov, 'governor'), { delta_hz: Number(btn.dataset.delta) });
     } else if (btn.dataset.fpCancel) {
         _fpPending.delete(btn.dataset.fpCancel);
         _renderFaceplate();
@@ -1659,6 +1700,7 @@ export const __power_test__ = {
     openFaceplate: _openFaceplate,
     onFaceplateClick: _onFaceplateClick,
     faceplatePending: _fpPending,
+    syncFrame: _syncFrame,
     audio: _audio,
     stopTraining: () => { if (_trTimer) clearTimeout(_trTimer); _trTimer = null; _trView = null; },
     onAlarmClick: _onAlarmClick,

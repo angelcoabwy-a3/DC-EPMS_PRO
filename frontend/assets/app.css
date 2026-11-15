@@ -10862,3 +10862,20 @@ table.opt-votes td {
     .tr-btn, .fp-btn, .fp-close { min-height: 44px; }
     .tr-select { min-height: 44px; }
 }
+
+/* T3 (2026-11-15) — synchroscope (closed-transition training mode). */
+.sy { margin: 6px 0; padding: 6px; border: 1px dashed #5b626c; border-radius: 4px; }
+.sy-dial { width: 132px; height: 132px; float: left; margin-right: 10px; }
+.sy-face { fill: #23272e; stroke: #8a929c; stroke-width: 1.5; }
+.sy-window { fill: rgba(76, 196, 106, 0.28); stroke: #4cc46a; stroke-width: 0.8; }
+.sy-tick { stroke: #8a929c; stroke-width: 1.2; }
+.sy-needle { stroke: #e6e9ed; stroke-width: 2.4; stroke-linecap: round; }
+.sy-hub { fill: #e6e9ed; }
+.sy-lbl { fill: #8a929c; font: 7px var(--font-mono); }
+.sy-read { display: flex; flex-direction: column; gap: 3px; min-height: 132px; }
+.sy-read b { color: #e6e9ed; font-variant-numeric: tabular-nums; }
+.sy-lamp { align-self: flex-start; margin-top: 4px; padding: 2px 8px; border-radius: 3px; font-weight: 700; border: 1px solid #ef5350; color: #ef5350; }
+.sy-lamp[data-ok="1"] { border-color: #4cc46a; color: #4cc46a; }
+.sy-gov { clear: both; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-top: 6px; }
+.sy-gov span { color: #8a929c; margin-right: 4px; }
+.sy-note { clear: both; color: #8a929c; padding-top: 4px; }
