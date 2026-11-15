@@ -1,0 +1,24 @@
+{
+  "id": "DRILL-01",
+  "version": 1,
+  "title": "Utility loss on path A: manual recovery on generators",
+  "summary": "Utility undervoltage on the 27.5 kV feed of path A. ANSI 27 trips 52-U, the 13.8 kV bus is dead and UPS bank A carries the IT load on battery. The transfer controller and the sets are in REMOTE for this drill (no automatic transfer): start the generator bus and close 52-GM before the battery runs out.",
+  "path": "a",
+  "target_s": 60,
+  "time_limit_s": 1800,
+  "setup": {
+    "authority": {"mvtc_a": "REMOTE", "genset_a_*": "REMOTE"},
+    "inject": [{"type": "utility_loss", "path": "a"}]
+  },
+  "steps": [
+    {"id": "ACK", "text": "Acknowledge the path A alarms in the alarm banner",
+     "check": {"type": "alarms_acked", "prefix": "PATH_A_"}},
+    {"id": "START", "text": "Start the generator bus (MV transfer A: Start generator bus)",
+     "check": {"type": "gens_started_cover_demand", "path": "a"}},
+    {"id": "SYNC", "text": "Wait until the synchronised sets cover the path demand",
+     "check": {"type": "gens_on_bus_cover_demand", "path": "a"}},
+    {"id": "CLOSE", "text": "Close 52-GM (MV transfer A: Transfer to generators)",
+     "check": {"type": "transfer_state", "path": "a", "state": "GENERATORS"}}
+  ],
+  "fail": [{"type": "load_lost", "path": "a"}]
+}

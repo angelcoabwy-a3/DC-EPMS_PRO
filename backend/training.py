@@ -1,0 +1,325 @@
+"""T1 (2026-11-15): operator training drills on the simulated plant.
+
+A drill (``config/training_drills/DRILL-NN.json``) declares a setup
+(authorities, injections), ordered steps with machine-checkable
+conditions on the plant and the alarm state, and failure conditions.
+The trainee works with the normal HMI (alarm banner, Power SLD, Power
+Controls). The engine only OBSERVES: each evaluation marks the next
+step done when its condition holds and stamps the elapsed time.
+
+Scoring rubric "DC-EPMS training rubric v1" (our own rubric, not an
+industry standard such as NETA or Uptime Institute):
+  - outcome FAIL (critical load lost or time limit) -> score 0;
+  - otherwise 100, minus 10 per refused or blocked command during the
+    drill, minus 1 per started 10 s beyond the drill's target time,
+    floor 0.
+
+Honest scope: one drill at a time for the whole plant (the plant is a
+single shared simulator); times come from the server clock at
+evaluation (the UI polls every 1 to 3 s), so step times are accurate to
+the poll, with ms resolution. Pure logic: no FastAPI here.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import json
+import math
+import threading
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from backend.alarm_engine import ACKED, NORM, AlarmEngine, conditions_from_plant, iso_ms
+
+RUBRIC = {
+    "name": "DC-EPMS training rubric v1",
+    "not_an_industry_standard": True,
+    "fail": "critical load lost or time limit exceeded -> 0",
+    "violation_penalty": 10,
+    "late_penalty_per_10_s": 1,
+}
+VIOLATION_EVENTS = ("refused", "procedure_blocked", "bay_blocked")
+
+CHECK_TYPES = (
+    "alarms_acked", "gens_started_cover_demand", "gens_on_bus_cover_demand",
+    "transfer_state", "device_state", "no_sets_running",
+)
+FAIL_TYPES = ("load_lost",)
+INJECT_TYPES = ("utility_loss", "utility_restore", "preset_on_generators", "ups_fault")
+
+
+class TrainingError(Exception):
+    def __init__(self, status: int, detail: str):
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
+
+
+# ── Drill library ───────────────────────────────────────────────────
+def validate_drill(d: dict[str, Any]) -> dict[str, Any]:
+    problems = []
+    for key in ("id", "title", "summary", "path", "steps"):
+        if not d.get(key):
+            problems.append(f"missing {key}")
+    if float(d.get("target_s", 0)) <= 0 or float(d.get("time_limit_s", 0)) <= 0:
+        problems.append("target_s and time_limit_s must be positive")
+    ids = set()
+    for step in d.get("steps") or []:
+        if step.get("id") in ids:
+            problems.append(f"duplicate step {step.get('id')}")
+        ids.add(step.get("id"))
+        if (step.get("check") or {}).get("type") not in CHECK_TYPES:
+            problems.append(f"step {step.get('id')}: unknown check")
+    for f in d.get("fail") or []:
+        if f.get("type") not in FAIL_TYPES:
+            problems.append(f"unknown fail condition {f.get('type')}")
+    for inj in (d.get("setup") or {}).get("inject") or []:
+        if inj.get("type") not in INJECT_TYPES:
+            problems.append(f"unknown injection {inj.get('type')}")
+    if problems:
+        raise ValueError(f"drill {d.get('id')!r} invalid: " + "; ".join(problems))
+    return d
+
+
+def load_drills(directory: Path) -> dict[str, dict[str, Any]]:
+    drills = {}
+    for path in sorted(directory.glob("DRILL-*.json")):
+        drill = validate_drill(json.loads(path.read_text(encoding="utf-8")))
+        drills[drill["id"]] = drill
+    return drills
+
+
+def drill_summary(d: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": d["id"], "version": d.get("version", 1), "title": d["title"],
+        "summary": d["summary"], "path": d["path"], "target_s": d["target_s"],
+        "time_limit_s": d["time_limit_s"],
+        "steps": [{"id": s["id"], "text": s["text"]} for s in d["steps"]],
+    }
+
+
+# ── Conditions on the plant snapshot ────────────────────────────────
+def _path(plant: dict[str, Any], path: str) -> dict[str, Any]:
+    return next((p for p in plant.get("paths", []) if p.get("path") == path), {})
+
+
+def _devices(plant: dict[str, Any], kind: str, path: str) -> list[dict[str, Any]]:
+    return [d for d in plant.get("devices", []) if d.get("kind") == kind and d.get("path") == path]
+
+
+def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine) -> bool:
+    kind = cond.get("type")
+    path = cond.get("path")
+    if kind == "alarms_acked":
+        prefix = str(cond.get("prefix", ""))
+        mine = [a for a in engine.alarms.values() if a.alarm_id.startswith(prefix)]
+        raised = [a for a in mine if a.occurrences > 0]
+        return bool(raised) and all(a.state in (ACKED, NORM) for a in mine)
+    if kind in ("gens_started_cover_demand", "gens_on_bus_cover_demand"):
+        # demand_kw is what the path draws once a source is back
+        # (IT + cooling + auxiliaries + UPS losses), dead bus or not.
+        demand = float(_path(plant, path).get("demand_kw") or 0.0)
+        gens = _devices(plant, "generator", path)
+        if kind == "gens_started_cover_demand":
+            kw = sum(g.get("rated_kw", 0) for g in gens if g.get("state") != "STANDBY"
+                     and g.get("state") != "COOLDOWN")
+        else:
+            kw = float(_path(plant, path).get("gen_on_bus_kw") or 0.0)
+        return demand > 0 and kw >= demand
+    if kind == "transfer_state":
+        return any(d.get("state") == cond.get("state") for d in _devices(plant, "transfer", path))
+    if kind == "device_state":
+        # "states" lists every state that proves the step was done (a
+        # later state counts: the trainee may act between two polls).
+        wanted = cond.get("states") or [cond.get("state")]
+        return any(d.get("id") == cond.get("device") and d.get("state") in wanted
+                   for d in plant.get("devices", []))
+    if kind == "no_sets_running":
+        return not any(g.get("state") in ("RUNNING", "ON_LOAD", "CRANKING")
+                       for g in _devices(plant, "generator", path))
+    return False
+
+
+def failed(conds: list[dict[str, Any]], plant: dict[str, Any]) -> str | None:
+    for cond in conds:
+        if cond.get("type") == "load_lost" and _path(plant, cond.get("path")).get("load_lost"):
+            return f"critical load lost on path {str(cond.get('path')).upper()}"
+    return None
+
+
+# ── Session ─────────────────────────────────────────────────────────
+@dataclass
+class Session:
+    drill: dict[str, Any]
+    operator: str
+    started_ms: int
+    events_mark: float
+    done: list[dict[str, Any]] = field(default_factory=list)
+    outcome: str | None = None          # PASS | FAIL | ABORTED
+    reason: str | None = None
+    ended_ms: int | None = None
+    violations: list[dict[str, Any]] = field(default_factory=list)
+    score: int | None = None
+    ledger_entry_id: str | None = None
+
+    @property
+    def active(self) -> bool:
+        return self.outcome is None
+
+
+class TrainingManager:
+    """Single drill at a time over one DeviceController + AlarmEngine."""
+
+    def __init__(self, drills: dict[str, dict[str, Any]],
+                 clock: Callable[[], float] = time.time):
+        self.drills = drills
+        self.clock = clock
+        self.session: Session | None = None
+        self.last_report: dict[str, Any] | None = None
+        self._lock = threading.Lock()
+
+    def _now_ms(self) -> int:
+        return int(round(self.clock() * 1000))
+
+    def start(self, drill_id: str, operator: str, ctl: Any, engine: AlarmEngine) -> dict[str, Any]:
+        drill = self.drills.get(drill_id)
+        if drill is None:
+            raise TrainingError(404, f"unknown drill {drill_id!r}")
+        with self._lock:
+            if self.session is not None and self.session.active:
+                raise TrainingError(409, f"drill {self.session.drill['id']} is running: abort it first")
+            ctl.reset(operator)
+            engine.reset()
+            setup = drill.get("setup") or {}
+            for pattern, mode in (setup.get("authority") or {}).items():
+                for device_id in sorted(fnmatch.filter(ctl.devices, pattern)):
+                    if ctl.devices[device_id].authority != mode:
+                        ctl.set_authority(device_id, mode, "training")
+            mark = ctl.wall_clock()
+            for inj in setup.get("inject") or []:
+                kind = inj["type"]
+                if kind == "utility_loss":
+                    ctl.inject_utility_loss(inj["path"], "training")
+                elif kind == "utility_restore":
+                    ctl.restore_utility(inj["path"], "training")
+                elif kind == "preset_on_generators":
+                    ctl.preset_on_generators(inj["path"], "training")
+                elif kind == "ups_fault":
+                    ctl.inject_ups_fault(inj["device"], inj["fault"], "training")
+            self.session = Session(drill=drill, operator=operator,
+                                   started_ms=self._now_ms(), events_mark=mark)
+            self.last_report = None
+        return self.evaluate(ctl, engine)
+
+    def evaluate(self, ctl: Any, engine: AlarmEngine) -> dict[str, Any]:
+        with self._lock:
+            s = self.session
+            if s is None:
+                return {"active": False, "session": None, "last_report": self.last_report}
+            if not s.active:
+                return self._view(s)
+            plant = ctl.snapshot_all()
+            engine.evaluate(conditions_from_plant(plant))
+            now = self._now_ms()
+            steps = s.drill["steps"]
+            while len(s.done) < len(steps):
+                step = steps[len(s.done)]
+                if not check(step["check"], plant, engine):
+                    break
+                s.done.append({"id": step["id"], "text": step["text"], "t_ms": now - s.started_ms})
+            s.violations = [
+                e for e in list(ctl._events)
+                if e.get("event") in VIOLATION_EVENTS and e.get("ts", 0) >= s.events_mark
+            ]
+            reason = failed(s.drill.get("fail") or [], plant)
+            if reason:
+                self._finish(s, "FAIL", reason, now)
+            elif len(s.done) == len(steps):
+                self._finish(s, "PASS", None, now)
+            elif now - s.started_ms > float(s.drill["time_limit_s"]) * 1000:
+                self._finish(s, "FAIL", "time limit exceeded", now)
+            view = self._view(s)
+            if not s.active:
+                self.last_report = self._report(s, ctl, engine)
+                view["last_report"] = self.last_report
+            return view
+
+    def abort(self, actor: str, ctl: Any, engine: AlarmEngine) -> dict[str, Any]:
+        with self._lock:
+            s = self.session
+            if s is None or not s.active:
+                raise TrainingError(409, "no drill is running")
+            self._finish(s, "ABORTED", f"aborted by {actor}", self._now_ms())
+            self.last_report = self._report(s, ctl, engine)
+            view = self._view(s)
+            view["last_report"] = self.last_report
+            return view
+
+    def _finish(self, s: Session, outcome: str, reason: str | None, now: int) -> None:
+        s.outcome, s.reason, s.ended_ms = outcome, reason, now
+        s.score = score(s)
+
+    @staticmethod
+    def _view(s: Session) -> dict[str, Any]:
+        now_ms = s.ended_ms
+        steps = []
+        for i, step in enumerate(s.drill["steps"]):
+            done = s.done[i] if i < len(s.done) else None
+            steps.append({
+                "id": step["id"], "text": step["text"],
+                "done": done is not None, "t_ms": done["t_ms"] if done else None,
+                "current": done is None and i == len(s.done) and s.active,
+            })
+        return {
+            "active": s.active,
+            "session": {
+                "drill": drill_summary(s.drill), "operator": s.operator,
+                "started": iso_ms(s.started_ms), "started_ms": s.started_ms,
+                "ended": iso_ms(now_ms), "outcome": s.outcome, "reason": s.reason,
+                "score": s.score, "violations": len(s.violations), "steps": steps,
+                "ledger_entry_id": s.ledger_entry_id,
+            },
+        }
+
+    def _report(self, s: Session, ctl: Any, engine: AlarmEngine) -> dict[str, Any]:
+        soe = []
+        for e in list(ctl._events):
+            if e.get("ts", 0) >= s.events_mark - 0.001:
+                ms = int(round(float(e["ts"]) * 1000))
+                soe.append({"ts": iso_ms(ms), "ts_ms": ms, "source": "plant",
+                            **{k: v for k, v in e.items() if k != "ts"}})
+        for j in engine.journal_since(s.started_ms - 5000):
+            soe.append({"source": "alarm", **j})
+        for d in s.done:
+            ms = s.started_ms + d["t_ms"]
+            soe.append({"ts": iso_ms(ms), "ts_ms": ms, "source": "training",
+                        "event": "step_done", "step": d["id"]})
+        soe.sort(key=lambda r: r.get("ts_ms", 0))
+        return {
+            "report": "DC-EPMS operator training report",
+            "simulated": True,
+            "drill": drill_summary(s.drill),
+            "operator": s.operator,
+            "started": iso_ms(s.started_ms), "ended": iso_ms(s.ended_ms),
+            "duration_ms": (s.ended_ms or s.started_ms) - s.started_ms,
+            "outcome": s.outcome, "reason": s.reason, "score": s.score,
+            "rubric": RUBRIC,
+            "steps": [dict(d) for d in s.done],
+            "violations": [dict(v) for v in s.violations],
+            "soe": soe,
+            "time_note": "Server observation times (ms resolution); steps are "
+                         "stamped when the UI poll evaluated them.",
+        }
+
+
+def score(s: Session) -> int:
+    if s.outcome != "PASS":
+        return 0
+    elapsed_s = ((s.ended_ms or s.started_ms) - s.started_ms) / 1000.0
+    late = max(0.0, elapsed_s - float(s.drill["target_s"]))
+    points = 100 - RUBRIC["violation_penalty"] * len(s.violations) \
+        - RUBRIC["late_penalty_per_10_s"] * math.ceil(late / 10.0)
+    return max(0, int(points))

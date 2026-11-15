@@ -710,7 +710,7 @@ class TestAgentIsolation:
                 continue
             text = path.read_text(encoding="utf-8")
             if any(name in text for name in ("device_control", "mv_switching", "power_scenarios",
-                                             "alarm_routes")):
+                                             "alarm_routes", "training_routes")):
                 offenders.append(path.name)
         assert offenders == []
 

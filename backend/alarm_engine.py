@@ -105,6 +105,16 @@ class AlarmEngine:
         self._journal: deque[dict[str, Any]] = deque(maxlen=JOURNAL_SIZE)
         self._lock = threading.Lock()
 
+    def reset(self) -> None:
+        """Forget every alarm and the journal (training restart)."""
+        with self._lock:
+            self.alarms.clear()
+            self._journal.clear()
+
+    def journal_since(self, ms: int) -> list[dict[str, Any]]:
+        with self._lock:
+            return [j for j in self._journal if j["ts_ms"] >= ms]
+
     def _now_ms(self) -> int:
         return int(round(self.clock() * 1000))
 

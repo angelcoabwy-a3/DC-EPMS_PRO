@@ -196,6 +196,11 @@ COMMANDS: dict[str, dict[str, tuple[str, str]]] = {
             "Opens 52-GM (if closed) and closes 52-U (open transition). "
             "Needs utility voltage on the incomer.",
         ),
+        "STOP_GENERATORS": (
+            "Stop generator bus",
+            "Opens 52-G of every running set of the path and starts the "
+            "cooldown. Refused while the path is on generators.",
+        ),
     },
     KIND_GENERATOR: {
         "START": (
@@ -453,6 +458,26 @@ class DeviceController:
                 self._event("auto_transfer", xfer, "controller", to_state=XFER_GENERATORS,
                             detail="generator bus ready: 52-GM closed")
 
+    def _running_sets(self, path: str) -> list[Device]:
+        return [d for d in self._of(KIND_GENERATOR, path) if d.state in (GEN_RUNNING, GEN_ON_LOAD)]
+
+    def preset_on_generators(self, path: str, actor: str) -> dict[str, Any]:
+        """Training preset: every available set running and synchronised,
+        52-GM closed. Skips the 8 s crank so a drill can start there."""
+        with self._lock:
+            self._advance()
+            now = self.clock()
+            for gen in self._gens_available(path):
+                bay = self.bays[gen.device_id]
+                gen.state, gen.state_since = GEN_RUNNING, now
+                ctx = mv.BayContext(now=now, engine_at_rated=True)
+                if bay.cb != mv.CLOSED and mv.interlock(bay, mv.OP_CLOSE_CB, ctx) is None:
+                    mv.apply(bay, mv.OP_CLOSE_CB, now)
+            for xfer in self._of(KIND_TRANSFER, path):
+                xfer.state, xfer.state_since = XFER_GENERATORS, now
+            self._advance()
+            return self._plant_event("preset_on_generators", path, actor)
+
     def _of_kind(self, kind: str) -> list[Device]:
         return [d for d in self.devices.values() if d.kind == kind]
 
@@ -699,6 +724,12 @@ class DeviceController:
             if command == "START_GENERATORS":
                 if not self._start_candidates(dev.path, auto_only=False):
                     return "No set is in standby, in service and out of LOCAL."
+                return None
+            if command == "STOP_GENERATORS":
+                if dev.state == XFER_GENERATORS:
+                    return "Path is on generators: retransfer to utility first."
+                if not self._running_sets(dev.path):
+                    return "No set of this path is running."
                 return None
             if command == "TRANSFER_TO_GENERATORS":
                 if dev.state == XFER_GENERATORS:
@@ -1029,6 +1060,16 @@ class DeviceController:
                 return self._event(
                     "command", dev, actor, command=sel.command, from_state=previous,
                     to_state=dev.state, started=[g.device_id for g in started],
+                )
+            if sel.command == "STOP_GENERATORS":
+                stopped = self._running_sets(dev.path)
+                for gen in stopped:
+                    mv.apply(self.bays[gen.device_id], mv.OP_OPEN_CB, self.clock())
+                    gen.state, gen.state_since = GEN_COOLDOWN, self.clock()
+                self._advance()
+                return self._event(
+                    "command", dev, actor, command=sel.command, from_state=previous,
+                    to_state=dev.state, stopped=[g.device_id for g in stopped],
                 )
             dev.state = _NEXT_STATE[sel.command]
             dev.state_since = self.clock()

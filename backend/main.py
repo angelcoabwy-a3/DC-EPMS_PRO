@@ -3670,10 +3670,24 @@ try:
 
     app.state.alarm_engine = AlarmEngine()
     register_alarm_routes(app, _device_controller, app.state.alarm_engine)
+    # T1: operator training drills over the same simulated plant.
+    from backend.training import TrainingManager, load_drills
+    from backend.training_routes import register_training_routes
+
+    _TRAINING_DIR = PROJECT_ROOT / "config" / "training_drills"
+
+    def _training_manager():
+        mgr = getattr(app.state, "training_manager", None)
+        if mgr is None and _TRAINING_DIR.exists():
+            mgr = TrainingManager(load_drills(_TRAINING_DIR))
+            app.state.training_manager = mgr
+        return mgr
+
+    register_training_routes(app, _device_controller, app.state.alarm_engine, _training_manager)
     register_power_scenario_routes(app, _power_scenario_library, _power_design)
     log.info(
         "[BOOT] Power plant control mounted (/api/devices, /api/mv, "
-        "/api/power-scenarios, /api/alarms; %d scenarios)", len(_power_scenario_library()),
+        "/api/power-scenarios, /api/alarms, /api/training; %d scenarios)", len(_power_scenario_library()),
     )
 except Exception as e:
     log.error("[BOOT] Device control mount failed: %s", e, exc_info=True)
