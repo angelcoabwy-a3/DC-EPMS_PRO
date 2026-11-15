@@ -170,6 +170,10 @@ T3b (2026-11-15): sync-check supervised close (EXECUTE arms, server
   closes at computed window entry, 30 s timeout, /sync-cancel), window
   ETA in the faceplate, DC-EPMS-074 fixed (report SOE origin). Ledger
   has the arming, not the close instant. pytest 1953 / vitest 847.
+UI-1 (2026-11-15): Power SLD at 100 % zoom. core/sld_viewport.js
+  named views + wheel zoom + drag pan, viewport-height canvas, rail
+  hidden on #power (body[data-route]), inspector toggle, drill HUD
+  with ACK ALL. Phones unchanged. vitest 868 / 48 files.
 NEXT: operator applies the bundle and eyeballs the Power SLD (strip +
   sequence in What-If); then GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;

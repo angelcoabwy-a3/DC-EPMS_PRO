@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### UI-1 - Power SLD fits the screen (2026-11-15)
+
+- Named views (Phase 1, Path A, Path B, Phase 2, Farm, All), wheel
+  zoom, drag pan (`core/sld_viewport.js`); canvas takes the viewport
+  height; incidents rail hidden on the Power route; inspector toggle.
+- Drill HUD over the diagram with the current step and ACK ALL.
+- Trigger: the operator needed 50 % browser zoom to read the SLD.
+- Phones unchanged (DC-EPMS-064 layout). vitest 868 (48 files).
+
 ### T3b - sync-check supervised close + DC-EPMS-074 (2026-11-15)
 
 - Closed-transition close is now sync-check supervised: EXECUTE arms
