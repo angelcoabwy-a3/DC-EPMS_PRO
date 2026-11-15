@@ -61,6 +61,8 @@ export function navigateTo(routeId) {
         return true;
     }
 
+    // UI-1: route-scoped layout rules (e.g. the Power view drops the rail).
+    document.body.dataset.route = routeId;
     document.querySelectorAll('.view').forEach(v => v.setAttribute('hidden', ''));
     const view = document.getElementById(handler.viewId);
     if (view) view.removeAttribute('hidden');

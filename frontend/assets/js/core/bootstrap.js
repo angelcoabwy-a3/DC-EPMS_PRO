@@ -192,6 +192,7 @@ function navigateTo(routeKey) {
     // becomes the default view, never a hidden view or a blank page.
     // guardRoute() is a passthrough when demo mode is off.
     routeKey = guardRoute(routeKey);
+    if (document.body) document.body.dataset.route = routeKey;
 
     // T2.2: ES-module routes are owned by core/router.js. Delegate any
     // registered route to it and return. After T2.1 closed, this covers

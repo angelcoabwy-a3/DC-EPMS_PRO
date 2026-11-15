@@ -47,6 +47,9 @@ import { trainingHtml } from '../core/training_view.js';
 import { needleAngle, permissive, etaNow, etaText } from '../core/synchroscope.js';
 import { escapeHTML } from '../core/sanitize.js';
 import {
+    attachViewport, viewportToolbarHtml, presetForPath, SLD_PRESETS, DEFAULT_PRESET,
+} from '../core/sld_viewport.js';
+import {
     severityFromChannels, symbol, wire, sparkPoints, sparkPolyline,
     createSparkTracker, createActuationModal, legend,
 } from '../core/diagram_kit.js';
@@ -93,6 +96,12 @@ const _fpPending = new Map();   // deviceId -> { token, label, expiresAt }
 let _seenUnack = new Set();
 let _prevXfer = {};
 let _prevSteps = 0;
+// UI-1: SLD viewport (named views, zoom, pan) + inspector toggle.
+let _vp = null;
+let _vpReturn = DEFAULT_PRESET;
+let _inspOpen = true;
+const _VP_KEY = 'dcepms.sld.view';
+const _INSP_KEY = 'dcepms.sld.inspector';
 
 /** The grid the drawing shows: plant mirror in LIVE, the DAG otherwise. */
 function _effGrid(grid) {
@@ -742,7 +751,12 @@ function _setFarmLod(lod) {
     const svg = document.querySelector('#view-power .pid-svg');
     if (!svg) return;
     svg.innerHTML = _buildFlatMarkup();
-    svg.setAttribute('viewBox', _farmLod === 1 ? _FARM_FOCUS_VIEWBOX : _FLAT.viewBox);
+    if (_vp) {
+        if (_farmLod === 1) { _vpReturn = _vp.preset || _vpReturn; _vp.set('farm'); }
+        else _vp.set(_vpReturn === 'farm' ? DEFAULT_PRESET : _vpReturn);
+    } else {
+        svg.setAttribute('viewBox', _farmLod === 1 ? _FARM_FOCUS_VIEWBOX : _FLAT.viewBox);
+    }
     if (_initialized) _refresh();
 }
 
@@ -789,7 +803,7 @@ const _HMI_LEGEND = Object.freeze([
 function _renderFlatSld() {
     const svg = document.querySelector('#view-power .pid-svg');
     if (!svg) return;
-    svg.setAttribute('viewBox', _FLAT.viewBox);
+    if (_vp) _vp.reapply(); else svg.setAttribute('viewBox', _FLAT.viewBox);
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.classList.add('pf-svg');
     svg.setAttribute('data-scheme', BREAKER_SCHEME.id);
@@ -1101,6 +1115,7 @@ function _renderVida2(grid) {
 
 // ── HMI H4: alarm banner ────────────────────────────────────────
 function _renderAlarms() {
+    _renderHud();
     const el = document.getElementById('pwr-alarms');
     if (!el) return;
     const sandbox = _mode === 'whatif';
@@ -1160,6 +1175,125 @@ function _soundCues() {
 }
 
 // ── T2: training coach ───────────────────────────────────────────
+// ── UI-1: SLD viewport + inspector toggle + drill HUD ───────────
+function _store(key, value) {
+    try { localStorage.setItem(key, value); } catch (_e) { /* storage off */ }
+}
+function _load(key) {
+    try { return localStorage.getItem(key); } catch (_e) { return null; }
+}
+
+function _buildViewport(svg) {
+    const canvas = svg && svg.closest('.pid-canvas');
+    if (!canvas || document.getElementById('pwr-vp')) return;
+    canvas.classList.add('vp-canvas');
+    const bar = document.createElement('div');
+    bar.id = 'pwr-vp';
+    bar.className = 'pwr-vp';
+    bar.setAttribute('role', 'toolbar');
+    bar.setAttribute('aria-label', 'Diagram view');
+    bar.addEventListener('click', _onViewportClick);
+    canvas.insertBefore(bar, canvas.firstChild);
+    const hud = document.createElement('div');
+    hud.id = 'pwr-hud';
+    hud.className = 'pwr-hud';
+    hud.hidden = true;
+    hud.setAttribute('aria-live', 'polite');
+    hud.addEventListener('click', _onAlarmClick);
+    canvas.appendChild(hud);
+    const savedInsp = _load(_INSP_KEY);
+    // Default: inspector open only where the drawing keeps ~1300 px.
+    _inspOpen = savedInsp === null ? (window.innerWidth || 0) >= 1700 : savedInsp !== '0';
+    _applyInspector();
+    const saved = _load(_VP_KEY);
+    _vp = attachViewport(svg, {
+        preset: saved && SLD_PRESETS[saved] && saved !== 'farm' ? saved : DEFAULT_PRESET,
+        onChange: ({ preset }) => {
+            _renderViewportBar(preset);
+            if (preset && preset !== 'farm') { _vpReturn = preset; _store(_VP_KEY, preset); }
+        },
+    });
+    // The canvas follows the window; a named view re-fits to it.
+    if (typeof ResizeObserver !== 'undefined') {
+        let last = '';
+        new ResizeObserver(() => {
+            const r = svg.getBoundingClientRect();
+            const key = `${Math.round(r.width)}x${Math.round(r.height)}`;
+            if (key !== last && r.width > 0) { last = key; _vp && _vp.refit(); }
+        }).observe(svg);
+    }
+    // A node selected while the inspector is hidden opens it.
+    subscribe('selectedAsset', (id) => { if (id && !_inspOpen) _setInspector(true); });
+}
+
+function _renderViewportBar(preset = _vp && _vp.preset) {
+    const bar = document.getElementById('pwr-vp');
+    if (bar) bar.innerHTML = viewportToolbarHtml(preset, { inspectorOpen: _inspOpen });
+}
+
+function _onViewportClick(ev) {
+    const btn = ev.target.closest('button');
+    if (!btn || !_vp) return;
+    if (btn.dataset.vp) {
+        if (btn.dataset.vp !== 'farm' && _farmLod === 1) { _vpReturn = btn.dataset.vp; _setFarmLod(0); }
+        _vp.set(btn.dataset.vp);
+    } else if (btn.dataset.vpZoom) {
+        _vp.zoom(btn.dataset.vpZoom === 'in' ? 1.25 : 0.8);
+    } else if (btn.dataset.vpInsp) {
+        _setInspector(!_inspOpen);
+    }
+}
+
+function _applyInspector() {
+    const view = document.getElementById('view-power');
+    if (view) view.classList.toggle('insp-closed', !_inspOpen);
+}
+
+function _setInspector(open) {
+    _inspOpen = !!open;
+    _store(_INSP_KEY, _inspOpen ? '1' : '0');
+    _applyInspector();
+    _renderViewportBar();
+}
+
+/** Compact drill coach over the diagram: the operator watches the
+ *  plant and the current step without scrolling back to the coach. */
+function _renderHud() {
+    const hud = document.getElementById('pwr-hud');
+    if (!hud) return;
+    const s = _trView && _trView.active && _trView.session;
+    const unack = _mode === 'live'
+        ? ((_liveAlarms && _liveAlarms.alarms) || []).filter((a) => a.state === 'UNACK').length : 0;
+    if (!s && !unack) { hud.hidden = true; hud.innerHTML = ''; return; }
+    let html = '';
+    if (s) {
+        const steps = s.steps || [];
+        const cur = steps.find((x) => x.current) || null;
+        const done = steps.filter((x) => x.done).length;
+        const elapsed = Math.max(0, Date.now() - s.started_ms);
+        const mm = String(Math.floor(elapsed / 60000)).padStart(2, '0');
+        const ss = String(Math.floor(elapsed / 1000) % 60).padStart(2, '0');
+        html += `<div class="hud-top"><b>${escapeHTML(s.drill.id)}</b>`
+            + `<span class="hud-clock">${mm}:${ss}</span>`
+            + `<span>step ${Math.min(done + 1, steps.length)} / ${steps.length}</span>`
+            + `<span class="hud-limit">limit ${escapeHTML(String(s.drill.time_limit_s))} s</span></div>`
+            + (cur ? `<div class="hud-step">${escapeHTML(cur.text)}</div>` : '');
+    }
+    if (unack) {
+        html += `<div class="hud-al"><span>${unack} unacknowledged alarm${unack === 1 ? '' : 's'}</span>`
+            + '<button type="button" class="hud-btn" data-ack-all="1">ACK ALL</button></div>';
+    }
+    hud.hidden = false;
+    hud.innerHTML = html;
+}
+
+function _focusDrill() {
+    if (!_vp) return;
+    _vp.set(presetForPath(_drillPath()));
+    const canvas = document.querySelector('#view-power .pid-canvas');
+    if (canvas && canvas.scrollIntoView) canvas.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
 function _drillPath() {
     const s = _trView && _trView.session;
     return s ? s.drill.path : 'a';
@@ -1175,6 +1309,7 @@ function _renderTraining() {
         drills: _drills, view: _trView, pathSummary: ps, selected: _trSelected,
         message: _trMsg, soundOn: _audio.on, soundSupported: _audio.supported,
     });
+    _renderHud();
 }
 
 async function _loadTraining() {
@@ -1229,6 +1364,7 @@ async function _onTrainingClick(ev) {
     _trMsg = r.ok ? '' : (r.status === 401 || r.status === 403
         ? 'Refused: drills reset the shared plant and need a FACILITY_MANAGER session.' : r.detail);
     await _trainingTick();
+    if (r.ok && btn.dataset.trStart) _focusDrill();
     await _pollAlarms(true);
 }
 
@@ -1648,6 +1784,7 @@ export function initPowerView() {
     // the .pid-svg element so it survives _renderFlatSld() re-renders.
     const flatSvg = document.querySelector('#view-power .pid-svg');
     if (flatSvg) flatSvg.addEventListener('click', _onFlatClick);
+    _buildViewport(flatSvg);
     // L3 Phase 2: LIVE <-> WHAT-IF toggle + flat-SLD render of the local
     // DAG fault-cascade (the sandbox's simulated faults become visible).
     _buildModeToggle();
@@ -1685,6 +1822,12 @@ export const __power_test__ = {
     n1Overlay: _n1Overlay,
     setReplay: _setReplay,
     setFarmLod: _setFarmLod,
+    buildViewport: _buildViewport,
+    getViewport: () => _vp,
+    renderHud: _renderHud,
+    setTrainingView: (v) => { _trView = v; },
+    setLiveAlarms: (v) => { _liveAlarms = v; },
+    isInspectorOpen: () => _inspOpen,
     getFarmLod: () => _farmLod,
     farmFocusViewBox: _FARM_FOCUS_VIEWBOX,
     scrubTo: _scrubTo,
@@ -1716,6 +1859,9 @@ export const __power_test__ = {
         _initialized = false;
         _mode = 'live';
         _farmLod = 0;
+        _vp = null;
+        _vpReturn = DEFAULT_PRESET;
+        _inspOpen = true;
         if (_unsubTelemetry) { _unsubTelemetry(); _unsubTelemetry = null; }
         const modal = document.getElementById('pwr-breaker-modal');
         if (modal) modal.remove();

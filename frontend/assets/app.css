@@ -10881,3 +10881,108 @@ table.opt-votes td {
 .sy-note { clear: both; color: #8a929c; padding-top: 4px; }
 .sy-eta { color: #c3c8cf; font-variant-numeric: tabular-nums; }
 .sy-armed { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; padding: 3px 6px; border: 1px dashed #ffa726; border-radius: 4px; color: #ffa726; font-weight: 700; }
+
+/* ════════════════════════════════════════════════════════════════
+ * UI-1 (2026-11-15): Power SLD fits the screen at 100 % zoom.
+ * The global incidents rail leaves the Power route (the SLD needs the
+ * width), the canvas takes the viewport height, and the drawing is
+ * read through named views + wheel zoom + drag pan (sld_viewport.js).
+ * Desktop only: the phone layout (below 900 px) is unchanged.
+ * ════════════════════════════════════════════════════════════════ */
+@media (min-width: 901px) {
+    body[data-route="power"] .app-main { grid-template-columns: 280px minmax(0, 1fr); }
+    body[data-route="power"] .panel-side { display: none; }
+    body #view-power .pid-canvas.vp-canvas { height: calc(100dvh - 132px); min-height: 440px; }
+    #view-power.insp-closed .sld-stage-row { grid-template-columns: minmax(0, 1fr); }
+    #view-power.insp-closed .sld-info-panel { display: none; }
+    #view-power .sld-stage-row .sld-info-panel { max-height: calc(100dvh - 132px); overflow-y: auto; }
+}
+/* Every width: a fixed-height canvas; the svg fills it and the view
+ * decides what is in frame (an auto-height svg would feed back into
+ * the view fit). Phones get a shorter canvas. */
+#view-power .pid-canvas.vp-canvas {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: min(72dvh, 620px);
+    padding: 0;
+    overflow: hidden;
+}
+#view-power .vp-canvas .pid-svg {
+    flex: 1 1 0;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    display: block;
+}
+@media (pointer: fine) {
+    #view-power .vp-canvas .pid-svg { cursor: grab; touch-action: none; }
+}
+/* Phones keep the DC-EPMS-064 behaviour: the drawing stays 860 px wide
+ * and scrolls sideways with the finger; the view buttons still apply. */
+@media (max-width: 900px) {
+    #view-power .pid-canvas.vp-canvas { overflow-x: auto; overflow-y: hidden; }
+    #view-power .pwr-vp { position: sticky; left: 0; }
+    #view-power .pwr-hud { position: sticky; left: 8px; top: auto; margin: 6px 8px; max-width: none; }
+}
+#view-power .vp-canvas .pid-svg.vp-dragging { cursor: grabbing; }
+.pwr-vp {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #2A3038;
+    background: #0F1216;
+    font-family: var(--font-mono);
+}
+.pwr-vp .vp-group { display: inline-flex; border: 1px solid #2A3038; border-radius: 4px; overflow: hidden; }
+.pwr-vp .vp-btn {
+    min-height: 30px;
+    padding: 0 10px;
+    background: transparent;
+    color: #9aa4b2;
+    border: 0;
+    border-right: 1px solid #2A3038;
+    font: inherit;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+}
+.pwr-vp .vp-group .vp-btn:last-child { border-right: 0; }
+.pwr-vp .vp-btn:hover { color: #e2e8f0; background: #161b21; }
+.pwr-vp .vp-btn[aria-pressed="true"] { color: #0B0D10; background: #9aa4b2; }
+.pwr-vp .vp-insp { border: 1px solid #2A3038; border-radius: 4px; }
+.pwr-vp .vp-hint { margin-left: auto; color: #5b6573; font-size: 10px; }
+.pwr-hud {
+    position: absolute;
+    top: 50px;
+    right: 10px;
+    max-width: 380px;
+    padding: 8px 10px;
+    background: rgba(11, 13, 16, 0.92);
+    border: 1px solid #f59e0b;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: #cbd5e1;
+    pointer-events: none;
+    z-index: 5;
+}
+.pwr-hud .hud-al { display: flex; gap: 10px; align-items: center; margin-top: 6px; color: #fca5a5; }
+.pwr-hud .hud-al:first-child { margin-top: 0; }
+.pwr-hud .hud-btn {
+    pointer-events: auto;
+    min-height: 28px;
+    padding: 0 10px;
+    background: #7f1d1d;
+    color: #fee2e2;
+    border: 1px solid #ef4444;
+    border-radius: 3px;
+    font: inherit;
+    cursor: pointer;
+}
+.pwr-hud .hud-top { display: flex; gap: 10px; align-items: baseline; }
+.pwr-hud .hud-clock { color: #f8fafc; font-size: 13px; }
+.pwr-hud .hud-limit { color: #7c8796; }
+.pwr-hud .hud-step { margin-top: 4px; color: #fbbf24; }
