@@ -10989,3 +10989,20 @@ table.opt-votes td {
 .pwr-hud .hud-clock { color: #f8fafc; font-size: 13px; }
 .pwr-hud .hud-limit { color: #7c8796; }
 .pwr-hud .hud-step { margin-top: 4px; color: #fbbf24; }
+
+/* T4 (2026-11-15): protective relay tags on the Power SLD. Grey by
+ * default (ISA-101); colour only for a picked-up / blocking function.
+ * N/M chips are identification only: dashed, dimmed. */
+.pf-relay-cap { font: 600 7px var(--font-mono); letter-spacing: 0.05em; fill: #6b737d; }
+.pf-relay-box { fill: #1b1f25; stroke: #5b626c; stroke-width: 1; }
+.pf-relay-num { font: 700 8.5px var(--font-mono); fill: #c3c8cf; }
+.pf-relay-state { font: 600 6.5px var(--font-mono); letter-spacing: 0.03em; fill: #8a929c; }
+.pf-relay[data-tone="id"] .pf-relay-box { stroke-dasharray: 2 2; fill: none; }
+.pf-relay[data-tone="id"] text { fill: #5b626c; }
+.pf-relay[data-tone="off"] .pf-relay-state { fill: #5b626c; }
+.pf-relay[data-tone="ok"] .pf-relay-state { fill: #9fd8a8; }
+.pf-relay[data-tone="warn"] .pf-relay-box { stroke: #f59e0b; }
+.pf-relay[data-tone="warn"] .pf-relay-state { fill: #fbbf24; }
+.pf-relay[data-tone="crit"] .pf-relay-box { fill: #3a1214; stroke: #ef4444; }
+.pf-relay[data-tone="crit"] .pf-relay-state { fill: #fca5a5; }
+.dk-swatch-relay { fill: #1b1f25; stroke: #c3c8cf; }

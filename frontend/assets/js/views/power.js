@@ -44,8 +44,10 @@ import { ControlRoomAudio } from '../core/control_room_audio.js';
 import { plantPost, plantGet } from '../core/plant_client.js';
 import { faceplateHtml } from '../core/sbo_faceplate.js';
 import { trainingHtml } from '../core/training_view.js';
+import { openPrintable } from '../core/training_print.js';
 import { needleAngle, permissive, etaNow, etaText } from '../core/synchroscope.js';
 import { escapeHTML } from '../core/sanitize.js';
+import { relayRowSvg, relayStates, applyRelays } from '../core/relay_tags.js';
 import {
     attachViewport, viewportToolbarHtml, presetForPath, SLD_PRESETS, DEFAULT_PRESET,
 } from '../core/sld_viewport.js';
@@ -471,7 +473,10 @@ function _flatPath(suffix, S, energized) {
         + flowTxt('gen', T.gen + 18, gmY - 16, 'start');
     const strips = _unitStrip('genset_' + suffix, T.gen, genY - 52)
         + _unitStrip('ups_' + suffix, T.ups, S - 52);
-    return `<g class="pf-pathgroup" data-path="${suffix}">${wires}${breakers}${mv}${parBus}${nodes}${labels}${strips}${tag}</g>`;
+    // T4: protective relay tags of the incomer / transformer (27 and 25
+    // simulated, the rest identification only: core/relay_tags.js).
+    const relays = relayRowSvg(suffix, 232, S + 84);
+    return `<g class="pf-pathgroup" data-path="${suffix}">${wires}${breakers}${mv}${parBus}${nodes}${labels}${strips}${tag}${relays}</g>`;
 }
 
 /** HMI H2: small breaker for devices the model does not operate. */
@@ -781,8 +786,8 @@ function _buildFlatMarkup() {
         + tie
         + _flatPhase2()
         // two blocks so the legend never sits on the UTILITY A label
-        + legend(_HMI_LEGEND.slice(0, 4), 16, 96)
-        + legend(_HMI_LEGEND.slice(4), 16, 640);
+        + legend(_HMI_LEGEND.slice(0, 5), 16, 96)
+        + legend(_HMI_LEGEND.slice(5), 16, 640);
 }
 
 // HMI H1 legend: grey = normal, colour = exception; breaker convention
@@ -792,6 +797,7 @@ const _HMI_LEGEND = Object.freeze([
     { swatch: 'deenergized', label: 'De-energized' },
     { swatch: 'brk-closed', label: BREAKER_SCHEME.legendClosed },
     { swatch: 'brk-open', label: BREAKER_SCHEME.legendOpen },
+    { swatch: 'relay', label: 'Relay 27 / 25 simulated · N/M = not modelled' },
     { swatch: 'interlock', label: 'Interlock (52-U / 52-GM)' },
     { swatch: 'model', label: 'MODEL = design value, not metered' },
     { swatch: 'warning', label: 'Warning (|z| >= 2)' },
@@ -1007,6 +1013,14 @@ function _buildN1Toggle() {
 }
 
 /** Render the local DAG grid state (the fault cascade) onto the flat SLD. */
+/** T4: relay chips follow the live plant (LIVE) or the DAG sandbox. */
+function _applyRelays(grid) {
+    const root = document.querySelector('#view-power .pid-svg');
+    if (!root) return;
+    const plant = _mode === 'live' ? _plant : null;
+    for (const p of ['a', 'b']) applyRelays(root, p, relayStates(p, plant, grid));
+}
+
 function _applyGrid(grid) {
     if (!grid) return;
     document.querySelectorAll('#view-power .pid-svg .pf-node').forEach((node) => {
@@ -1024,6 +1038,7 @@ function _applyGrid(grid) {
     });
     _applyUnits(grid);
     _applyFlow(grid);
+    _applyRelays(grid);
     _eventLog.observe(grid);
     _renderVida2(grid);
     // Transfer position from the DAG (What-If / Replay show the
@@ -1342,6 +1357,18 @@ async function _onTrainingClick(ev) {
         _audio.setOn(!_audio.on);
         if (_audio.on) _audio.chime();
         _renderTraining();
+        return;
+    }
+    if (btn.dataset.trPrint) {
+        // Open the window inside the click (popup blockers allow that),
+        // then fill it once the report arrives.
+        const w = window.open('', '_blank');
+        const r = await plantGet('/api/training/report');
+        if (!r.ok) { if (w) w.close(); _trMsg = r.detail; _renderTraining(); return; }
+        if (!openPrintable(r.data, { open: () => w })) {
+            _trMsg = 'The browser blocked the report window: allow pop-ups for this site, or download the JSON.';
+            _renderTraining();
+        }
         return;
     }
     if (btn.dataset.trReport) {

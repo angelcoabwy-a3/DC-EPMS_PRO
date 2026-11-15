@@ -73,6 +73,7 @@ export function trainingHtml({ drills = [], view = null, pathSummary = null, now
             + '</span>'
             + (s.reason ? `<span>${escapeHTML(s.reason)}</span>` : '')
             + (s.ledger_entry_id ? `<span class="tr-ledger">ledger ${escapeHTML(String(s.ledger_entry_id).slice(0, 12))}</span>` : '')
+            + '<button type="button" class="tr-btn" data-tr-print="1">Print report (PDF)</button>'
             + '<button type="button" class="tr-btn" data-tr-report="1">Download report (JSON)</button></div>'
             + '<div class="tr-note">Rubric: DC-EPMS training rubric v2 (ours, not an industry standard): -10 per refused command or switching outside the procedure, -1 per 10 s late.</div>';
     }

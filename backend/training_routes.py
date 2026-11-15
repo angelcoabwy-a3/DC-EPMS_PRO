@@ -55,13 +55,23 @@ def register_training_routes(
         if s is None or s.active or s.ledger_entry_id or mgr.last_report is None:
             return view
         report = mgr.last_report
+        digest = report_sha256(report)
         entry = await _ledger_append(request.app, s.operator, ACTION_TRAINING_RESULT, {
             "drill": s.drill["id"], "version": s.drill.get("version", 1),
             "outcome": s.outcome, "score": s.score, "reason": s.reason,
-            "duration_ms": report["duration_ms"], "report_sha256": report_sha256(report),
+            "duration_ms": report["duration_ms"], "report_sha256": digest,
         })
         s.ledger_entry_id = entry or "ledger-unavailable"
         report["ledger_entry_id"] = entry
+        # T4: the printed / downloaded report carries the digest the
+        # ledger recorded, and says what it covers (the two keys added
+        # after hashing are excluded).
+        report["integrity"] = {
+            "report_sha256": digest,
+            "covers": "this report without the ledger_entry_id and integrity keys "
+                      "(JSON, sorted keys, compact separators)",
+            "ledger_entry_id": entry,
+        }
         view["session"]["ledger_entry_id"] = s.ledger_entry_id
         return view
 

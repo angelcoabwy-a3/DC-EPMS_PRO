@@ -246,6 +246,16 @@ class TestRoutes:
         assert report["outcome"] == "PASS"
         assert report["ledger_entry_id"] == view["session"]["ledger_entry_id"]
         assert len(report_sha256(report)) == 64
+        # T4: the report carries the digest the ledger recorded, and the
+        # digest is reproducible from the report minus the two late keys.
+        integ = report["integrity"]
+        body = {k: v for k, v in report.items() if k not in ("ledger_entry_id", "integrity")}
+        assert integ["report_sha256"] == report_sha256(body)
+        assert integ["ledger_entry_id"] == report["ledger_entry_id"]
+        ledger = c.app.state.forensic_ledger
+        entries = ledger.persistence._entries
+        result = next(e for e in entries if e.entry_id == integ["ledger_entry_id"])
+        assert result.payload["report_sha256"] == integ["report_sha256"]
 
     def test_operator_cannot_reset_the_plant(self, client):
         c, *_ = client
