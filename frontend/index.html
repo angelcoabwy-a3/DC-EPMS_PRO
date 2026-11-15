@@ -953,12 +953,8 @@
 
                 <div class="pid-action-bar">
                     <span class="pid-meta" id="sld-meta">Loading…</span>
-                    <span class="pid-legend sld-legend-v2">
-                        <span class="pid-legend-item"><span class="sld-leg-path-a"></span> Path A (cyan, energized)</span>
-                        <span class="pid-legend-item"><span class="sld-leg-path-b"></span> Path B (violet, energized)</span>
-                        <span class="pid-legend-item"><span class="sld-leg-batt"></span> On battery (amber)</span>
-                        <span class="pid-legend-item"><span class="sld-leg-fault"></span> Fault / cold</span>
-                    </span>
+                    <!-- HMI H1: the colour legend lives in the SLD itself (ISA-101 grey
+                         = normal); the old cyan / violet / amber legend was removed. -->
                     <!-- DAG-driven fault injection (v0.10.7) -->
                     <span class="sld-sim-controls">
                         <button id="sld-sim-utility-loss-a" class="btn btn-secondary btn-sm sld-sim-btn" type="button" title="Demo shortcut: trip util_a, watch the cascade through the DAG engine. Click any node TRIP pip or shift-click to fail any other component.">⚡ Demo: Trip Utility A</button>

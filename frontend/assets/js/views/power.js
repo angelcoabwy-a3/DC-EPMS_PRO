@@ -31,7 +31,10 @@ import { registerRoute } from '../core/router.js';
 import { onHermesStream, getTopologyState, writeBmsTag } from '../services/api.js';
 import { subscribe, setState, getState } from '../core/state.js';
 import { toggleTrip, restoreAll, setUnitsOut, getTopology, PHASE1 } from '../core/power_grid.js';
-import { pathFlows, fmtPower, fmtApparent } from '../core/power_flow.js';
+import {
+    pathFlows, fmtPower, fmtApparent, fmtReactive, PF,
+    MV_KV, LV_V, NOMINAL_HZ, UPS_RUNTIME_SPEC_MIN,
+} from '../core/power_flow.js';
 import { statusStrip, EventLog } from '../core/power_status.js';
 import { BREAKER_SCHEME, breakerText } from '../core/hmi_scheme.js';
 import { escapeHTML } from '../core/sanitize.js';
@@ -85,11 +88,11 @@ function _applyTopology(data) {
 
     if (ua) {
         _setMetric('util_a-kw', Math.round(ua.metrics.kw ?? 0).toLocaleString() + ' kW');
-        _setMetric('util_a-kv', (ua.metrics.kv ?? 27.5).toFixed(1) + ' kV');
+        _setMetric('util_a-kv', (ua.metrics.kv ?? 27.5).toFixed(1) + ` kV · ${NOMINAL_HZ} Hz`);
     }
     if (ub) {
         _setMetric('util_b-kw', Math.round(ub.metrics.kw ?? 0).toLocaleString() + ' kW');
-        _setMetric('util_b-kv', (ub.metrics.kv ?? 27.5).toFixed(1) + ' kV');
+        _setMetric('util_b-kv', (ub.metrics.kv ?? 27.5).toFixed(1) + ` kV · ${NOMINAL_HZ} Hz`);
     }
     // Transformer / UPS / RPP loads come from core/power_flow.js
     // (design-consistent: 8 x 2.5 MW blocks per path, eta 0.97). The
@@ -310,9 +313,9 @@ function _flatPath(suffix, S, energized) {
         return `<path class="pf-arrow" data-arrow="${suffix}:${name}" `
             + `d="M${b1[0]} ${b1[1]} L${tip[0]} ${tip[1]} L${b2[0]} ${b2[1]}"/>`;
     };
-    const seg = (name, pts, extra = '') =>
+    const seg = (name, pts, extra = '', withArrow = true) =>
         wire(pts, `${cls} pf-seg${extra}`).replace('<path ', `<path data-seg="${suffix}:${name}" `)
-        + arrow(name, pts);
+        + (withArrow ? arrow(name, pts) : '');
     // ── orthogonal wiring; every run carries data-seg for the flow layer ──
     const wires = [
         seg('util', [[T.util + 40, S], [T.xfmr - 14, S]]),
@@ -323,15 +326,17 @@ function _flatPath(suffix, S, energized) {
         seg('gm', [[T.gen, gmY + 11], [T.gen, S]]),
         seg('mv', [[T.gen, S], [T.ats - 40, S]]),
         seg('mvtc', [[T.ats + 40, S], [L.swgr - 5, S]]),
-        seg('swgr', [[L.swgr + 5, S], [L.usub - 14, S]]),
-        seg('usub', [[L.usub + 14, S], [T.ups - 40, S]]),
+        // HMI H2: these two runs carry the unit-substation breakers
+        // instead of a chevron (no room for both).
+        seg('swgr', [[L.swgr + 5, S], [L.usub - 14, S]], '', false),
+        seg('usub', [[L.usub + 14, S], [T.ups - 40, S]], '', false),
         seg('ups', [[T.ups + 40, S], [T.pdu - 40, S]]),
         seg('batt', [[T.ups, battY - 23], [T.ups, S + 23]]),
     ].join('');
     // ── nodes ──
     const nodes = [
         _flatNode('util_' + suffix, 'util', 'UTILITY ' + X,
-            T.util, S, [{ key: 'util_' + suffix + '-kv', text: '27.5 kV' },
+            T.util, S, [{ key: 'util_' + suffix + '-kv', text: '27.5 kV · 60 Hz' },
                         { key: 'util_' + suffix + '-kw', text: '— kW' }]),
         _flatNode('xfmr_' + suffix, 'xfmr', 'XFMR ' + X,
             T.xfmr, S, [{ key: 'xfmr_' + suffix + '-load', text: '— MVA' },
@@ -345,10 +350,14 @@ function _flatPath(suffix, S, energized) {
             'UPS BANK ' + X + ` · ${PHASE1.ups.units} × TRINERGY`,
             T.ups, S, [{ key: 'ups_' + suffix + '-mode', text: 'ONLINE' },
                        { key: 'ups_' + suffix + '-load', text: '— MW' }]),
-        _flatNode('batt_' + suffix, 'batt', 'BATTERY ' + X,
+        // H3: autonomy is the design spec (config/power_plant.yml,
+        // runtime_full_load_min), not a discharge-curve estimate.
+        _flatNode('batt_' + suffix, 'batt',
+            `BATTERY ${X} · ${UPS_RUNTIME_SPEC_MIN} MIN @ ${PHASE1.ups.units * PHASE1.ups.unitKw / 1000} MW (SPEC)`,
             T.ups, battY, [{ key: 'batt_' + suffix + '-soc', text: 'SOC 100%' }]),
         _flatNode('rpp_' + suffix + '1', 'rpp', 'RPP / PDU ' + X,
-            T.pdu, S, [{ key: 'rpp_' + suffix + '1-kw', text: '— kW' }]),
+            T.pdu, S, [{ key: 'rpp_' + suffix + '1-kw', text: '— kW' },
+                       { key: 'rpp_' + suffix + '1-lv', text: `${LV_V} V 3-ph · ${NOMINAL_HZ} Hz` }]),
     ].join('');
     // paralleling bus: label to the right so it never covers the G glyph
     const parBus = `<g class="sld-node pf-node" data-sld-node="par_bus_${suffix}">`
@@ -374,8 +383,28 @@ function _flatPath(suffix, S, energized) {
         + `<text class="pf-52-label" x="${labelX}" y="${labelY}" text-anchor="${anchor}">${label}</text>`
         + `<text class="pf-52-state" x="${st[0]}" y="${st[1]}" text-anchor="${st[2]}">`
         + `${breakerText('closed')}</text></g>`;
-    const breakers = brk('u', '52-U', L.u52, S, L.u52, S - 18, 'middle', [L.u52, S + 25, 'middle'])
-        + brk('gm', '52-GM', T.gen, gmY, T.gen - 18, gmY + 4, 'end', [T.gen + 16, gmY + 4, 'start']);
+    const breakers = brk('u', '52-U', L.u52, S, L.u52 - 13, S - 14, 'end', [L.u52, S + 25, 'middle'])
+        + brk('gm', '52-GM', T.gen, gmY, T.gen - 18, gmY - 6, 'end', [T.gen + 16, gmY + 4, 'start'])
+        // HMI H2: 52-U / 52-GM interlock (the transfer is open-transition
+        // in the model: the two mains are never closed together).
+        + `<path class="pf-interlock" data-interlock="${suffix}" `
+        + `d="M${L.u52} ${S - 11} L${L.u52} ${gmY} L${T.gen - 11} ${gmY}">`
+        + `<title>Interlock 52-U / 52-GM: never closed together (open transition)</title></path>`
+        // HMI H2: unit substation primary (13.8 kV) and secondary
+        // (480 V main) breakers. No device model or telemetry exists
+        // for them: drawn in the design normal lineup, marked MODEL.
+        + _miniBrk(suffix, 'sp', '52-P', (L.swgr + 5 + L.usub - 14) / 2, S,
+            'Unit substation primary breaker, 13.8 kV (design normal lineup, not modelled or metered)')
+        + _miniBrk(suffix, 'ss', '52-S', (L.usub + 14 + T.ups - 40) / 2, S,
+            'Unit substation secondary main, 480 V (design normal lineup, not modelled or metered)');
+    // HMI H3: design-model data tag on the 13.8 kV bus (filled by
+    // _applyFlow). Every value here is computed, never metered.
+    const tag = `<g class="pf-tag" data-tag="${suffix}:mv">`
+        + `<rect class="pf-tag-box" x="402" y="${S + 30}" width="146" height="46" rx="3"/>`
+        + `<text class="pf-tag-head" x="408" y="${S + 42}">MODEL · MV ${MV_KV} kV · ${NOMINAL_HZ} Hz</text>`
+        + `<text class="pf-tag-line" data-tag-line="${suffix}:pq" x="408" y="${S + 56}"></text>`
+        + `<text class="pf-tag-line" data-tag-line="${suffix}:spf" x="408" y="${S + 69}"></text>`
+        + `<title>Design model: P from the IT load and UPS efficiency, PF ${PF.toFixed(2)} assumed, transformer losses not modelled. Not metering.</title></g>`;
     // power-flow labels (filled by _applyFlow)
     const flowTxt = (key, x, y, anchor = 'middle') =>
         `<text class="pf-flow-label" data-flow="${suffix}:${key}" x="${x}" y="${y}" text-anchor="${anchor}"></text>`;
@@ -384,7 +413,16 @@ function _flatPath(suffix, S, energized) {
         + flowTxt('gen', T.gen + 18, gmY - 16, 'start');
     const strips = _unitStrip('genset_' + suffix, T.gen, genY - 52)
         + _unitStrip('ups_' + suffix, T.ups, S - 52);
-    return `<g class="pf-pathgroup" data-path="${suffix}">${wires}${breakers}${mv}${parBus}${nodes}${labels}${strips}</g>`;
+    return `<g class="pf-pathgroup" data-path="${suffix}">${wires}${breakers}${mv}${parBus}${nodes}${labels}${strips}${tag}</g>`;
+}
+
+/** HMI H2: small breaker for devices the model does not operate. */
+function _miniBrk(suffix, id, label, x, y, title) {
+    return `<g class="pf-52 pf-52-mini" data-brk="${suffix}:${id}" data-state="closed" data-model="design">`
+        + `<rect class="pf-52-box" x="${x - 7}" y="${y - 7}" width="14" height="14" rx="2"/>`
+        + `<path class="pf-52-blade" d="M${x - 4} ${y + 4} L${x + 4} ${y - 4}"/>`
+        + `<text class="pf-52-label" x="${x}" y="${y - 11}" text-anchor="middle">${label}</text>`
+        + `<title>${escapeHTML(title)}</title></g>`;
 }
 
 /**
@@ -681,7 +719,7 @@ function _buildFlatMarkup() {
         + _flatPhase2()
         // two blocks so the legend never sits on the UTILITY A label
         + legend(_HMI_LEGEND.slice(0, 4), 16, 96)
-        + legend(_HMI_LEGEND.slice(4), 16, 650);
+        + legend(_HMI_LEGEND.slice(4), 16, 640);
 }
 
 // HMI H1 legend: grey = normal, colour = exception; breaker convention
@@ -691,6 +729,8 @@ const _HMI_LEGEND = Object.freeze([
     { swatch: 'deenergized', label: 'De-energized' },
     { swatch: 'brk-closed', label: BREAKER_SCHEME.legendClosed },
     { swatch: 'brk-open', label: BREAKER_SCHEME.legendOpen },
+    { swatch: 'interlock', label: 'Interlock (52-U / 52-GM)' },
+    { swatch: 'model', label: 'MODEL = design value, not metered' },
     { swatch: 'warning', label: 'Warning (|z| >= 2)' },
     { swatch: 'critical', label: 'Critical / anomalous' },
     { swatch: 'dc', label: '800 VDC unipolar TN-S (design)' },
@@ -1028,6 +1068,13 @@ function _applyFlow(gridIn) {
             if (el) el.textContent = v;
         };
         txt('mv', src === 'util' || src === 'genset' ? fmtPower(f.upsInKw) : '');
+        const tl = (key, v) => {
+            const el = document.querySelector(`#view-power [data-tag-line="${p}:${key}"]`);
+            if (el) el.textContent = v;
+        };
+        const mvP = src === 'util' || src === 'genset' ? f.upsInKw : 0;
+        tl('pq', `P ${fmtPower(mvP)} · Q ${fmtReactive(mvP)}`);
+        tl('spf', mvP > 0 ? `S ${fmtApparent(f.mvKva)} · PF ${PF.toFixed(2)}` : 'S 0 kVA · bus dead');
         txt('ups', f.upsOutKw > 0 ? fmtPower(f.upsOutKw) : '');
         txt('gen', f.genKw > 0 ? `${fmtPower(f.genKw)} · ${f.genLoadPct.toFixed(0)} %` : '');
         _setMetric(`util_${p}-kw`, src === 'util' ? fmtPower(f.upsInKw) : '0 kW');

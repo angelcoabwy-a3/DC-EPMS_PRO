@@ -10751,3 +10751,17 @@ table.opt-votes td {
 .pwr-strip-kv b[data-state="transfer"] { color: var(--warn); }
 /* colour by exception: a healthy N / N+1 reading is plain text */
 #view-power .pwr-strip-kv b[data-lvl="ok"] { color: var(--text); }
+
+/* ════════════════════════════════════════════════════════════════
+ * HMI H2 / H3 (2026-11-14) — interlock, unit-substation breakers,
+ * design-model data tags.
+ * ════════════════════════════════════════════════════════════════ */
+.pf-interlock { fill: none; stroke: #8a929c; stroke-width: 1.2; stroke-dasharray: 2 3; }
+.pf-52-mini .pf-52-label { font-size: 7px; }
+.pf-52-mini .pf-52-blade { stroke-width: 1.6; }
+.pf-52[data-model="design"] .pf-52-box { stroke-dasharray: 2 1.5; }
+.pf-tag-box { fill: #1b1f25; stroke: #5b626c; stroke-width: 1; }
+.pf-tag-head { font: 600 7.5px var(--font-mono); letter-spacing: 0.04em; fill: #8a929c; }
+.pf-tag-line { font: 600 9px var(--font-mono); fill: #e6e9ed; }
+.dk-swatch-interlock { fill: none; stroke: #8a929c; stroke-dasharray: 2 2; stroke-width: 1.4; }
+.dk-swatch-model { fill: #1b1f25; stroke: #5b626c; }

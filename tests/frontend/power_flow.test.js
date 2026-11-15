@@ -184,7 +184,7 @@ describe('SLD flow layer', () => {
     it('HMI H1: static direction chevrons, one per run, lit only while carrying', () => {
         mount();
         applyGrid(getGridState());
-        expect(document.querySelectorAll('[data-arrow^="a:"]').length).toBe(12);
+        expect(document.querySelectorAll('[data-arrow^="a:"]').length).toBe(10);   // swgr + usub runs carry breakers (H2)
         expect(arrow('a:xfmr').classList.contains('pf-arrow-on')).toBe(true);
         expect(arrow('a:gen').classList.contains('pf-arrow-on')).toBe(false);
         expect(seg('a:xfmr').style.getPropertyValue('--flow-dur')).toBe('');
@@ -228,5 +228,59 @@ describe('UPS bank opened into its blocks', () => {
         const html = engineeringSection('ups_a', getGridState(), {});
         expect(html.indexOf('data-eng="ups-bank"')).toBeGreaterThanOrEqual(0);
         expect(html.indexOf('data-eng="ups-bank"')).toBeLessThan(html.indexOf('OPERATING MODE'));
+    });
+});
+
+describe('HMI H2 / H3 on the Power SLD', () => {
+    const { renderFlatSld, applyGrid } = __power_test__;
+    function mount() {
+        vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 503, json: async () => ({}) })));
+        document.body.innerHTML = '<div id="view-power"><div class="pid-action-bar"></div><svg class="pid-svg"></svg></div>';
+        renderFlatSld();
+    }
+    afterEach(() => vi.unstubAllGlobals());
+    const line = (k) => document.querySelector(`[data-tag-line="${k}"]`)?.textContent;
+
+    it('H2: interlock drawn per path, unit-substation breakers marked as design lineup', () => {
+        mount();
+        for (const p of ['a', 'b']) {
+            expect(document.querySelector(`[data-interlock="${p}"]`)).not.toBeNull();
+            for (const id of ['sp', 'ss']) {
+                const b = document.querySelector(`[data-brk="${p}:${id}"]`);
+                expect(b.getAttribute('data-model')).toBe('design');
+                expect(b.querySelector('title').textContent).toMatch(/not modelled or metered/);
+            }
+        }
+    });
+
+    it('H3: MV data tag from the design model (P, Q, S, PF 0.90) labelled MODEL', () => {
+        mount();
+        applyGrid(getGridState());
+        expect(document.querySelector('[data-tag="a:mv"] .pf-tag-head').textContent)
+            .toBe('MODEL · MV 13.8 kV · 60 Hz');
+        expect(line('a:pq')).toBe('P 8.64 MW · Q 4.18 Mvar');
+        expect(line('a:spf')).toBe('S 9.60 MVA · PF 0.90');
+    });
+
+    it('H3: dead MV bus reads zero, battery spec and LV nameplate drawn', () => {
+        mount();
+        tripNode('util_a');
+        applyGrid(getGridState());
+        expect(line('a:pq')).toBe('P 0 kW · Q 0 kvar');
+        expect(line('a:spf')).toBe('S 0 kVA · bus dead');
+        expect(document.querySelector('[data-sld-node="batt_a"] .pf-name').textContent)
+            .toBe('BATTERY A · 10 MIN @ 20 MW (SPEC)');
+        expect(document.querySelector('[data-sld-metric="rpp_a1-lv"]').textContent).toBe('480 V 3-ph · 60 Hz');
+    });
+});
+
+describe('power_flow reactive power', () => {
+    it('Q = P tan(acos 0.9)', async () => {
+        const { reactiveKvar, fmtReactive } = await import('/assets/js/core/power_flow.js');
+        expect(reactiveKvar(1000)).toBeCloseTo(484.32, 2);
+        expect(reactiveKvar(0)).toBe(0);
+        expect(reactiveKvar(1000, 1)).toBeCloseTo(0, 9);
+        expect(fmtReactive(8640)).toBe('4.18 Mvar');
+        expect(fmtReactive(500)).toBe('242 kvar');
     });
 });

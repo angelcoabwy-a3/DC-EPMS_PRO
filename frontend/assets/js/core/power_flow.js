@@ -29,6 +29,20 @@
 import { PHASE1 } from './power_grid.js';
 
 export const PF = 0.9;
+// HMI H3 nameplate values for the drawn data tags (design, not metering):
+// 60 Hz (Ontario grid), 13.8 kV MV bus and 480 V LV (config/power_plant.yml),
+// UPS autonomy at full bank load = runtime_full_load_min (operator documents
+// give 8 to 12 min; the design file holds 10).
+export const NOMINAL_HZ = 60;
+export const MV_KV = 13.8;
+export const LV_V = 480;
+export const UPS_RUNTIME_SPEC_MIN = 10;
+
+/** Reactive power for a real power at a power factor: Q = P tan(acos pf). */
+export function reactiveKvar(kw, pf = PF) {
+    if (!Number.isFinite(kw) || kw <= 0 || !(pf > 0 && pf <= 1)) return 0;
+    return kw * Math.tan(Math.acos(pf));
+}
 export const DEFAULT_IT_KW = PHASE1.itLoadPerPathKw;   // 16.76 MW facility IT
 
 /**
@@ -87,4 +101,11 @@ export function fmtPower(kw) {
 export function fmtApparent(kva) {
     if (!Number.isFinite(kva) || kva <= 0) return '0 kVA';
     return kva >= 1000 ? `${(kva / 1000).toFixed(2)} MVA` : `${Math.round(kva)} kVA`;
+}
+
+/** "4.18 Mvar" / "420 kvar" for a real power at the model power factor. */
+export function fmtReactive(kw, pf = PF) {
+    const q = reactiveKvar(kw, pf);
+    if (q <= 0) return '0 kvar';
+    return q >= 1000 ? `${(q / 1000).toFixed(2)} Mvar` : `${Math.round(q)} kvar`;
 }
