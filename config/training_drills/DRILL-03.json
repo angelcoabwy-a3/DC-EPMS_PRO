@@ -1,11 +1,12 @@
 {
   "id": "DRILL-03",
-  "version": 1,
+  "version": 2,
   "title": "UPS block A3 inverter over-temperature: static bypass and isolation",
-  "summary": "UPS block A3 reports inverter over-temperature. Move its share to the static bypass without dropping the load, then take the block out of the parallel system for maintenance. Lockout at the equipment is outside this simulator: isolation here is the electrical step only.",
+  "summary": "UPS block A3 reports inverter over-temperature. Move its share to the static bypass without dropping the load, then take the block out of the parallel system for maintenance. Lockout at the equipment is outside this simulator: isolation here is the electrical step only. Switching the procedure does not call for counts as a violation.",
   "path": "a",
   "target_s": 60,
   "time_limit_s": 900,
+  "procedure_commands": ["TRANSFER_TO_BYPASS", "ISOLATE"],
   "setup": {
     "authority": {"ups_a_03": "REMOTE"},
     "inject": [{"type": "ups_fault", "device": "ups_a_03", "fault": "INVERTER_OVERTEMP"}]

@@ -1,11 +1,12 @@
 {
   "id": "DRILL-02",
-  "version": 1,
+  "version": 2,
   "title": "Utility back on path A: retransfer (open transition) and stop the sets",
-  "summary": "Path A is on generators after a utility outage; the utility voltage is back and stable. The design transfers in open transition (52-U and 52-GM are interlocked, never closed together): retransfer to utility, then stop the generator bus.",
+  "summary": "Path A is on generators after a utility outage; the utility voltage is back and stable. The design transfers in open transition (52-U and 52-GM are interlocked, never closed together): retransfer to utility, then stop the generator bus. Switching the procedure does not call for counts as a violation.",
   "path": "a",
   "target_s": 45,
   "time_limit_s": 900,
+  "procedure_commands": ["RETRANSFER_TO_UTILITY", "STOP_GENERATORS", "STOP"],
   "setup": {
     "authority": {"mvtc_a": "REMOTE", "genset_a_*": "REMOTE"},
     "inject": [
@@ -18,7 +19,8 @@
     {"id": "ACK", "text": "Acknowledge the path A alarms in the alarm banner",
      "check": {"type": "alarms_acked", "prefix": "PATH_A_"}},
     {"id": "RETRANSFER", "text": "Retransfer to utility (MV transfer A: Retransfer to utility)",
-     "check": {"type": "transfer_state", "path": "a", "state": "UTILITY"}},
+     "check": {"type": "transfer_state", "path": "a", "state": "UTILITY"},
+     "holds": {"type": "transfer_state", "path": "a", "state": "UTILITY"}},
     {"id": "STOP", "text": "Stop the generator bus (MV transfer A: Stop generator bus)",
      "check": {"type": "no_sets_running", "path": "a"}}
   ],

@@ -10828,6 +10828,9 @@ table.opt-votes td {
 .tr-steps li[data-state="done"] { color: #c3c8cf; }
 .tr-steps li[data-state="done"] .tr-n::before { content: "✓ "; }
 .tr-steps li[data-state="current"] { color: #e6e9ed; font-weight: 700; }
+.tr-steps li[data-state="reverted"] { color: #fbbf24; }
+.tr-steps li[data-state="reverted"] .tr-n::before { content: "↺ "; }
+.tr-steps .tr-rev { font-size: 10px; letter-spacing: 0.5px; color: #f59e0b; }
 .tr-t { font-variant-numeric: tabular-nums; }
 .tr-result { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; padding: 6px 10px; border-top: 1px solid #3a4048; }
 .tr-result[data-outcome="PASS"] b { color: #4cc46a; }

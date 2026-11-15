@@ -7,12 +7,16 @@ The trainee works with the normal HMI (alarm banner, Power SLD, Power
 Controls). The engine only OBSERVES: each evaluation marks the next
 step done when its condition holds and stamps the elapsed time.
 
-Scoring rubric "DC-EPMS training rubric v1" (our own rubric, not an
+Scoring rubric "DC-EPMS training rubric v2" (our own rubric, not an
 industry standard such as NETA or Uptime Institute):
   - outcome FAIL (critical load lost or time limit) -> score 0;
-  - otherwise 100, minus 10 per refused or blocked command during the
-    drill, minus 1 per started 10 s beyond the drill's target time,
-    floor 0.
+  - otherwise 100, minus 10 per violation, minus 1 per started 10 s
+    beyond the drill's target time, floor 0. A violation is a refused
+    or blocked command, or (v2) a switching command outside the drill's
+    procedure ("procedure_commands"): unplanned switching.
+v2 also tracks steps whose "holds" condition stops being true after
+they were done (e.g. back to generators after the close): reported as
+reverted / restored, not scored (the switching that caused it is).
 
 Honest scope: one drill at a time for the whole plant (the plant is a
 single shared simulator); times come from the server clock at
@@ -35,12 +39,16 @@ from typing import Any
 from backend.alarm_engine import ACKED, NORM, AlarmEngine, conditions_from_plant, iso_ms
 
 RUBRIC = {
-    "name": "DC-EPMS training rubric v1",
+    "name": "DC-EPMS training rubric v2",
     "not_an_industry_standard": True,
     "fail": "critical load lost or time limit exceeded -> 0",
+    "violation": "refused or blocked command, or a switching command outside "
+                 "the drill procedure (unplanned switching)",
     "violation_penalty": 10,
     "late_penalty_per_10_s": 1,
 }
+# Actors of automatic plant events: never counted as unplanned switching.
+SYSTEM_ACTORS = frozenset({"training", "controller", "protection", "auto", "plant"})
 VIOLATION_EVENTS = ("refused", "procedure_blocked", "bay_blocked")
 
 CHECK_TYPES = (
@@ -75,6 +83,12 @@ def validate_drill(d: dict[str, Any]) -> dict[str, Any]:
         ids.add(step.get("id"))
         if (step.get("check") or {}).get("type") not in CHECK_TYPES:
             problems.append(f"step {step.get('id')}: unknown check")
+        if "holds" in step and (step.get("holds") or {}).get("type") not in CHECK_TYPES:
+            problems.append(f"step {step.get('id')}: unknown holds condition")
+    pc = d.get("procedure_commands")
+    if pc is not None and (not isinstance(pc, list) or not pc
+                           or not all(isinstance(c, str) and c for c in pc)):
+        problems.append("procedure_commands must be a non-empty list of command names")
     for f in d.get("fail") or []:
         if f.get("type") not in FAIL_TYPES:
             problems.append(f"unknown fail condition {f.get('type')}")
@@ -162,6 +176,21 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
     return False
 
 
+def unplanned_switching(drill: dict[str, Any],
+                        events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Commands executed by a person that the drill procedure does not
+    call for. A drill without "procedure_commands" checks nothing."""
+    allowed = drill.get("procedure_commands")
+    if not allowed:
+        return []
+    return [
+        {**e, "violation": "unplanned_switching"}
+        for e in events
+        if e.get("event") == "command" and e.get("actor") not in SYSTEM_ACTORS
+        and e.get("command") not in allowed
+    ]
+
+
 def failed(conds: list[dict[str, Any]], plant: dict[str, Any],
            events: list[dict[str, Any]] | None = None) -> str | None:
     for cond in conds:
@@ -186,6 +215,8 @@ class Session:
     reason: str | None = None
     ended_ms: int | None = None
     violations: list[dict[str, Any]] = field(default_factory=list)
+    reverts: list[dict[str, Any]] = field(default_factory=list)
+    holding: dict[str, bool] = field(default_factory=dict)
     score: int | None = None
     ledger_entry_id: str | None = None
 
@@ -259,10 +290,22 @@ class TrainingManager:
                 if not check(step["check"], plant, engine, events):
                     break
                 s.done.append({"id": step["id"], "text": step["text"], "t_ms": now - s.started_ms})
+                if "holds" in step:
+                    s.holding[step["id"]] = check(step["holds"], plant, engine, events)
+            # v2: a done step whose "holds" condition stops being true.
+            for step in steps[:len(s.done)]:
+                if "holds" not in step:
+                    continue
+                ok = check(step["holds"], plant, engine, events)
+                was = s.holding.get(step["id"], ok)
+                if was != ok:
+                    s.reverts.append({"step": step["id"], "event": "restored" if ok else "reverted",
+                                      "t_ms": now - s.started_ms})
+                s.holding[step["id"]] = ok
             s.violations = [
-                e for e in list(ctl._events)
-                if e.get("event") in VIOLATION_EVENTS and e.get("ts", 0) >= s.events_mark
-            ]
+                e for e in events if e.get("event") in VIOLATION_EVENTS
+            ] + unplanned_switching(s.drill, events)
+            s.violations.sort(key=lambda e: e.get("ts", 0))
             reason = failed(s.drill.get("fail") or [], plant, events)
             if reason:
                 self._finish(s, "FAIL", reason, now)
@@ -301,6 +344,7 @@ class TrainingManager:
                 "id": step["id"], "text": step["text"],
                 "done": done is not None, "t_ms": done["t_ms"] if done else None,
                 "current": done is None and i == len(s.done) and s.active,
+                "reverted": done is not None and s.holding.get(step["id"]) is False,
             })
         return {
             "active": s.active,
@@ -308,7 +352,10 @@ class TrainingManager:
                 "drill": drill_summary(s.drill), "operator": s.operator,
                 "started": iso_ms(s.started_ms), "started_ms": s.started_ms,
                 "ended": iso_ms(now_ms), "outcome": s.outcome, "reason": s.reason,
-                "score": s.score, "violations": len(s.violations), "steps": steps,
+                "score": s.score, "violations": len(s.violations),
+                "unplanned_switching": sum(1 for v in s.violations
+                                           if v.get("violation") == "unplanned_switching"),
+                "steps": steps,
                 "ledger_entry_id": s.ledger_entry_id,
             },
         }
@@ -330,6 +377,10 @@ class TrainingManager:
             ms = s.started_ms + d["t_ms"]
             soe.append({"ts": iso_ms(ms), "ts_ms": ms, "source": "training",
                         "event": "step_done", "step": d["id"]})
+        for r in s.reverts:
+            ms = s.started_ms + r["t_ms"]
+            soe.append({"ts": iso_ms(ms), "ts_ms": ms, "source": "training",
+                        "event": f"step_{r['event']}", "step": r["step"]})
         soe.sort(key=lambda r: r.get("ts_ms", 0))
         return {
             "report": "DC-EPMS operator training report",
@@ -342,6 +393,7 @@ class TrainingManager:
             "rubric": RUBRIC,
             "steps": [dict(d) for d in s.done],
             "violations": [dict(v) for v in s.violations],
+            "step_reverts": [dict(r) for r in s.reverts],
             "soe": soe,
             "time_note": "Server observation times (ms resolution); steps are "
                          "stamped when the UI poll evaluated them.",

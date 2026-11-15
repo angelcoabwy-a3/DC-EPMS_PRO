@@ -404,3 +404,89 @@ class TestClosedTransitionOffByDefault:
             assert r.json()["synchro"]["gen_hz"] == 60.2
             r = c.post("/api/devices/mvtc_a/governor", json={"delta_hz": 1}, headers=bearer("manager"))
             assert r.status_code == 400
+
+
+# ── Rubric v2: unplanned switching + reverted steps ─────────────────
+class TestRubricV2:
+    def _close_in_window(self, ctl, clock, mgr, engine):
+        while ctl.synchro("a")["slip_hz"] > 0.06:
+            ctl.adjust_governor("mvtc_a", -0.05, "trainee")
+        mgr.evaluate(ctl, engine)                                # the UI poll sees TRIM
+        run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")       # arms
+        clock.tick(dc.window_entry_s(ctl.synchro("a")["angle_deg"], ctl.synchro("a")["slip_hz"]) + 0.2)
+        assert ctl.snapshot("mvtc_a")["state"] == dc.XFER_UTILITY
+
+    def test_every_drill_declares_its_procedure(self):
+        for drill in tr.load_drills(DRILLS).values():
+            assert drill["procedure_commands"], drill["id"]
+
+    def test_operator_report_replay_counts_the_extra_transfer(self, world, clock):
+        """The operator's DRILL-04 run of 2026-11-15: close, back to
+        generators, close again, stop. v1 scored 77; v2 adds one
+        unplanned switching violation and records the CLOSE revert."""
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        engine.ack_all("trainee")
+        self._close_in_window(ctl, clock, mgr, engine)
+        view = mgr.evaluate(ctl, engine)
+        assert steps_done(view) == ["ACK", "TRIM", "CLOSE"]
+        clock.tick(5)
+        run(ctl, "mvtc_a", "TRANSFER_TO_GENERATORS")
+        view = mgr.evaluate(ctl, engine)
+        close = next(s for s in view["session"]["steps"] if s["id"] == "CLOSE")
+        assert close["reverted"] is True
+        assert view["session"]["unplanned_switching"] == 1
+        clock.tick(5)
+        engine.ack_all("trainee")
+        ctl.set_sync("a", 60.05, -40, "test")
+        self._close_in_window(ctl, clock, mgr, engine)
+        mgr.evaluate(ctl, engine)
+        run(ctl, "mvtc_a", "STOP_GENERATORS")
+        view = mgr.evaluate(ctl, engine)
+        s = view["session"]
+        assert s["outcome"] == "PASS"
+        assert s["violations"] == 1
+        assert next(x for x in s["steps"] if x["id"] == "CLOSE")["reverted"] is False
+        report = mgr.last_report
+        assert report["rubric"]["name"].endswith("v2")
+        v = report["violations"][0]
+        assert (v["violation"], v["command"]) == ("unplanned_switching", "TRANSFER_TO_GENERATORS")
+        assert [r["event"] for r in report["step_reverts"]] == ["reverted", "restored"]
+        soe = [r["event"] for r in report["soe"] if r["source"] == "training"]
+        assert "step_reverted" in soe
+        assert "step_restored" in soe
+        elapsed = report["duration_ms"] / 1000
+        late = max(0, elapsed - 90)
+        assert report["score"] == max(0, 100 - 10 - -(-late // 10))
+
+    def test_clean_run_has_no_violation(self, world, clock):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-04", "trainee", ctl, engine)
+        engine.ack_all("trainee")
+        self._close_in_window(ctl, clock, mgr, engine)
+        run(ctl, "mvtc_a", "STOP_GENERATORS")
+        view = mgr.evaluate(ctl, engine)
+        assert (view["session"]["outcome"], view["session"]["violations"]) == ("PASS", 0)
+        assert mgr.last_report["step_reverts"] == []
+
+    def test_automatic_commands_are_not_unplanned(self):
+        drill = {"procedure_commands": ["STOP"]}
+        events = [
+            {"event": "command", "command": "TRANSFER_TO_GENERATORS", "actor": "controller"},
+            {"event": "command", "command": "START_GENERATORS", "actor": "training"},
+            {"event": "command", "command": "STOP", "actor": "op"},
+            {"event": "command", "command": "ISOLATE", "actor": "op"},
+        ]
+        got = tr.unplanned_switching(drill, events)
+        assert [e["command"] for e in got] == ["ISOLATE"]
+        assert tr.unplanned_switching({}, events) == []
+
+    def test_drill_validation_rejects_bad_procedure_and_holds(self):
+        base = {"id": "X", "title": "t", "summary": "s", "path": "a", "target_s": 1, "time_limit_s": 2,
+                "steps": [{"id": "A", "text": "a", "check": {"type": "event_seen"}}]}
+        with pytest.raises(ValueError, match="procedure_commands"):
+            tr.validate_drill({**base, "procedure_commands": []})
+        bad = {**base, "steps": [{"id": "A", "text": "a", "check": {"type": "event_seen"},
+                                  "holds": {"type": "nope"}}]}
+        with pytest.raises(ValueError, match="holds"):
+            tr.validate_drill(bad)

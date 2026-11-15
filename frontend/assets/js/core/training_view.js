@@ -43,9 +43,10 @@ export function trainingHtml({ drills = [], view = null, pathSummary = null, now
     if (s && view.active) {
         const elapsed = nowMs - s.started_ms;
         const steps = s.steps.map((st, i) => {
-            const state = st.done ? 'done' : (st.current ? 'current' : 'pending');
+            const state = st.done ? (st.reverted ? 'reverted' : 'done') : (st.current ? 'current' : 'pending');
             return `<li data-state="${state}"><span class="tr-n">${i + 1}</span>`
-                + `<span class="tr-text">${escapeHTML(st.text)}</span>`
+                + `<span class="tr-text">${escapeHTML(st.text)}`
+                + (st.reverted ? ' <b class="tr-rev">REVERTED</b>' : '') + '</span>'
                 + `<span class="tr-t">${st.done ? fmtElapsed(st.t_ms) : ''}</span></li>`;
         }).join('');
         return head + msg
@@ -67,11 +68,13 @@ export function trainingHtml({ drills = [], view = null, pathSummary = null, now
         result = `<div class="tr-result" data-outcome="${escapeHTML(s.outcome || '')}">`
             + `<b>${escapeHTML(s.drill.id)} · ${escapeHTML(s.outcome || '')}</b>`
             + `<span>Score ${escapeHTML(String(s.score ?? 0))} / 100</span>`
-            + `<span>${escapeHTML(String(s.violations ?? 0))} refused command(s)</span>`
+            + `<span>${escapeHTML(String(s.violations ?? 0))} violation(s)`
+            + (s.unplanned_switching ? ` · ${escapeHTML(String(s.unplanned_switching))} unplanned switching` : '')
+            + '</span>'
             + (s.reason ? `<span>${escapeHTML(s.reason)}</span>` : '')
             + (s.ledger_entry_id ? `<span class="tr-ledger">ledger ${escapeHTML(String(s.ledger_entry_id).slice(0, 12))}</span>` : '')
             + '<button type="button" class="tr-btn" data-tr-report="1">Download report (JSON)</button></div>'
-            + '<div class="tr-note">Rubric: DC-EPMS training rubric v1 (ours, not an industry standard).</div>';
+            + '<div class="tr-note">Rubric: DC-EPMS training rubric v2 (ours, not an industry standard): -10 per refused command or switching outside the procedure, -1 per 10 s late.</div>';
     }
     return head + msg + picker + result;
 }

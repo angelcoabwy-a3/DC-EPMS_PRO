@@ -131,6 +131,19 @@ describe('training_view', () => {
         expect(h).toContain('ledger abcdef123456');
         expect(h).toContain('data-tr-report="1"');
         expect(h).toContain('not an industry standard');
+        expect(h).toContain('1 violation(s)');
+        expect(h).toContain('rubric v2');
+    });
+    it('rubric v2: unplanned switching count and a reverted step', () => {
+        const v = { active: true, session: { ...ACTIVE.session, steps: [
+            { id: 'CLOSE', text: 'Close', done: true, t_ms: 1000, current: false, reverted: true },
+            { id: 'STOP', text: 'Stop', done: false, t_ms: null, current: true },
+        ] } };
+        const h = trainingHtml({ drills: DRILLS, view: v, nowMs: 1_005_000 });
+        expect(h).toContain('data-state="reverted"');
+        expect(h).toContain('REVERTED');
+        const done = { active: false, session: { ...ACTIVE.session, outcome: 'PASS', score: 67, violations: 1, unplanned_switching: 1 } };
+        expect(trainingHtml({ drills: DRILLS, view: done })).toContain('1 unplanned switching');
     });
 });
 
