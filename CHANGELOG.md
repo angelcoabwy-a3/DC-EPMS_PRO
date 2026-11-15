@@ -13,6 +13,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### HMI H4 - alarm banner, ISA-18.2 states (2026-11-14, `b1ad2c4`)
+
+- `backend/alarm_engine.py` + `backend/alarm_routes.py`: alarm states
+  NORM / UNACK / ACKED / RTNUN over the simulated Power Controls
+  plant; `GET /api/alarms`, `POST /api/alarms/{id}/ack`,
+  `POST /api/alarms/ack-all` (L1_OPERATOR minimum, session actor,
+  Forensic Ledger `ALARM_ACK`). ACK changes no plant state.
+- Power view banner: live alarms from the backend, sandbox alarms in
+  What-If (local ack, never logged). UNACK flashes, priority by colour
+  and text, ms timestamps.
+- Honest scope: observation times, not field SOE; no shelving;
+  priorities are a first rationalisation.
+- **DC-EPMS-073 (MEDIUM, open)**: the Power SLD drawing follows the
+  browser DAG, not the Power Controls plant. A transfer or a UPS
+  bypass done in Power Controls raises a live alarm on the banner,
+  but the drawing does not show it.
+
+### HMI H2 + H3 - interlock, unit-substation breakers, MODEL tags (2026-11-14, `78d3c23`)
+
+- 52-U / 52-GM interlock drawn; unit-substation primary and secondary
+  breakers drawn in the design normal lineup (not modelled or metered).
+- MV bus data tag per path (P, Q, S, PF 0.90, 13.8 kV, 60 Hz) marked
+  MODEL; 60 Hz at the utility, 480 V at the RPP, battery autonomy as
+  the 10-minute spec. Transformer losses not modelled.
+- Old action-bar legend (cyan / violet / amber) removed: it
+  contradicted H1.
+- Floors (Linux): pytest 1904 passed (3 pre-existing optimizer errors
+  on py3.13), vitest 812 / 43 files.
+
 ### HMI H1 - ISA-101 style pass on the Power SLD (2026-11-14, `0aeddff`)
 
 - Breaker convention in one constant (`core/hmi_scheme.js`). Default

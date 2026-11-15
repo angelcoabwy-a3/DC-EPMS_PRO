@@ -139,7 +139,16 @@ DC-EPMS-068 lote C2 (2026-11-14, 4a862cc): topology labels, Procedure
 HMI H1 (2026-11-14, 0aeddff): ISA-101 style Power SLD. core/hmi_scheme.js
   = breaker convention (ansi default: red CLOSED / green OPEN, text
   state too); grey canvas, colour by exception, no animated dashes,
-  static chevrons. vitest 794 / 42 files. H2 / H3 / H4 need GO.
+  static chevrons. vitest 794 / 42 files.
+HMI H2 + H3 (78d3c23): 52-U / 52-GM interlock, unit-sub 52-P / 52-S
+  (design lineup, not modelled), MV data tag P / Q / S / PF / kV / Hz
+  labelled MODEL, battery 10 min spec.
+HMI H4 (b1ad2c4): backend/alarm_engine.py + alarm_routes.py
+  (/api/alarms, ack, ack-all; L1_OPERATOR; ledger ALARM_ACK) + banner
+  on the Power view (live = backend, What-If = local sandbox).
+  DC-EPMS-073 OPEN: SLD drawing follows the browser DAG, not the
+  Power Controls plant. Floors (Linux): pytest 1904 / vitest 812
+  (43 files).
 NEXT: operator applies the bundle and eyeballs the Power SLD (strip +
   sequence in What-If); then GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
