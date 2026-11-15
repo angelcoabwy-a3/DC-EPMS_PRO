@@ -10682,3 +10682,72 @@ table.opt-votes td {
 .pwr-tl-ev[data-lvl="ok"] { border-left-color: var(--ok); }
 .pwr-tl-t { color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .pwr-tl-empty { padding: 6px 0; font-size: 11px; color: var(--text-dim); }
+
+/* ════════════════════════════════════════════════════════════════
+ * HMI H1 (2026-11-14) — ISA-101 style pass on the Phase 1 Power SLD.
+ * Grey = normal, colour = exception. Solid buses and feeders, no
+ * animated dashes (motion is reserved for abnormal states), static
+ * direction chevrons. Breaker colours follow data-scheme (core/
+ * hmi_scheme.js): ansi = red CLOSED / green OPEN, iec = inverse.
+ * Scoped to .pf-pathgroup so the Phase 2 DESIGN branch keeps its
+ * AC/DC vocabulary colours.
+ * ════════════════════════════════════════════════════════════════ */
+#view-power {
+    --hmi-bg: #23272e;
+    --hmi-live: #c3c8cf;
+    --hmi-dead: #4a5058;
+    --hmi-red: #d32f2f;
+    --hmi-green: #2e9d4a;
+    --hmi-amber: #f5a623;
+}
+#view-power .pid-canvas { background: var(--hmi-bg) !important; }
+#view-power .pf-svg { background: var(--hmi-bg); }
+#view-power .pf-pathgroup .pf-spark { stroke: #8a929c; filter: none; }
+#view-power .pf-unit:not([data-out="1"]) { fill: #8a929c; stroke: #8a929c; }
+#view-power .pf-pathgroup .pf-wire { filter: none; stroke: var(--hmi-live); stroke-width: 2.6; }
+#view-power .pf-pathgroup .pf-seg.pf-dead { opacity: 1; stroke: var(--hmi-dead); }
+#view-power .pf-pathgroup .pf-seg.pf-flow,
+#view-power .pf-pathgroup .pf-seg.pf-flow[data-src] {
+    animation: none; stroke-dasharray: none; stroke: var(--hmi-live);
+}
+#view-power .pf-pathgroup .pf-bus { fill: var(--hmi-live); stroke: none; }
+#view-power .pf-pathgroup .pid-symbol[data-sev="ok"] { filter: none; }
+#view-power .pf-pathgroup .pf-sym[data-sev="ok"] { stroke: #8a929c; fill: #2c3138; }
+.pf-arrow { fill: none; stroke: #e6e9ed; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.pf-arrow.pf-arrow-on { opacity: 1; }
+
+/* Breakers: filled = closed, hollow = open, amber = transfer / trip. */
+.pf-52-state { font: 700 8px var(--font-mono); letter-spacing: 0.06em; fill: var(--hmi-live, #c3c8cf); }
+.pf-svg .pf-52[data-state="open"] .pf-52-box { stroke-dasharray: none; fill: var(--hmi-bg, #23272e); stroke-width: 2; }
+.pf-svg[data-scheme="ansi"] .pf-52[data-state="closed"] .pf-52-box { fill: var(--hmi-red); stroke: #ef5350; }
+.pf-svg[data-scheme="ansi"] .pf-52[data-state="open"] .pf-52-box { stroke: var(--hmi-green); }
+.pf-svg[data-scheme="ansi"] .pf-52[data-state="closed"] .pf-52-state { fill: #ef5350; }
+.pf-svg[data-scheme="ansi"] .pf-52[data-state="open"] .pf-52-state { fill: #4cc46a; }
+.pf-svg[data-scheme="iec"] .pf-52[data-state="closed"] .pf-52-box { fill: var(--hmi-green); stroke: #4cc46a; }
+.pf-svg[data-scheme="iec"] .pf-52[data-state="open"] .pf-52-box { stroke: var(--hmi-red); }
+.pf-svg[data-scheme="iec"] .pf-52[data-state="closed"] .pf-52-state { fill: #4cc46a; }
+.pf-svg[data-scheme="iec"] .pf-52[data-state="open"] .pf-52-state { fill: #ef5350; }
+.pf-svg .pf-52[data-state="closed"] .pf-52-blade { stroke: #fff; }
+.pf-svg .pf-52[data-state="transfer"] .pf-52-box { fill: var(--hmi-bg, #23272e); stroke: var(--hmi-amber); }
+.pf-svg .pf-52[data-state="trip"] .pf-52-box { fill: var(--hmi-amber); stroke: var(--hmi-amber); }
+.pf-svg .pf-52[data-state="trip"] .pf-52-blade { stroke: #1a1a1a; }
+.pf-svg .pf-52[data-state="transfer"] .pf-52-state,
+.pf-svg .pf-52[data-state="trip"] .pf-52-state { fill: var(--hmi-amber); }
+.pf-flow-label { fill: #e6e9ed; }
+
+/* Legend swatches for the HMI states. */
+.dk-swatch-energized { fill: #c3c8cf; }
+.dk-swatch-deenergized { fill: #4a5058; }
+.dk-swatch-brk-closed { fill: #d32f2f; }
+.dk-swatch-brk-open { fill: none; stroke: #2e9d4a; stroke-width: 1.6; }
+.pf-svg[data-scheme="iec"] .dk-swatch-brk-closed { fill: #2e9d4a; }
+.pf-svg[data-scheme="iec"] .dk-swatch-brk-open { stroke: #d32f2f; }
+
+/* Status strip follows the same breaker convention. */
+.pwr-strip[data-scheme="ansi"] .pwr-strip-kv b[data-state="closed"] { color: #ef5350; }
+.pwr-strip[data-scheme="ansi"] .pwr-strip-kv b[data-state="open"] { color: #4cc46a; }
+.pwr-strip[data-scheme="iec"] .pwr-strip-kv b[data-state="closed"] { color: #4cc46a; }
+.pwr-strip[data-scheme="iec"] .pwr-strip-kv b[data-state="open"] { color: #ef5350; }
+.pwr-strip-kv b[data-state="transfer"] { color: var(--warn); }
+/* colour by exception: a healthy N / N+1 reading is plain text */
+#view-power .pwr-strip-kv b[data-lvl="ok"] { color: var(--text); }

@@ -33,10 +33,11 @@ import { subscribe, setState, getState } from '../core/state.js';
 import { toggleTrip, restoreAll, setUnitsOut, getTopology, PHASE1 } from '../core/power_grid.js';
 import { pathFlows, fmtPower, fmtApparent } from '../core/power_flow.js';
 import { statusStrip, EventLog } from '../core/power_status.js';
+import { BREAKER_SCHEME, breakerText } from '../core/hmi_scheme.js';
 import { escapeHTML } from '../core/sanitize.js';
 import {
     severityFromChannels, symbol, wire, sparkPoints, sparkPolyline,
-    createSparkTracker, createActuationModal, legend, DEFAULT_LEGEND,
+    createSparkTracker, createActuationModal, legend,
 } from '../core/diagram_kit.js';
 import {
     sldToTopoMap, channelPrefixesFor, matchesChannel, nodesWhere,
@@ -297,8 +298,21 @@ function _flatPath(suffix, S, energized) {
     const gmY = S - 30;                 // 52-GM on the generator drop
     const battY = S + 130;             // clears the UPS metric + sparkline rows
     const X = suffix.toUpperCase();
+    // HMI H1: every run also carries a STATIC direction chevron at its
+    // midpoint (drawn first point -> second point = direction of power
+    // flow). No animated dashes: ISA-101 reserves motion for abnormal.
+    const arrow = (name, [[x1, y1], [x2, y2]]) => {
+        const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+        const dx = Math.sign(x2 - x1), dy = Math.sign(y2 - y1);
+        const tip = [mx + dx * 5, my + dy * 5];
+        const b1 = [mx - dx * 4 - dy * 5, my - dy * 4 - dx * 5];
+        const b2 = [mx - dx * 4 + dy * 5, my - dy * 4 + dx * 5];
+        return `<path class="pf-arrow" data-arrow="${suffix}:${name}" `
+            + `d="M${b1[0]} ${b1[1]} L${tip[0]} ${tip[1]} L${b2[0]} ${b2[1]}"/>`;
+    };
     const seg = (name, pts, extra = '') =>
-        wire(pts, `${cls} pf-seg${extra}`).replace('<path ', `<path data-seg="${suffix}:${name}" `);
+        wire(pts, `${cls} pf-seg${extra}`).replace('<path ', `<path data-seg="${suffix}:${name}" `)
+        + arrow(name, pts);
     // ── orthogonal wiring; every run carries data-seg for the flow layer ──
     const wires = [
         seg('util', [[T.util + 40, S], [T.xfmr - 14, S]]),
@@ -351,14 +365,17 @@ function _flatPath(suffix, S, energized) {
         + `<title>${PHASE1.ups.units} unit substations 13.8 kV / 480 V, 3.5 MVA each (sizing assumption, site model v2)</title></g>`;
     // ANSI 52 breakers: 52-U on the utility incomer, 52-GM on the
     // generator main. Drawn open or closed from the DAG (_applyFlow).
-    const brk = (id, label, x, y, labelX, anchor) =>
+    // HMI H1: the colour convention lives in core/hmi_scheme.js and the
+    // state is ALSO written as text, so colour is never the only cue.
+    const brk = (id, label, x, y, labelX, labelY, anchor, st) =>
         `<g class="pf-52" data-brk="${suffix}:${id}" data-state="closed">`
         + `<rect class="pf-52-box" x="${x - 11}" y="${y - 11}" width="22" height="22" rx="2"/>`
         + `<path class="pf-52-blade" d="M${x - 7} ${y + 7} L${x + 7} ${y - 7}"/>`
-        + `<text class="pf-52-label" x="${labelX}" y="${y + 4}" text-anchor="${anchor}">${label}</text></g>`;
-    const breakers = brk('u', '52-U', L.u52, S, L.u52, 'middle').replace(
-        `y="${S + 4}" text-anchor="middle">52-U`, `y="${S - 18}" text-anchor="middle">52-U`)
-        + brk('gm', '52-GM', T.gen, gmY, T.gen - 18, 'end');
+        + `<text class="pf-52-label" x="${labelX}" y="${labelY}" text-anchor="${anchor}">${label}</text>`
+        + `<text class="pf-52-state" x="${st[0]}" y="${st[1]}" text-anchor="${st[2]}">`
+        + `${breakerText('closed')}</text></g>`;
+    const breakers = brk('u', '52-U', L.u52, S, L.u52, S - 18, 'middle', [L.u52, S + 25, 'middle'])
+        + brk('gm', '52-GM', T.gen, gmY, T.gen - 18, gmY + 4, 'end', [T.gen + 16, gmY + 4, 'start']);
     // power-flow labels (filled by _applyFlow)
     const flowTxt = (key, x, y, anchor = 'middle') =>
         `<text class="pf-flow-label" data-flow="${suffix}:${key}" x="${x}" y="${y}" text-anchor="${anchor}"></text>`;
@@ -662,8 +679,22 @@ function _buildFlatMarkup() {
         + _flatPath('b', _FLAT.spineY.B, 'pf-b')
         + tie
         + _flatPhase2()
-        + legend(DEFAULT_LEGEND, 16, 96);
+        // two blocks so the legend never sits on the UTILITY A label
+        + legend(_HMI_LEGEND.slice(0, 4), 16, 96)
+        + legend(_HMI_LEGEND.slice(4), 16, 650);
 }
+
+// HMI H1 legend: grey = normal, colour = exception; breaker convention
+// from the site scheme; AC/DC kept for the Phase 2 design branch.
+const _HMI_LEGEND = Object.freeze([
+    { swatch: 'energized', label: 'Energized (normal, grey)' },
+    { swatch: 'deenergized', label: 'De-energized' },
+    { swatch: 'brk-closed', label: BREAKER_SCHEME.legendClosed },
+    { swatch: 'brk-open', label: BREAKER_SCHEME.legendOpen },
+    { swatch: 'warning', label: 'Warning (|z| >= 2)' },
+    { swatch: 'critical', label: 'Critical / anomalous' },
+    { swatch: 'dc', label: '800 VDC unipolar TN-S (design)' },
+]);
 
 /** Render the orthogonal flat SLD into the legacy .pid-svg container. */
 function _renderFlatSld() {
@@ -672,6 +703,7 @@ function _renderFlatSld() {
     svg.setAttribute('viewBox', _FLAT.viewBox);
     svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
     svg.classList.add('pf-svg');
+    svg.setAttribute('data-scheme', BREAKER_SCHEME.id);
     svg.innerHTML = _buildFlatMarkup();
     // Paint the current DAG state at once (unit captions, breakers,
     // flow) instead of waiting for the next grid change.
@@ -896,6 +928,7 @@ function _ensureVida2Panels() {
     strip.id = 'pwr-status';
     strip.className = 'pwr-strip';
     strip.setAttribute('aria-label', 'Phase 1 path status');
+    strip.setAttribute('data-scheme', BREAKER_SCHEME.id);
     anchor.parentNode.insertBefore(strip, anchor);
     const tl = document.createElement('section');
     tl.id = 'pwr-timeline';
@@ -956,8 +989,6 @@ function _applyFlow(gridIn) {
             swgr: src === 'util' || src === 'genset', usub: src === 'util' || src === 'genset',
             ups: f.upsOutKw > 0, batt: src === 'battery',
         };
-        const mw = (f.upsInKw || f.upsOutKw) / 1000;
-        const dur = Math.max(0.6, 3.2 - mw * 0.25).toFixed(2) + 's';
         document.querySelectorAll(`#view-power [data-seg^="${p}:"]`).forEach((el) => {
             const name = el.dataset.seg.split(':')[1];
             const node = grid[`${_SEG_NODE[name] ?? name}_${p}`];
@@ -967,12 +998,20 @@ function _applyFlow(gridIn) {
             el.classList.toggle('pf-dead', !energized);
             el.classList.toggle('pf-flow', !!carrying[name] && energized);
             el.setAttribute('data-src', carrying[name] && energized ? (src || '') : '');
-            el.style.setProperty('--flow-dur', dur);
+            const ar = document.querySelector(`#view-power [data-arrow="${p}:${name}"]`);
+            if (ar) ar.classList.toggle('pf-arrow-on', !!carrying[name] && energized);
         });
+        // Trip lands on the breaker that was carrying the bus (52-GM when
+        // the controller sat on the generator side, else 52-U).
+        const tripId = tc.tripped ? (tc.ats_pos === 'secondary' ? 'gm' : 'u') : null;
         const setBrk = (id, closed) => {
             const b = document.querySelector(`#view-power [data-brk="${p}:${id}"]`);
             if (!b) return;
-            b.setAttribute('data-state', tc.transferring ? 'transfer' : (closed ? 'closed' : 'open'));
+            const state = tripId === id ? 'trip'
+                : (tc.transferring ? 'transfer' : (closed ? 'closed' : 'open'));
+            b.setAttribute('data-state', state);
+            const st = b.querySelector('.pf-52-state');
+            if (st) st.textContent = breakerText(state);
             const blade = b.querySelector('.pf-52-blade');
             if (blade) {
                 const r = b.querySelector('.pf-52-box');

@@ -98,6 +98,8 @@ describe('SLD flow layer', () => {
     const seg = (s) => document.querySelector(`[data-seg="${s}"]`);
     const brk = (b) => document.querySelector(`[data-brk="${b}"]`);
     const txt = (k) => document.querySelector(`[data-flow="${k}"]`)?.textContent;
+    const arrow = (k) => document.querySelector(`[data-arrow="${k}"]`);
+    const stateTxt = (k) => document.querySelector(`[data-brk="${k}"] .pf-52-state`)?.textContent;
     const metric = (k) => document.querySelector(`[data-sld-metric="${k}"]`)?.textContent;
 
     it('draws the closed-design runs, both breakers and the MV equipment', () => {
@@ -130,7 +132,7 @@ describe('SLD flow layer', () => {
         expect(document.querySelector('[data-sld-node="genset_a"] .pid-symbol').getAttribute('data-sev')).toBe('ok');
     });
 
-    it('transfer: both breakers pulse, then 52-GM closes and the generator runs flow amber', () => {
+    it('transfer: both breakers pulse, then 52-GM closes and the generator runs carry the bus', () => {
         mount();
         tripNode('util_a');
         applyGrid(getGridState());
@@ -146,15 +148,55 @@ describe('SLD flow layer', () => {
         expect(metric('xfmr_a-load')).toBe('0 MVA');
     });
 
-    it('dash speed scales with power (path B dead -> path A runs faster)', () => {
+    it('path B dead: path A carries the whole load, B runs go cold', () => {
         mount();
-        applyGrid(getGridState());
-        const slow = parseFloat(seg('a:ups').style.getPropertyValue('--flow-dur'));
         setUnitsOut('ups_b', 8);
         applyGrid(getGridState());
-        const fast = parseFloat(seg('a:ups').style.getPropertyValue('--flow-dur'));
-        expect(fast).toBeLessThan(slow);
         expect(seg('b:ups').classList.contains('pf-flow')).toBe(false);
+        expect(arrow('b:ups').classList.contains('pf-arrow-on')).toBe(false);
+        expect(arrow('a:ups').classList.contains('pf-arrow-on')).toBe(true);
+    });
+
+    it('HMI H1: ANSI scheme on the svg, breaker state written as text', () => {
+        mount();
+        applyGrid(getGridState());
+        expect(document.querySelector('#view-power .pid-svg').getAttribute('data-scheme')).toBe('ansi');
+        expect(stateTxt('a:u')).toBe('CLOSED');
+        expect(stateTxt('a:gm')).toBe('OPEN');
+        tripNode('util_a');
+        applyGrid(getGridState());
+        expect(stateTxt('a:u')).toBe('XFER');
+        vi.advanceTimersByTime(2000);
+        applyGrid(getGridState());
+        expect(stateTxt('a:u')).toBe('OPEN');
+        expect(stateTxt('a:gm')).toBe('CLOSED');
+    });
+
+    it('HMI H1: MV transfer controller trip shows TRIP on the carrying breaker', () => {
+        mount();
+        tripNode('mvtc_a');
+        applyGrid(getGridState());
+        expect(brk('a:u').getAttribute('data-state')).toBe('trip');
+        expect(stateTxt('a:u')).toBe('TRIP');
+        expect(stateTxt('a:gm')).toBe('OPEN');
+    });
+
+    it('HMI H1: static direction chevrons, one per run, lit only while carrying', () => {
+        mount();
+        applyGrid(getGridState());
+        expect(document.querySelectorAll('[data-arrow^="a:"]').length).toBe(12);
+        expect(arrow('a:xfmr').classList.contains('pf-arrow-on')).toBe(true);
+        expect(arrow('a:gen').classList.contains('pf-arrow-on')).toBe(false);
+        expect(seg('a:xfmr').style.getPropertyValue('--flow-dur')).toBe('');
+    });
+
+    it('HMI H1: legend teaches the breaker convention and keeps the DC fence', () => {
+        mount();
+        const legend = [...document.querySelectorAll('#view-power .dk-legend-text')].map((t) => t.textContent).join(' | ');
+        expect(legend).toContain('Breaker CLOSED (red, filled)');
+        expect(legend).toContain('Breaker OPEN (green, hollow)');
+        expect(legend).toContain('800 VDC unipolar TN-S');
+        expect(legend).not.toMatch(/800 VDC.*(3-phase|trif)/i);
     });
 });
 
