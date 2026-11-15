@@ -13,6 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### DC-EPMS-068 lote C2 — topology, procedures, fixtures (2026-11-14, `4a862cc`)
+
+- Topology HLD labels on the closed design; Procedure Architect
+  presets from `/api/site/model` roles (static fallback).
+- Legacy-id fixtures resolved by role: the backend suite now passes
+  on both models (1886 with the flag unset, 1886 with `v2`; was 5
+  failures under v2). vitest 786 / 41 files.
+- Remaining for DC-EPMS-068: procedure YAMLs (operator review),
+  simulator check of the v2 points, then v2 as default.
+
+### Power SLD "vida 2" (2026-11-14, `3768abe`)
+
+- `core/power_status.js`: per-path status strip (source, load and
+  share, UPS and generator N / N+1, 52-U / 52-GM) and a clocked
+  sequence of events derived by diffing DAG snapshots (utility lost,
+  52-U opens, crank, running, 52-GM closes, battery on / off, blocks
+  or sets out). The sequence shows in What-If; t = 0 is the first
+  event of the session.
+- Checked at 1600 px and 440 px. vitest +10.
+
 ### Power SLD "vida 1" (2026-11-14, `1ef07cf`)
 
 - Operator review of the C1 drawing: the numbers contradicted the

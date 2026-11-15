@@ -107,21 +107,27 @@ Per file (backend, frontend, config):
    stay with the frontend. ASCO HAL is legacy-only (no 480 V ATS in
    v2; binding a vendor to the MV transfer controller is a separate
    decision). Under v2, 5 tests fail on legacy-id fixtures.
-3. **Frontend**: lote C1 DONE (2026-11-14): Power SLD + DAG on the
-   closed design (`mvtc_*`, UPS bank / generator bus unit ticks with
-   N / N+1). Remaining (C2): topology HLD view, Mission Control,
-   procedures view. Original estimate for the whole item:
-   **Frontend** (10 files): node registry, power grid DAG and SLD
-   (largest: about 70 references), topology, mission control. The SLD
-   must draw 8 UPS and 9 sets per path; it needs the level-of-detail
-   pattern already used for the Building D farm. 12-18 h.
+3. **Frontend**: DONE (lotes C1 + C2 + SLD vida 1 / 2, 2026-11-14).
+   Power SLD and What-If DAG on the closed design (MV transfer
+   controller, 13.8 kV switchgear, unit substations, generator bus,
+   UPS bank with per-block detail, animated flow, status strip and
+   sequence of events); topology HLD labels; Procedure Architect
+   presets from `/api/site/model` roles. The HLD keys stay an
+   aggregate namespace (`site_roles.hld_key`).
 4. **Procedures** (5 MOP / SOP files): rewrite the targets; the ATS
    monthly MOP becomes an MV transfer controller MOP. 3-5 h, plus
    operator review of the procedure text.
-5. **Tests** (39 files): mostly fixture ids; ported with each consumer.
+5. **Tests**: DONE for the runtime switch: the full backend suite passes
+   with `DC_EPMS_SITE_MODEL` unset (1886) and with `v2` (1886).
+   Fixtures that build their own legacy SiteModel still exercise the
+   legacy file on purpose.
 6. **Telemetry simulator** producing the v2 points (step 4 runtime).
 7. Rename `site_model.yml` to `site_model_legacy.yml`, make v2 the
    default, close DC-EPMS-057..061 and -068.
 
-Total remaining, estimated: about 30-45 h of work. The SLD is the
-largest single item.
+Remaining (2026-11-14): step 4 (procedure YAMLs, 5 files, needs
+operator review of the procedure text), step 6 (simulator check of the
+v2 points against telemetry_mapping_v2.yml) and step 7 (make v2 the
+default; then close DC-EPMS-057..061 and -068). DC-EPMS-072 (40 of 50
+Phase 1 racks without a power chain) should be settled before step 7.
+Estimated 8-14 h.

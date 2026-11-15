@@ -129,8 +129,15 @@ SLD VIDA 1 (2026-11-14, 1ef07cf): core/power_flow.js (design-consistent
   animated flow by source, UPS bank block table in the asset panel.
   vitest 773 / 40 files. Optional next: vida 2 (event timeline in
   What-If, per-path status strip).
-NEXT: operator applies the bundle and eyeballs the Power SLD; then GO
-  for lote C2 (topology, Mission Control, procedures) or vida 2.
+SLD VIDA 2 (2026-11-14, 3768abe): core/power_status.js, per-path status
+  strip + clocked sequence of events (DAG diff) on the Power SLD.
+DC-EPMS-068 lote C2 (2026-11-14, 4a862cc): topology labels, Procedure
+  Architect presets from /api/site/model roles, legacy-id fixtures by
+  role. Backend suite passes on BOTH models (1886 / 1886). vitest
+  786 / 41 files. Remaining for -068: procedure YAMLs (operator
+  review), simulator check of v2 points, v2 as default (8-14 h).
+NEXT: operator applies the bundle and eyeballs the Power SLD (strip +
+  sequence in What-If); then GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```
