@@ -89,4 +89,59 @@ export class ControlRoomAudio {
     engineStart() {
         return this._tone('sawtooth', 24, 60, 0.12, 1.8);
     }
+
+    /** L1: short filtered-noise burst (mechanical transients). */
+    _noise(gain, dur, delay = 0, freq = 2400) {
+        const ctx = this._ctx();
+        if (!ctx || !ctx.createBuffer) return false;
+        const t = ctx.currentTime + delay;
+        const n = Math.max(1, Math.floor(ctx.sampleRate * dur));
+        const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < n; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / n);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(gain, t);
+        let node = src;
+        if (ctx.createBiquadFilter) {
+            const f = ctx.createBiquadFilter();
+            f.type = 'bandpass';
+            f.frequency.value = freq;
+            src.connect(f);
+            node = f;
+        }
+        node.connect(g);
+        g.connect(ctx.destination);
+        src.start(t);
+        return true;
+    }
+
+    /** Racking crank: a train of pawl clicks. */
+    ratchet(clicks = 12, span = 1.0) {
+        let ok = false;
+        for (let i = 0; i < clicks; i++) ok = this._noise(0.25, 0.018, (i * span) / clicks, 3200) || ok;
+        return ok;
+    }
+
+    /** Charging-handle stroke: one heavy pawl click and a spring creak. */
+    pump() {
+        const a = this._noise(0.35, 0.03, 0, 1800);
+        if (a) this._tone('triangle', 240, 150, 0.08, 0.12, 0.03);
+        return a;
+    }
+
+    /** Interlock: the mechanism refuses, a dull metallic stop. */
+    clunk() {
+        const a = this._tone('square', 70, 45, 0.25, 0.12);
+        if (a) this._noise(0.2, 0.05, 0, 700);
+        return a;
+    }
+
+    /** Padlock shackle or key switch. */
+    latch() {
+        const a = this._noise(0.3, 0.012, 0, 5200);
+        if (a) this._noise(0.2, 0.012, 0.06, 4200);
+        return a;
+    }
 }

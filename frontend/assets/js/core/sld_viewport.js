@@ -183,5 +183,6 @@ export function viewportToolbarHtml(active, { inspectorOpen = true } = {}) {
         + '<button type="button" class="vp-btn" data-vp-zoom="out" aria-label="Zoom out">-</button>'
         + '<button type="button" class="vp-btn" data-vp-zoom="in" aria-label="Zoom in">+</button></div>'
         + `<button type="button" class="vp-btn vp-insp" data-vp-insp="1" aria-pressed="${inspectorOpen}">Inspector</button>`
+        + '<button type="button" class="vp-btn vp-insp" data-vp-field="1" title="Field view of the 13.8 kV switchgear">Field: SWGR</button>'
         + '<span class="vp-hint">wheel = zoom · drag = pan</span>';
 }

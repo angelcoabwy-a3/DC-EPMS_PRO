@@ -257,6 +257,23 @@ def conditions_from_plant(plant: dict[str, Any]) -> list[Condition]:
             out.append(Condition(f"DEV_{did}_INVERTER_FAULT", bool(d.get("fault")), HIGH,
                                  f"{d.get('display', did)}: inverter fault "
                                  f"({str(d.get('fault') or '').replace('_', ' ').lower()})", did))
+        elif d.get("kind") == "transfer":
+            # L1: the two 13.8 kV mains as switchgear cubicles.
+            name = d.get("display", did)
+            for c in d.get("cubicles") or []:
+                brk = str(c.get("breaker", "?"))
+                key = brk.replace("-", "")
+                src_txt = "utility incomer" if brk == "52-U" else "generator main"
+                out += [
+                    Condition(f"DEV_{did}_{key}_UNAVAILABLE", c.get("racking") != "CONNECTED", MEDIUM,
+                              f"{name}: {brk} racked to {c.get('racking')} ({src_txt} unavailable)", did),
+                    Condition(f"DEV_{did}_{key}_86", bool(c.get("lockout_86")), HIGH,
+                              f"{name}: {brk} 86 lockout tripped (close circuit open)", did),
+                    Condition(f"DEV_{did}_{key}_SPRING",
+                              c.get("racking") == "CONNECTED" and not c.get("spring_charged")
+                              and not c.get("motor_on"), LOW,
+                              f"{name}: {brk} closing spring discharged, charging motor OFF", did),
+                ]
         elif d.get("kind") == "generator":
             out.append(Condition(f"DEV_{did}_BAY_OOS", status.get("text") == "Bay not in service",
                                  LOW, f"{d.get('display', did)}: bay not in service", did))

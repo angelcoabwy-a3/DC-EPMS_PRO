@@ -45,6 +45,7 @@ import { plantPost, plantGet } from '../core/plant_client.js';
 import { faceplateHtml } from '../core/sbo_faceplate.js';
 import { trainingHtml } from '../core/training_view.js';
 import { openPrintable } from '../core/training_print.js';
+import { fieldLineupSvg, applyFieldState, resolveClick, fieldLogHtml } from '../core/field_switchgear.js';
 import { needleAngle, permissive, etaNow, etaText } from '../core/synchroscope.js';
 import { escapeHTML } from '../core/sanitize.js';
 import { relayRowSvg, relayStates, applyRelays } from '../core/relay_tags.js';
@@ -100,6 +101,12 @@ let _prevXfer = {};
 let _prevSteps = 0;
 // UI-1: SLD viewport (named views, zoom, pan) + inspector toggle.
 let _vp = null;
+// L1: field view of the 13.8 kV switchgear (Layer 2).
+let _fieldPath = null;
+let _fieldMsg = '';
+let _fieldBusy = false;
+let _fieldTimer = null;
+const _fieldCovers = new Set();
 let _vpReturn = DEFAULT_PRESET;
 let _inspOpen = true;
 const _VP_KEY = 'dcepms.sld.view';
@@ -442,7 +449,10 @@ function _flatPath(suffix, S, energized) {
         + `<path class="pf-52-blade" d="M${x - 7} ${y + 7} L${x + 7} ${y - 7}"/>`
         + `<text class="pf-52-label" x="${labelX}" y="${labelY}" text-anchor="${anchor}">${label}</text>`
         + `<text class="pf-52-state" x="${st[0]}" y="${st[1]}" text-anchor="${st[2]}">`
-        + `${breakerText('closed')}</text></g>`;
+        + `${breakerText('closed')}</text>`
+        // L1: switchgear cubicle state (racked out, 86, padlock)
+        + `<text class="pf-52-cub" data-cub="${suffix}:${id}" x="${id === 'gm' ? x - 16 : st[0]}" `
+        + `y="${id === 'gm' ? y + 6 : st[1] + 10}" text-anchor="${id === 'gm' ? 'end' : st[2]}"></text></g>`;
     const breakers = brk('u', '52-U', L.u52, S, L.u52 - 13, S - 14, 'end', [L.u52, S + 25, 'middle'])
         + brk('gm', '52-GM', T.gen, gmY, T.gen - 18, gmY - 6, 'end', [T.gen + 16, gmY + 4, 'start'])
         // HMI H2: 52-U / 52-GM interlock (the transfer is open-transition
@@ -891,6 +901,11 @@ function _onFlatClick(e) {
     const node = e.target.closest('.pf-node');
     if (!node) return;
     const id = node.dataset.sldNode;
+    // L1: the 13.8 kV switchgear bus opens the field view in LIVE.
+    if (_mode === 'live' && /^mv_swgr_[ab]$/.test(id || '')) {
+        _openField(id.slice(-1));
+        return;
+    }
     if (_mode === 'whatif') {
         // Sandbox: any node-click injects a simulated fault into the
         // LOCAL DAG engine — the cascade is computed in frontend memory,
@@ -1019,6 +1034,25 @@ function _applyRelays(grid) {
     if (!root) return;
     const plant = _mode === 'live' ? _plant : null;
     for (const p of ['a', 'b']) applyRelays(root, p, relayStates(p, plant, grid));
+    // L1: cubicle state next to 52-U / 52-GM (LIVE only: the What-If
+    // sandbox has no switchgear model).
+    for (const p of ['a', 'b']) {
+        const xfer = plant && (plant.devices || []).find((d) => d.id === `mvtc_${p}`);
+        for (const [key, brk] of [['u', '52-U'], ['gm', '52-GM']]) {
+            const c = xfer && (xfer.cubicles || []).find((x) => x.breaker === brk);
+            const t = root.querySelector(`[data-cub="${p}:${key}"]`);
+            const g = root.querySelector(`[data-brk="${p}:${key}"]`);
+            const parts = [];
+            if (c && c.racking !== 'CONNECTED') parts.push(c.racking === 'TEST' ? 'TEST' : 'DISC');
+            if (c && c.lockout_86) parts.push('86');
+            if (c && c.padlock) parts.push('LOCKED');
+            if (t) t.textContent = parts.join(' · ');
+            if (g) {
+                g.setAttribute('data-racked', c && c.racking !== 'CONNECTED' ? '1' : '0');
+                g.setAttribute('data-lockout', c && c.lockout_86 ? '1' : '0');
+            }
+        }
+    }
 }
 
 function _applyGrid(grid) {
@@ -1171,6 +1205,7 @@ async function _pollAlarms(force = false) {
         _renderAlarms();
     }
     _renderFaceplate();
+    _applyField();
 }
 
 // ── T2: sound cues from plant / alarm changes ────────────────────
@@ -1256,6 +1291,8 @@ function _onViewportClick(ev) {
         _vp.zoom(btn.dataset.vpZoom === 'in' ? 1.25 : 0.8);
     } else if (btn.dataset.vpInsp) {
         _setInspector(!_inspOpen);
+    } else if (btn.dataset.vpField) {
+        _openField(_vp.preset === 'b' ? 'b' : 'a');
     }
 }
 
@@ -1307,6 +1344,146 @@ function _focusDrill() {
     _vp.set(presetForPath(_drillPath()));
     const canvas = document.querySelector('#view-power .pid-canvas');
     if (canvas && canvas.scrollIntoView) canvas.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// ── L1: field view of the 13.8 kV switchgear ─────────────────────
+function _fieldXfer() {
+    const id = `mvtc_${_fieldPath}`;
+    return ((_plant && _plant.devices) || []).find((d) => d.id === id) || null;
+}
+
+function _ensureField() {
+    let el = document.getElementById('pwr-field');
+    if (el) return el;
+    el = document.createElement('aside');
+    el.id = 'pwr-field';
+    el.className = 'pwr-field';
+    el.hidden = true;
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-modal', 'true');
+    el.setAttribute('aria-label', 'Field view: 13.8 kV switchgear');
+    el.innerHTML = '<div class="fsg-shell"><div class="fsg-bar"><span>FIELD VIEW</span>'
+        + '<span class="fsg-paths"><button type="button" data-fpath="a">PATH A</button>'
+        + '<button type="button" data-fpath="b">PATH B</button></span>'
+        + '<span class="fsg-note">Layer 2 · equipment view · every operation is checked by the server interlocks and recorded</span>'
+        + '<button type="button" class="fsg-close" data-fclose="1" aria-label="Close field view">CLOSE ✕</button></div>'
+        + '<div class="fsg-stage" id="pwr-field-stage"></div><div class="fsg-foot" id="pwr-field-foot"></div></div>';
+    el.addEventListener('click', _onFieldClick);
+    document.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape' && !el.hidden) _closeField();
+    });
+    document.body.appendChild(el);
+    return el;
+}
+
+function _openField(path) {
+    const el = _ensureField();
+    _fieldPath = String(path || 'a').toLowerCase() === 'b' ? 'b' : 'a';
+    _fieldMsg = '';
+    _fieldCovers.clear();
+    document.getElementById('pwr-field-stage').innerHTML = fieldLineupSvg(_fieldPath);
+    el.querySelectorAll('[data-fpath]').forEach((b) =>
+        b.setAttribute('aria-pressed', String(b.dataset.fpath === _fieldPath)));
+    el.hidden = false;
+    _applyField();
+    if (_fieldTimer) clearInterval(_fieldTimer);
+    _fieldTimer = setInterval(() => { if (!_fieldBusy) _pollAlarms(true); }, 1000);
+    _pollAlarms(true);
+}
+
+function _closeField() {
+    const el = document.getElementById('pwr-field');
+    if (el) el.hidden = true;
+    _fieldPath = null;
+    if (_fieldTimer) { clearInterval(_fieldTimer); _fieldTimer = null; }
+}
+
+function _applyField() {
+    if (!_fieldPath) return;
+    const stage = document.getElementById('pwr-field-stage');
+    const xfer = _fieldXfer();
+    if (stage && xfer) applyFieldState(stage, xfer, { covers: _fieldCovers });
+    const foot = document.getElementById('pwr-field-foot');
+    if (foot) {
+        foot.innerHTML = xfer ? fieldLogHtml((_plant && _plant.events) || [], _fieldMsg, xfer.id)
+            : '<div class="fsg-lcd-msg" data-tone="warn">Plant not reachable: sign in or wait for the next poll.</div>';
+    }
+}
+
+const _wait = (ms) => new Promise((r) => { setTimeout(r, ms); });
+
+async function _onFieldClick(ev) {
+    const t = ev.target;
+    if (t.closest && t.closest('[data-fclose]')) { _closeField(); return; }
+    const pb = t.closest && t.closest('[data-fpath]');
+    if (pb) { _openField(pb.dataset.fpath); return; }
+    if (_fieldBusy) return;
+    const xfer = _fieldXfer();
+    const r = resolveClick(t, xfer);
+    if (!r || !xfer) return;
+    if (r.cover) {
+        if (_fieldCovers.has(r.cover)) _fieldCovers.delete(r.cover); else _fieldCovers.add(r.cover);
+        _audio.latch();
+        _applyField();
+        return;
+    }
+    const stage = document.getElementById('pwr-field-stage');
+    const url = (p) => `/api/devices/${encodeURIComponent(xfer.id)}/${p}`;
+    _fieldBusy = true;
+    try {
+        if (r.authority) {
+            _audio.latch();
+            const res = await plantPost(url('authority'), { authority: r.authority });
+            _fieldMsg = res.ok ? `CONTROL ${r.authority}` : `KEY SWITCH: ${res.detail}`;
+        } else {
+            const c = (xfer.cubicles || []).find((x) => x.breaker === r.breaker) || {};
+            const permitted = ((c.actions || []).find((a) => a.action === r.action) || {}).permitted;
+            const sec = stage && stage.querySelector(`[data-section="${r.breaker}"]`);
+            const target = t.closest('[data-act]');
+            // Mechanism animation first, as on real equipment: the crank
+            // turns, the handle strokes, the button goes down. A blocked
+            // mechanism only jolts (the server still decides).
+            if (permitted && (r.action === 'RACK_IN' || r.action === 'RACK_OUT')) {
+                const crank = sec && sec.querySelector('.fsg-crank');
+                const cls = r.action === 'RACK_OUT' ? 'fsg-turning' : 'fsg-turning-back';
+                if (crank) crank.classList.add(cls);
+                _audio.ratchet(14, 1.0);
+                await _wait(1050);
+                if (crank) crank.classList.remove(cls);
+            } else if (permitted && r.action === 'PUMP_SPRING') {
+                const lever = sec && sec.querySelector('.fsg-lever');
+                if (lever) lever.classList.add('fsg-pumping');
+                _audio.pump();
+                await _wait(180);
+                if (lever) lever.classList.remove('fsg-pumping');
+            } else if (r.kind) {
+                const cap = target;
+                if (cap) cap.classList.add('fsg-press');
+                await _wait(90);
+                if (cap) cap.classList.remove('fsg-press');
+            }
+            const res = await plantPost(url('field'), { breaker: r.breaker, action: r.action });
+            if (res.ok) {
+                const evd = res.data.event || {};
+                _fieldMsg = `${r.action.replace(/_/g, ' ')} ${r.breaker} · ${evd.racking || ''}`;
+                if (r.action === 'LOCAL_CLOSE' || r.action === 'LOCAL_OPEN' || r.action === 'TRIP_86') {
+                    _audio.breaker(r.action === 'LOCAL_CLOSE');
+                } else if (r.action === 'PADLOCK' || r.action === 'UNPADLOCK') _audio.latch();
+                if (r.kind) _fieldCovers.delete(`${r.breaker}:${r.kind}`);
+            } else {
+                _fieldMsg = `INTERLOCK · ${res.detail}`;
+                _audio.clunk();
+                if (target) {
+                    target.classList.add('fsg-shake');
+                    setTimeout(() => target.classList.remove('fsg-shake'), 340);
+                }
+            }
+        }
+    } finally {
+        _fieldBusy = false;
+    }
+    await _pollAlarms(true);
+    if (_trView && _trView.active) _trainingTick();
 }
 
 function _drillPath() {
@@ -1473,6 +1650,7 @@ async function _onFaceplateClick(ev) {
     const btn = ev.target.closest('button');
     if (!btn) return;
     if (btn.dataset.fpClose) { _fpTarget = null; _fpPending.clear(); _renderFaceplate(); return; }
+    if (btn.dataset.fpField) { _openField(btn.dataset.fpField); return; }
     const url = (id, verb) => `/api/devices/${encodeURIComponent(id)}/${verb}`;
     let r = null;
     if (btn.dataset.fpAuth) {
@@ -1849,6 +2027,10 @@ export const __power_test__ = {
     n1Overlay: _n1Overlay,
     setReplay: _setReplay,
     setFarmLod: _setFarmLod,
+    openField: _openField,
+    closeField: _closeField,
+    onFieldClick: _onFieldClick,
+    setPlant: (p) => { _plant = p; },
     buildViewport: _buildViewport,
     getViewport: () => _vp,
     renderHud: _renderHud,

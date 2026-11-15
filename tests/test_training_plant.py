@@ -72,7 +72,7 @@ class TestUtilityLoss:
         ctl.inject_utility_loss("a", "instructor")
         snap = ctl.snapshot("mvtc_a")
         assert snap["state"] == dc.XFER_OPEN
-        assert [i["value"] for i in snap["indications"]] == ["OPEN", "OPEN", "PICKED UP"]
+        assert [i["value"] for i in snap["indications"][:3]] == ["OPEN", "OPEN", "PICKED UP"]
         assert snap["status"]["tone"] == "crit"
         s = summary(ctl)
         assert (s["source"], s["bus_energized"], s["utility_ok"]) == ("NONE", False, False)

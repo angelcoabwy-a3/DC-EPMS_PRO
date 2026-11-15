@@ -65,7 +65,7 @@ def steps_done(view):
 class TestLibrary:
     def test_three_valid_drills(self):
         drills = tr.load_drills(DRILLS)
-        assert sorted(drills) == ["DRILL-01", "DRILL-02", "DRILL-03", "DRILL-04"]
+        assert sorted(drills) == ["DRILL-01", "DRILL-02", "DRILL-03", "DRILL-04", "DRILL-05"]
 
     def test_validator_rejects_unknown_check(self):
         with pytest.raises(ValueError, match="unknown check"):
@@ -231,7 +231,7 @@ def bearer(name):
 class TestRoutes:
     def test_flow_and_ledger(self, client, clock):
         c, ctl, engine, _ = client
-        assert len(c.get("/api/training/drills").json()["drills"]) == 4
+        assert len(c.get("/api/training/drills").json()["drills"]) == 5
         assert c.post("/api/training/start", json={"drill_id": "DRILL-03"}).status_code == 403
         r = c.post("/api/training/start", json={"drill_id": "DRILL-03"}, headers=bearer("manager"))
         assert r.status_code == 200
@@ -500,3 +500,60 @@ class TestRubricV2:
                                   "holds": {"type": "nope"}}]}
         with pytest.raises(ValueError, match="holds"):
             tr.validate_drill(bad)
+
+
+# ── L1: DRILL-05 (52-GM rack out and lockout) ──────────────────────
+class TestDrill05RackOut:
+    def fa(self, ctl, brk, action, actor="trainee"):
+        return ctl.field_action("mvtc_a", brk, action, actor)
+
+    def test_full_isolation_passes_clean(self, world, clock):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-05", "trainee", ctl, engine)
+        ctl.set_authority("mvtc_a", dc.AUTH_LOCAL, "trainee")
+        self.fa(ctl, "52-GM", "RACK_OUT")
+        self.fa(ctl, "52-GM", "MOTOR_OFF")
+        mgr.evaluate(ctl, engine)
+        self.fa(ctl, "52-GM", "LOCAL_CLOSE")
+        self.fa(ctl, "52-GM", "LOCAL_OPEN")
+        mgr.evaluate(ctl, engine)
+        self.fa(ctl, "52-GM", "RACK_OUT")
+        mgr.evaluate(ctl, engine)
+        self.fa(ctl, "52-GM", "PADLOCK")
+        view = mgr.evaluate(ctl, engine)
+        s = view["session"]
+        assert (s["outcome"], s["violations"]) == ("PASS", 0)
+        assert steps_done(view) == ["LOCAL", "TEST", "MOTOR", "DISCHARGE", "DISCONNECT", "LOCK"]
+        assert mgr.last_report["drill"]["references"]
+
+    def test_discharge_with_motor_on_does_not_count(self, world, clock):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-05", "trainee", ctl, engine)
+        ctl.set_authority("mvtc_a", dc.AUTH_LOCAL, "trainee")
+        self.fa(ctl, "52-GM", "RACK_OUT")
+        mgr.evaluate(ctl, engine)
+        self.fa(ctl, "52-GM", "LOCAL_CLOSE")                # motor still ON
+        self.fa(ctl, "52-GM", "LOCAL_OPEN")
+        clock.tick(10)                                      # motor recharges the spring
+        view = mgr.evaluate(ctl, engine)
+        assert steps_done(view) == ["LOCAL", "TEST"]
+
+    def test_racking_a_closed_breaker_is_refused_and_counted(self, client):
+        c, ctl, engine, mgr = client
+        dc.register_device_control_routes(c.app, lambda: ctl)
+        h = bearer("manager")
+        c.post("/api/training/start", json={"drill_id": "DRILL-05"}, headers=h)
+        c.post("/api/devices/mvtc_a/authority", json={"authority": "LOCAL"}, headers=h)
+        r = c.post("/api/devices/mvtc_a/field", json={"breaker": "52-U", "action": "RACK_OUT"}, headers=h)
+        assert r.status_code == 409
+        view = c.get("/api/training/session").json()
+        assert view["session"]["violations"] == 1
+
+    def test_opening_the_incomer_fails_the_drill(self, world):
+        ctl, engine, mgr = world
+        mgr.start("DRILL-05", "trainee", ctl, engine)
+        ctl.set_authority("mvtc_a", dc.AUTH_LOCAL, "trainee")
+        self.fa(ctl, "52-U", "LOCAL_OPEN")
+        view = mgr.evaluate(ctl, engine)
+        assert view["session"]["outcome"] == "FAIL"
+        assert "wrong breaker" in view["session"]["reason"]

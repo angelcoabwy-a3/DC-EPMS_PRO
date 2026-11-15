@@ -68,6 +68,8 @@ export function faceplateHtml(target, plant, { pending = new Map(), nowMs = Date
             + `<div class="fp-status">${escapeHTML(d.status?.text || '')}</div>`
             + (ind ? `<div class="fp-inds">${ind}</div>` : '')
             + (d.kind === 'transfer' && d.synchro ? synchroscopeHtml(d.id, d.synchro) : '')
+            + (d.kind === 'transfer' && d.cubicles
+                ? `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(d.path)}">Field view: 13.8 kV switchgear (racking, springs, 86, padlock)</button>` : '')
             + _commands(d, pending, nowMs) + '</div>';
     }).join('');
     return `<div class="fp-head"><span>${escapeHTML(head)} · SELECT then EXECUTE</span>`

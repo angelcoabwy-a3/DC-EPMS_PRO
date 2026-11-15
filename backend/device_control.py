@@ -63,7 +63,7 @@ from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Request
 
-from backend import mv_switching as mv
+from backend import mv_cubicle as cub, mv_switching as mv
 
 # ── Kinds ───────────────────────────────────────────────────────────
 KIND_UPS = "ups"
@@ -118,6 +118,7 @@ ACTION_DEVICE_COMMAND_RESULT = "DEVICE_COMMAND_RESULT"
 ACTION_MV_PROCEDURE = "MV_SWITCHING_PROCEDURE"
 ACTION_MV_STEP = "MV_SWITCHING_STEP"
 ACTION_MV_WITNESS = "MV_SWITCHING_WITNESS"
+ACTION_MV_FIELD = "MV_SWITCHGEAR_FIELD_ACTION"
 
 SIMULATION_NOTICE = (
     "SIMULATED plant. No field equipment is connected: states and "
@@ -334,6 +335,9 @@ class DeviceController:
     _sync_at: float | None = None
     # path -> {"device_id", "actor", "deadline"}: supervised close armed
     _sync_close: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # L1: draw-out cubicles of the two mains, key (path, breaker)
+    cubicles: dict[tuple[str, str], cub.Cubicle] = field(default_factory=dict)
+    _auto_blocked: dict[str, str] = field(default_factory=dict)
 
     # ── Construction ────────────────────────────────────────────────
     @classmethod
@@ -357,6 +361,8 @@ class DeviceController:
             ctl.load_lost[path] = False
             ctl.gen_hz[path] = UTILITY_HZ
             ctl.sync_angle[path] = 0.0
+            for brk in cub.BREAKERS:
+                ctl.cubicles[(path, brk)] = cub.Cubicle(breaker=brk)
             upper = path.upper()
             for n in range(1, int(ups["units_per_path"]) + 1):
                 ctl._add(Device(
@@ -444,9 +450,104 @@ class DeviceController:
                 dev.state, dev.state_since = GEN_ON_LOAD, now
             elif dev.state == GEN_ON_LOAD and not carrying:
                 dev.state, dev.state_since = GEN_RUNNING, now
+        for (path, brk), c in self.cubicles.items():
+            if cub.tick(c, now):
+                xfer = next(iter(self._of(KIND_TRANSFER, path)), None)
+                if xfer is not None:
+                    self._event("spring_charged", xfer, "controller", breaker=brk, by="motor")
         self._advance_auto_transfer(now)
         self._advance_battery(now)
         self._advance_sync(now)
+
+    # ── L1: draw-out cubicles of 52-U / 52-GM ───────────────────────
+    def _main_closed(self, path: str, brk: str) -> bool:
+        xfer = next(iter(self._of(KIND_TRANSFER, path)), None)
+        if xfer is None:
+            return False
+        return xfer.state == (XFER_UTILITY if brk == cub.BREAKER_U else XFER_GENERATORS)
+
+    def _cubicle_reason(self, path: str, brk: str) -> str | None:
+        c = self.cubicles.get((path, brk))
+        return cub.close_reason(c) if c is not None else None
+
+    def _closed_main(self, path: str, brk: str) -> None:
+        """A main breaker was just closed (any control): the closing
+        spring is released and the motor, if ON, recharges it."""
+        c = self.cubicles.get((path, brk))
+        if c is not None:
+            cub.discharge(c, self.clock())
+
+    def _plant_close_reason(self, xfer: Device, brk: str) -> str | None:
+        """Plant interlock for a LOCAL close of a main in CONNECTED."""
+        path = xfer.path
+        if brk == cub.BREAKER_U:
+            if xfer.state == XFER_GENERATORS:
+                return ("Interlock: 52-GM is closed. The A3 design never parallels the mains "
+                        "from the switchgear: open 52-GM first (dead-bus transfer).")
+            if not self.utility_ok.get(path, True):
+                return "No utility voltage on the incomer: ANSI 27 holds 52-U open."
+            return None
+        if xfer.state == XFER_UTILITY:
+            return "Interlock: 52-U is closed (open-transition design): open 52-U first."
+        on_bus = sum(d.rated_kw for d in self._gens_on_bus(path))
+        demand = self._demand_kw(path)
+        if on_bus < demand:
+            return (f"Generator bus has {on_bus / 1000:.1f} MW synchronised, below the "
+                    f"{demand / 1000:.1f} MW the path draws.")
+        return None
+
+    def _cubicle_ctx(self, xfer: Device, brk: str, actor: str = "") -> cub.CubicleContext:
+        return cub.CubicleContext(
+            now=self.clock(), local_authority=xfer.authority == AUTH_LOCAL,
+            main_closed=self._main_closed(xfer.path, brk),
+            plant_close_reason=self._plant_close_reason(xfer, brk), actor=actor,
+        )
+
+    def cubicles_of(self, xfer: Device) -> list[dict[str, Any]]:
+        return [cub.describe(self.cubicles[(xfer.path, b)], self._cubicle_ctx(xfer, b))
+                for b in cub.BREAKERS if (xfer.path, b) in self.cubicles]
+
+    def field_action(self, device_id: str, breaker: str, action: str, actor: str) -> dict[str, Any]:
+        """L1: an operation at the switchgear (racking, springs, local
+        push buttons, 86 lockout, padlock). Recorded as a "command"
+        event named ACTION@BREAKER, so drills can list or forbid it."""
+        action = str(action or "").upper()
+        breaker = str(breaker or "").upper()
+        with self._lock:
+            self._advance()
+            xfer = self._get(device_id)
+            if xfer.kind != KIND_TRANSFER:
+                raise DeviceControlError(400, "switchgear actions apply to an MV transfer controller")
+            c = self.cubicles.get((xfer.path, breaker))
+            if c is None:
+                raise DeviceControlError(404, f"no cubicle {breaker!r} on path {xfer.path.upper()}")
+            if action not in cub.ACTIONS:
+                raise DeviceControlError(400, f"action must be one of {list(cub.ACTIONS)}")
+            ctx = self._cubicle_ctx(xfer, breaker, actor)
+            reason = cub.interlock(c, action, ctx)
+            if reason:
+                raise DeviceControlError(409, reason)
+            before = {"racking": c.racking, "closed": cub.is_closed(c, ctx.main_closed)}
+            previous = xfer.state
+            effect = cub.apply(c, action, ctx)
+            now = self.clock()
+            if effect == "main_open":
+                xfer.state, xfer.state_since = XFER_OPEN, now
+                self._drop_selections(xfer.device_id)
+                if xfer.path in self._sync_close:
+                    self._cancel_sync_close(xfer.path, f"{breaker} opened at the switchgear")
+            elif effect == "main_close":
+                xfer.state = XFER_UTILITY if breaker == cub.BREAKER_U else XFER_GENERATORS
+                xfer.state_since = now
+            self._advance()
+            after = cub.is_closed(c, self._main_closed(xfer.path, breaker))
+            return self._event(
+                "command", xfer, actor, command=f"{action}@{breaker}", field=True,
+                breaker=breaker, action=action, from_state=previous, to_state=xfer.state,
+                racking=c.racking, racking_before=before["racking"],
+                breaker_closed=after, spring_charged=c.spring_charged,
+                lockout_86=c.lockout_86, padlock=c.padlock,
+            )
 
     # ── T3: generator bus vs utility (synchroscope model) ──────────
     def _islanded(self, path: str) -> bool:
@@ -474,6 +575,10 @@ class DeviceController:
                 tau = window_entry_s(a0, slip)
                 limit = min(dt, pending["deadline"] - t0)
                 if abs(slip) <= SYNC_MAX_SLIP_HZ and tau is not None and tau <= limit:
+                    why = self._cubicle_reason(path, cub.BREAKER_U)
+                    if why:
+                        self._cancel_sync_close(path, why)
+                        continue
                     self._sync_close_now(path, t0 + tau, a0 + 360.0 * slip * tau, slip, now)
                     continue
                 if now >= pending["deadline"]:
@@ -489,6 +594,7 @@ class DeviceController:
         dev = self.devices[pending["device_id"]]
         previous = dev.state
         dev.state, dev.state_since = XFER_UTILITY, at
+        self._closed_main(path, cub.BREAKER_U)
         self.gen_hz[path], self.sync_angle[path] = UTILITY_HZ, 0.0
         angle = (angle + 180.0) % 360.0 - 180.0
         event = self._event(
@@ -612,8 +718,17 @@ class DeviceController:
             if xfer.authority != AUTH_AUTO or xfer.state != XFER_OPEN:
                 continue
             path = xfer.path
-            if self.utility_ok.get(path, True):
+            u_block = self._cubicle_reason(path, cub.BREAKER_U)
+            if self.utility_ok.get(path, True) and u_block:
+                # Utility is there but its breaker cannot close (racked
+                # out, 86 tripped, spring discharged): the controller
+                # treats the normal source as unavailable and goes on
+                # to the emergency source below.
+                self._auto_block(xfer, u_block)
+            elif self.utility_ok.get(path, True):
                 xfer.state, xfer.state_since = XFER_UTILITY, now
+                self._closed_main(path, cub.BREAKER_U)
+                self._auto_blocked.pop(path, None)
                 self._event("auto_transfer", xfer, "controller", to_state=XFER_UTILITY,
                             detail="utility voltage restored: 52-U reclosed")
                 continue
@@ -622,9 +737,22 @@ class DeviceController:
                 self._event("auto_start", gen, "controller", to_state=GEN_CRANKING)
             on_bus = sum(d.rated_kw for d in self._gens_on_bus(path))
             if on_bus > 0 and on_bus >= self._demand_kw(path):
+                why = self._cubicle_reason(path, cub.BREAKER_GM)
+                if why:
+                    self._auto_block(xfer, why)
+                    continue
                 xfer.state, xfer.state_since = XFER_GENERATORS, now
+                self._closed_main(path, cub.BREAKER_GM)
+                self._auto_blocked.pop(path, None)
                 self._event("auto_transfer", xfer, "controller", to_state=XFER_GENERATORS,
                             detail="generator bus ready: 52-GM closed")
+
+    def _auto_block(self, xfer: Device, why: str) -> None:
+        """Log once per reason: the automatic transfer is held by the
+        switchgear (racked out, 86 tripped or spring discharged)."""
+        if self._auto_blocked.get(xfer.path) != why:
+            self._auto_blocked[xfer.path] = why
+            self._event("auto_transfer_blocked", xfer, "controller", detail=why)
 
     def _running_sets(self, path: str) -> list[Device]:
         return [d for d in self._of(KIND_GENERATOR, path) if d.state in (GEN_RUNNING, GEN_ON_LOAD)]
@@ -765,12 +893,13 @@ class DeviceController:
             )
             for name in ("devices", "bays", "procedures", "path_share", "utility_ok",
                          "battery_soc", "load_lost", "faults", "closed_transition",
-                         "gen_hz", "sync_angle"):
+                         "gen_hz", "sync_angle", "cubicles"):
                 setattr(self, name, getattr(fresh, name))
             self._selections.clear()
             self._batt_at = None
             self._sync_at = None
             self._sync_close.clear()
+            self._auto_blocked.clear()
             event = {
                 "ts": round(self.wall_clock(), 3), "event": "plant_reset",
                 "device_id": "plant", "actor": actor,
@@ -906,7 +1035,7 @@ class DeviceController:
                     return "No utility voltage on the incomer (ANSI 27 picked up)."
                 if dev.path in self._sync_close:
                     return "A supervised close is already armed: wait or cancel it."
-                return None
+                return self._cubicle_reason(dev.path, cub.BREAKER_U)
             if command == "STOP_GENERATORS":
                 if dev.state == XFER_GENERATORS:
                     return "Path is on generators: retransfer to utility first."
@@ -923,13 +1052,13 @@ class DeviceController:
                         f"Generator bus has {on_bus / 1000:.1f} MW synchronised, below the "
                         f"{demand / 1000:.1f} MW the path is drawing."
                     )
-                return None
+                return self._cubicle_reason(dev.path, cub.BREAKER_GM)
             if command == "RETRANSFER_TO_UTILITY":
                 if dev.state == XFER_UTILITY:
                     return "Path is already on utility."
                 if not self.utility_ok.get(dev.path, True):
                     return "No utility voltage on the incomer (ANSI 27 picked up)."
-                return None
+                return self._cubicle_reason(dev.path, cub.BREAKER_U)
         elif dev.kind == KIND_GENERATOR:
             bay = self.bays[dev.device_id]
             if command == "START":
@@ -1038,6 +1167,9 @@ class DeviceController:
                  "value": mv.CLOSED if dev.state == XFER_GENERATORS else mv.OPEN},
                 {"label": "ANSI 27 incomer undervoltage",
                  "value": "NORMAL" if self.utility_ok.get(dev.path, True) else "PICKED UP"},
+            ] + [
+                {"label": f"{b} cubicle", "value": _cubicle_text(self.cubicles[(dev.path, b)])}
+                for b in cub.BREAKERS if (dev.path, b) in self.cubicles
             ]
         if dev.kind == KIND_GENERATOR:
             return self.bays[dev.device_id].indications()
@@ -1113,6 +1245,8 @@ class DeviceController:
             snap["switching"] = self._switching(dev)
         if dev.kind == KIND_TRANSFER:
             snap["synchro"] = self.synchro(dev.path)
+            snap["cubicles"] = self.cubicles_of(dev)
+            snap["auto_blocked"] = self._auto_blocked.get(dev.path)
         return snap
 
     def _switching(self, dev: Device) -> dict[str, Any]:
@@ -1267,6 +1401,7 @@ class DeviceController:
                         slip_hz=sync["slip_hz"],
                     )
                 dev.state, dev.state_since = XFER_UTILITY, self.clock()
+                self._closed_main(dev.path, cub.BREAKER_U)
                 self.gen_hz[dev.path], self.sync_angle[dev.path] = UTILITY_HZ, 0.0
                 self._advance()
                 return self._event(
@@ -1286,6 +1421,10 @@ class DeviceController:
                 )
             dev.state = _NEXT_STATE[sel.command]
             dev.state_since = self.clock()
+            if sel.command == "TRANSFER_TO_GENERATORS":
+                self._closed_main(dev.path, cub.BREAKER_GM)
+            elif sel.command == "RETRANSFER_TO_UTILITY":
+                self._closed_main(dev.path, cub.BREAKER_U)
             if sel.command == "ISOLATE" and dev.device_id in self.faults:
                 # Training assumption: the isolated block is repaired.
                 del self.faults[dev.device_id]
@@ -1494,6 +1633,16 @@ def window_entry_s(angle_deg: float, slip_hz: float,
     return (a - target) / -rate
 
 
+def _cubicle_text(c: cub.Cubicle) -> str:
+    parts = [c.racking]
+    parts.append("SPRING CHARGED" if c.spring_charged else "SPRING DISCHARGED")
+    if c.lockout_86:
+        parts.append("86 TRIPPED")
+    if c.padlock:
+        parts.append(f"PADLOCK {c.padlock}")
+    return " · ".join(parts)
+
+
 def _num(value: Any) -> float:
     try:
         number = float(value)
@@ -1666,6 +1815,32 @@ def register_device_control_routes(
         except DeviceControlError as exc:
             raise _fail(exc) from exc
         return {"success": True, **out}
+
+    @app.post("/api/devices/{device_id}/field")
+    async def switchgear_field_action(
+        device_id: str, request: Request, payload: dict = Body(...),
+    ) -> dict[str, Any]:
+        """L1: an operation at the 13.8 kV switchgear of a path
+        (racking, closing spring, local push buttons, 86 lockout,
+        personal padlock). One ledger entry per accepted action;
+        refusals go to the plant event log (a drill counts them)."""
+        actor = authorise(request, payload)
+        ctl = _controller()
+        breaker = str(payload.get("breaker") or "")
+        action = str(payload.get("action") or "")
+        try:
+            event = ctl.field_action(device_id, breaker, action, actor)
+        except DeviceControlError as exc:
+            ctl.refusal_event(device_id, actor, exc.detail,
+                              command=f"{action.upper()}@{breaker.upper()}")
+            raise _fail(exc) from exc
+        entry_id = await _ledger_append(
+            request.app, actor, ACTION_MV_FIELD,
+            {k: event.get(k) for k in ("device_id", "breaker", "action", "racking",
+                                        "breaker_closed", "lockout_86", "padlock",
+                                        "from_state", "to_state")},
+        )
+        return {"success": True, "event": event, "ledger_entry_id": entry_id}
 
     # ── MV switching procedures ─────────────────────────────────────
     @app.post("/api/mv/bays/{bay_id}/procedure")

@@ -113,6 +113,9 @@ export function reportDocument(r) {
         + `<dt>Ended</dt><dd class="mono">${e(r.ended)}</dd>`
         + `<dt>Duration</dt><dd class="mono">${fmtMs(r.duration_ms)} (target ${e(d.target_s)} s, limit ${e(d.time_limit_s)} s${late !== null ? `, ${late} s over target` : ''})</dd>`
         + '</dl>'
+        + ((d.references || []).length
+            ? `<h2>References</h2><ul>${d.references.map((x) => `<li>${e(x)}</li>`).join('')}</ul>`
+              + '<p class="note">Quoted from memory in the drill file: verify against the current edition.</p>' : '')
         + `<h2>Steps</h2>${steps}${notDone ? `<p class="note">Not completed:</p><ul>${notDone}</ul>` : ''}`
         + `<h2>Violations (${(r.violations || []).length})</h2>${viol}`
         + `<h2>Reverted steps</h2>${reverts}`

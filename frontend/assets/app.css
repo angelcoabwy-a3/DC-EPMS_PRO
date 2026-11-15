@@ -11006,3 +11006,195 @@ table.opt-votes td {
 .pf-relay[data-tone="crit"] .pf-relay-box { fill: #3a1214; stroke: #ef4444; }
 .pf-relay[data-tone="crit"] .pf-relay-state { fill: #fca5a5; }
 .dk-swatch-relay { fill: #1b1f25; stroke: #c3c8cf; }
+
+/* ════════════════════════════════════════════════════════════════
+ * L1 (2026-11-15): FIELD VIEW · 13.8 kV switchgear line-up (Layer 2).
+ * Equipment as it looks at the line-up: powder-coated light-grey
+ * steel, engraved phenolic nameplates, Fresnel pilot lights, real
+ * mechanisms. The ISA-101 rule (grey, colour by exception) stays on
+ * the control-room mimic; here colour is what the hardware shows.
+ * ════════════════════════════════════════════════════════════════ */
+.pwr-field { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: center; justify-content: center;
+    background: rgba(4, 6, 9, 0.78); backdrop-filter: blur(2px); }
+.pwr-field[hidden] { display: none; }
+.fsg-shell { width: min(1180px, 96vw); max-height: 96dvh; display: flex; flex-direction: column;
+    background: #101317; border: 1px solid #2a3038; border-radius: 6px; box-shadow: 0 30px 80px rgba(0,0,0,.6); overflow: hidden; }
+.fsg-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #2a3038;
+    font: 600 12px var(--font-mono); color: #c3c8cf; letter-spacing: .04em; }
+.fsg-bar .fsg-paths { display: inline-flex; border: 1px solid #2a3038; border-radius: 4px; overflow: hidden; }
+.fsg-bar button { font: inherit; min-height: 30px; padding: 0 12px; background: transparent; color: #9aa4b2; border: 0; cursor: pointer; }
+.fsg-bar button[aria-pressed="true"] { background: #9aa4b2; color: #0b0d10; }
+.fsg-bar .fsg-close { margin-left: auto; border: 1px solid #2a3038; border-radius: 4px; }
+.fsg-bar .fsg-note { color: #6b737d; font-weight: 400; font-size: 11px; }
+.fsg-stage { overflow: auto; padding: 8px; background:
+    repeating-linear-gradient(0deg, transparent 0 39px, rgba(255,255,255,.025) 39px 40px),
+    repeating-linear-gradient(90deg, transparent 0 39px, rgba(255,255,255,.025) 39px 40px), #0b0d10; }
+.fsg-svg { display: block; width: 100%; height: auto; max-height: calc(96dvh - 170px); user-select: none; }
+.fsg-foot { border-top: 1px solid #2a3038; padding: 8px 12px; background: #0b0d10; }
+
+/* frame and doors */
+.fsg-frame { fill: #2f353b; stroke: #15181c; stroke-width: 2; }
+.fsg-topcap { fill: #3a4148; }
+.fsg-split { stroke: #1b1f24; stroke-width: 3; }
+.fsg-head { font: 700 14px var(--font-mono); fill: #e6e9ed; letter-spacing: .08em; }
+.fsg-door { fill: url(#fsg-steel); stroke: #6c747b; stroke-width: 1.2; }
+.fsg-door-sheen { fill: url(#fsg-sheen); pointer-events: none; }
+.fsg-hinge { fill: #5d656c; stroke: #3c4247; }
+.fsg-handle rect { fill: #1e2226; stroke: #0a0b0d; }
+.fsg-handle-boss { fill: #8a929a; }
+.fsg-screw-head { fill: #c9ced3; stroke: #6f777e; stroke-width: .8; }
+.fsg-screw-hex { fill: #7d858c; }
+.fsg-tiny { font: 600 7.5px var(--font-mono); fill: #2b3036; letter-spacing: .05em; }
+.fsg-label { font: 700 9px var(--font-mono); fill: #23272c; letter-spacing: .06em; }
+.fsg-light { fill: #c3c8cf; }
+.fsg-dark { fill: #2b3036; }
+
+/* engraved phenolic nameplate */
+.fsg-np-plate { fill: #121416; stroke: #000; }
+.fsg-rivet { fill: #b6bcc1; stroke: #555; stroke-width: .5; }
+.fsg-np-big { font: 800 19px var(--font-mono); fill: #f2f4f6; letter-spacing: .08em; }
+.fsg-np-small { font: 600 7.5px var(--font-mono); fill: #d9dde1; letter-spacing: .08em; }
+
+/* arc-flash label */
+.fsg-afl-body { fill: #f7f5ef; stroke: #222; stroke-width: .8; }
+.fsg-afl-head { fill: #f28c00; }
+.fsg-afl-tri { fill: #111; }
+.fsg-afl-bang { font: 900 10px sans-serif; fill: #f28c00; }
+.fsg-afl-head-txt { font: 900 11px sans-serif; fill: #111; letter-spacing: .12em; }
+.fsg-afl-txt { font: 700 7px sans-serif; fill: #222; }
+.fsg-afl-strong { font: 900 8px sans-serif; fill: #b00020; }
+
+/* pilot lights with Fresnel lens */
+.fsg-led-bezel { fill: #2b2f33; stroke: #0b0c0d; stroke-width: 1.5; }
+.fsg-led-lens { fill: url(#fsg-lens-off); transition: fill .15s, filter .15s; }
+.fsg-led-fresnel { fill: none; stroke: rgba(255,255,255,.12); stroke-width: .8; }
+.fsg-led-glint { fill: rgba(255,255,255,.35); }
+.fsg-led[data-on="1"][data-colour="red"] .fsg-led-lens { fill: #ff3b30; filter: drop-shadow(0 0 6px #ff3b30); }
+.fsg-led[data-on="1"][data-colour="green"] .fsg-led-lens { fill: #34d058; filter: drop-shadow(0 0 6px #34d058); }
+.fsg-led[data-on="1"][data-colour="amber"] .fsg-led-lens { fill: #ffb020; filter: drop-shadow(0 0 6px #ffb020); }
+.fsg-led[data-on="1"][data-colour="white"] .fsg-led-lens { fill: #f4f6f8; filter: drop-shadow(0 0 6px #fff); }
+
+/* 86 lockout relay */
+.fsg-86, .fsg-sel, .fsg-lever, .fsg-hasp, .fsg-pb-cap, .fsg-cover, .fsg-btn-rack, .fsg-key { cursor: pointer; }
+.fsg-86-bezel { fill: #1b1e21; stroke: #000; stroke-width: 2; }
+.fsg-86-face { fill: #2c3135; }
+.fsg-86-target { fill: #111; stroke: #555; transition: fill .2s; }
+.fsg-86-handle { transition: transform .35s cubic-bezier(.3,1.6,.5,1); transform: rotate(-38deg); }
+.fsg-section[data-86="1"] .fsg-86-handle { transform: rotate(38deg); }
+.fsg-section[data-86="1"] .fsg-86-target { fill: #e01e1e; }
+.fsg-86-grip { fill: #c8102e; stroke: #5a0a14; stroke-width: 1.2; }
+.fsg-86-hub { fill: #9aa1a8; stroke: #333; }
+
+/* spring motor selector */
+.fsg-sel-plate { fill: #d9dde1; stroke: #6c747b; }
+.fsg-sel-body { fill: url(#fsg-knob); stroke: #000; }
+.fsg-sel-bar { fill: #0f1113; stroke: #30353a; }
+.fsg-sel-dot { fill: #f4f6f8; }
+.fsg-sel-knob { transition: transform .25s ease-out; transform: rotate(-45deg); }
+.fsg-section[data-motor="1"] .fsg-sel-knob { transform: rotate(45deg); }
+.fsg-lcd-txt { font: 700 12px var(--font-mono); fill: #9bffb0; letter-spacing: .08em;
+    paint-order: stroke; stroke: #0b1a10; stroke-width: 6px; }
+
+/* breaker compartment */
+.fsg-cavity { fill: #15181b; stroke: #050607; stroke-width: 2; }
+.fsg-truck { transition: transform .5s ease-in-out, opacity .5s; }
+.fsg-section[data-racking="TEST"] .fsg-truck { transform: translateY(5px); }
+.fsg-section[data-racking="DISCONNECTED"] .fsg-truck { transform: translateY(10px); opacity: .8; }
+.fsg-front { fill: url(#fsg-front); stroke: #5b636a; stroke-width: 1.2; }
+.fsg-window { fill: #0e1012; stroke: #3c4247; }
+.fsg-flag-face { fill: #1f9d48; transition: fill .12s; }
+.fsg-flag-txt { font: 900 10px var(--font-mono); fill: #fff; letter-spacing: .05em; }
+.fsg-section[data-closed="1"] .fsg-flag-face { fill: #d81f26; }
+.fsg-sflag-face { fill: #eef0f2; transition: fill .2s; }
+.fsg-sflag-txt { font: 900 9px var(--font-mono); fill: #222; letter-spacing: .04em; }
+.fsg-section[data-spring="1"] .fsg-sflag-face { fill: #ffd21f; }
+
+/* manual charging lever */
+.fsg-lever-hub { fill: #2a2e32; stroke: #000; }
+.fsg-lever-bar { fill: #3b4146; stroke: #111; }
+.fsg-lever-grip { fill: #c8102e; stroke: #4a0a12; }
+.fsg-lever-arm { transform: rotate(-20deg); transition: transform .18s ease-in; }
+.fsg-lever.fsg-pumping .fsg-lever-arm { transform: rotate(48deg); }
+
+/* push buttons + hinged clear covers */
+.fsg-pb-escutcheon { fill: #2a2e32; stroke: #0b0c0d; }
+.fsg-pb-ring { fill: #b7bdc2; stroke: #4a5056; }
+.fsg-pb-close { fill: #d81f26; }
+.fsg-pb-open { fill: #1f9d48; }
+.fsg-pb-glyph { font: 900 13px var(--font-mono); fill: #fff; pointer-events: none; }
+.fsg-pb-cap { transition: transform .08s; transform-box: fill-box; transform-origin: 50% 50%; }
+.fsg-pb-cap.fsg-press { transform: scale(.88); }
+.fsg-cover { transition: transform .3s ease; transform-box: fill-box; transform-origin: 50% 0; }
+.fsg-cover-glass { fill: rgba(200, 225, 255, .22); stroke: rgba(230, 240, 255, .7); stroke-width: 1.2; }
+.fsg-cover-hinge { fill: #6c747b; }
+.fsg-pb[data-cover="open"] .fsg-cover { transform: scaleY(.14); }
+.fsg-pb[data-cover="shut"] .fsg-pb-cap { pointer-events: none; }
+
+/* racking */
+.fsg-rack-slot { fill: #1c1f23; stroke: #000; }
+.fsg-rack-ptr { transition: transform .9s cubic-bezier(.4,0,.2,1); }
+.fsg-rack-ptr-shape { fill: #ffd21f; stroke: #5a4a00; }
+.fsg-port-ring { fill: #2a2e32; stroke: #0b0c0d; stroke-width: 2; }
+.fsg-port-socket { fill: #000; stroke: #666; }
+.fsg-crank-arm { fill: #c3c8cd; stroke: #4a5056; }
+.fsg-crank-knob { fill: #1b1e21; stroke: #000; }
+.fsg-crank.fsg-turning { animation: fsg-crank 1.05s cubic-bezier(.45,0,.55,1); }
+@keyframes fsg-crank { to { transform: rotate(1080deg); } }
+.fsg-crank.fsg-turning-back { animation: fsg-crank-back 1.05s cubic-bezier(.45,0,.55,1); }
+@keyframes fsg-crank-back { to { transform: rotate(-1080deg); } }
+.fsg-btn-rack rect { fill: #24282c; stroke: #000; }
+.fsg-btn-rack text { font: 700 8px var(--font-mono); fill: #e6e9ed; letter-spacing: .04em; }
+.fsg-btn-rack:hover rect { fill: #33393f; }
+
+/* padlock + danger tag */
+.fsg-hasp-plate { fill: #c3c8cd; stroke: #4a5056; }
+.fsg-hasp-hole { fill: #222; }
+.fsg-padlock, .fsg-tag { opacity: 0; transition: opacity .2s; pointer-events: none; }
+.fsg-section[data-locked="1"] .fsg-padlock, .fsg-section[data-locked="1"] .fsg-tag { opacity: 1; }
+.fsg-shackle { fill: none; stroke: #b8bec4; stroke-width: 3.2; }
+.fsg-lock-body { fill: #d10f1f; stroke: #4a0a12; }
+.fsg-tag-body { fill: #fff; stroke: #222; }
+.fsg-tag-head { fill: #c8102e; }
+.fsg-tag-head-txt { font: 900 8.5px sans-serif; fill: #fff; letter-spacing: .1em; }
+.fsg-tag-txt { font: 800 7.5px sans-serif; fill: #111; }
+.fsg-tag-name { font: 700 7px var(--font-mono); fill: #c8102e; }
+.fsg-tag-wire { stroke: #8a929a; stroke-width: 1.4; fill: none; }
+.fsg-tag-eyelet { fill: #fff; stroke: #8a929a; }
+
+/* LOCAL / REMOTE key switch */
+.fsg-key-plate { fill: #1b1e21; stroke: #000; stroke-width: 2; }
+.fsg-key-cyl { fill: #c9a227; stroke: #5b4a10; }
+.fsg-key-slot { fill: #3a2f08; }
+.fsg-key-blade { fill: #d8dde2; stroke: #555; }
+.fsg-key-bow { fill: #d8dde2; stroke: #555; }
+.fsg-key-auth { font: 800 9px var(--font-mono); fill: #ffd21f; letter-spacing: .08em; }
+.fsg-key-barrel { transition: transform .3s ease; transform: rotate(0deg); }
+.fsg-key[data-auth="REMOTE"] .fsg-key-barrel { transform: rotate(-45deg); }
+.fsg-key[data-auth="LOCAL"] .fsg-key-barrel { transform: rotate(45deg); }
+
+/* control power lost in DISCONNECTED */
+.fsg-section[data-ctrl="0"] .fsg-lcd-txt { fill: #4a5058; }
+
+/* refused: the mechanism does not move */
+.fsg-shake { animation: fsg-shake .32s linear; }
+@keyframes fsg-shake { 20% { transform: translateX(-3px); } 40% { transform: translateX(3px); } 60% { transform: translateX(-2px); } 80% { transform: translateX(2px); } }
+
+/* status display */
+.fsg-lcd-msg { font: 700 12px var(--font-mono); padding: 6px 10px; border-radius: 3px; background: #0c1a10; color: #9bffb0;
+    border: 1px solid #1f3a26; letter-spacing: .04em; }
+.fsg-lcd-msg[data-tone="warn"] { background: #1f1606; color: #ffd27a; border-color: #4d3a10; }
+.fsg-log { list-style: none; margin: 6px 0 0; padding: 0; font: 11px var(--font-mono); color: #9aa4b2; max-height: 112px; overflow: auto; }
+.fsg-log li { display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; padding: 2px 0; border-top: 1px solid #1b1f24; }
+.fsg-log li[data-kind="refused"] { color: #ffb4a8; }
+.fsg-log li[data-kind="spring_charged"] { color: #ffd27a; }
+.fsg-field-open { margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) {
+    .fsg-crank.fsg-turning, .fsg-crank.fsg-turning-back, .fsg-shake { animation: none; }
+}
+/* L1: cubicle state on the control-room SLD (text + dashed outline,
+ * colour only for the 86 lockout, ISA-101). */
+.pf-52-cub { font: 700 6.5px var(--font-mono); letter-spacing: .05em; fill: #c3c8cf; paint-order: stroke; stroke: #23272c; stroke-width: 3px; }
+#view-power .pf-52[data-racked="1"] .pf-52-box { stroke-dasharray: 3 2; opacity: .55; }
+#view-power .pf-52[data-racked="1"] .pf-52-blade { opacity: .45; }
+.pf-52[data-lockout="1"] .pf-52-cub { fill: #ffb020; }
+.fp-field { margin-top: 6px; width: 100%; }

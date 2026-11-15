@@ -111,7 +111,8 @@ class TestClosedDesign:
     def test_no_480v_ats_in_the_roster(self, ctl):
         assert not any(i.startswith("ats") for i in ctl.devices)
         labels = [i["label"] for i in ctl.snapshot("mvtc_a")["indications"]]
-        assert labels == ["52-U utility incomer", "52-GM generator main", "ANSI 27 incomer undervoltage"]
+        assert labels == ["52-U utility incomer", "52-GM generator main", "ANSI 27 incomer undervoltage",
+                          "52-U cubicle", "52-GM cubicle"]
 
     def test_ups_n_plus_1_inside_the_path(self, ctl):
         s = ctl.path_summary("a")
@@ -355,7 +356,7 @@ class TestGeneratorsAndTransfer:
         run(ctl, "mvtc_a", "TRANSFER_TO_GENERATORS")
         snap = ctl.snapshot("mvtc_a")
         assert snap["state"] == dc.XFER_GENERATORS
-        assert [i["value"] for i in snap["indications"]] == [mv.OPEN, mv.CLOSED, "NORMAL"]
+        assert [i["value"] for i in snap["indications"][:3]] == [mv.OPEN, mv.CLOSED, "NORMAL"]
         assert ctl.snapshot("genset_a_01")["state"] == dc.GEN_ON_LOAD
         # 10734 kW over 4 sets
         assert readings(ctl, "genset_a_01")["Real power"] == pytest.approx(2684, abs=1)
@@ -710,7 +711,7 @@ class TestAgentIsolation:
                 continue
             text = path.read_text(encoding="utf-8")
             if any(name in text for name in ("device_control", "mv_switching", "power_scenarios",
-                                             "alarm_routes", "training_routes")):
+                                             "alarm_routes", "training_routes", "mv_cubicle")):
                 offenders.append(path.name)
         assert offenders == []
 
@@ -718,7 +719,8 @@ class TestAgentIsolation:
 class TestVocabularyFence:
     def test_dc_side_is_out_of_scope(self, ctl):
         assert not any("dc_bus" in i or "sscb" in i for i in ctl.devices)
-        for module in (dc, mv):
+        from backend import mv_cubicle
+        for module in (dc, mv, mv_cubicle):
             text = pathlib.Path(module.__file__).read_text(encoding="utf-8").lower()
             assert "800 vdc trif" not in text
             assert "three-phase dc" not in text

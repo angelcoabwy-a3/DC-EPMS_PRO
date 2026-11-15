@@ -54,7 +54,7 @@ VIOLATION_EVENTS = ("refused", "procedure_blocked", "bay_blocked")
 CHECK_TYPES = (
     "alarms_acked", "gens_started_cover_demand", "gens_on_bus_cover_demand",
     "transfer_state", "device_state", "no_sets_running",
-    "sync_slip_within", "event_seen",
+    "sync_slip_within", "event_seen", "cubicle", "device_authority", "all",
 )
 FAIL_TYPES = ("load_lost", "command_used")
 INJECT_TYPES = ("utility_loss", "utility_restore", "preset_on_generators", "ups_fault",
@@ -113,6 +113,7 @@ def drill_summary(d: dict[str, Any]) -> dict[str, Any]:
         "id": d["id"], "version": d.get("version", 1), "title": d["title"],
         "summary": d["summary"], "path": d["path"], "target_s": d["target_s"],
         "time_limit_s": d["time_limit_s"],
+        "references": list(d.get("references") or []),
         "steps": [{"id": s["id"], "text": s["text"]} for s in d["steps"]],
     }
 
@@ -146,6 +147,21 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
             if "field" not in cond or e.get(cond["field"]) == cond.get("value"):
                 return True
         return False
+    if kind == "cubicle":
+        # L1: {"path", "breaker", "field", "value"} or "values": [...]
+        xfer = next(iter(_devices(plant, "transfer", path)), {})
+        c = next((x for x in xfer.get("cubicles") or [] if x.get("breaker") == cond.get("breaker")), None)
+        if c is None:
+            return False
+        if cond.get("truthy"):
+            return bool(c.get(cond.get("field")))
+        wanted = cond.get("values") if "values" in cond else [cond.get("value")]
+        return c.get(cond.get("field")) in wanted
+    if kind == "all":
+        return all(check(sub, plant, engine, events) for sub in cond.get("of") or [{}])
+    if kind == "device_authority":
+        return any(d.get("id") == cond.get("device") and d.get("authority") == cond.get("authority")
+                   for d in plant.get("devices", []))
     if kind == "alarms_acked":
         prefix = str(cond.get("prefix", ""))
         mine = [a for a in engine.alarms.values() if a.alarm_id.startswith(prefix)]
