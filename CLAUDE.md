@@ -136,6 +136,10 @@ DC-EPMS-068 lote C2 (2026-11-14, 4a862cc): topology labels, Procedure
   role. Backend suite passes on BOTH models (1886 / 1886). vitest
   786 / 41 files. Remaining for -068: procedure YAMLs (operator
   review), simulator check of v2 points, v2 as default (8-14 h).
+HMI H1 (2026-11-14, 0aeddff): ISA-101 style Power SLD. core/hmi_scheme.js
+  = breaker convention (ansi default: red CLOSED / green OPEN, text
+  state too); grey canvas, colour by exception, no animated dashes,
+  static chevrons. vitest 794 / 42 files. H2 / H3 / H4 need GO.
 NEXT: operator applies the bundle and eyeballs the Power SLD (strip +
   sequence in What-If); then GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;

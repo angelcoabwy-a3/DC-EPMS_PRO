@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### HMI H1 - ISA-101 style pass on the Power SLD (2026-11-14, `0aeddff`)
+
+- Breaker convention in one constant (`core/hmi_scheme.js`). Default
+  `ansi` for the Ontario site: red filled = CLOSED, green hollow =
+  OPEN; `iec` is the inverse. The state is also written as text
+  (CLOSED / OPEN / XFER / TRIP). An MV transfer controller trip shows
+  TRIP on the breaker that was carrying the bus.
+- Grey matte canvas, grey = normal, colour = exception; solid feeders
+  and buses; animated dashes removed, static direction chevrons per
+  run instead. Generator-fed runs are no longer amber (that colour is
+  the 800 VDC legend colour).
+- Legend split in two blocks; status strip follows the scheme.
+- Phase 2 DESIGN branch unchanged. Not yet done: H2 topology, H3 data
+  tags labelled MODEL, H4 ISA-18.2 alarm banner (each needs a GO).
+- Honest scope: neither breaker palette is mandated by one standard
+  the HMI can cite; ISA-101 leaves the palette to the site HMI
+  philosophy. vitest 794 / 42 files.
+
 ### DC-EPMS-068 lote C2 — topology, procedures, fixtures (2026-11-14, `4a862cc`)
 
 - Topology HLD labels on the closed design; Procedure Architect
