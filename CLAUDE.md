@@ -151,6 +151,16 @@ DC-EPMS-073 RESOLVED (2026-11-15, 5d7d397): core/plant_mirror.js maps
   GET /api/devices onto a copy of the DAG (power_grid.propagateStatic);
   LIVE drawing follows the Power Controls plant, What-If / Replay keep
   the DAG. Replay and N-1 shadow still read the DAG. vitest 823 / 44.
+T1 + T2 TRAINING (2026-11-15, 61531a8 / 41911fe / a166776): plant gets
+  utility loss + ANSI 27 trip (transfer state OPEN), AUTO sequence,
+  START/STOP_GENERATORS, battery SOC + load-loss latch, UPS inverter
+  fault, reset. backend/training.py + training_routes.py
+  (/api/training/*, FACILITY_MANAGER, ledger) + config/training_drills
+  DRILL-01..03. HMI: core/training_view.js coach, core/sbo_faceplate.js
+  (SELECT -> EXECUTE from the SLD), core/control_room_audio.js (off by
+  default). Rubric v1 is ours. Floors (Linux): pytest 1935 / vitest
+  839 (45 files). Open decisions: T3 closed transition, 52-TIE, AI
+  instructor; T4 PDF report + relay indicators.
 NEXT: operator applies the bundle and eyeballs the Power SLD (strip +
   sequence in What-If); then GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;

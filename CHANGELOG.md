@@ -13,6 +13,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### T1 + T2 - operator training on the simulated plant (2026-11-15, `61531a8`, `41911fe`, `a166776`)
+
+- Plant (T1): utility loss per path with ANSI 27 trip of 52-U (new
+  transfer state OPEN, dead 13.8 kV bus), AUTO transfer sequence,
+  master start / stop of the generator bus, battery SOC per path
+  (linear in energy from runtime_full_load_min; no Peukert, chemistry
+  not in the design), critical load loss latch, UPS inverter
+  over-temperature fault, training reset. New alarms: UTILITY_LOST,
+  MV_BUS_DEAD, ON_BATTERY, BATTERY_LOW, LOAD_LOST, INVERTER_FAULT.
+- Drill engine (T1): `backend/training.py` + `/api/training/*`, drills
+  DRILL-01 (utility loss, manual recovery), DRILL-02 (retransfer in
+  open transition, stop sets), DRILL-03 (UPS inverter fault, bypass,
+  isolate). Rubric "DC-EPMS training rubric v1" is ours, not an
+  industry standard. Report JSON with SOE; start, result (report
+  SHA-256) and reset in the Forensic Ledger.
+- HMI (T2): training coach and select-before-operate faceplate on the
+  Power SLD, Web Audio cues (off by default).
+- Checked live: DRILL-01 from the HMI only, PASS 100 in 18.5 s.
+- Not done (need operator decisions): synchroscope / closed
+  transition (T3), 52-TIE, AI instructor; PDF report and relay
+  indicators (T4). Drills reset the SHARED simulated plant and need a
+  FACILITY_MANAGER session: one trainee at a time.
+- Floors (Linux): pytest 1935 passed (3 pre-existing optimizer errors
+  on py3.13), vitest 839 / 45 files.
+
 ### DC-EPMS-073 RESOLVED - LIVE Power SLD follows the Power Controls plant (2026-11-15, `5d7d397`)
 
 - `core/plant_mirror.js` maps `GET /api/devices` onto a copy of the
