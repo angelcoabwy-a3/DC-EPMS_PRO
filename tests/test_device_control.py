@@ -716,7 +716,7 @@ class TestAgentIsolation:
             if any(re.search(rf"\b{name}\b", text)
                    for name in ("device_control", "mv_switching", "power_scenarios",
                                 "alarm_routes", "training_routes", "mv_cubicle", "mv_xfmr",
-                                "gen_fuel")):
+                                "gen_fuel", "ups_bypass")):
                 offenders.append(path.name)
         assert offenders == []
 
@@ -724,8 +724,8 @@ class TestAgentIsolation:
 class TestVocabularyFence:
     def test_dc_side_is_out_of_scope(self, ctl):
         assert not any("dc_bus" in i or "sscb" in i for i in ctl.devices)
-        from backend import gen_fuel, mv_cubicle, mv_xfmr
-        for module in (dc, mv, mv_cubicle, mv_xfmr, gen_fuel):
+        from backend import gen_fuel, mv_cubicle, mv_xfmr, ups_bypass
+        for module in (dc, mv, mv_cubicle, mv_xfmr, gen_fuel, ups_bypass):
             text = pathlib.Path(module.__file__).read_text(encoding="utf-8").lower()
             assert "800 vdc trif" not in text
             assert "three-phase dc" not in text

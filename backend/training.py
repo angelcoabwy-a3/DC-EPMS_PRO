@@ -54,12 +54,12 @@ VIOLATION_EVENTS = ("refused", "procedure_blocked", "bay_blocked")
 CHECK_TYPES = (
     "alarms_acked", "gens_started_cover_demand", "gens_on_bus_cover_demand",
     "transfer_state", "device_state", "no_sets_running",
-    "sync_slip_within", "event_seen", "cubicle", "device_authority", "xfmr", "gen_fuel", "all",
+    "sync_slip_within", "event_seen", "cubicle", "device_authority", "xfmr", "gen_fuel", "ups_system", "all",
 )
 FAIL_TYPES = ("load_lost", "command_used", "xfmr_internal_fault", "gen_shutdown")
 INJECT_TYPES = ("utility_loss", "utility_restore", "preset_on_generators", "ups_fault",
                 "closed_transition_mode", "synchro", "xfmr_spare_key", "utility_voltage",
-                "gen_condition")
+                "gen_condition", "qf1_shunt_trip", "ups_mode")
 
 
 class TrainingError(Exception):
@@ -213,6 +213,9 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
         # L3: {"device", "field": "pumps.0.mode"} + value / values / truthy / min / max
         dev = next((d for d in plant.get("devices", []) if d.get("id") == cond.get("device")), {})
         return _match(_dig(dev.get("fuel"), cond.get("field")), cond)
+    if kind == "ups_system":
+        # L4: {"path", "field": "breakers.Q3"} + value / values / truthy / min / max
+        return _match(_dig(_path(plant, path).get("ups_system"), cond.get("field")), cond)
     if kind == "all":
         return all(check(sub, plant, engine, events) for sub in cond.get("of") or [{}])
     if kind == "device_authority":
@@ -356,6 +359,10 @@ class TrainingManager:
                     ctl.set_spare_key(inj["path"], bool(inj.get("available", True)), "training")
                 elif kind == "utility_voltage":
                     ctl.set_grid_voltage(inj["path"], inj["kv"], "training")
+                elif kind == "qf1_shunt_trip":
+                    ctl.inject_qf1_shunt_trip(inj["path"], "training")
+                elif kind == "ups_mode":
+                    ctl.ups_action(inj["path"], inj["action"], "training")
                 elif kind == "gen_condition":
                     params = {k: v for k, v in inj.items() if k not in ("type", "device", "condition")}
                     ctl.inject_gen_condition(inj["device"], inj["condition"], "training", **params)

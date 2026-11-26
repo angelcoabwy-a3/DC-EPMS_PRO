@@ -225,7 +225,8 @@ def conditions_from_plant(plant: dict[str, Any]) -> list[Condition]:
                       f"Path {P} utility undervoltage (ANSI 27)", src),
             Condition(f"PATH_{P}_MV_BUS_DEAD", dead, HIGH,
                       f"Path {P} 13.8 kV bus dead (52-U and 52-GM open)", src),
-            Condition(f"PATH_{P}_ON_BATTERY", dead and not lost, HIGH,
+            Condition(f"PATH_{P}_ON_BATTERY",
+                      bool(p["on_battery"]) if "on_battery" in p else (dead and not lost), HIGH,
                       f"Path {P} UPS on battery ({soc:.0f} % SOC, "
                       f"{float(p.get('battery_runtime_min', 0.0)):.1f} min left, model)", src),
             Condition(f"PATH_{P}_BATTERY_LOW", dead and not lost and soc < 25.0, HIGH,
@@ -247,6 +248,24 @@ def conditions_from_plant(plant: dict[str, Any]) -> list[Condition]:
             Condition(f"PATH_{P}_GEN_N1_LOST", gen_n and not bool(p.get("gen_n_plus_1_ok", True)),
                       LOW, f"Path {P} generation lost N+1", src),
         ]
+        # L4: UPS bank system breakers and the maintenance bypass.
+        us = p.get("ups_system")
+        if us:
+            brk = us.get("breakers") or {}
+            out += [
+                Condition(f"PATH_{P}_UPS_MAINT_BYPASS", bool(brk.get("Q3")), MEDIUM,
+                          f"Path {P} critical load on maintenance bypass (not UPS-protected)", src),
+                Condition(f"PATH_{P}_UPS_OUTPUT_ISOLATED", brk.get("Q4") is False, LOW,
+                          f"Path {P} UPS output isolated (MIB Q4 open)", src),
+                Condition(f"PATH_{P}_UPS_QF1_OPEN", brk.get("QF1") is False, MEDIUM,
+                          f"Path {P} UPS battery breaker QF1 open (no battery backup)", src),
+                Condition(f"PATH_{P}_UPS_Q1_OPEN", brk.get("Q1") is False, LOW,
+                          f"Path {P} UPS rectifier input Q1 open", src),
+                Condition(f"PATH_{P}_UPS_Q2_OPEN", brk.get("Q2") is False, LOW,
+                          f"Path {P} UPS static-bypass input Q2 open", src),
+                Condition(f"PATH_{P}_UPS_SKRU_KEY_OUT", int(us.get("skru_keys", 1)) == 0, LOW,
+                          f"Path {P} maintenance bypass key out of the SKRU", src),
+            ]
         # L3: main (bulk) fuel tank of the path.
         if p.get("bulk_fuel_pct") is not None:
             hrs = p.get("bulk_hours_left")

@@ -66,7 +66,13 @@ from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Request
 
-from backend import gen_fuel as gf, mv_cubicle as cub, mv_switching as mv, mv_xfmr as xf
+from backend import (
+    gen_fuel as gf,
+    mv_cubicle as cub,
+    mv_switching as mv,
+    mv_xfmr as xf,
+    ups_bypass as ub,
+)
 
 # ── Kinds ───────────────────────────────────────────────────────────
 KIND_UPS = "ups"
@@ -124,6 +130,7 @@ ACTION_MV_WITNESS = "MV_SWITCHING_WITNESS"
 ACTION_MV_FIELD = "MV_SWITCHGEAR_FIELD_ACTION"
 ACTION_XFMR_FIELD = "XFMR_FIELD_ACTION"
 ACTION_GEN_FIELD = "GENERATOR_FIELD_ACTION"
+ACTION_UPS_FIELD = "UPS_SYSTEM_FIELD_ACTION"
 
 SIMULATION_NOTICE = (
     "SIMULATED plant. No field equipment is connected: states and "
@@ -352,6 +359,8 @@ class DeviceController:
     gensets: dict[str, gf.GenSet] = field(default_factory=dict)
     bulk_l: dict[str, float] = field(default_factory=dict)
     _gen_at: float | None = None
+    # L4: UPS bank system breakers + external maintenance bypass per path
+    ups_systems: dict[str, ub.UpsSystem] = field(default_factory=dict)
 
     # ── Construction ────────────────────────────────────────────────
     @classmethod
@@ -380,6 +389,7 @@ class DeviceController:
             ctl.xfmrs[path] = xf.Transformer(path=path)
             ctl.grid_kv[path] = xf.PRIMARY_KV
             ctl.bulk_l[path] = gf.BULK_TANK_L
+            ctl.ups_systems[path] = ub.UpsSystem(path=path)
             upper = path.upper()
             for n in range(1, int(ups["units_per_path"]) + 1):
                 ctl._add(Device(
@@ -886,6 +896,97 @@ class DeviceController:
             return self._event("gen_condition", dev, actor, condition=condition,
                                **{k: v for k, v in params.items() if isinstance(v, int | float | str)})
 
+    # ── L4: UPS bank system breakers and maintenance bypass ────────
+    def _ups_mode(self, path: str) -> str:
+        blocks = [d for d in self._of(KIND_UPS, path) if d.state in _UPS_CARRYING]
+        if not blocks:
+            return ub.OFF
+        if all(d.state in _UPS_PROTECTING for d in blocks):
+            return ub.INVERTER
+        if all(d.state == UPS_STATIC_BYPASS for d in blocks):
+            return ub.STATIC_BYPASS
+        return ub.MIXED
+
+    def _ups_ctx(self, path: str, actor: str = "") -> ub.UpsContext:
+        return ub.UpsContext(mode=self._ups_mode(path), bus_live=self._bus_energized(path),
+                             blocks_faulted=sum(1 for d in self._of(KIND_UPS, path)
+                                                if d.device_id in self.faults), actor=actor)
+
+    def ups_action(self, path: str, action: str, actor: str) -> dict[str, Any]:
+        """L4: an operation on the UPS bank of ``path`` (system display,
+        Q1 / Q2 / Q3 / Q4 / QF1, SKRU and Kirk locks, QF1 padlock).
+        Recorded as a "command" event named ACTION@UPS_P."""
+        action = str(action or "").upper()
+        path = str(path or "").lower()
+        with self._lock:
+            self._advance()
+            sys_ = self.ups_systems.get(path)
+            if sys_ is None:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            if action not in ub.ACTIONS:
+                raise DeviceControlError(400, f"action must be one of {list(ub.ACTIONS)}")
+            ctx = self._ups_ctx(path, actor)
+            reason = ub.interlock(sys_, action, ctx)
+            if reason:
+                raise DeviceControlError(409, reason)
+            mode_before = ctx.mode
+            effect = ub.apply(sys_, action, ctx)
+            now = self.clock()
+            blocks = self._of(KIND_UPS, path)
+            if effect == "to_bypass":
+                for d in blocks:
+                    if d.state in _UPS_PROTECTING:
+                        d.state, d.state_since = UPS_STATIC_BYPASS, now
+                        self._drop_selections(d.device_id)
+            elif effect == "to_inverter":
+                for d in blocks:
+                    if d.state == UPS_STATIC_BYPASS and d.device_id not in self.faults:
+                        d.state, d.state_since = UPS_DOUBLE_CONVERSION, now
+                        self._drop_selections(d.device_id)
+            elif effect == "park":
+                for d in blocks:
+                    if d.state != UPS_ISOLATED:
+                        sys_.parked.append(d.device_id)
+                        d.state, d.state_since = UPS_ISOLATED, now
+                        self._drop_selections(d.device_id)
+            elif effect == "unpark":
+                for d in blocks:
+                    if d.device_id in sys_.parked:
+                        d.state, d.state_since = UPS_STATIC_BYPASS, now
+                sys_.parked.clear()
+            event = {
+                "ts": round(self.wall_clock(), 3), "event": "command",
+                "device_id": f"ups_system_{path}", "actor": actor,
+                "command": f"{action}@UPS_{path.upper()}", "field": True, "equipment": "ups",
+                "action": action, "path": path, "mode_before": mode_before,
+                "breakers": {b: getattr(sys_, b.lower()) for b in ub.BREAKERS},
+                "skru_keys": sys_.skru_keys, "qf1_padlock": sys_.qf1_padlock,
+            }
+            self._events.append(event)
+            self._advance()
+            event["mode"] = self._ups_mode(path)
+            event["load_feed"] = self._load_feed(path)[1]
+            return event
+
+    def ups_refusal(self, path: str, actor: str, detail: str, action: str) -> None:
+        with self._lock:
+            p = str(path or "").lower()
+            self._events.append({
+                "ts": round(self.wall_clock(), 3), "event": "refused",
+                "device_id": f"ups_system_{p}", "actor": actor, "detail": detail,
+                "command": f"{str(action or '').upper()}@UPS_{p.upper()}",
+            })
+
+    def inject_qf1_shunt_trip(self, path: str, actor: str) -> dict[str, Any]:
+        """Training: QF1 opened by its shunt-trip coil (EPO / battery
+        room interlock)."""
+        with self._lock:
+            sys_ = self.ups_systems.get(path)
+            if sys_ is None:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            sys_.qf1 = False
+            return self._plant_event("qf1_shunt_trip", path, actor, breaker="QF1")
+
     # ── T3: generator bus vs utility (synchroscope model) ──────────
     def _islanded(self, path: str) -> bool:
         """Generator bus carrying the path with utility voltage present
@@ -1126,6 +1227,9 @@ class DeviceController:
         return False
 
     def _battery_energy_kwh(self, path: str) -> float:
+        sys_ = self.ups_systems.get(path)
+        if sys_ is not None and not sys_.qf1:
+            return 0.0          # L4: battery breaker QF1 open
         runtime_min = _num(self.design["ups"].get("runtime_full_load_min"))
         rated = sum(d.rated_kw for d in self._of(KIND_UPS, path) if d.state in _UPS_PROTECTING)
         return rated * runtime_min / 60.0
@@ -1138,27 +1242,54 @@ class DeviceController:
             return 0.0
         return energy / load * 60.0
 
+    def _load_feed(self, path: str) -> tuple[str, str]:
+        """How the critical load of ``path`` is fed now: ("fed", how),
+        ("battery", why) or ("lost", why). L4: maintenance bypass, MIB,
+        rectifier / bypass inputs and the battery breaker count."""
+        bus = self._bus_energized(path)
+        sys_ = self.ups_systems.get(path)
+        if sys_ is not None and sys_.q3:
+            return ("fed", "maintenance bypass") if bus else ("lost", "on maintenance bypass with the source dead")
+        carrying = self._ups_carrying(path)
+        if sys_ is not None and not sys_.q4:
+            return ("lost", "UPS output isolated (MIB open) with the maintenance bypass open")
+        if not carrying:
+            return ("fed", "source") if bus and sys_ is None else ("lost", "no UPS block carrying the load")
+        on_bypass = [d for d in carrying if d.state not in _UPS_PROTECTING]
+        bypass_ok = bus and (sys_ is None or sys_.q2)
+        rect_ok = bus and (sys_ is None or sys_.q1)
+        if on_bypass and not bypass_ok:
+            why = ("MV bus dead" if not bus else "static-bypass input Q2 open")
+            return ("lost", f"{len(on_bypass)} block(s) on static bypass with the {why}")
+        if len(on_bypass) < len(carrying) and not rect_ok:
+            if self._battery_energy_kwh(path) <= 0:
+                return ("lost", "inverter without rectifier input and battery breaker QF1 open")
+            return ("battery", "MV bus dead" if not bus else "rectifier input Q1 open")
+        return ("fed", "UPS")
+
+    def _on_battery(self, path: str) -> bool:
+        return not self.load_lost.get(path) and self._load_feed(path)[0] == "battery"
+
     def _advance_battery(self, now: float) -> None:
         last = self._batt_at
         self._batt_at = now
         dt = 0.0 if last is None else max(0.0, now - last)
         for path in self.path_share:
             soc = self.battery_soc.get(path, 1.0)
-            if self._bus_energized(path):
+            state, why = self._load_feed(path)
+            if state == "fed":
                 if self.load_lost.get(path):
                     self.load_lost[path] = False
                     self._plant_event("load_restored", path, "controller")
-                if dt:
+                sys_ = self.ups_systems.get(path)
+                charging = self._bus_energized(path) and (sys_ is None or (sys_.q1 and sys_.qf1))
+                if dt and charging:
                     self.battery_soc[path] = min(1.0, soc + dt / BATTERY_RECHARGE_FULL_S)
                 continue
             if self.load_lost.get(path):
                 continue
-            carrying = self._ups_carrying(path)
-            unprotected = [d for d in carrying if d.state not in _UPS_PROTECTING]
-            if not carrying or unprotected:
-                reason = ("no UPS block carrying the load" if not carrying else
-                          f"{len(unprotected)} block(s) on static bypass with the MV bus dead")
-                self._latch_load_lost(path, reason)
+            if state == "lost":
+                self._latch_load_lost(path, why)
                 continue
             energy = self._battery_energy_kwh(path)
             if dt and energy > 0:
@@ -1234,7 +1365,7 @@ class DeviceController:
             for name in ("devices", "bays", "procedures", "path_share", "utility_ok",
                          "battery_soc", "load_lost", "faults", "closed_transition",
                          "gen_hz", "sync_angle", "cubicles", "xfmrs", "grid_kv",
-                         "gensets", "bulk_l"):
+                         "gensets", "bulk_l", "ups_systems"):
                 setattr(self, name, getattr(fresh, name))
             self._xfmr_at = None
             self._gen_at = None
@@ -1281,6 +1412,9 @@ class DeviceController:
         return self._it_design_kw * self.path_share.get(path, 0.0)
 
     def _ups_carrying(self, path: str) -> list[Device]:
+        sys_ = self.ups_systems.get(path)
+        if sys_ is not None and not sys_.q4:
+            return []           # L4: MIB open, the UPS output is isolated from the load
         return [d for d in self._of(KIND_UPS, path) if d.state in _UPS_CARRYING]
 
     def _ups_block_load_kw(self, path: str) -> float:
@@ -1315,6 +1449,10 @@ class DeviceController:
                        XFER_UTILITY if self._bus_energized(path) else "NONE"),
             "utility_ok": self.utility_ok.get(path, True),
             "incomer_live": self._incomer_live(path),
+            "on_battery": self._on_battery(path),
+            "load_feed": self._load_feed(path)[1],
+            **({"ups_system": ub.describe(self.ups_systems[path], self._ups_ctx(path))}
+               if path in self.ups_systems else {}),
             **self._bulk_summary(path),
             "bus_energized": self._bus_energized(path),
             "load_lost": self.load_lost.get(path, False),
@@ -1353,6 +1491,16 @@ class DeviceController:
             fault = self.faults.get(dev.device_id)
             if fault and command in ("ENTER_DYNAMIC_ONLINE", "RETURN_TO_DOUBLE_CONVERSION"):
                 return f"{UPS_FAULTS[fault]} active: the inverter cannot carry the load."
+            sys_ = self.ups_systems.get(dev.path)
+            if sys_ is not None and command in ("ENTER_DYNAMIC_ONLINE", "RETURN_TO_DOUBLE_CONVERSION"):
+                if sys_.q3:
+                    return "Maintenance bypass (MBB) closed: the inverter must not parallel it."
+                if sys_.skru_keys == 0:
+                    return "A key is out of the SKRU: the UPS is held on static bypass."
+                if not sys_.q1:
+                    return "Rectifier input Q1 is open."
+            if sys_ is not None and command == "TRANSFER_TO_BYPASS" and not sys_.q2:
+                return "Static-bypass input Q2 is open: no bypass source."
             if command == "ENTER_DYNAMIC_ONLINE":
                 return None if dev.state == UPS_DOUBLE_CONVERSION else "Block is not in double conversion."
             if command == "RETURN_TO_DOUBLE_CONVERSION":
@@ -1552,8 +1700,8 @@ class DeviceController:
                 return {"tone": "crit", "text": f"{UPS_FAULTS[fault]}: transfer to bypass"}
             if self.load_lost.get(dev.path) and dev.state in _UPS_CARRYING:
                 return {"tone": "crit", "text": "Output lost: critical load dropped"}
-            if (dev.state in _UPS_PROTECTING and not self._bus_energized(dev.path)):
-                return {"tone": "warn", "text": "On battery: MV bus dead"}
+            if dev.state in _UPS_PROTECTING and self._on_battery(dev.path):
+                return {"tone": "warn", "text": f"On battery: {self._load_feed(dev.path)[1]}"}
             if dev.state in _UPS_CARRYING and self._ups_block_load_kw(dev.path) > dev.rated_kw:
                 return {"tone": "crit", "text": "OVERLOAD: block above its rating"}
             return {
@@ -2265,6 +2413,27 @@ def register_device_control_routes(
             request.app, actor, ACTION_GEN_FIELD,
             {k: event.get(k) for k in ("device_id", "action", "from_state", "to_state", "ecs_mode",
                                         "estop", "heater_on", "day_tank_pct", "pumps", "filter")},
+        )
+        return {"success": True, "event": event, "ledger_entry_id": entry_id}
+
+    @app.post("/api/ups-systems/{path}/action")
+    async def ups_system_action(
+        path: str, request: Request, payload: dict = Body(...),
+    ) -> dict[str, Any]:
+        """L4: an operation on the UPS bank of a path (system display,
+        Q1 / Q2 / Q3 / Q4 / QF1, SKRU, Kirk locks, padlock)."""
+        actor = authorise(request, payload)
+        ctl = _controller()
+        action = str(payload.get("action") or "")
+        try:
+            event = ctl.ups_action(path, action, actor)
+        except DeviceControlError as exc:
+            ctl.ups_refusal(path, actor, exc.detail, action)
+            raise _fail(exc) from exc
+        entry_id = await _ledger_append(
+            request.app, actor, ACTION_UPS_FIELD,
+            {k: event.get(k) for k in ("device_id", "action", "path", "mode_before", "mode",
+                                        "breakers", "skru_keys", "qf1_padlock", "load_feed")},
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 

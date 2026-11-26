@@ -1,0 +1,140 @@
+{
+  "id": "DRILL-08",
+  "version": 1,
+  "title": "Put UPS bank A on maintenance bypass and lock out its battery",
+  "summary": "Path A runs on utility; UPS bank A (8 blocks) carries the critical load in double conversion. The battery vendor needs UPS bank A isolated with the battery breaker locked out. Move the load to the maintenance bypass without a break: at the UPS (field view, UPS) transfer the system to static bypass, take the key from the solenoid key release unit (SKRU), unlock and close the maintenance bypass breaker MBB (Q3), open the maintenance isolation breaker MIB (Q4), lock MIB and return its key to the SKRU, then isolate the UPS: open the battery breaker QF1, the rectifier input Q1 and the static-bypass input Q2, and apply your padlock to QF1. Any break in the supply to the critical load ends the drill. On maintenance bypass the load has no battery behind it: if the utility drops now, it is lost.",
+  "path": "a",
+  "target_s": 180,
+  "time_limit_s": 900,
+  "procedure_commands": [
+    "SYSTEM_TO_BYPASS@UPS_A",
+    "SKRU_RELEASE@UPS_A",
+    "UNLOCK_MBB@UPS_A",
+    "CLOSE_Q3@UPS_A",
+    "OPEN_Q4@UPS_A",
+    "LOCK_MIB@UPS_A",
+    "SKRU_CAPTURE@UPS_A",
+    "OPEN_QF1@UPS_A",
+    "OPEN_Q1@UPS_A",
+    "OPEN_Q2@UPS_A",
+    "PADLOCK_QF1@UPS_A"
+  ],
+  "references": [
+    "Toshiba G9000 MBS operation: UPS to static bypass, key from the SKRU, unlock and close MBB, open MIB, lock MIB and return its key, DC breakers off, UIB off (vendor manual, checked 2026-11-26)",
+    "Schneider Galaxy VX: shut down a single system from normal to maintenance bypass operation (UOB / SSIB order, Kirk keys and SKRU), checked 2026-11-26",
+    "Powerware 9315 MBM: the SKRU withholds the key needed to start the transfer sequence (checked 2026-11-26)",
+    "Two keys keyed alike and the breaker names Q1 / Q2 / Q3 / Q4 / QF1 are this model's; a real site follows its own key drawing and vendor procedure",
+    "OSHA 29 CFR 1910.147: the padlock on QF1 is the employee's own lockout device"
+  ],
+  "setup": {
+    "inject": []
+  },
+  "steps": [
+    {
+      "id": "BYPASS",
+      "text": "Transfer UPS bank A to static bypass from the UPS display",
+      "check": {
+        "type": "ups_system",
+        "path": "a",
+        "field": "mode",
+        "values": [
+          "STATIC_BYPASS"
+        ]
+      }
+    },
+    {
+      "id": "KEY",
+      "text": "Take the key from the SKRU (lamp on) and unlock the MBB",
+      "check": {
+        "type": "ups_system",
+        "path": "a",
+        "field": "mbb_unlocked",
+        "value": true
+      }
+    },
+    {
+      "id": "MBB",
+      "text": "Close the maintenance bypass breaker MBB (Q3)",
+      "check": {
+        "type": "ups_system",
+        "path": "a",
+        "field": "breakers.Q3",
+        "value": true
+      }
+    },
+    {
+      "id": "MIB",
+      "text": "Open the maintenance isolation breaker MIB (Q4): load on maintenance bypass",
+      "check": {
+        "type": "ups_system",
+        "path": "a",
+        "field": "breakers.Q4",
+        "value": false
+      }
+    },
+    {
+      "id": "RETURN_KEY",
+      "text": "Lock MIB open and return its key to the SKRU",
+      "check": {
+        "type": "all",
+        "of": [
+          {
+            "type": "ups_system",
+            "path": "a",
+            "field": "mib_unlocked",
+            "value": false
+          },
+          {
+            "type": "ups_system",
+            "path": "a",
+            "field": "skru_keys",
+            "value": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "ISOLATE",
+      "text": "Open QF1 (battery), Q1 (rectifier input) and Q2 (static-bypass input)",
+      "check": {
+        "type": "all",
+        "of": [
+          {
+            "type": "ups_system",
+            "path": "a",
+            "field": "breakers.QF1",
+            "value": false
+          },
+          {
+            "type": "ups_system",
+            "path": "a",
+            "field": "breakers.Q1",
+            "value": false
+          },
+          {
+            "type": "ups_system",
+            "path": "a",
+            "field": "breakers.Q2",
+            "value": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "LOCK",
+      "text": "Apply your personal padlock to QF1",
+      "check": {
+        "type": "ups_system",
+        "path": "a",
+        "field": "qf1_padlock",
+        "truthy": true
+      }
+    }
+  ],
+  "fail": [
+    {
+      "type": "load_lost",
+      "path": "a"
+    }
+  ]
+}
