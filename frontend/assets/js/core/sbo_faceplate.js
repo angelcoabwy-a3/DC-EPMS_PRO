@@ -70,12 +70,15 @@ export function faceplateHtml(target, plant, { pending = new Map(), nowMs = Date
             + (d.kind === 'transfer' && d.synchro ? synchroscopeHtml(d.id, d.synchro) : '')
             + (d.kind === 'transfer' && d.cubicles
                 ? `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(d.path)}">Field view: 13.8 kV switchgear (racking, springs, 86, padlock)</button>` : '')
+            + (d.kind === 'transfer' && d.wiring
+                ? `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(d.path)}" data-fp-equip="wiring">Field view: control compartment (PT fuses, TB-1, multimeter)</button>` : '')
             + (d.kind === 'generator' && d.fuel
                 ? `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(d.path)}" data-fp-equip="gen" data-fp-gen="${escapeHTML(Number(String(d.id).slice(-2)) || 1)}">Field view: set panel, day tank, pumps, filter</button>` : '')
             + _commands(d, pending, nowMs) + '</div>';
     }).join('');
     const upsField = kind === 'ups'
-        ? `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(path)}" data-fp-equip="ups">Field view: UPS bank breakers, maintenance bypass, battery QF1</button>` : '';
+        ? `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(path)}" data-fp-equip="ups">Field view: UPS bank breakers, maintenance bypass, battery QF1</button>`
+            + `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(path)}" data-fp-equip="batt">Field view: battery room (strings, IR, analyzer, H2)</button>` : '';
     return `<div class="fp-head"><span>${escapeHTML(head)} · SELECT then EXECUTE</span>`
         + '<button type="button" class="fp-close" data-fp-close="1" aria-label="Close">×</button></div>'
         + (message ? `<div class="fp-msg">${escapeHTML(message)}</div>` : '')

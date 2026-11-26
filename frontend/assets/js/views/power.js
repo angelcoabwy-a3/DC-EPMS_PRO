@@ -49,6 +49,8 @@ import { fieldLineupSvg, applyFieldState, resolveClick, fieldLogHtml } from '../
 import { xfmrSvg, applyXfmrState, resolveXfmrClick, isXfmrEvent, xfmrEventText } from '../core/field_xfmr.js';
 import { genSvg, applyGenState, resolveGenClick, isGenEvent, genEventText, genId } from '../core/field_gen.js';
 import { upsSvg, applyUpsState, resolveUpsClick, isUpsEvent, upsEventText } from '../core/field_ups.js';
+import { batterySvg, applyBatteryState, resolveBatteryClick, isBatteryEvent, batteryEventText } from '../core/field_battery.js';
+import { wiringSvg, applyWiringState, resolveWiringClick, isWiringEvent, wiringEventText } from '../core/field_wiring.js';
 import { needleAngle, permissive, etaNow, etaText } from '../core/synchroscope.js';
 import { escapeHTML } from '../core/sanitize.js';
 import { relayRowSvg, relayStates, applyRelays } from '../core/relay_tags.js';
@@ -108,6 +110,7 @@ let _vp = null;
 let _fieldPath = null;
 let _fieldEquip = 'swgr';      // L2: 'swgr' | 'xfmr'; L3: 'gen'
 let _fieldGen = 1;             // L3: set number shown (1..9)
+let _fieldBatt = { string: 1, tool: 'meter', jar: null };   // L5: battery room view state
 let _fieldMsg = '';
 let _fieldBusy = false;
 let _fieldTimer = null;
@@ -1388,7 +1391,9 @@ function _ensureField() {
         + '<span class="fsg-paths"><button type="button" data-fequip="swgr">SWITCHGEAR</button>'
         + '<button type="button" data-fequip="xfmr">TRANSFORMER</button>'
         + '<button type="button" data-fequip="gen">GENERATOR</button>'
-        + '<button type="button" data-fequip="ups">UPS</button></span>'
+        + '<button type="button" data-fequip="ups">UPS</button>'
+        + '<button type="button" data-fequip="batt">BATTERY</button>'
+        + '<button type="button" data-fequip="wiring">CONTROL</button></span>'
         + '<span class="fsg-note">Layer 2 · equipment view · every operation is checked by the server interlocks and recorded</span>'
         + '<button type="button" class="fsg-close" data-fclose="1" aria-label="Close field view">CLOSE ✕</button></div>'
         + '<div class="fsg-stage" id="pwr-field-stage"></div><div class="fsg-foot" id="pwr-field-foot"></div></div>';
@@ -1403,14 +1408,16 @@ function _ensureField() {
 function _openField(path, equip, gen) {
     const el = _ensureField();
     _fieldPath = String(path || 'a').toLowerCase() === 'b' ? 'b' : 'a';
-    if (equip) _fieldEquip = ['xfmr', 'gen', 'ups'].includes(equip) ? equip : 'swgr';
+    if (equip) _fieldEquip = ['xfmr', 'gen', 'ups', 'batt', 'wiring'].includes(equip) ? equip : 'swgr';
     if (gen) _fieldGen = Math.min(9, Math.max(1, Number(gen) || 1));
     _fieldMsg = '';
     _fieldCovers.clear();
     document.getElementById('pwr-field-stage').innerHTML = _fieldEquip === 'xfmr'
-        ? xfmrSvg(_fieldPath) : ({ gen: genSvg, ups: upsSvg }[_fieldEquip] || fieldLineupSvg)(_fieldPath);
+        ? xfmrSvg(_fieldPath) : ({ gen: genSvg, ups: upsSvg, batt: batterySvg, wiring: wiringSvg }[_fieldEquip]
+            || fieldLineupSvg)(_fieldPath);
     el.setAttribute('aria-label', { xfmr: 'Field view: utility transformer', gen: 'Field view: generator set',
-        ups: 'Field view: UPS bank' }[_fieldEquip]
+        ups: 'Field view: UPS bank', batt: 'Field view: battery room',
+        wiring: 'Field view: MV control compartment' }[_fieldEquip]
         || 'Field view: 13.8 kV switchgear');
     el.querySelectorAll('[data-fpath]').forEach((b) =>
         b.setAttribute('aria-pressed', String(b.dataset.fpath === _fieldPath)));
@@ -1437,9 +1444,15 @@ function _applyField() {
     const xf = _fieldEquip === 'xfmr';
     const gen = _fieldEquip === 'gen' ? _fieldGenDev() : null;
     const ups = _fieldEquip === 'ups';
+    const batt = _fieldEquip === 'batt';
+    const wiring = _fieldEquip === 'wiring';
     const ps = ((_plant && _plant.paths) || []).find((p) => p.path === _fieldPath) || null;
     if (stage && xfer) {
-        if (ups) {
+        if (batt) {
+            applyBatteryState(stage, ps, _fieldBatt);
+        } else if (wiring) {
+            applyWiringState(stage, xfer.wiring);
+        } else if (ups) {
             applyUpsState(stage, ps, ((_plant && _plant.devices) || [])
                 .filter((d) => d.kind === 'ups' && d.path === _fieldPath));
         } else if (gen) {
@@ -1450,7 +1463,11 @@ function _applyField() {
     const foot = document.getElementById('pwr-field-foot');
     if (foot) {
         const upsIds = [`ups_system_${_fieldPath}`, `path_${_fieldPath}`];
-        const view = ups ? { anyDevice: true, match: (ev) => upsIds.includes(ev.device_id) && isUpsEvent(ev),
+        const battIds = [`battery_room_${_fieldPath}`];
+        const view = batt ? { anyDevice: true, match: (ev) => battIds.includes(ev.device_id) && isBatteryEvent(ev),
+            text: batteryEventText, empty: 'No operation in this battery room yet' }
+            : wiring ? { match: isWiringEvent, text: wiringEventText, empty: 'No operation in this compartment yet' }
+            : ups ? { anyDevice: true, match: (ev) => upsIds.includes(ev.device_id) && isUpsEvent(ev),
             text: upsEventText, empty: 'No operation on this UPS bank yet' }
             : gen ? { match: isGenEvent, text: genEventText, empty: 'No operation at this set yet' }
             : (xf ? { match: isXfmrEvent, text: xfmrEventText, empty: 'No transformer operation yet' } : null);
@@ -1472,6 +1489,8 @@ async function _onFieldClick(ev) {
     if (_fieldEquip === 'xfmr') { await _onXfmrClick(t); return; }
     if (_fieldEquip === 'gen') { await _onGenClick(t); return; }
     if (_fieldEquip === 'ups') { await _onUpsClick(t); return; }
+    if (_fieldEquip === 'batt') { await _onBattClick(t); return; }
+    if (_fieldEquip === 'wiring') { await _onWiringClick(t); return; }
     const xfer = _fieldXfer();
     const r = resolveClick(t, xfer);
     if (!r || !xfer) return;
@@ -1564,6 +1583,74 @@ async function _onUpsClick(t) {
             if (r.kind === 'breaker') _audio.breaker(r.action.startsWith('CLOSE'));
         } else {
             _fieldMsg = `INTERLOCK · ${res.detail}`;
+            _audio.clunk();
+            if (target) {
+                target.classList.add('fsg-shake');
+                setTimeout(() => target.classList.remove('fsg-shake'), 340);
+            }
+        }
+    } finally {
+        _fieldBusy = false;
+    }
+    await _pollAlarms(true);
+    if (_trView && _trView.active) _trainingTick();
+}
+
+// L5: an operation in the battery room. Tabs and tools are view state;
+// choosing the IR camera (or a string with it) records the scan.
+async function _onBattClick(t) {
+    const ps = ((_plant && _plant.paths) || []).find((p) => p.path === _fieldPath) || null;
+    const room = ps && ps.battery_room;
+    const r = resolveBatteryClick(t, room, _fieldBatt);
+    if (!r) return;
+    if (r.ui) _fieldBatt = { ..._fieldBatt, ...r.ui };
+    const action = r.action || r.scan;
+    if (!action) { _applyField(); return; }
+    const target = t.closest('[data-act], .xb-jar');
+    _fieldBusy = true;
+    try {
+        if (r.kind === 'breaker' || r.kind === 'key' || r.kind === 'selector') _audio.latch();
+        const res = await plantPost(`/api/battery-rooms/${encodeURIComponent(_fieldPath)}/action`, { action });
+        if (res.ok) {
+            const evd = res.data.event || {};
+            const rd = evd.reading || {};
+            _fieldMsg = rd.jar ? `ANALYZER ${rd.jar}: ${rd.v} V · ${rd.r_mohm} mΩ (${rd.rise_pct >= 0 ? '+' : ''}${rd.rise_pct} %) · ${rd.status}`
+                : rd.string ? `IR SCAN STRING ${rd.string}: hottest ${rd.hottest} ${rd.max_c} °C (ΔT ${rd.delta_c} K)`
+                    : `${action.replace(/_/g, ' ')} · ${evd.strings_online} of 4 strings on line`;
+            if (r.kind === 'breaker') _audio.breaker(action.startsWith('CLOSE'));
+        } else {
+            _fieldMsg = `INTERLOCK · ${res.detail}`;
+            _audio.clunk();
+            if (target) {
+                target.classList.add('fsg-shake');
+                setTimeout(() => target.classList.remove('fsg-shake'), 340);
+            }
+        }
+    } finally {
+        _fieldBusy = false;
+    }
+    await _pollAlarms(true);
+    if (_trView && _trView.active) _trainingTick();
+}
+
+// L5: an operation in the MV control compartment (PT fuse holders,
+// multimeter selector and test leads).
+async function _onWiringClick(t) {
+    const xfer = _fieldXfer();
+    const r = resolveWiringClick(t, xfer && xfer.wiring);
+    if (!r) return;
+    const target = t.closest('[data-act]');
+    _fieldBusy = true;
+    try {
+        if (r.kind === 'selector' || r.kind === 'tool') _audio.latch();
+        const res = await plantPost(`/api/devices/${encodeURIComponent(xfer.id)}/wiring`, { action: r.action });
+        if (res.ok) {
+            const rd = (res.data.event || {}).reading || {};
+            _fieldMsg = rd.point ? `${rd.label}: ${rd.display}${rd.warning ? ` · ${rd.warning}` : ''}`
+                : `${r.action.replace(/_/g, ' ')}`;
+            if (rd.beep) _audio.beep();
+        } else {
+            _fieldMsg = `${r.kind === 'probe' ? 'METER' : 'INTERLOCK'} · ${res.detail}`;
             _audio.clunk();
             if (target) {
                 target.classList.add('fsg-shake');

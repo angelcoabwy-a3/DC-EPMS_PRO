@@ -11301,6 +11301,8 @@ table.opt-votes td {
     .fsg-bar { flex-wrap: wrap; row-gap: 6px; }
     .fsg-bar .fsg-note { display: none; }
     .fsg-bar .fsg-paths button { white-space: nowrap; }
+    /* L5: seven equipment buttons wrap inside their group. */
+    .fsg-bar .fsg-paths { flex-wrap: wrap; flex-shrink: 1; max-width: 100%; }
 }
 /* ════════════════════════════════════════════════════════════════
  * L3 (2026-11-26): FIELD VIEW · generator set and fuel system.
@@ -11393,3 +11395,80 @@ table.opt-votes td {
 .xu-section[data-lost="1"] .xf-lcd-line { fill: #ff7a68; }
 .xu-svg [role="button"]:focus, .xg-svg [role="button"]:focus { outline: none; }
 .xu-svg [role="button"]:focus-visible, .xg-svg [role="button"]:focus-visible { outline: 2px solid #ffd21f; outline-offset: 2px; }
+
+/* ── L5 battery room field view (Layer 2, ADR-014) ─────────────── */
+.xb-rack { fill: #2a2e33; stroke: #000; stroke-width: 1.5; }
+.xb-jar { cursor: pointer; }
+.xb-jar-body { fill: #3d4248; stroke: #0d0f11; stroke-width: 1.2; transition: fill .3s; }
+.xb-section[data-tool="meter"] .xb-jar:hover .xb-jar-body { stroke: #ffd21f; stroke-width: 2; }
+.xb-section[data-tool="replace"] .xb-jar:hover .xb-jar-body { stroke: #ff8a3d; stroke-width: 2; }
+.xb-post { fill: #8c9399; stroke: #222; }
+.xb-pos { fill: #b33a3a; }
+.xb-jar-n { font: 800 11px var(--font-mono); fill: #c3c8cf; }
+.xb-jar-t { font: 800 9px var(--font-mono); fill: #fff; paint-order: stroke; stroke: #000; stroke-width: 2.5px; }
+.xb-section[data-ir="1"] .xb-rack { fill: #0d0f11; }
+.xb-section[data-ir="1"] .xb-jar-n { fill: #fff; paint-order: stroke; stroke: #000; stroke-width: 2.5px; }
+.xb-section[data-ir="0"] .xb-scale { opacity: .35; }
+.xb-jar[data-sel="1"] .xb-jar-body { stroke: #ffd21f; stroke-width: 3; }
+.xb-jar[data-vented="1"] .xb-jar-body { stroke: #ff3b30; stroke-width: 3; stroke-dasharray: 4 3; }
+.xb-tab, .xb-tool, .xb-reset, .xb-hasp, .xb-link { cursor: pointer; }
+.xb-tab rect, .xb-tool rect { fill: #24282c; stroke: #000; }
+.xb-tab text, .xb-tool text { font: 800 9px var(--font-mono); fill: #c3c8cf; letter-spacing: .04em; }
+.xb-tab[data-on="1"] rect { fill: #e6e9ed; }
+.xb-tab[data-on="1"] text { fill: #111; }
+.xb-tool[data-on="1"] rect { fill: #ffd21f; }
+.xb-tool[data-on="1"] text { fill: #111; }
+.xb-meter-body { fill: #ffcb05; stroke: #4a3c00; stroke-width: 2; }
+.xb-meter .xu-light { fill: #2a2400; }
+.xb-section[data-mstatus="REPLACE"] .xb-meter .xf-lcd-line { fill: #ff7a68; }
+.xb-section[data-mstatus="WARN"] .xb-meter .xf-lcd-line { fill: #ffd21f; }
+.xb-sb[data-high="1"] .xu-brk-body { stroke: #ffb020; stroke-width: 3; }
+.xb-sb .xu-handle-lever { transition: transform .2s ease; transform: translateY(26px); }
+.xb-sb[data-closed="1"] .xu-handle-lever { transform: translateY(0); }
+.xb-sb .xu-padlock { opacity: 0; transition: opacity .2s; }
+.xb-sb[data-padlock="1"] .xu-padlock { opacity: 1; }
+.xb-link-stud { fill: #8c9399; stroke: #222; }
+.xb-link-bar { fill: #c98a2b; stroke: #4a2e00; transition: transform .2s, opacity .2s; }
+.xb-sb[data-link="0"] .xb-link-bar { transform: translateY(-14px); opacity: .45; }
+.xb-reset rect { fill: #24282c; stroke: #000; }
+.xb-reset text { font: 800 7px var(--font-mono); fill: #e6e9ed; }
+.xb-reset[data-failed="1"] rect { fill: #b3261e; }
+.xb-section[data-h2="1"] [data-txt="h1"], .xb-section[data-h2="1"] [data-txt="h2"] { fill: #ff7a68; }
+.xb-svg [role="button"]:focus, .xw-svg [role="button"]:focus { outline: none; }
+.xb-svg [role="button"]:focus-visible, .xw-svg [role="button"]:focus-visible { outline: 2px solid #ffd21f; outline-offset: 2px; }
+
+/* ── L5 MV control compartment: PT fuses, TB-1, multimeter ─────── */
+.xw-fuse-base { fill: #2b2f33; stroke: #000; stroke-width: 1.5; }
+.xw-holder { cursor: pointer; transition: transform .25s ease; }
+.xw-holder-body { fill: #1b1e21; stroke: #000; }
+.xw-cartridge { fill: #d9d2bf; stroke: #6b6350; }
+.xw-grip { fill: #c8102e; }
+.xw-fuse[data-pulled="1"] .xw-holder { transform: translate(30px, 4px) rotate(12deg); }
+.xw-replace { opacity: .25; pointer-events: none; }
+.xw-fuse[data-pulled="1"] .xw-replace { opacity: 1; pointer-events: auto; }
+.xw-pt { cursor: pointer; }
+.xw-pt-row { fill: #e3e6e9; stroke: #6c747b; }
+.xw-pt:hover .xw-pt-row { fill: #fff6c7; }
+.xw-pt[data-on="1"] .xw-pt-row { fill: #ffe78a; stroke: #6b5300; }
+.xw-screw { fill: #a9b0b6; stroke: #333; }
+.xw-pt-t { font: 800 9.5px var(--font-mono); fill: #1b1e21; }
+.xw-holster { fill: #ffcb05; stroke: #4a3c00; stroke-width: 2; }
+.xw-meter-body { fill: #3a3f44; stroke: #111; stroke-width: 2; }
+.xw-lcd { fill: #b9c4a8; stroke: #222; stroke-width: 2; }
+.xw-lcd-big { font: 800 34px var(--font-mono); fill: #15180f; font-variant-numeric: tabular-nums; }
+.xw-lcd-small { font: 800 10px var(--font-mono); fill: #15180f; }
+.xw-light { fill: #e3e6e9; }
+.xw-dial-ring { fill: #2a2e33; stroke: #ffcb05; stroke-width: 3; }
+.xw-knob { transition: transform .25s ease-out; }
+.xw-pointer { fill: #ffcb05; }
+.xw-dialpos { cursor: pointer; }
+.xw-dialpos text { font: 800 11px var(--font-mono); fill: #e3e6e9; }
+.xw-dialpos[data-on="1"] text { fill: #ffcb05; }
+.xw-jack { stroke: #111; stroke-width: 3; }
+.xw-jack-com { fill: #111; }
+.xw-jack-v { fill: #c8102e; }
+.xw-lead { fill: none; stroke-width: 4; stroke-linecap: round; opacity: .75; pointer-events: none; transition: d .3s; }
+.xw-lead-red { stroke: #c8102e; }
+.xw-lead-black { stroke: #111; }
+.xw-section[data-mode="OFF"] .xw-lcd-big { fill: #66705a; }
+.xw-warn { font: 800 9px var(--font-mono); fill: #ff7a68; }

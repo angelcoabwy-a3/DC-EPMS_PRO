@@ -301,7 +301,7 @@ export function fieldLogHtml(events, message = '', deviceId = '', view = null) {
     // L2: ``view`` = {match(ev), text(ev), empty} for another field view
     // (transformer). The switchgear log leaves transformer events out.
     const isXf = (ev) => ev.equipment === 'xfmr' || String(ev.command || '').endsWith('@XFMR');
-    const swgr = (ev) => !isXf(ev)
+    const swgr = (ev) => !isXf(ev) && ev.equipment !== 'wiring'
         && (ev.field || (ev.event === 'refused' && String(ev.command || '').includes('@'))
             || ['spring_charged', 'auto_transfer_blocked', 'authority'].includes(ev.event));
     const rows = (events || [])

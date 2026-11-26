@@ -150,6 +150,11 @@ export class ControlRoomAudio {
         return a;
     }
 
+    /** L5: multimeter continuity beep. */
+    beep() {
+        return this._tone('square', 2700, 2700, 0.05, 0.25);
+    }
+
     /** Padlock shackle or key switch. */
     latch() {
         const a = this._noise(0.3, 0.012, 0, 5200);
