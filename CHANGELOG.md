@@ -13,6 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Building D 800 VDC design model, lote 1 of the 3D hall track (2026-11-26)
+
+- `config/design/building_d.yml` (inputs) + `backend/design_model.py`
+  (sizing, checks, hall layout in mm) + `GET /api/design/building-d`,
+  `/racks`, `/racks/{id}`. ADR-021.
+- 2N, 50 MW IT on 800 VDC unipolar TN-S: 24 x 5 MW MV rectifiers, 40
+  busways (5,000 A), 500 rack feeds (250 A, 315 A SSCB), BESS 2 x 7.5
+  MWh, 42 x 3.2 MW generators, 4 x 80 MVA step-up, 30 CDUs.
+- DC-EPMS-075 (open): README Phase 1 DLC flow 40 L/min at 142 kW
+  implies a 53.5 K rise; the 18 to 45 C envelope allows 27 K.
+- DC-EPMS-076 (open): `site_model.yml` still holds the old single-path
+  Building D (one 55 MW rectifier, 2 x 2 MW RPP); SLD, What-If and the
+  simulator read it.
+- `backend/main.py` ruff-formatted and a mypy error on the CMMS
+  fallback fixed, so commits pass the pre-commit hooks without
+  `--no-verify` from now on.
+- Floors (Linux): pytest 2126 (3 pre-existing optimizer errors), vitest
+  941 / 58 files.
+
 ### Instructor fallback + field text size (2026-11-26)
 
 - MetaProvider surfaces Meta's error message on non-200 replies (the

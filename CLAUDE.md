@@ -234,9 +234,19 @@ FIX (2026-11-26, 8a61eba / c0baa8f): live debrief hit Meta 404; provider
   now shows Meta's error text; deterministic FAIL debrief lists missing
   steps; field views FIT / MEDIUM / LARGE text size (localStorage
   dcepms.field.size). pytest 2117 / vitest 941 (58 files).
-NEXT: operator lists the models the Meta key can use (GET /v1/models),
-  sets META_MODEL on Render, retries a debrief; candidates needing GO:
-  DC-EPMS-068 closing lote, DC-EPMS-072.
+3D HALL TRACK lote 1 (2026-11-26, b3c1ae9 / ab7cad2, ADR-021): Building D
+  800 VDC design model. config/design/building_d.yml = inputs only;
+  backend/design_model.py sizes 2N end to end (24 rectifiers, 40
+  busways 5,000 A, rack feeds 250 A / SSCB 315 A, BESS 7.5 MWh per path,
+  42 x 3.2 MW gens, 80 MVA step-up 1+1, 30 CDUs), checks, hall layout
+  in mm; GET /api/design/building-d[/racks[/{id}]]. Values tagged
+  DESIGN / MODEL. DC-EPMS-075 (Phase 1 DLC flow) and -076 (site_model
+  Building D stale) open. Commits now pass pre-commit hooks, no
+  --no-verify. pytest 2126 / vitest 941.
+NEXT: 3D hall lote 2 (scene: detailed rack, instanced row, 800 VDC
+  busway with bloom, pipes); lote 3 (live data, click, callouts,
+  fly-through, quality governor). Meta debrief 404 still to confirm on
+  Render after f6a3013.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```
@@ -705,7 +715,7 @@ Hard rules for every PowerShell artifact, distilled across Batches 1+2+3+3.5+5 a
 > **✅ SUPERSEDED same day (S4 bug closeout delivered — see the block
 > above). Original entry:** ~~MVP S4: bug closeout~~ (the Epic 5
 > portion of S4 is done; MVP runs ~3 weeks ahead of the jul 2-8
-> window): T1.6, DC-EPMS-029c (SHI rollup insensitivity), 
+> window): T1.6, DC-EPMS-029c (SHI rollup insensitivity),
 > DC-EPMS-TEST-01 (overview.test.js fetch leak), E2E WARNING triage
 > (docs/audit/E2E_Security_Orphan_Audit.md). Then S5 = FEATURE
 > FREEZE -> T1.1 Mission Control eyeball validation, DEMO_SCRIPT v5,
