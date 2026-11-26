@@ -188,6 +188,9 @@ L1 FIELD VIEW (2026-11-15): backend/mv_cubicle.py (52-U / 52-GM
   pytest 1985 / vitest 886 / 50 files. Next lots from the master spec:
   L2 transformer, L3 generator + fuel, L4 UPS bypass, L5 diagnostics,
   L6 oscillography.
+L1b (2026-11-26): DRILL-05 v2 in OSHA 1910.147(d) order (lock, then
+  release stored energy, verified against the eCFR); mechanical push
+  buttons in DISCONNECTED. pytest 1986 / vitest 886.
 NEXT: operator applies the bundle and eyeballs the Power SLD (strip +
   sequence in What-If); then GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;

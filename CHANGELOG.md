@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### L1b - DRILL-05 in OSHA 1910.147(d) order (2026-11-26)
+
+- Verified against the eCFR text: stored energy is relieved after the
+  lockout devices are applied ((d)(5)(i)). DRILL-05 v1 had it before.
+- Mechanical push buttons in DISCONNECTED (no control power) release
+  the springs after the lock; motor stops in DISCONNECTED.
+- DRILL-05 v2 order: LOCAL, TEST, DISCONNECTED, padlock, release.
+- pytest 1986 / vitest 886 (50 files).
+
 ### L1 - field view of the 13.8 kV switchgear (2026-11-15)
 
 - Draw-out cubicles for 52-U / 52-GM (`backend/mv_cubicle.py`,
