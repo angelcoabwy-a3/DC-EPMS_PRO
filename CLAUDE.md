@@ -232,7 +232,7 @@ AI-1 INSTRUCTOR (2026-11-26, e789253 / e6ae9f8, ADR-020): operator chose
   a fake provider only. Floors (Linux): pytest 2115 / vitest 939 (57).
 FIX (2026-11-26, 8a61eba / c0baa8f): live debrief hit Meta 404; provider
   now shows Meta's error text; deterministic FAIL debrief lists missing
-  steps; field views LARGE TEXT / FIT VIEW toggle (localStorage
+  steps; field views FIT / MEDIUM / LARGE text size (localStorage
   dcepms.field.size). pytest 2117 / vitest 941 (58 files).
 NEXT: operator lists the models the Meta key can use (GET /v1/models),
   sets META_MODEL on Render, retries a debrief; candidates needing GO:

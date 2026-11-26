@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model name, set `META_MODEL` to a model the key lists).
 - Deterministic debrief on FAIL: failure reason first, missing steps
   listed, no "no steps" line under what went well.
-- Field views: LARGE TEXT / FIT VIEW toggle (LARGE default on desktop).
+- Field views: FIT / MEDIUM / LARGE text size (LARGE default on desktop,
+  MEDIUM added at operator request).
 - Floors (Linux): pytest 2117 / vitest 941 (58 files).
 
 ### AI-1 training instructor debrief (2026-11-26)
