@@ -1508,9 +1508,9 @@ function _applyField() {
 
 const _wait = (ms) => new Promise((r) => { setTimeout(r, ms); });
 
-// Readability: FIT keeps the whole panel in the window, MEDIUM draws the
-// equipment up to 1380 px wide and LARGE up to 1600 px (the stage
-// scrolls). Remembered per browser; phones start in FIT.
+// Readability: FIT keeps the whole panel in the window, MEDIUM fills the
+// width (vertical scroll), LARGE is 1.35x the width (scroll both ways).
+// Remembered per browser; phones start in FIT.
 const FIELD_SIZES = ['fit', 'medium', 'large'];
 const FIELD_SIZE_KEY = 'dcepms.field.size';
 function _fieldSize() {

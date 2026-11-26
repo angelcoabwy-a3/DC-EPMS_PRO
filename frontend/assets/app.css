@@ -11525,6 +11525,10 @@ table.opt-votes td {
 .fsg-stage { flex: 1 1 auto; min-height: 0; }
 .pwr-field[data-size="medium"] .fsg-shell,
 .pwr-field[data-size="large"] .fsg-shell { width: 98vw; }
-.pwr-field[data-size="medium"] .fsg-svg { max-height: none; max-width: 1380px; margin: 0 auto; }
-.pwr-field[data-size="large"] .fsg-svg { max-height: none; max-width: 1600px; margin: 0 auto; }
+/* Sizes are relative to the stage so each step is visibly larger on any
+ * screen: MEDIUM fills the width (vertical scroll), LARGE is 1.35x the
+ * width (scroll both ways). A fixed px cap made them identical on
+ * laptops narrower than the cap. */
+.pwr-field[data-size="medium"] .fsg-svg { max-height: none; max-width: none; width: 100%; }
+.pwr-field[data-size="large"] .fsg-svg { max-height: none; max-width: none; width: 135%; }
 .fsg-bar .fsg-size { white-space: nowrap; }
