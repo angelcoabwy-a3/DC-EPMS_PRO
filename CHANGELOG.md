@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Instructor fallback + field text size (2026-11-26)
+
+- MetaProvider surfaces Meta's error message on non-200 replies (the
+  live debrief returned `Meta API error 404`; the likely cause is the
+  model name, set `META_MODEL` to a model the key lists).
+- Deterministic debrief on FAIL: failure reason first, missing steps
+  listed, no "no steps" line under what went well.
+- Field views: LARGE TEXT / FIT VIEW toggle (LARGE default on desktop).
+- Floors (Linux): pytest 2117 / vitest 941 (58 files).
+
 ### AI-1 training instructor debrief (2026-11-26)
 
 - **Debrief** (ADR-020): `backend/training_instructor.py` +

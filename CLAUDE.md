@@ -230,9 +230,13 @@ AI-1 INSTRUCTOR (2026-11-26, e789253 / e6ae9f8, ADR-020): operator chose
   fallback (no key / cap / error), name scrubbed, citation guard, cache,
   META_INSTRUCTOR_DAILY_CAP default 20. Coach EN / ES buttons. Tested with
   a fake provider only. Floors (Linux): pytest 2115 / vitest 939 (57).
-NEXT: operator sets META_API_KEY on the host (and optionally the cap) and
-  tries a debrief; candidates needing GO: DC-EPMS-068 closing lote,
-  DC-EPMS-072.
+FIX (2026-11-26, 8a61eba / c0baa8f): live debrief hit Meta 404; provider
+  now shows Meta's error text; deterministic FAIL debrief lists missing
+  steps; field views LARGE TEXT / FIT VIEW toggle (localStorage
+  dcepms.field.size). pytest 2117 / vitest 941 (58 files).
+NEXT: operator lists the models the Meta key can use (GET /v1/models),
+  sets META_MODEL on Render, retries a debrief; candidates needing GO:
+  DC-EPMS-068 closing lote, DC-EPMS-072.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```
