@@ -268,6 +268,10 @@ def public_no_db_client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("DC_EPMS_USE_SIMULATOR", "1")
     monkeypatch.setenv("DC_EPMS_SKIP_WARMUP", "1")
     monkeypatch.setattr(main_mod, "LM_STUDIO_URL", "http://127.0.0.1:1234")
+    # A public host has no GPU. Force the NVML probe to "unavailable" so the
+    # result does not depend on the machine running the suite (the operator
+    # workstation has a real RTX 3060 and reported "IDLE").
+    monkeypatch.setattr(main_mod, "_read_gpu_stats", lambda: {"source": "unavailable"})
     with TestClient(main_mod.app) as client:
         # The lifespan (re)binds rag_service when chromadb is installed
         # (operator Windows venv), so force "no RAG" AFTER startup.
@@ -285,6 +289,15 @@ class TestPublicHealth:
         for key in ("postgres", "rag", "gemma"):
             assert body[key]["status"] == "disabled", key
         assert body["gpu"]["status"] == "disabled"
+
+    def test_present_gpu_is_reported_as_is(self, public_no_db_client, monkeypatch):
+        import main as main_mod
+
+        fake = {"source": "nvml", "gpu": "RTX 3060", "status": "IDLE"}
+        monkeypatch.setattr(main_mod, "_read_gpu_stats", lambda: dict(fake))
+        body = public_no_db_client.get("/api/health").json()
+        assert body["gpu"]["status"] == "IDLE"
+        assert body["gpu"]["source"] == "nvml"
 
     def test_no_loopback_url_or_error_text(self, public_no_db_client):
         raw = public_no_db_client.get("/api/health").text
