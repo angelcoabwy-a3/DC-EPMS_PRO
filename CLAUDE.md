@@ -224,8 +224,15 @@ L6 OSCILLOGRAPHY (2026-11-26, 4d16311 / a4077d6, ADR-019):
   static-switch notch 3 ms, sag, inverter-fault harmonics), IEEE 1159
   classes, COMTRADE C37.111-1999 ASCII. /api/oscillography/*, field view
   core/field_scope.js. Floors (Linux): pytest 2105 / vitest 934 (56).
-NEXT: master-spec lots L1-L6 delivered. Candidates needing GO: AI
-  instructor (provider decision), DC-EPMS-068 closing lote, DC-EPMS-072.
+AI-1 INSTRUCTOR (2026-11-26, e789253 / e6ae9f8, ADR-020): operator chose
+  Meta Muse. backend/training_instructor.py + POST /api/training/debrief:
+  post-drill debrief EN / ES, muse-spark-1.3 via MetaProvider, deterministic
+  fallback (no key / cap / error), name scrubbed, citation guard, cache,
+  META_INSTRUCTOR_DAILY_CAP default 20. Coach EN / ES buttons. Tested with
+  a fake provider only. Floors (Linux): pytest 2115 / vitest 939 (57).
+NEXT: operator sets META_API_KEY on the host (and optionally the cap) and
+  tries a debrief; candidates needing GO: DC-EPMS-068 closing lote,
+  DC-EPMS-072.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```

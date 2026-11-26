@@ -13,6 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### AI-1 training instructor debrief (2026-11-26)
+
+- **Debrief** (ADR-020): `backend/training_instructor.py` +
+  `POST /api/training/debrief`. After a finished drill, EN or ES. Meta Muse
+  Spark (`muse-spark-1.3`, 4000 output tokens) through the existing
+  `MetaProvider` when `META_API_KEY` is set; deterministic debrief
+  otherwise, always labelled. Operator name replaced by "trainee";
+  references limited to the drill's; unverified citations listed; score
+  and outcome never changed.
+- Cost: one call per report and language (cached),
+  `META_INSTRUCTOR_DAILY_CAP` default 20 per UTC day. Ledger
+  `TRAINING_DEBRIEF` (digest, source, model; not the text).
+- Meta path tested with a fake provider only (no key here).
+- Floors (Linux): pytest 2115 passed (3 pre-existing test_optimizer
+  errors), vitest 939 / 57 files.
+
 ### L6 disturbance recorder and oscillography (2026-11-26)
 
 - **Recorder** (ADR-019): `backend/oscillography.py` synthesises three-phase
