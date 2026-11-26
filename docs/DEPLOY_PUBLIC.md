@@ -50,7 +50,15 @@ Recommended:
 | `DC_EPMS_LEDGER_HMAC_KEY` | **hex** string, at least 64 hex digits (32 bytes) | Otherwise ledger entries cannot be verified after a restart. A non-hex or shorter value makes the ledger fail to start. |
 
 Already-existing variables that keep their meaning: `META_API_KEY`
-(MOP Verification), `DC_EPMS_OPTIMIZER_ENABLED`, `DC_EPMS_USE_SIMULATOR`.
+(MOP Verification, Shift Forensic Investigator, and since AI-1 the
+training instructor debrief), `DC_EPMS_OPTIMIZER_ENABLED`,
+`DC_EPMS_USE_SIMULATOR`.
+
+Training instructor (AI-1): `META_INSTRUCTOR_DAILY_CAP` (default 20)
+limits the Meta calls of `POST /api/training/debrief` per UTC day; `0`
+disables them. Without `META_API_KEY`, or past the cap, the debrief is
+the deterministic one, labelled as such. The cap counts calls, not
+money: check the Meta console for pricing and the credit balance.
 
 Optional: `DC_EPMS_SKIP_WARMUP=1` skips the GraphRAG and LOTO warmup at
 boot (DC-EPMS-069). On a host without the embedding stack it only saves

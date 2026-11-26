@@ -8,6 +8,9 @@ GET  /api/training/session     evaluate and return the running drill
 POST /api/training/abort       stop the running drill
 POST /api/training/reset       back to the design lineup (no drill)
 GET  /api/training/report      last finished drill report (JSON)
+POST /api/training/debrief     {"lang": "en"|"es"}: instructor debrief of
+                               the last report (AI-1: Meta Muse when
+                               configured, deterministic otherwise)
 
 Start / abort / reset need FACILITY_MANAGER (they reset the shared
 simulated plant). Start, end and reset are chained in the Forensic
@@ -23,6 +26,7 @@ from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Request
 
+from backend import training_instructor as ti
 from backend.alarm_engine import AlarmEngine
 from backend.device_control import DeviceControlError, DeviceController, _ledger_append, authorise
 from backend.training import TrainingError, TrainingManager, drill_summary
@@ -30,6 +34,7 @@ from backend.training import TrainingError, TrainingManager, drill_summary
 ACTION_TRAINING_START = "TRAINING_DRILL_STARTED"
 ACTION_TRAINING_RESULT = "TRAINING_DRILL_RESULT"
 ACTION_TRAINING_RESET = "TRAINING_PLANT_RESET"
+ACTION_TRAINING_DEBRIEF = "TRAINING_DEBRIEF"
 
 
 def report_sha256(report: dict[str, Any]) -> str:
@@ -127,3 +132,21 @@ def register_training_routes(
         if mgr.last_report is None:
             raise HTTPException(404, "no finished drill yet")
         return mgr.last_report
+
+    @app.post("/api/training/debrief")
+    async def debrief(request: Request, payload: dict = Body(default={})) -> dict[str, Any]:
+        """AI-1: instructor debrief of the last finished drill. Read-only:
+        the score and outcome stay the deterministic rubric's."""
+        actor = authorise(request, payload or {})
+        _, mgr = _deps()
+        if mgr.last_report is None:
+            raise HTTPException(404, "no finished drill yet")
+        lang = str((payload or {}).get("lang") or "en").lower()
+        result = await ti.debrief(mgr.last_report, lang, drill_ids=sorted(mgr.drills))
+        result["ledger_entry_id"] = await _ledger_append(request.app, actor, ACTION_TRAINING_DEBRIEF, {
+            "drill": (mgr.last_report.get("drill") or {}).get("id"),
+            "report_sha256": report_sha256(mgr.last_report), "source": result["source"],
+            "model": result["model"], "lang": result["lang"], "cached": result["cached"],
+            "unverified_citations": len(result["unverified_citations"]),
+        })
+        return result
