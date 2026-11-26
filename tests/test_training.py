@@ -507,36 +507,44 @@ class TestDrill05RackOut:
     def fa(self, ctl, brk, action, actor="trainee"):
         return ctl.field_action("mvtc_a", brk, action, actor)
 
-    def test_full_isolation_passes_clean(self, world, clock):
+    def test_full_isolation_passes_clean_in_osha_order(self, world, clock):
         ctl, engine, mgr = world
         mgr.start("DRILL-05", "trainee", ctl, engine)
         ctl.set_authority("mvtc_a", dc.AUTH_LOCAL, "trainee")
         self.fa(ctl, "52-GM", "RACK_OUT")
-        self.fa(ctl, "52-GM", "MOTOR_OFF")
-        mgr.evaluate(ctl, engine)
-        self.fa(ctl, "52-GM", "LOCAL_CLOSE")
-        self.fa(ctl, "52-GM", "LOCAL_OPEN")
         mgr.evaluate(ctl, engine)
         self.fa(ctl, "52-GM", "RACK_OUT")
         mgr.evaluate(ctl, engine)
         self.fa(ctl, "52-GM", "PADLOCK")
+        mgr.evaluate(ctl, engine)
+        self.fa(ctl, "52-GM", "LOCAL_CLOSE")                # mechanical, no control power
+        self.fa(ctl, "52-GM", "LOCAL_OPEN")
+        clock.tick(30)                                      # the motor cannot recharge
         view = mgr.evaluate(ctl, engine)
         s = view["session"]
         assert (s["outcome"], s["violations"]) == ("PASS", 0)
-        assert steps_done(view) == ["LOCAL", "TEST", "MOTOR", "DISCHARGE", "DISCONNECT", "LOCK"]
-        assert mgr.last_report["drill"]["references"]
+        assert steps_done(view) == ["LOCAL", "TEST", "DISCONNECT", "LOCK", "DISCHARGE"]
+        refs = " ".join(mgr.last_report["drill"]["references"])
+        assert "1910.147(d)(5)(i)" in refs
+        assert "verified" in refs
 
-    def test_discharge_with_motor_on_does_not_count(self, world, clock):
+    def test_discharge_before_the_lock_does_not_count(self, world, clock):
+        """The old order (release in TEST, then lock) leaves the drill
+        waiting: the release must follow the lockout device."""
         ctl, engine, mgr = world
         mgr.start("DRILL-05", "trainee", ctl, engine)
         ctl.set_authority("mvtc_a", dc.AUTH_LOCAL, "trainee")
         self.fa(ctl, "52-GM", "RACK_OUT")
         mgr.evaluate(ctl, engine)
-        self.fa(ctl, "52-GM", "LOCAL_CLOSE")                # motor still ON
+        self.fa(ctl, "52-GM", "MOTOR_OFF")
+        self.fa(ctl, "52-GM", "LOCAL_CLOSE")
         self.fa(ctl, "52-GM", "LOCAL_OPEN")
-        clock.tick(10)                                      # motor recharges the spring
+        self.fa(ctl, "52-GM", "RACK_OUT")
+        mgr.evaluate(ctl, engine)
+        self.fa(ctl, "52-GM", "PADLOCK")
         view = mgr.evaluate(ctl, engine)
-        assert steps_done(view) == ["LOCAL", "TEST"]
+        assert view["session"]["outcome"] is None
+        assert steps_done(view) == ["LOCAL", "TEST", "DISCONNECT", "LOCK"]
 
     def test_racking_a_closed_breaker_is_refused_and_counted(self, client):
         c, ctl, engine, mgr = client

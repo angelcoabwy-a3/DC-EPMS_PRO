@@ -144,8 +144,14 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
         for e in events or []:
             if e.get("event") != cond.get("event"):
                 continue
-            if "field" not in cond or e.get(cond["field"]) == cond.get("value"):
-                return True
+            if "field" in cond and e.get(cond["field"]) != cond.get("value"):
+                continue
+            # L1b: several fields at once, and fields that must be set
+            if any(e.get(k) != v for k, v in (cond.get("match") or {}).items()):
+                continue
+            if not all(e.get(k) for k in cond.get("present") or []):
+                continue
+            return True
         return False
     if kind == "cubicle":
         # L1: {"path", "breaker", "field", "value"} or "values": [...]

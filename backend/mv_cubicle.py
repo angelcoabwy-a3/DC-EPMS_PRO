@@ -25,8 +25,13 @@ Interlocks (fail-safe):
   C2  never close with the closing spring discharged
   C3  never close with the 86 lockout tripped (it opens the close
       circuit); the 86 also trips the breaker when operated
-  C4  never close electrically in DISCONNECTED (secondary contacts
-      parted: no close circuit)
+  C4  in DISCONNECTED the secondary contacts are parted: no control
+      power, so no electrical close and no motor charging. The push
+      buttons on the breaker front then act MECHANICALLY (manual close
+      and trip, as on common draw-out breakers; verify against the
+      vendor manual): the breaker can be cycled off the bus to release
+      its springs after the lock is on (OSHA 1910.147(d)(5)(i): stored
+      energy is relieved after the lockout devices are applied)
   C5  never rack in a padlocked breaker
   C6  the padlock goes on the racking mechanism in DISCONNECTED only
   C7  only the person who applied a padlock removes it
@@ -144,7 +149,8 @@ def is_closed(c: Cubicle, main_closed: bool) -> bool:
 
 def tick(c: Cubicle, now: float) -> bool:
     """Advance the charging motor. True when the spring just charged."""
-    if c.charge_at is not None and c.motor_on and now >= c.charge_at:
+    if (c.charge_at is not None and c.motor_on and c.racking != DISCONNECTED
+            and now >= c.charge_at):
         c.charge_at = None
         c.spring_charged = True
         c.pumps = 0
@@ -180,9 +186,7 @@ def interlock(c: Cubicle, action: str, ctx: CubicleContext) -> str | None:
     if action == LOCAL_CLOSE:
         if closed:
             return f"{b} is already closed."
-        if c.racking == DISCONNECTED:
-            return f"C4: {b} is DISCONNECTED: secondary contacts parted, no close circuit."
-        if c.lockout_86:
+        if c.lockout_86 and c.racking != DISCONNECTED:
             return f"C3: 86 lockout tripped: the {b} close circuit is open. Reset the 86 first."
         if not c.spring_charged:
             return f"C2: {b} closing spring is discharged."
@@ -217,12 +221,14 @@ def apply(c: Cubicle, action: str, ctx: CubicleContext) -> str | None:
     if action == RACK_OUT:
         c.racking = TEST if c.racking == CONNECTED else DISCONNECTED
         c.test_closed = False
+        _control_power_changed(c, ctx.now)
     elif action == RACK_IN:
         c.racking = TEST if c.racking == DISCONNECTED else CONNECTED
         c.test_closed = False
+        _control_power_changed(c, ctx.now)
     elif action == MOTOR_ON:
         c.motor_on = True
-        if not c.spring_charged:
+        if not c.spring_charged and c.racking != DISCONNECTED:
             c.charge_at = ctx.now + SPRING_MOTOR_CHARGE_S
     elif action == MOTOR_OFF:
         c.motor_on = False
@@ -256,10 +262,21 @@ def apply(c: Cubicle, action: str, ctx: CubicleContext) -> str | None:
 
 
 def discharge(c: Cubicle, now: float) -> None:
-    """A close releases the closing spring; the motor recharges it."""
+    """A close releases the closing spring; the motor recharges it
+    when it has control power (not in DISCONNECTED)."""
     c.spring_charged = False
     c.pumps = 0
-    c.charge_at = now + SPRING_MOTOR_CHARGE_S if c.motor_on else None
+    c.charge_at = (now + SPRING_MOTOR_CHARGE_S
+                   if c.motor_on and c.racking != DISCONNECTED else None)
+
+
+def _control_power_changed(c: Cubicle, now: float) -> None:
+    """Racking moved the secondary contacts: the charging motor stops
+    in DISCONNECTED and resumes (if ON and needed) in TEST / CONNECTED."""
+    if c.racking == DISCONNECTED:
+        c.charge_at = None
+    elif c.motor_on and not c.spring_charged and c.charge_at is None:
+        c.charge_at = now + SPRING_MOTOR_CHARGE_S
 
 
 def close_reason(c: Cubicle) -> str | None:

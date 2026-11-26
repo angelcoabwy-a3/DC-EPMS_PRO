@@ -177,7 +177,8 @@ function pushButton(brk, kind, x, y, glyph, label) {
         + `<g class="fsg-cover" data-act="cover" data-brk="${brk}" data-kind="${kind}" role="button" tabindex="0">`
         + '<rect x="-27" y="-22" width="54" height="44" rx="4" class="fsg-cover-glass"/>'
         + '<rect x="-27" y="-22" width="54" height="7" rx="3" class="fsg-cover-hinge"/></g>'
-        + `<text y="36" class="fsg-tiny fsg-dark" text-anchor="middle">${label}</text></g>`;
+        + `<text y="36" class="fsg-tiny fsg-dark" text-anchor="middle">${label}</text>`
+        + '<title>Electrical close / trip in CONNECTED and TEST; mechanical in DISCONNECTED (no control power), to release the springs after lockout.</title></g>';
 }
 
 /** Static SVG of the line-up for one path (built once per open). */
@@ -251,7 +252,8 @@ export function applyFieldState(root, xfer, ui = {}) {
         const chg = sec.querySelector('[data-txt="charging"]');
         if (chg) {
             chg.textContent = c.spring_charged ? 'READY'
-                : (c.charging_s_left != null ? `MOTOR ${Math.ceil(c.charging_s_left)} s` : (c.motor_on ? 'MOTOR' : 'MANUAL'));
+                : (!c.control_power ? 'NO CTRL PWR'
+                    : (c.charging_s_left != null ? `MOTOR ${Math.ceil(c.charging_s_left)} s` : (c.motor_on ? 'MOTOR' : 'MANUAL')));
         }
         const ptr = sec.querySelector('.fsg-rack-ptr');
         if (ptr) ptr.style.transform = `translateX(${RACK_X[c.racking] ?? 0}px)`;

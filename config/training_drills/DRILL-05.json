@@ -1,43 +1,145 @@
 {
   "id": "DRILL-05",
-  "version": 1,
+  "version": 2,
   "title": "Isolate generator main 52-GM of path A for maintenance (rack out, stored energy, lockout)",
-  "summary": "Path A is on utility, 52-GM is open and the generator bus is in standby. Maintenance needs 52-GM out of its cell. At the 13.8 kV switchgear (field view): take local control, rack 52-GM to TEST, switch its spring-charging motor OFF and release the stored energy (close and open it in TEST), rack it to DISCONNECTED and apply your personal padlock to the racking mechanism. 52-U carries path A the whole time: touching it ends the drill. Switching the procedure does not call for counts as a violation.",
+  "summary": "Path A is on utility, 52-GM is open and the generator bus is in standby. Maintenance needs 52-GM out of its cell. At the 13.8 kV switchgear (field view), in the order of OSHA 29 CFR 1910.147(d): take local control, rack 52-GM through TEST to DISCONNECTED (isolation), apply your personal padlock to the racking mechanism (lockout), then relieve the stored energy: close and open 52-GM with its mechanical push buttons until the closing spring reads DISCHARGED (no control power in DISCONNECTED, so the motor cannot recharge it). 52-U carries path A the whole time: touching it ends the drill. Switching the procedure does not call for counts as a violation.",
   "path": "a",
   "target_s": 120,
   "time_limit_s": 900,
-  "procedure_commands": ["RACK_OUT@52-GM", "MOTOR_OFF@52-GM", "LOCAL_CLOSE@52-GM", "LOCAL_OPEN@52-GM", "PADLOCK@52-GM"],
+  "procedure_commands": [
+    "RACK_OUT@52-GM",
+    "PADLOCK@52-GM",
+    "LOCAL_CLOSE@52-GM",
+    "LOCAL_OPEN@52-GM",
+    "MOTOR_OFF@52-GM",
+    "PUMP_SPRING@52-GM"
+  ],
   "references": [
-    "OSHA 29 CFR 1910.147(d): application of control, including release of stored energy after isolation (paragraph numbers quoted from memory: verify)",
-    "OSHA 29 CFR 1910.147(e)(3): each lockout device is removed by the employee who applied it (verify)",
-    "NFPA 70E Article 120: establishing an electrically safe work condition (edition-specific numbering: verify)"
+    "OSHA 29 CFR 1910.147(d)(4)(i): lockout devices are affixed to each energy isolating device by authorized employees (verified against the eCFR text, Cornell LII, 2026-11-26)",
+    "OSHA 29 CFR 1910.147(d)(5)(i): after the lockout devices are applied, stored or residual energy is relieved, disconnected, restrained or otherwise rendered safe (verified 2026-11-26)",
+    "OSHA 29 CFR 1910.147(e)(3): each lockout device is removed by the employee who applied it (verified 2026-11-26)",
+    "Mechanical close / trip push buttons on the breaker front without control power: common draw-out breaker practice, verify against the vendor manual"
   ],
   "setup": {
-    "authority": {"mvtc_a": "REMOTE"},
+    "authority": {
+      "mvtc_a": "REMOTE"
+    },
     "inject": []
   },
   "steps": [
-    {"id": "LOCAL", "text": "Take local control: MV transfer A authority to LOCAL (remote and automatic close blocked)",
-     "check": {"type": "device_authority", "device": "mvtc_a", "authority": "LOCAL"}},
-    {"id": "TEST", "text": "Rack 52-GM from CONNECTED to TEST (field view, racking crank)",
-     "check": {"type": "cubicle", "path": "a", "breaker": "52-GM", "field": "racking", "values": ["TEST", "DISCONNECTED"]}},
-    {"id": "MOTOR", "text": "Switch the 52-GM spring-charging motor OFF",
-     "check": {"type": "cubicle", "path": "a", "breaker": "52-GM", "field": "motor_on", "value": false}},
-    {"id": "DISCHARGE", "text": "Release the stored energy: close and open 52-GM in TEST until the spring reads DISCHARGED",
-     "check": {"type": "all", "of": [
-       {"type": "cubicle", "path": "a", "breaker": "52-GM", "field": "spring_charged", "value": false},
-       {"type": "cubicle", "path": "a", "breaker": "52-GM", "field": "closed", "value": false}]}},
-    {"id": "DISCONNECT", "text": "Rack 52-GM to DISCONNECTED",
-     "check": {"type": "cubicle", "path": "a", "breaker": "52-GM", "field": "racking", "value": "DISCONNECTED"}},
-    {"id": "LOCK", "text": "Apply your personal padlock to the 52-GM racking mechanism",
-     "check": {"type": "cubicle", "path": "a", "breaker": "52-GM", "field": "padlock", "truthy": true},
-     "holds": {"type": "cubicle", "path": "a", "breaker": "52-GM", "field": "racking", "value": "DISCONNECTED"}}
+    {
+      "id": "LOCAL",
+      "text": "Take local control: MV transfer A authority to LOCAL (remote and automatic close blocked)",
+      "check": {
+        "type": "device_authority",
+        "device": "mvtc_a",
+        "authority": "LOCAL"
+      }
+    },
+    {
+      "id": "TEST",
+      "text": "Rack 52-GM from CONNECTED to TEST (field view, racking crank)",
+      "check": {
+        "type": "cubicle",
+        "path": "a",
+        "breaker": "52-GM",
+        "field": "racking",
+        "values": [
+          "TEST",
+          "DISCONNECTED"
+        ]
+      }
+    },
+    {
+      "id": "DISCONNECT",
+      "text": "Rack 52-GM to DISCONNECTED (isolated from the bus, no control power)",
+      "check": {
+        "type": "cubicle",
+        "path": "a",
+        "breaker": "52-GM",
+        "field": "racking",
+        "value": "DISCONNECTED"
+      }
+    },
+    {
+      "id": "LOCK",
+      "text": "Apply your personal padlock to the 52-GM racking mechanism",
+      "check": {
+        "type": "cubicle",
+        "path": "a",
+        "breaker": "52-GM",
+        "field": "padlock",
+        "truthy": true
+      },
+      "holds": {
+        "type": "all",
+        "of": [
+          {
+            "type": "cubicle",
+            "path": "a",
+            "breaker": "52-GM",
+            "field": "racking",
+            "value": "DISCONNECTED"
+          },
+          {
+            "type": "cubicle",
+            "path": "a",
+            "breaker": "52-GM",
+            "field": "padlock",
+            "truthy": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "DISCHARGE",
+      "text": "Relieve the stored energy after the lock: close and open 52-GM with its mechanical push buttons until the spring reads DISCHARGED",
+      "check": {
+        "type": "all",
+        "of": [
+          {
+            "type": "cubicle",
+            "path": "a",
+            "breaker": "52-GM",
+            "field": "spring_charged",
+            "value": false
+          },
+          {
+            "type": "cubicle",
+            "path": "a",
+            "breaker": "52-GM",
+            "field": "closed",
+            "value": false
+          },
+          {
+            "type": "event_seen",
+            "event": "command",
+            "match": {
+              "command": "LOCAL_OPEN@52-GM",
+              "racking": "DISCONNECTED"
+            },
+            "present": [
+              "padlock"
+            ]
+          }
+        ]
+      }
+    }
   ],
   "fail": [
-    {"type": "load_lost", "path": "a"},
-    {"type": "command_used", "command": "LOCAL_OPEN@52-U",
-     "reason": "52-U opened: wrong breaker, the utility incomer carries path A (load on battery)"},
-    {"type": "command_used", "command": "TRIP_86@52-U",
-     "reason": "86 of 52-U tripped: wrong breaker, path A lost its incomer"}
+    {
+      "type": "load_lost",
+      "path": "a"
+    },
+    {
+      "type": "command_used",
+      "command": "LOCAL_OPEN@52-U",
+      "reason": "52-U opened: wrong breaker, the utility incomer carries path A (load on battery)"
+    },
+    {
+      "type": "command_used",
+      "command": "TRIP_86@52-U",
+      "reason": "86 of 52-U tripped: wrong breaker, path A lost its incomer"
+    }
   ]
 }

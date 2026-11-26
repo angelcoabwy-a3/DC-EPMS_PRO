@@ -89,9 +89,28 @@ class TestPure:
         cub.apply(c, cub.RESET_86, ctx())
         assert cub.interlock(c, cub.LOCAL_CLOSE, ctx()) is None
 
-    def test_c4_no_electrical_close_when_disconnected(self):
-        c = cub.Cubicle(breaker="52-U", racking=cub.DISCONNECTED)
-        assert "C4" in cub.interlock(c, cub.LOCAL_CLOSE, ctx())
+    def test_c4_disconnected_push_buttons_act_mechanically(self):
+        # No control power in DISCONNECTED: the push buttons still cycle
+        # the breaker off the bus (to release its springs), the motor
+        # cannot recharge, and the 86 no longer blocks (no close circuit).
+        c = cub.Cubicle(breaker="52-GM", racking=cub.DISCONNECTED, lockout_86=True, padlock="ana")
+        assert cub.interlock(c, cub.LOCAL_CLOSE, ctx()) is None
+        assert cub.apply(c, cub.LOCAL_CLOSE, ctx(now=5)) is None
+        assert (c.test_closed, c.spring_charged, c.charge_at) == (True, False, None)
+        cub.apply(c, cub.LOCAL_OPEN, ctx(now=6))
+        assert not cub.tick(c, 1000)
+        assert (c.test_closed, c.spring_charged) == (False, False)
+
+    def test_motor_stops_in_disconnected_and_resumes_in_test(self):
+        c = cub.Cubicle(breaker="52-GM", racking=cub.TEST)
+        cub.apply(c, cub.LOCAL_CLOSE, ctx(now=0))
+        cub.apply(c, cub.LOCAL_OPEN, ctx(now=1))
+        cub.apply(c, cub.RACK_OUT, ctx(now=2))                    # DISCONNECTED
+        assert c.charge_at is None
+        assert not cub.tick(c, 100)
+        cub.apply(c, cub.RACK_IN, ctx(now=200))                   # back to TEST
+        assert cub.tick(c, 200 + cub.SPRING_MOTOR_CHARGE_S)
+        assert c.spring_charged
 
     def test_plant_reason_applies_only_on_the_bus(self):
         c = cub.Cubicle(breaker="52-U")

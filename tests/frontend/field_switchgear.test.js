@@ -49,6 +49,9 @@ describe('field_switchgear: drawing', () => {
         expect(gm.querySelector('.fsg-sflag-txt').textContent).toBe('DISCHARGED');
         expect(gm.querySelector('[data-txt="pumps"]').textContent).toBe('STROKES 2 / 5');
         expect(gm.querySelector('[data-txt="charging"]').textContent).toBe('MANUAL');
+        const disc = mount(XFER({}, { racking: 'DISCONNECTED', spring_charged: false, control_power: false }));
+        expect(disc.querySelector('[data-section="52-GM"] [data-txt="charging"]').textContent).toBe('NO CTRL PWR');
+        mount(XFER({}, { racking: 'TEST', spring_charged: false, motor_on: false, pumps: 2, lockout_86: true }));
         expect(gm.querySelector('.fsg-rack-ptr').style.transform).toContain('62px');
         expect(gm.querySelector('[data-pb="close"]').getAttribute('data-cover')).toBe('open');
         expect(u.querySelector('[data-pb="close"]').getAttribute('data-cover')).toBe('shut');
