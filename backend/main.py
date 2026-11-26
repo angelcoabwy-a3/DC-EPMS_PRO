@@ -3617,6 +3617,20 @@ except Exception as e:
     log.error("[BOOT] USD export mount failed: %s", e, exc_info=True)
 
 # ==============================================================
+#  ADR-021 -- Building D 800 VDC design model (read-only)
+# ==============================================================
+# Sized end to end from config/design/building_d.yml: 2N paths, MV
+# rectifiers, 800 VDC unipolar bus sections, busways, rack feeds, BESS,
+# capacitor banks, generators, transformers, mechanical, CDUs.
+try:
+    from backend.design_model import register_design_routes
+
+    register_design_routes(app)
+    log.info("[BOOT] Building D design model mounted (GET /api/design/building-d)")
+except Exception as e:
+    log.error("[BOOT] Building D design model mount failed: %s", e, exc_info=True)
+
+# ==============================================================
 #  Release R3-A / R3-B -- Power plant supervisory control (UPS
 #  blocks, MV transfer controllers, generators, MV bay switching)
 #  and the executable scenario library

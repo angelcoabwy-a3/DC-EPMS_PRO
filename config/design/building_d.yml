@@ -1,0 +1,112 @@
+# config/design/building_d.yml
+# Building D (Phase 2) design INPUTS for the 800 VDC unipolar TN-S hall.
+# Everything derived (currents, unit counts, ratings, flows, capacitor
+# sizes, checks) is COMPUTED by backend/design_model.py from these
+# inputs; no derived number is typed here. ADR-021.
+#
+# Status: DESIGN, simulated facility (A3-Alpha). Values tagged
+# "assumption" are model choices made 2026-11-26 for the operator to
+# confirm; they are not vendor data. Nothing here is a real product
+# rating unless a source is named.
+version: 1
+site: "A3-Alpha Toronto Area"
+building: D
+hall: DH1
+
+it:
+  racks: 250                    # CLAUDE.md Path C2
+  rack_kw: 200                  # CLAUDE.md Path C2 (GB300 NVL144 design)
+  rack_model: "NVIDIA GB300 NVL144 (project design label)"
+
+dc:
+  nominal_v: 800                # unipolar TN-S, no phases
+  earthing: TN-S
+  # Project spec 03_TECHNICAL_SPECS_800VDC.md (voltage bands quoted there
+  # as IEC TR 63282; not re-verified against the standard text).
+  min_continuous_v: 640         # U2, undervoltage disconnect
+  overvoltage_limit_v: 840      # U5, sources must never exceed
+
+redundancy:
+  topology: 2N                  # paths A and B, each carries 100 percent
+  paths: [a, b]
+  normal_share: 0.5
+  sections_per_path: 2          # DC bus split to bound bus current and fault level (assumption)
+
+layout:                         # assumption: hall DH1 grid
+  rows: 10
+  racks_per_row: 25
+  busways_per_row_per_path: 2   # half-row busways
+  rack_width_mm: 600            # assumption, verify vendor drawing
+  rack_depth_mm: 1200           # assumption, verify vendor drawing
+  rack_height_mm: 2300          # assumption
+  cold_aisle_mm: 1800
+  hot_aisle_mm: 1200
+  busway_height_mm: 3200        # overhead, above rack tops (assumption)
+
+rules:
+  # Conductors and overcurrent devices: continuous load at most 80 percent
+  # of rating (the 125 percent continuous-load rule, e.g. CEC / NEC).
+  continuous_factor: 0.8
+  # Transformers, rectifiers, converters and generators: 100 percent of
+  # rating with the stated redundancy.
+
+rectifier:                      # MV rectifier, 35 kVAC 3-phase in, 800 VDC out
+  unit_kw: 5000                 # 03_TECHNICAL_SPECS_800VDC.md (5000 kW each)
+  redundancy_per_section: 1     # N+1 inside each DC bus section
+  efficiency: 0.98              # assumption
+  input_power_factor: 0.95      # assumption (multi-pulse front end)
+
+capacitor_bank:                 # per row, per path
+  holdup_ms: 200                # 03_TECHNICAL_SPECS_800VDC.md sizing rule
+  discharge_to_v: 640           # down to U2
+
+bess:                           # per path, on the 800 VDC bus via DC/DC
+  ride_through_min: 5           # assumption (gen start + farm paralleling + margin)
+  usable_fraction: 0.64         # assumption: 80 percent DoD x 80 percent end of life
+  block_mwh: 2.5                # 03_TECHNICAL_SPECS_800VDC.md BESS size, used as block
+  converter_kw: 2500            # assumption, bidirectional DC/DC per converter
+  converter_redundancy: 1
+
+mechanical:
+  fraction_of_it: 0.25          # operator decision 2026-11-14 (power_plant.yml)
+  critical_fraction_of_it: 0.02 # assumption: CDU pumps + controls on UPS
+  power_factor: 0.9             # assumption
+  unit_sub_kva: 3750            # assumption, 35 kV / 480 V unit substation
+  unit_sub_redundancy: 1
+  critical_ups_kw: 500          # assumption, AC UPS module for critical mechanical
+  critical_ups_redundancy: 1
+
+utility:
+  voltage_kv: 35.0              # CLAUDE.md Path C2
+  feeds: 2                      # one per path (2N)
+  power_factor: 0.95            # assumption
+
+generators:                     # per path, MV, stepped up to 35 kV
+  unit_kw: 3200                 # existing gen_farm_d unit (site_model.yml)
+  unit_kva: 4000                # 0.8 pf rating (assumption)
+  voltage_kv: 13.8
+  redundancy_per_path: 1        # N+1 per path, 2N across paths
+
+stepup_transformer:             # 13.8 kV -> 35 kV, per path
+  redundancy_per_path: 1
+
+cooling:
+  supply_c: 18                  # config/config.yml (NVIDIA DLC)
+  return_max_c: 45              # config/config.yml
+  fluid: "PG25 (approximate properties)"
+  cp_kj_per_kg_k: 3.9           # approximate, verify against fluid datasheet
+  density_kg_per_l: 1.02        # approximate
+  cdu_kw: 2500                  # assumption, per CDU
+  cdu_redundancy_per_row: 1
+
+# Cross-check of the Phase 1 README figure (not Building D):
+phase1_dlc_check:
+  rack_kw: 142
+  flow_l_min: 40                # README.md "flow 40 L/min glycol"
+
+standard_ratings:
+  breaker_a: [250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500,
+              3200, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000,
+              25000, 32000, 40000, 50000, 63000]
+  mv_bus_a: [1250, 1600, 2000, 2500, 3150, 4000]
+  transformer_mva: [40, 50, 63, 80, 100]
