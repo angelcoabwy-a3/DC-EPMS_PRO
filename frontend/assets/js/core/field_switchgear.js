@@ -305,7 +305,7 @@ export function fieldLogHtml(events, message = '', deviceId = '', view = null) {
         && (ev.field || (ev.event === 'refused' && String(ev.command || '').includes('@'))
             || ['spring_charged', 'auto_transfer_blocked', 'authority'].includes(ev.event));
     const rows = (events || [])
-        .filter((ev) => ev.device_id === deviceId && (view ? view.match(ev) : swgr(ev)))
+        .filter((ev) => (view && view.anyDevice ? true : ev.device_id === deviceId) && (view ? view.match(ev) : swgr(ev)))
         .slice(0, 6)
         .map((ev) => {
             const t = new Date(Number(ev.ts) * 1000);

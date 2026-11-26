@@ -48,6 +48,7 @@ import { openPrintable } from '../core/training_print.js';
 import { fieldLineupSvg, applyFieldState, resolveClick, fieldLogHtml } from '../core/field_switchgear.js';
 import { xfmrSvg, applyXfmrState, resolveXfmrClick, isXfmrEvent, xfmrEventText } from '../core/field_xfmr.js';
 import { genSvg, applyGenState, resolveGenClick, isGenEvent, genEventText, genId } from '../core/field_gen.js';
+import { upsSvg, applyUpsState, resolveUpsClick, isUpsEvent, upsEventText } from '../core/field_ups.js';
 import { needleAngle, permissive, etaNow, etaText } from '../core/synchroscope.js';
 import { escapeHTML } from '../core/sanitize.js';
 import { relayRowSvg, relayStates, applyRelays } from '../core/relay_tags.js';
@@ -1386,7 +1387,8 @@ function _ensureField() {
         + '<button type="button" data-fpath="b">PATH B</button></span>'
         + '<span class="fsg-paths"><button type="button" data-fequip="swgr">SWITCHGEAR</button>'
         + '<button type="button" data-fequip="xfmr">TRANSFORMER</button>'
-        + '<button type="button" data-fequip="gen">GENERATOR</button></span>'
+        + '<button type="button" data-fequip="gen">GENERATOR</button>'
+        + '<button type="button" data-fequip="ups">UPS</button></span>'
         + '<span class="fsg-note">Layer 2 · equipment view · every operation is checked by the server interlocks and recorded</span>'
         + '<button type="button" class="fsg-close" data-fclose="1" aria-label="Close field view">CLOSE ✕</button></div>'
         + '<div class="fsg-stage" id="pwr-field-stage"></div><div class="fsg-foot" id="pwr-field-foot"></div></div>';
@@ -1401,13 +1403,14 @@ function _ensureField() {
 function _openField(path, equip, gen) {
     const el = _ensureField();
     _fieldPath = String(path || 'a').toLowerCase() === 'b' ? 'b' : 'a';
-    if (equip) _fieldEquip = ['xfmr', 'gen'].includes(equip) ? equip : 'swgr';
+    if (equip) _fieldEquip = ['xfmr', 'gen', 'ups'].includes(equip) ? equip : 'swgr';
     if (gen) _fieldGen = Math.min(9, Math.max(1, Number(gen) || 1));
     _fieldMsg = '';
     _fieldCovers.clear();
     document.getElementById('pwr-field-stage').innerHTML = _fieldEquip === 'xfmr'
-        ? xfmrSvg(_fieldPath) : (_fieldEquip === 'gen' ? genSvg(_fieldPath) : fieldLineupSvg(_fieldPath));
-    el.setAttribute('aria-label', { xfmr: 'Field view: utility transformer', gen: 'Field view: generator set' }[_fieldEquip]
+        ? xfmrSvg(_fieldPath) : ({ gen: genSvg, ups: upsSvg }[_fieldEquip] || fieldLineupSvg)(_fieldPath);
+    el.setAttribute('aria-label', { xfmr: 'Field view: utility transformer', gen: 'Field view: generator set',
+        ups: 'Field view: UPS bank' }[_fieldEquip]
         || 'Field view: 13.8 kV switchgear');
     el.querySelectorAll('[data-fpath]').forEach((b) =>
         b.setAttribute('aria-pressed', String(b.dataset.fpath === _fieldPath)));
@@ -1433,16 +1436,23 @@ function _applyField() {
     const xfer = _fieldXfer();
     const xf = _fieldEquip === 'xfmr';
     const gen = _fieldEquip === 'gen' ? _fieldGenDev() : null;
+    const ups = _fieldEquip === 'ups';
+    const ps = ((_plant && _plant.paths) || []).find((p) => p.path === _fieldPath) || null;
     if (stage && xfer) {
-        if (gen) {
-            const ps = ((_plant && _plant.paths) || []).find((p) => p.path === _fieldPath) || null;
+        if (ups) {
+            applyUpsState(stage, ps, ((_plant && _plant.devices) || [])
+                .filter((d) => d.kind === 'ups' && d.path === _fieldPath));
+        } else if (gen) {
             applyGenState(stage, gen, ps, _fieldGen);
         } else if (xf) applyXfmrState(stage, xfer.transformer, _fieldPath);
         else applyFieldState(stage, xfer, { covers: _fieldCovers });
     }
     const foot = document.getElementById('pwr-field-foot');
     if (foot) {
-        const view = gen ? { match: isGenEvent, text: genEventText, empty: 'No operation at this set yet' }
+        const upsIds = [`ups_system_${_fieldPath}`, `path_${_fieldPath}`];
+        const view = ups ? { anyDevice: true, match: (ev) => upsIds.includes(ev.device_id) && isUpsEvent(ev),
+            text: upsEventText, empty: 'No operation on this UPS bank yet' }
+            : gen ? { match: isGenEvent, text: genEventText, empty: 'No operation at this set yet' }
             : (xf ? { match: isXfmrEvent, text: xfmrEventText, empty: 'No transformer operation yet' } : null);
         foot.innerHTML = xfer ? fieldLogHtml((_plant && _plant.events) || [], _fieldMsg, gen ? gen.id : xfer.id, view)
             : '<div class="fsg-lcd-msg" data-tone="warn">Plant not reachable: sign in or wait for the next poll.</div>';
@@ -1461,6 +1471,7 @@ async function _onFieldClick(ev) {
     if (_fieldBusy) return;
     if (_fieldEquip === 'xfmr') { await _onXfmrClick(t); return; }
     if (_fieldEquip === 'gen') { await _onGenClick(t); return; }
+    if (_fieldEquip === 'ups') { await _onUpsClick(t); return; }
     const xfer = _fieldXfer();
     const r = resolveClick(t, xfer);
     if (!r || !xfer) return;
@@ -1520,6 +1531,43 @@ async function _onFieldClick(ev) {
                     target.classList.add('fsg-shake');
                     setTimeout(() => target.classList.remove('fsg-shake'), 340);
                 }
+            }
+        }
+    } finally {
+        _fieldBusy = false;
+    }
+    await _pollAlarms(true);
+    if (_trView && _trView.active) _trainingTick();
+}
+
+// L4: an operation on the UPS bank (display, Q1 / Q2 / Q3 / Q4 / QF1,
+// SKRU and Kirk locks, QF1 padlock).
+async function _onUpsClick(t) {
+    const ps = ((_plant && _plant.paths) || []).find((p) => p.path === _fieldPath) || null;
+    const us = ps && ps.ups_system;
+    const r = resolveUpsClick(t, us);
+    if (!r) return;
+    const target = t.closest('[data-act]');
+    const permitted = ((us.actions || []).find((a) => a.action === r.action) || {}).permitted;
+    _fieldBusy = true;
+    try {
+        if (permitted && r.kind === 'key') _audio.latch();
+        else if (r.kind === 'button') {
+            if (target) target.classList.add('fsg-press');
+            await _wait(90);
+            if (target) target.classList.remove('fsg-press');
+        }
+        const res = await plantPost(`/api/ups-systems/${encodeURIComponent(_fieldPath)}/action`, { action: r.action });
+        if (res.ok) {
+            const evd = res.data.event || {};
+            _fieldMsg = `${r.action.replace(/_/g, ' ')} · ${String(evd.mode || '').replace('_', ' ')} · ${evd.load_feed || ''}`;
+            if (r.kind === 'breaker') _audio.breaker(r.action.startsWith('CLOSE'));
+        } else {
+            _fieldMsg = `INTERLOCK · ${res.detail}`;
+            _audio.clunk();
+            if (target) {
+                target.classList.add('fsg-shake');
+                setTimeout(() => target.classList.remove('fsg-shake'), 340);
             }
         }
     } finally {

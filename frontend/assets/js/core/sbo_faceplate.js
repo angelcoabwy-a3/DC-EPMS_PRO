@@ -74,9 +74,11 @@ export function faceplateHtml(target, plant, { pending = new Map(), nowMs = Date
                 ? `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(d.path)}" data-fp-equip="gen" data-fp-gen="${escapeHTML(Number(String(d.id).slice(-2)) || 1)}">Field view: set panel, day tank, pumps, filter</button>` : '')
             + _commands(d, pending, nowMs) + '</div>';
     }).join('');
+    const upsField = kind === 'ups'
+        ? `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(path)}" data-fp-equip="ups">Field view: UPS bank breakers, maintenance bypass, battery QF1</button>` : '';
     return `<div class="fp-head"><span>${escapeHTML(head)} · SELECT then EXECUTE</span>`
         + '<button type="button" class="fp-close" data-fp-close="1" aria-label="Close">×</button></div>'
         + (message ? `<div class="fp-msg">${escapeHTML(message)}</div>` : '')
-        + `<div class="fp-body">${rows}</div>`
+        + `<div class="fp-body">${upsField}${rows}</div>`
         + '<div class="fp-foot">SIMULATED plant · rules enforced by the server · actions in the Forensic Ledger</div>';
 }

@@ -11354,3 +11354,42 @@ table.opt-votes td {
 /* L3: the field-view bar now carries three equipment buttons. */
 .fsg-bar .fsg-paths { flex-shrink: 0; }
 .fsg-bar .fsg-note { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ════════════════════════════════════════════════════════════════
+ * L4 (2026-11-26): FIELD VIEW · UPS bank + maintenance bypass.
+ * ════════════════════════════════════════════════════════════════ */
+.xu-line { fill: none; stroke: #6c747b; stroke-width: 4; stroke-linecap: square; }
+.xu-line[data-live="1"] { stroke: #1b1e21; }
+.xu-mbb { stroke-dasharray: 6 4; }
+.xu-mbb[data-live="1"] { stroke: #c8102e; stroke-dasharray: none; }
+.xu-box { fill: #d9dde1; stroke: #23272c; stroke-width: 1.5; }
+.xu-box-t { font: 800 8px var(--font-mono); fill: #23272c; }
+.xu-section[data-mode="INVERTER"] [data-box="inv"], .xu-section[data-mode="MIXED"] [data-box="inv"] { fill: #b9e8c4; }
+.xu-section[data-mode="STATIC_BYPASS"] [data-box="ss"], .xu-section[data-mode="MIXED"] [data-box="ss"] { fill: #ffe08a; }
+.xu-btn, .xu-handle, .xu-skru { cursor: pointer; }
+.xu-btn rect { fill: #24282c; stroke: #000; }
+.xu-btn text { font: 800 9px var(--font-mono); fill: #e6e9ed; letter-spacing: .04em; }
+.xu-btn:hover rect { fill: #33393f; }
+.xu-btn.fsg-press { transform: translateY(1px); }
+.xu-chip rect { fill: #2b2f33; stroke: #000; }
+.xu-chip-n { font: 800 8px var(--font-mono); fill: #e6e9ed; }
+.xu-chip-s { font: 700 6.5px var(--font-mono); fill: #9aa4b2; }
+.xu-chip[data-state="DOUBLE_CONVERSION"] rect, .xu-chip[data-state="DYNAMIC_ONLINE"] rect { fill: #1f6b3a; }
+.xu-chip[data-state="STATIC_BYPASS"] rect { fill: #8a6a10; }
+.xu-chip[data-state="ISOLATED"] rect { fill: #3a4046; }
+.xu-brk-body { fill: #2b2f33; stroke: #000; stroke-width: 1.5; }
+.xu-light { fill: #c3c8cf; }
+.xu-flag { fill: #1f9d48; }
+.xu-brk[data-closed="1"] .xu-flag { fill: #d81f26; }
+.xu-lever { fill: #c3c8cd; stroke: #333; }
+.xu-handle-lever { transition: transform .2s ease; transform: translateY(26px); }
+.xu-brk[data-closed="1"] .xu-handle-lever { transform: translateY(0); }
+.xu-skru-body { fill: #2b2f33; stroke: #000; }
+.xu-skru-t { font: 800 6.5px var(--font-mono); fill: #c3c8cf; }
+.xu-skru-key { opacity: 0; transition: opacity .2s; }
+.xu-section[data-skru-key="1"] .xu-skru-key { opacity: 1; }
+.xu-hand { font: 800 10px var(--font-mono); fill: #ffd21f; }
+.xu-padlock { opacity: 0; transition: opacity .2s; }
+.xu-section[data-padlock="1"] .xu-padlock { opacity: 1; }
+.xu-section[data-lost="1"] .xf-lcd-line { fill: #ff7a68; }
+.xu-svg [role="button"]:focus, .xg-svg [role="button"]:focus { outline: none; }
+.xu-svg [role="button"]:focus-visible, .xg-svg [role="button"]:focus-visible { outline: 2px solid #ffd21f; outline-offset: 2px; }
