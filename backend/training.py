@@ -61,7 +61,7 @@ FAIL_TYPES = ("load_lost", "command_used", "xfmr_internal_fault", "gen_shutdown"
 INJECT_TYPES = ("utility_loss", "utility_restore", "preset_on_generators", "ups_fault",
                 "closed_transition_mode", "synchro", "xfmr_spare_key", "utility_voltage",
                 "gen_condition", "qf1_shunt_trip", "ups_mode", "battery_condition",
-                "wiring_fault")
+                "wiring_fault", "utility_sag")
 
 
 class TrainingError(Exception):
@@ -382,6 +382,9 @@ class TrainingManager:
                     ctl.inject_qf1_shunt_trip(inj["path"], "training")
                 elif kind == "ups_mode":
                     ctl.ups_action(inj["path"], inj["action"], "training")
+                elif kind == "utility_sag":
+                    ctl.inject_utility_sag(inj["path"], inj.get("depth_pu", 0.6), inj.get("cycles", 6),
+                                           "training")
                 elif kind == "wiring_fault":
                     ctl.inject_wiring_fault(inj["path"], inj["fuse"], "training")
                 elif kind == "battery_condition":

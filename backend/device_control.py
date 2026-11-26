@@ -65,6 +65,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi.responses import PlainTextResponse
 
 from backend import (
     battery_room as br,
@@ -73,6 +74,7 @@ from backend import (
     mv_switching as mv,
     mv_wiring as mw,
     mv_xfmr as xf,
+    oscillography as osc,
     ups_bypass as ub,
 )
 
@@ -135,6 +137,8 @@ ACTION_GEN_FIELD = "GENERATOR_FIELD_ACTION"
 ACTION_UPS_FIELD = "UPS_SYSTEM_FIELD_ACTION"
 ACTION_BATT_FIELD = "BATTERY_ROOM_FIELD_ACTION"
 ACTION_WIRING_FIELD = "MV_CONTROL_WIRING_ACTION"
+ACTION_DFR = "DISTURBANCE_RECORDER_ACTION"
+DFR_RECORDS_MAX = 24
 
 SIMULATION_NOTICE = (
     "SIMULATED plant. No field equipment is connected: states and "
@@ -370,6 +374,11 @@ class DeviceController:
     _room_at: float | None = None
     # L5: MV control compartment (PT fuses F-1A / F-1B, TB-1, multimeter)
     wirings: dict[str, mw.ControlWiring] = field(default_factory=dict)
+    # L6: disturbance recorder (state-change triggered records per path)
+    _dfr_sig: dict[str, dict[str, Any]] = field(default_factory=dict)
+    _dfr_records: deque = field(default_factory=lambda: deque(maxlen=DFR_RECORDS_MAX))
+    _dfr_seq: int = 0
+    _dfr_mark: float = 0.0
 
     # ── Construction ────────────────────────────────────────────────
     @classmethod
@@ -507,6 +516,7 @@ class DeviceController:
         self._advance_battery(now)
         self._advance_battery_rooms(now)
         self._advance_sync(now)
+        self._advance_dfr()
 
     # ── L1: draw-out cubicles of 52-U / 52-GM ───────────────────────
     def _main_closed(self, path: str, brk: str) -> bool:
@@ -1088,6 +1098,128 @@ class DeviceController:
             self._advance()
             return event
 
+    # ── L6: disturbance recorder (oscillography) ───────────────────
+    def _dfr_state(self, path: str) -> dict[str, Any]:
+        """Electrical state the recorder watches: source of the MV bus,
+        how the critical load bus is fed, MV frequency."""
+        bus = self._bus_energized(path)
+        on_gen = self._path_on_generators(path)
+        source = "NONE" if not bus else ("GENERATORS" if on_gen else "UTILITY")
+        state, how = self._load_feed(path)
+        if self.load_lost.get(path) or state == "lost":
+            load = osc.LOAD_LOST
+        elif how == "maintenance bypass":
+            load = osc.LOAD_MAINT
+        else:
+            carrying = self._ups_carrying(path)
+            if carrying and all(d.state == UPS_STATIC_BYPASS for d in carrying):
+                load = osc.LOAD_BYPASS
+            elif any(d.device_id in self.faults and d.state in _UPS_PROTECTING for d in carrying):
+                load = osc.LOAD_DISTORTED
+            else:
+                load = osc.LOAD_INVERTER
+        hz = round(self.gen_hz.get(path, UTILITY_HZ), 3) if source == "GENERATORS" else UTILITY_HZ
+        return {"source": source, "load": load, "hz": hz}
+
+    def _dfr_cause(self, path: str) -> list[str]:
+        out = []
+        for e in self._events:
+            if e.get("ts", 0) < self._dfr_mark:
+                continue
+            did = str(e.get("device_id", ""))
+            if e.get("event") == "dfr_record" or not (
+                    did.endswith(f"_{path}") or f"_{path}_" in did or e.get("path") == path):
+                continue
+            out.append(str(e.get("command") or (e.get("relay") and f"{e['event']} {e['relay']}")
+                           or e.get("event")))
+        packed: list[list[Any]] = []
+        for item in out:
+            if packed and packed[-1][0] == item:
+                packed[-1][1] += 1
+            else:
+                packed.append([item, 1])
+        # the first events after the last record are the cause
+        return [f"{x} x{n}" if n > 1 else x for x, n in packed][:6]
+
+    def _dfr_store(self, path: str, trigger: str, pre: dict[str, Any], post: dict[str, Any],
+                   trans: dict[str, osc.Transition], cause: list[str]) -> osc.Record:
+        self._dfr_seq += 1
+        rec = osc.Record(
+            record_id=f"DFR-{path.upper()}-{self._dfr_seq:04d}", path=path, ts=self.wall_clock(),
+            trigger=trigger, cause=cause,
+            pre=osc.point_states(pre["source"] != "NONE", pre["hz"], pre["load"]),
+            post=osc.point_states(post["source"] != "NONE", post["hz"], post["load"]),
+            transitions=trans,
+        )
+        osc.synthesize(rec)
+        self._dfr_records.append(rec)
+        self._events.append({"ts": round(rec.ts, 3), "event": "dfr_record", "device_id": f"path_{path}",
+                             "actor": "recorder", "record_id": rec.record_id, "trigger": trigger,
+                             "detail": rec.summary["LD"]["class"]})
+        return rec
+
+    def _advance_dfr(self) -> None:
+        for path in self.path_share:
+            now_state = self._dfr_state(path)
+            before = self._dfr_sig.get(path)
+            self._dfr_sig[path] = now_state
+            if before is None or before == now_state:
+                continue
+            cause = self._dfr_cause(path)
+            closed = any("CLOSED_TRANSITION" in c for c in cause)
+            angle = self.sync_angle.get(path, 0.0) if closed else 0.0
+            trans = osc.transitions(before, now_state, closed_transition=closed, phase_deg=angle)
+            trigger = (f"MV {before['source']} -> {now_state['source']}" if before["source"] != now_state["source"]
+                       else f"LOAD {before['load']} -> {now_state['load']}")
+            self._dfr_store(path, trigger, before, now_state, trans, cause)
+            self._dfr_mark = self.wall_clock()
+
+    def dfr_records(self, path: str | None = None) -> list[dict[str, Any]]:
+        with self._lock:
+            self._advance()
+            return [osc.describe(r) for r in reversed(self._dfr_records)
+                    if path is None or r.path == path]
+
+    def dfr_record(self, record_id: str) -> osc.Record:
+        with self._lock:
+            rec = next((r for r in self._dfr_records if r.record_id == record_id), None)
+            if rec is None:
+                raise DeviceControlError(404, f"unknown record {record_id!r}")
+            return rec
+
+    def dfr_trigger(self, path: str, actor: str) -> dict[str, Any]:
+        """Manual trigger: a record of the present steady state."""
+        with self._lock:
+            self._advance()
+            if path not in self.path_share:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            st = self._dfr_state(path)
+            rec = self._dfr_store(path, "manual", st, st, {}, [f"manual trigger by {actor}"])
+            return osc.describe(rec)
+
+    def inject_utility_sag(self, path: str, depth_pu: float, cycles: float, actor: str) -> dict[str, Any]:
+        """Training: a utility voltage sag seen on the MV bus. It does not
+        trip 52-U (model: shorter than the 27 time delay). The critical
+        load sees it only if it is not on the inverter."""
+        with self._lock:
+            self._advance()
+            if path not in self.path_share:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            depth = _num(depth_pu)
+            cyc = _num(cycles)
+            if not 0.1 <= depth <= 0.9 or not 0.5 <= cyc <= 30:
+                raise DeviceControlError(400, "sag depth 0.1..0.9 pu and 0.5..30 cycles")
+            st = self._dfr_state(path)
+            if st["source"] != "UTILITY":
+                raise DeviceControlError(409, "the MV bus of this path is not on utility")
+            sag = osc.Transition("sag", seconds=cyc / UTILITY_HZ, depth=depth)
+            follows = st["load"] in (osc.LOAD_BYPASS, osc.LOAD_MAINT)
+            self._plant_event("utility_sag", path, actor, depth_pu=depth, cycles=cyc)
+            rec = self._dfr_store(path, f"MV sag {depth:.2f} pu {cyc:g} cycles", st, st,
+                                  {"MV": sag, "LD": sag if follows else osc.Transition()},
+                                  [f"utility sag injected by {actor}"])
+            return osc.describe(rec)
+
     # ── L5: battery room (strings, jars, analyzer, H2 exhaust) ─────
     def _room_ctx(self, path: str, actor: str = "") -> br.BatteryContext:
         sys_ = self.ups_systems.get(path)
@@ -1563,6 +1695,8 @@ class DeviceController:
             self._xfmr_at = None
             self._gen_at = None
             self._room_at = None
+            self._dfr_sig.clear()
+            self._dfr_records.clear()
             self._selections.clear()
             self._batt_at = None
             self._sync_at = None
@@ -1644,6 +1778,7 @@ class DeviceController:
             "utility_ok": self.utility_ok.get(path, True),
             "incomer_live": self._incomer_live(path),
             "utility_sensed": self._utility_sensed(path),
+            "dfr": self._dfr_state(path),
             "on_battery": self._on_battery(path),
             "load_feed": self._load_feed(path)[1],
             **({"ups_system": ub.describe(self.ups_systems[path], self._ups_ctx(path))}
@@ -2658,6 +2793,61 @@ def register_device_control_routes(
                                         "breakers", "skru_keys", "qf1_padlock", "load_feed")},
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
+
+    @app.get("/api/oscillography/records")
+    async def list_dfr_records(path: str | None = None) -> dict[str, Any]:
+        """L6: disturbance records (newest first), without samples."""
+        ctl = _controller()
+        return {"records": ctl.dfr_records(path.lower() if path else None),
+                "notice": "synthesised from plant state changes; model transition times"}
+
+    @app.get("/api/oscillography/records/{record_id}")
+    async def get_dfr_record(record_id: str) -> dict[str, Any]:
+        try:
+            return osc.describe(_controller().dfr_record(record_id), samples=True)
+        except DeviceControlError as exc:
+            raise _fail(exc) from exc
+
+    @app.get("/api/oscillography/records/{record_id}/comtrade")
+    async def get_dfr_comtrade(record_id: str, part: str = "cfg") -> PlainTextResponse:
+        """L6: COMTRADE C37.111-1999 ASCII, part=cfg or part=dat."""
+        if part not in ("cfg", "dat"):
+            raise HTTPException(400, "part must be cfg or dat")
+        try:
+            rec = _controller().dfr_record(record_id)
+        except DeviceControlError as exc:
+            raise _fail(exc) from exc
+        cfg, dat = osc.to_comtrade(rec)
+        return PlainTextResponse(
+            cfg if part == "cfg" else dat,
+            headers={"Content-Disposition": f'attachment; filename="{rec.record_id}.{part}"'},
+        )
+
+    @app.post("/api/oscillography/{path}/trigger")
+    async def dfr_manual_trigger(path: str, request: Request, payload: dict = Body(default={})) -> dict[str, Any]:
+        actor = authorise(request, payload)
+        try:
+            rec = _controller().dfr_trigger(path.lower(), actor)
+        except DeviceControlError as exc:
+            raise _fail(exc) from exc
+        entry_id = await _ledger_append(request.app, actor, ACTION_DFR,
+                                        {"path": path, "action": "MANUAL_TRIGGER", "record_id": rec["id"]})
+        return {"success": True, "record": rec, "ledger_entry_id": entry_id}
+
+    @app.post("/api/oscillography/{path}/sag")
+    async def dfr_utility_sag(path: str, request: Request, payload: dict = Body(...)) -> dict[str, Any]:
+        """L6 training injection (simulation only): a utility sag on the
+        MV bus of a path, recorded by the disturbance recorder."""
+        actor = authorise(request, payload)
+        try:
+            rec = _controller().inject_utility_sag(path.lower(), payload.get("depth_pu", 0.6),
+                                                   payload.get("cycles", 6), actor)
+        except DeviceControlError as exc:
+            raise _fail(exc) from exc
+        entry_id = await _ledger_append(request.app, actor, ACTION_DFR,
+                                        {"path": path, "action": "UTILITY_SAG", "record_id": rec["id"],
+                                         "summary": rec["summary"]})
+        return {"success": True, "record": rec, "ledger_entry_id": entry_id}
 
     @app.post("/api/battery-rooms/{path}/action")
     async def battery_room_action(
