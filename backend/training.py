@@ -54,11 +54,11 @@ VIOLATION_EVENTS = ("refused", "procedure_blocked", "bay_blocked")
 CHECK_TYPES = (
     "alarms_acked", "gens_started_cover_demand", "gens_on_bus_cover_demand",
     "transfer_state", "device_state", "no_sets_running",
-    "sync_slip_within", "event_seen", "cubicle", "device_authority", "all",
+    "sync_slip_within", "event_seen", "cubicle", "device_authority", "xfmr", "all",
 )
-FAIL_TYPES = ("load_lost", "command_used")
+FAIL_TYPES = ("load_lost", "command_used", "xfmr_internal_fault")
 INJECT_TYPES = ("utility_loss", "utility_restore", "preset_on_generators", "ups_fault",
-                "closed_transition_mode", "synchro")
+                "closed_transition_mode", "synchro", "xfmr_spare_key", "utility_voltage")
 
 
 class TrainingError(Exception):
@@ -163,6 +163,23 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
             return bool(c.get(cond.get("field")))
         wanted = cond.get("values") if "values" in cond else [cond.get("value")]
         return c.get(cond.get("field")) in wanted
+    if kind == "xfmr":
+        # L2: {"path", "field", "value"} / "values" / "truthy" / "min" + "max"
+        xfer = next(iter(_devices(plant, "transfer", path)), {})
+        t = xfer.get("transformer")
+        if not t:
+            return False
+        v = t.get(cond.get("field"))
+        if cond.get("truthy"):
+            return bool(v)
+        if "min" in cond or "max" in cond:
+            try:
+                x = float(v)
+            except (TypeError, ValueError):
+                return False
+            return float(cond.get("min", float("-inf"))) <= x <= float(cond.get("max", float("inf")))
+        wanted = cond.get("values") if "values" in cond else [cond.get("value")]
+        return v in wanted
     if kind == "all":
         return all(check(sub, plant, engine, events) for sub in cond.get("of") or [{}])
     if kind == "device_authority":
@@ -218,6 +235,13 @@ def failed(conds: list[dict[str, Any]], plant: dict[str, Any],
     for cond in conds:
         if cond.get("type") == "load_lost" and _path(plant, cond.get("path")).get("load_lost"):
             return f"critical load lost on path {str(cond.get('path')).upper()}"
+        if cond.get("type") == "xfmr_internal_fault":
+            for e in events or []:
+                if e.get("event") == "xfmr_internal_fault" \
+                        and e.get("device_id") == f"mvtc_{cond.get('path')}":
+                    return cond.get("reason") or (
+                        f"internal fault in XFMR {str(cond.get('path')).upper()}: "
+                        "DETC moved with the transformer energized")
         if cond.get("type") == "command_used":
             for e in events or []:
                 if e.get("event") == "command" and e.get("command") == cond.get("command"):
@@ -290,6 +314,10 @@ class TrainingManager:
                     ctl.set_closed_transition(bool(inj.get("enabled", True)), "training")
                 elif kind == "synchro":
                     ctl.set_sync(inj["path"], inj["gen_hz"], inj["angle_deg"], "training")
+                elif kind == "xfmr_spare_key":
+                    ctl.set_spare_key(inj["path"], bool(inj.get("available", True)), "training")
+                elif kind == "utility_voltage":
+                    ctl.set_grid_voltage(inj["path"], inj["kv"], "training")
             self.session = Session(drill=drill, operator=operator,
                                    started_ms=self._now_ms(), events_mark=mark)
             self.last_report = None

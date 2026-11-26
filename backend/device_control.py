@@ -26,8 +26,11 @@ What this module is NOT (honest scope)
   * No field device is behind it. Every value is ``simulated`` and
     the payload says so. The HAL adapters in ``backend/hal`` are not
     wired here.
-  * No protection functions (ANSI 25/27/59/81), no load-flow, no
-    short-circuit or arc-flash calculation, no thermal model.
+  * Protection exists only as training logic (27 undervoltage, 25
+    sync check, and for the utility transformer 26 / 49 / 63 / 87T /
+    86T, L2 ``backend/mv_xfmr.py``): no settings study, no load-flow,
+    no short-circuit or arc-flash calculation. The transformer thermal
+    model uses typical constants, not a test report.
   * The interlocks are supervisory permissives. A real installation
     keeps its mechanical and hardwired interlocks.
 
@@ -63,7 +66,7 @@ from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Request
 
-from backend import mv_cubicle as cub, mv_switching as mv
+from backend import mv_cubicle as cub, mv_switching as mv, mv_xfmr as xf
 
 # ── Kinds ───────────────────────────────────────────────────────────
 KIND_UPS = "ups"
@@ -119,6 +122,7 @@ ACTION_MV_PROCEDURE = "MV_SWITCHING_PROCEDURE"
 ACTION_MV_STEP = "MV_SWITCHING_STEP"
 ACTION_MV_WITNESS = "MV_SWITCHING_WITNESS"
 ACTION_MV_FIELD = "MV_SWITCHGEAR_FIELD_ACTION"
+ACTION_XFMR_FIELD = "XFMR_FIELD_ACTION"
 
 SIMULATION_NOTICE = (
     "SIMULATED plant. No field equipment is connected: states and "
@@ -141,6 +145,7 @@ BATTERY_LOW_FRACTION = 0.25
 # transition). Sync-check settings are training values, not a relay
 # setting file: angle window, maximum slip, governor range and step.
 UTILITY_HZ = 60.0
+SECONDARY_KV_DEFAULT = 13.8
 SYNC_MAX_ANGLE_DEG = 10.0
 SYNC_MAX_SLIP_HZ = 0.10
 GOVERNOR_MIN_HZ = 59.5
@@ -338,6 +343,10 @@ class DeviceController:
     # L1: draw-out cubicles of the two mains, key (path, breaker)
     cubicles: dict[tuple[str, str], cub.Cubicle] = field(default_factory=dict)
     _auto_blocked: dict[str, str] = field(default_factory=dict)
+    # L2: utility transformer per path (52-T, DETC, keys, thermal)
+    xfmrs: dict[str, xf.Transformer] = field(default_factory=dict)
+    grid_kv: dict[str, float] = field(default_factory=dict)
+    _xfmr_at: float | None = None
 
     # ── Construction ────────────────────────────────────────────────
     @classmethod
@@ -363,6 +372,8 @@ class DeviceController:
             ctl.sync_angle[path] = 0.0
             for brk in cub.BREAKERS:
                 ctl.cubicles[(path, brk)] = cub.Cubicle(breaker=brk)
+            ctl.xfmrs[path] = xf.Transformer(path=path)
+            ctl.grid_kv[path] = xf.PRIMARY_KV
             upper = path.upper()
             for n in range(1, int(ups["units_per_path"]) + 1):
                 ctl._add(Device(
@@ -455,6 +466,7 @@ class DeviceController:
                 xfer = next(iter(self._of(KIND_TRANSFER, path)), None)
                 if xfer is not None:
                     self._event("spring_charged", xfer, "controller", breaker=brk, by="motor")
+        self._advance_xfmrs(now)
         self._advance_auto_transfer(now)
         self._advance_battery(now)
         self._advance_sync(now)
@@ -468,6 +480,10 @@ class DeviceController:
 
     def _cubicle_reason(self, path: str, brk: str) -> str | None:
         c = self.cubicles.get((path, brk))
+        if brk == cub.BREAKER_U and path in self.xfmrs:
+            key = xf.u_lock_reason(self.xfmrs[path])
+            if key:
+                return key
         return cub.close_reason(c) if c is not None else None
 
     def _closed_main(self, path: str, brk: str) -> None:
@@ -484,7 +500,9 @@ class DeviceController:
             if xfer.state == XFER_GENERATORS:
                 return ("Interlock: 52-GM is closed. The A3 design never parallels the mains "
                         "from the switchgear: open 52-GM first (dead-bus transfer).")
-            if not self.utility_ok.get(path, True):
+            if path in self.xfmrs and xf.u_lock_reason(self.xfmrs[path]):
+                return xf.u_lock_reason(self.xfmrs[path])
+            if not self._incomer_live(path):
                 return "No utility voltage on the incomer: ANSI 27 holds 52-U open."
             return None
         if xfer.state == XFER_UTILITY:
@@ -549,11 +567,148 @@ class DeviceController:
                 lockout_86=c.lockout_86, padlock=c.padlock,
             )
 
+    # ── L2: utility transformer (52-T, DETC, keys, thermal) ────────
+    def _incomer_live(self, path: str) -> bool:
+        """Voltage on the 13.8 kV side of 52-U: utility present AND the
+        transformer energized (52-T closed, no 86T, not damaged)."""
+        if not self.utility_ok.get(path, True):
+            return False
+        t = self.xfmrs.get(path)
+        return True if t is None else xf.energized(t, True)
+
+    def _xfmr_ctx(self, path: str, actor: str = "") -> xf.XfmrContext:
+        return xf.XfmrContext(
+            grid_ok=self.utility_ok.get(path, True),
+            main_u_closed=self._main_closed(path, cub.BREAKER_U),
+            grid_kv=self.grid_kv.get(path, xf.PRIMARY_KV), actor=actor,
+        )
+
+    def _incomer_kv(self, path: str) -> float:
+        t = self.xfmrs.get(path)
+        if t is None:
+            return SECONDARY_KV_DEFAULT if self.utility_ok.get(path, True) else 0.0
+        return xf.secondary_kv(t, self.utility_ok.get(path, True),
+                               self.grid_kv.get(path, xf.PRIMARY_KV))
+
+    def _bus_kv(self, dev: Device) -> float:
+        if dev.state == XFER_UTILITY and dev.path in self.xfmrs:
+            return self._incomer_kv(dev.path)
+        return dev.voltage_v / 1000
+
+    def _xfmr_load_mva(self, path: str) -> float:
+        on_utility = any(d.state == XFER_UTILITY for d in self._of(KIND_TRANSFER, path))
+        if not on_utility or not self._incomer_live(path) or self.load_lost.get(path):
+            return 0.0
+        return self._demand_kw(path) / POWER_FACTOR / 1000.0
+
+    def _trip_incomer(self, path: str, relay: str, detail: str) -> None:
+        """The 13.8 kV incomer lost its source (52-T opened, 86T): 52-U
+        trips if it was closed and the MV bus goes dead."""
+        for xfer in self._of(KIND_TRANSFER, path):
+            if xfer.state == XFER_UTILITY:
+                xfer.state, xfer.state_since = XFER_OPEN, self.clock()
+                self._drop_selections(xfer.device_id)
+                self._event("protection_trip", xfer, "protection", relay=relay,
+                            breaker="52-U", detail=detail)
+
+    def _advance_xfmrs(self, now: float) -> None:
+        last = self._xfmr_at
+        self._xfmr_at = now
+        dt = 0.0 if last is None else max(0.0, now - last)
+        for path, t in self.xfmrs.items():
+            live = xf.energized(t, self.utility_ok.get(path, True))
+            for ev in xf.tick(t, dt, self._xfmr_load_mva(path), live):
+                xfer = next(iter(self._of(KIND_TRANSFER, path)), None)
+                if ev["event"] == "xfmr_lockout":
+                    t.primary_closed = False
+                    if xfer is not None:
+                        self._event("protection_trip", xfer, "protection", relay="86T",
+                                    breaker="52-T", detail=ev["cause"])
+                    self._trip_incomer(path, "86T", ev["cause"])
+                elif xfer is not None:
+                    self._event(ev["event"], xfer, "protection",
+                                **{k: v for k, v in ev.items() if k != "event"})
+
+    def _xfmr_indications(self, path: str) -> list[dict[str, str]]:
+        t = self.xfmrs.get(path)
+        if t is None:
+            return []
+        return [
+            {"label": "52-T transformer primary", "value": mv.CLOSED if t.primary_closed else mv.OPEN},
+            {"label": "86T transformer lockout", "value": "TRIPPED" if t.lockout_86t else "NORMAL"},
+            {"label": "DETC position", "value": f"{t.tap} ({xf.TAPS[t.tap]:+.1f} %)"},
+            {"label": "Key K1", "value": t.k1},
+        ]
+
+    def xfmr_action(self, device_id: str, action: str, actor: str) -> dict[str, Any]:
+        """L2: an operation at the utility transformer of the path of
+        transfer controller ``device_id`` (52-T, Kirk keys, DETC,
+        relay targets, fans). Recorded as a "command" event named
+        ACTION@XFMR; protection consequences follow as their own events."""
+        action = str(action or "").upper()
+        with self._lock:
+            self._advance()
+            xfer = self._get(device_id)
+            if xfer.kind != KIND_TRANSFER:
+                raise DeviceControlError(400, "transformer actions apply to an MV transfer controller")
+            t = self.xfmrs.get(xfer.path)
+            if t is None:
+                raise DeviceControlError(404, f"no transformer on path {xfer.path.upper()}")
+            if action not in xf.ACTIONS:
+                raise DeviceControlError(400, f"action must be one of {list(xf.ACTIONS)}")
+            ctx = self._xfmr_ctx(xfer.path, actor)
+            reason = xf.interlock(t, action, ctx)
+            if reason:
+                raise DeviceControlError(409, reason)
+            tap_from = t.tap
+            was_live = xf.energized(t, ctx.grid_ok)
+            effect = xf.apply(t, action, ctx)
+            event = self._event(
+                "command", xfer, actor, command=f"{action}@XFMR", field=True,
+                equipment="xfmr", action=action, tap_from=tap_from, tap=t.tap,
+                key_k1=t.k1, key_k2=t.k2, primary_closed=t.primary_closed,
+                detc_locked=t.detc_unlocked_by is None, detc_unlocked_by=t.detc_unlocked_by,
+                energized_before=was_live, energized=xf.energized(t, ctx.grid_ok),
+                outcome=effect or "ok",
+            )
+            if action == xf.DETC_SPARE_KEY:
+                self._event("interlock_defeated", xfer, actor, equipment="xfmr",
+                            detail="DETC handle unlocked with a spare key: the K1 / K2 chain is bypassed")
+            if effect == "internal_fault":
+                self._event("xfmr_internal_fault", xfer, "protection", relay="63+87T",
+                            detail=t.trip_cause)
+                self._event("protection_trip", xfer, "protection", relay="86T",
+                            breaker="52-T", detail=t.trip_cause)
+                self._trip_incomer(xfer.path, "86T", t.trip_cause or "86T")
+            elif effect == "primary_open":
+                self._trip_incomer(xfer.path, "27", "52-T opened: transformer de-energized")
+            self._advance()
+            return event
+
+    def set_spare_key(self, path: str, available: bool, actor: str) -> dict[str, Any]:
+        """Training hazard: a spare DETC key in the marshalling box."""
+        with self._lock:
+            if path not in self.xfmrs:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            self.xfmrs[path].spare_key_available = bool(available)
+            return self._plant_event("xfmr_spare_key", path, actor, available=bool(available))
+
+    def set_grid_voltage(self, path: str, kv: float, actor: str) -> dict[str, Any]:
+        """Training condition: steady utility voltage at the primary."""
+        kv = _num(kv)
+        if not 0.8 * xf.PRIMARY_KV <= kv <= 1.2 * xf.PRIMARY_KV:
+            raise DeviceControlError(400, "utility voltage must be within 80 to 120 % of 27.5 kV")
+        with self._lock:
+            if path not in self.grid_kv:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            self.grid_kv[path] = kv
+            return self._plant_event("utility_voltage", path, actor, kv=kv)
+
     # ── T3: generator bus vs utility (synchroscope model) ──────────
     def _islanded(self, path: str) -> bool:
         """Generator bus carrying the path with utility voltage present
         on the open incomer: the two sides can drift in phase."""
-        return self._path_on_generators(path) and self.utility_ok.get(path, True) \
+        return self._path_on_generators(path) and self._incomer_live(path) \
             and bool(self._gens_on_bus(path))
 
     def _advance_sync(self, now: float) -> None:
@@ -719,13 +874,13 @@ class DeviceController:
                 continue
             path = xfer.path
             u_block = self._cubicle_reason(path, cub.BREAKER_U)
-            if self.utility_ok.get(path, True) and u_block:
+            if self._incomer_live(path) and u_block:
                 # Utility is there but its breaker cannot close (racked
                 # out, 86 tripped, spring discharged): the controller
                 # treats the normal source as unavailable and goes on
                 # to the emergency source below.
                 self._auto_block(xfer, u_block)
-            elif self.utility_ok.get(path, True):
+            elif self._incomer_live(path):
                 xfer.state, xfer.state_since = XFER_UTILITY, now
                 self._closed_main(path, cub.BREAKER_U)
                 self._auto_blocked.pop(path, None)
@@ -780,7 +935,7 @@ class DeviceController:
     def _bus_energized(self, path: str) -> bool:
         for xfer in self._of(KIND_TRANSFER, path):
             if xfer.state == XFER_UTILITY:
-                return self.utility_ok.get(path, True)
+                return self._incomer_live(path)
             if xfer.state == XFER_GENERATORS:
                 return bool(self._gens_on_bus(path))
         return False
@@ -893,8 +1048,9 @@ class DeviceController:
             )
             for name in ("devices", "bays", "procedures", "path_share", "utility_ok",
                          "battery_soc", "load_lost", "faults", "closed_transition",
-                         "gen_hz", "sync_angle", "cubicles"):
+                         "gen_hz", "sync_angle", "cubicles", "xfmrs", "grid_kv"):
                 setattr(self, name, getattr(fresh, name))
+            self._xfmr_at = None
             self._selections.clear()
             self._batt_at = None
             self._sync_at = None
@@ -961,6 +1117,7 @@ class DeviceController:
             "source": (XFER_GENERATORS if self._path_on_generators(path) else
                        XFER_UTILITY if self._bus_energized(path) else "NONE"),
             "utility_ok": self.utility_ok.get(path, True),
+            "incomer_live": self._incomer_live(path),
             "bus_energized": self._bus_energized(path),
             "load_lost": self.load_lost.get(path, False),
             "battery_soc_pct": round(self.battery_soc.get(path, 1.0) * 100, 1),
@@ -1031,7 +1188,7 @@ class DeviceController:
                             "retransfers in open transition.")
                 if dev.state != XFER_GENERATORS:
                     return "Path is not on generators."
-                if not self.utility_ok.get(dev.path, True):
+                if not self._incomer_live(dev.path):
                     return "No utility voltage on the incomer (ANSI 27 picked up)."
                 if dev.path in self._sync_close:
                     return "A supervised close is already armed: wait or cancel it."
@@ -1056,7 +1213,7 @@ class DeviceController:
             if command == "RETRANSFER_TO_UTILITY":
                 if dev.state == XFER_UTILITY:
                     return "Path is already on utility."
-                if not self.utility_ok.get(dev.path, True):
+                if not self._incomer_live(dev.path):
                     return "No utility voltage on the incomer (ANSI 27 picked up)."
                 return self._cubicle_reason(dev.path, cub.BREAKER_U)
         elif dev.kind == KIND_GENERATOR:
@@ -1129,12 +1286,11 @@ class DeviceController:
             return [
                 _r("Path demand", demand if live else 0.0, "kW", 0),
                 _r("Bus current", amps, "A", 0),
-                _r("Bus voltage", dev.voltage_v / 1000 if live else 0.0, "kV", 1),
+                _r("Bus voltage", self._bus_kv(dev) if live else 0.0, "kV", 2),
                 _r("Bus frequency",
                    (self.gen_hz.get(dev.path, NOMINAL_HZ) if self._path_on_generators(dev.path)
                     else NOMINAL_HZ) if live else 0.0, "Hz", 2),
-                _r("Utility incomer voltage",
-                   dev.voltage_v / 1000 if self.utility_ok.get(dev.path, True) else 0.0, "kV", 1),
+                _r("Utility incomer voltage", self._incomer_kv(dev.path), "kV", 2),
                 _r("Generators synchronised", len(self._gens_on_bus(dev.path)), "sets", 0),
                 _r("Generation on bus", on_bus, "kW", 0),
             ]
@@ -1166,8 +1322,8 @@ class DeviceController:
                 {"label": "52-GM generator main",
                  "value": mv.CLOSED if dev.state == XFER_GENERATORS else mv.OPEN},
                 {"label": "ANSI 27 incomer undervoltage",
-                 "value": "NORMAL" if self.utility_ok.get(dev.path, True) else "PICKED UP"},
-            ] + [
+                 "value": "NORMAL" if self._incomer_live(dev.path) else "PICKED UP"},
+            ] + self._xfmr_indications(dev.path) + [
                 {"label": f"{b} cubicle", "value": _cubicle_text(self.cubicles[(dev.path, b)])}
                 for b in cub.BREAKERS if (dev.path, b) in self.cubicles
             ]
@@ -1197,7 +1353,10 @@ class DeviceController:
             if dev.state == XFER_UTILITY:
                 return {"tone": "ok", "text": "Path on utility"}
             if dev.state == XFER_OPEN:
-                if not self.utility_ok.get(dev.path, True):
+                t = self.xfmrs.get(dev.path)
+                if t is not None and t.lockout_86t:
+                    return {"tone": "crit", "text": "52-U tripped by 86T (transformer): MV bus dead"}
+                if not self._incomer_live(dev.path):
                     return {"tone": "crit", "text": "52-U tripped (ANSI 27): MV bus dead"}
                 return {"tone": "crit", "text": "Both mains open: MV bus dead"}
             return {"tone": "warn", "text": "Path on generators"}
@@ -1247,6 +1406,8 @@ class DeviceController:
             snap["synchro"] = self.synchro(dev.path)
             snap["cubicles"] = self.cubicles_of(dev)
             snap["auto_blocked"] = self._auto_blocked.get(dev.path)
+            if dev.path in self.xfmrs:
+                snap["transformer"] = xf.describe(self.xfmrs[dev.path], self._xfmr_ctx(dev.path))
         return snap
 
     def _switching(self, dev: Device) -> dict[str, Any]:
@@ -1839,6 +2000,28 @@ def register_device_control_routes(
             {k: event.get(k) for k in ("device_id", "breaker", "action", "racking",
                                         "breaker_closed", "lockout_86", "padlock",
                                         "from_state", "to_state")},
+        )
+        return {"success": True, "event": event, "ledger_entry_id": entry_id}
+
+    @app.post("/api/devices/{device_id}/xfmr")
+    async def transformer_field_action(
+        device_id: str, request: Request, payload: dict = Body(...),
+    ) -> dict[str, Any]:
+        """L2: an operation at the utility transformer of a path (52-T,
+        Kirk keys, DETC handle, relay targets, fan selector)."""
+        actor = authorise(request, payload)
+        ctl = _controller()
+        action = str(payload.get("action") or "")
+        try:
+            event = ctl.xfmr_action(device_id, action, actor)
+        except DeviceControlError as exc:
+            ctl.refusal_event(device_id, actor, exc.detail, command=f"{action.upper()}@XFMR")
+            raise _fail(exc) from exc
+        entry_id = await _ledger_append(
+            request.app, actor, ACTION_XFMR_FIELD,
+            {k: event.get(k) for k in ("device_id", "action", "tap_from", "tap", "key_k1",
+                                        "key_k2", "primary_closed", "detc_unlocked_by",
+                                        "energized_before", "energized", "outcome")},
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 

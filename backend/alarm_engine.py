@@ -274,6 +274,32 @@ def conditions_from_plant(plant: dict[str, Any]) -> list[Condition]:
                               and not c.get("motor_on"), LOW,
                               f"{name}: {brk} closing spring discharged, charging motor OFF", did),
                 ]
+            # L2: utility transformer of the path.
+            t = d.get("transformer")
+            if t:
+                P = str(d.get("path", "?")).upper()
+                xs = f"xfmr_{d.get('path')}"
+                out += [
+                    Condition(f"XFMR_{P}_86T", bool(t.get("lockout_86t")), HIGH,
+                              f"XFMR {P}: 86T lockout tripped ({t.get('trip_cause') or 'cause not recorded'})", xs),
+                    Condition(f"XFMR_{P}_63", bool(t.get("flag_63")), HIGH,
+                              f"XFMR {P}: 63 sudden-pressure relay operated", xs),
+                    Condition(f"XFMR_{P}_87T", bool(t.get("flag_87t")), HIGH,
+                              f"XFMR {P}: 87T differential relay operated", xs),
+                    Condition(f"XFMR_{P}_OIL_HIGH", bool(t.get("oil_alarm")), MEDIUM,
+                              f"XFMR {P}: top oil {t.get('top_oil_c')} C above alarm (26)", xs),
+                    Condition(f"XFMR_{P}_WINDING_HIGH", bool(t.get("winding_alarm")), MEDIUM,
+                              f"XFMR {P}: winding {t.get('winding_c')} C above alarm (49)", xs),
+                    Condition(f"XFMR_{P}_DEENERGIZED",
+                              not t.get("energized") and bool(t.get("grid_ok")) and not t.get("lockout_86t"),
+                              LOW, f"XFMR {P}: de-energized (52-T open)", xs),
+                    Condition(f"XFMR_{P}_DETC_UNLOCKED", not t.get("detc_locked", True), MEDIUM,
+                              f"XFMR {P}: DETC handle unlocked", xs),
+                    Condition(f"XFMR_{P}_INTERLOCK_DEFEATED", t.get("detc_unlocked_by") == "SPARE", HIGH,
+                              f"XFMR {P}: DETC unlocked with a spare key (key interlock defeated)", xs),
+                    Condition(f"XFMR_{P}_FANS_NOT_AUTO", t.get("fan_mode") != "AUTO", LOW,
+                              f"XFMR {P}: cooling fans selector in {t.get('fan_mode')}", xs),
+                ]
         elif d.get("kind") == "generator":
             out.append(Condition(f"DEV_{did}_BAY_OOS", status.get("text") == "Bay not in service",
                                  LOW, f"{d.get('display', did)}: bay not in service", did))

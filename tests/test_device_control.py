@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import pathlib
+import re
 import sys
 
 import pytest
@@ -112,7 +113,8 @@ class TestClosedDesign:
         assert not any(i.startswith("ats") for i in ctl.devices)
         labels = [i["label"] for i in ctl.snapshot("mvtc_a")["indications"]]
         assert labels == ["52-U utility incomer", "52-GM generator main", "ANSI 27 incomer undervoltage",
-                          "52-U cubicle", "52-GM cubicle"]
+                          "52-T transformer primary", "86T transformer lockout", "DETC position",
+                          "Key K1", "52-U cubicle", "52-GM cubicle"]
 
     def test_ups_n_plus_1_inside_the_path(self, ctl):
         s = ctl.path_summary("a")
@@ -710,8 +712,10 @@ class TestAgentIsolation:
             if not path.exists():
                 continue
             text = path.read_text(encoding="utf-8")
-            if any(name in text for name in ("device_control", "mv_switching", "power_scenarios",
-                                             "alarm_routes", "training_routes", "mv_cubicle")):
+            # Whole words: "mv_xfmr_a" is a site-model id, not the module.
+            if any(re.search(rf"\b{name}\b", text)
+                   for name in ("device_control", "mv_switching", "power_scenarios",
+                                "alarm_routes", "training_routes", "mv_cubicle", "mv_xfmr")):
                 offenders.append(path.name)
         assert offenders == []
 
@@ -719,8 +723,8 @@ class TestAgentIsolation:
 class TestVocabularyFence:
     def test_dc_side_is_out_of_scope(self, ctl):
         assert not any("dc_bus" in i or "sscb" in i for i in ctl.devices)
-        from backend import mv_cubicle
-        for module in (dc, mv, mv_cubicle):
+        from backend import mv_cubicle, mv_xfmr
+        for module in (dc, mv, mv_cubicle, mv_xfmr):
             text = pathlib.Path(module.__file__).read_text(encoding="utf-8").lower()
             assert "800 vdc trif" not in text
             assert "three-phase dc" not in text

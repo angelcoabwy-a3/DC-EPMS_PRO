@@ -65,7 +65,7 @@ def steps_done(view):
 class TestLibrary:
     def test_three_valid_drills(self):
         drills = tr.load_drills(DRILLS)
-        assert sorted(drills) == ["DRILL-01", "DRILL-02", "DRILL-03", "DRILL-04", "DRILL-05"]
+        assert sorted(drills) == ["DRILL-01", "DRILL-02", "DRILL-03", "DRILL-04", "DRILL-05", "DRILL-06"]
 
     def test_validator_rejects_unknown_check(self):
         with pytest.raises(ValueError, match="unknown check"):
@@ -231,7 +231,7 @@ def bearer(name):
 class TestRoutes:
     def test_flow_and_ledger(self, client, clock):
         c, ctl, engine, _ = client
-        assert len(c.get("/api/training/drills").json()["drills"]) == 5
+        assert len(c.get("/api/training/drills").json()["drills"]) == 6
         assert c.post("/api/training/start", json={"drill_id": "DRILL-03"}).status_code == 403
         r = c.post("/api/training/start", json={"drill_id": "DRILL-03"}, headers=bearer("manager"))
         assert r.status_code == 200

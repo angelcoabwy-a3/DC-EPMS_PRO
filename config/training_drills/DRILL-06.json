@@ -1,0 +1,186 @@
+{
+  "id": "DRILL-06",
+  "version": 1,
+  "title": "Change the DETC tap of utility transformer A under the key interlock",
+  "summary": "The utility service on path A has measured 28.19 kV for weeks (102.5 % of 27.5 kV), so the 13.8 kV bus runs about 2.5 % high. Engineering asks for DETC position 2. Path A already runs on generators: 52-U is open and the transformer is energized at no load. A de-energized tap changer is moved only with the transformer dead from both sides, so follow the key chain at the transformer (field view, TRANSFORMER): lock 52-U open with key K1, open the primary circuit switcher 52-T, use K1 to lock 52-T open and take K2, unlock the DETC handle with K2, move it to position 2, lock it, then reverse the chain, close 52-T and confirm the 13.8 kV side reads 13.8 kV, and return K1 to 52-U. A spare DETC key hangs in the marshalling box. It should not be there: using it defeats the interlock. Moving the handle while energized ends the drill.",
+  "path": "a",
+  "target_s": 240,
+  "time_limit_s": 1200,
+  "procedure_commands": [
+    "KEY_LOCK_52U@XFMR",
+    "OPEN_52T@XFMR",
+    "KEY_LOCK_52T@XFMR",
+    "DETC_UNLOCK@XFMR",
+    "DETC_POS_DOWN@XFMR",
+    "DETC_POS_UP@XFMR",
+    "DETC_LOCK@XFMR",
+    "KEY_UNLOCK_52T@XFMR",
+    "CLOSE_52T@XFMR",
+    "KEY_UNLOCK_52U@XFMR"
+  ],
+  "references": [
+    "IEEE C57.131-2012 scope: de-energized tap changers may be operated only while the transformer is not energized (ANSI webstore abstract, checked 2026-11-26)",
+    "Five-position DETC with the nominal voltage on the middle position; always check the nameplate (EC&M, Tap Changers: To Tap or Not To Tap?, checked 2026-11-26)",
+    "IEEE C37.2 device numbers: 26 apparatus thermal, 49 transformer thermal, 63 pressure switch, 86 lockout, 87 differential (list checked 2026-11-26 on a secondary source)",
+    "Key chain K1 / K2 and its order are this model's; a real site follows its own key-interlock drawing",
+    "Thermal readings: IEEE C57.91 Clause 7 form with typical constants, not this unit's test report"
+  ],
+  "setup": {
+    "inject": [
+      {
+        "type": "preset_on_generators",
+        "path": "a"
+      },
+      {
+        "type": "utility_voltage",
+        "path": "a",
+        "kv": 28.19
+      },
+      {
+        "type": "xfmr_spare_key",
+        "path": "a",
+        "available": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "LOCK_U",
+      "text": "Lock 52-U open with Kirk key K1 and remove K1",
+      "check": {
+        "type": "event_seen",
+        "event": "command",
+        "match": {
+          "command": "KEY_LOCK_52U@XFMR"
+        }
+      }
+    },
+    {
+      "id": "DEENERGIZE",
+      "text": "Open the primary circuit switcher 52-T: the transformer is de-energized",
+      "check": {
+        "type": "event_seen",
+        "event": "command",
+        "match": {
+          "command": "OPEN_52T@XFMR",
+          "energized": false
+        }
+      }
+    },
+    {
+      "id": "LOCK_T",
+      "text": "Insert K1 in the 52-T lock, lock 52-T open and take K2",
+      "check": {
+        "type": "event_seen",
+        "event": "command",
+        "match": {
+          "command": "KEY_LOCK_52T@XFMR"
+        }
+      }
+    },
+    {
+      "id": "UNLOCK_DETC",
+      "text": "Unlock the DETC handle with K2",
+      "check": {
+        "type": "event_seen",
+        "event": "command",
+        "match": {
+          "command": "DETC_UNLOCK@XFMR"
+        }
+      }
+    },
+    {
+      "id": "TAP",
+      "text": "Move the DETC handle to position 2 (102.5 % primary tap)",
+      "check": {
+        "type": "xfmr",
+        "path": "a",
+        "field": "tap",
+        "value": 2
+      }
+    },
+    {
+      "id": "RELOCK",
+      "text": "Lock the DETC handle on position 2 and remove K2",
+      "check": {
+        "type": "all",
+        "of": [
+          {
+            "type": "xfmr",
+            "path": "a",
+            "field": "detc_locked",
+            "value": true
+          },
+          {
+            "type": "xfmr",
+            "path": "a",
+            "field": "tap",
+            "value": 2
+          },
+          {
+            "type": "xfmr",
+            "path": "a",
+            "field": "key_k2",
+            "values": [
+              "HAND",
+              "L-T"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ENERGIZE",
+      "text": "Return K2 to the 52-T lock, take K1 and close 52-T",
+      "check": {
+        "type": "all",
+        "of": [
+          {
+            "type": "event_seen",
+            "event": "command",
+            "match": {
+              "command": "CLOSE_52T@XFMR"
+            }
+          },
+          {
+            "type": "xfmr",
+            "path": "a",
+            "field": "energized",
+            "value": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "VERIFY",
+      "text": "Confirm the 13.8 kV side reads 13.8 kV within 1 % (13.66 to 13.94 kV)",
+      "check": {
+        "type": "xfmr",
+        "path": "a",
+        "field": "secondary_kv",
+        "min": 13.66,
+        "max": 13.94
+      }
+    },
+    {
+      "id": "RELEASE_U",
+      "text": "Return K1 to the 52-U lock (52-U free to close again)",
+      "check": {
+        "type": "xfmr",
+        "path": "a",
+        "field": "key_k1",
+        "value": "L-U"
+      }
+    }
+  ],
+  "fail": [
+    {
+      "type": "load_lost",
+      "path": "a"
+    },
+    {
+      "type": "xfmr_internal_fault",
+      "path": "a"
+    }
+  ]
+}
