@@ -424,8 +424,7 @@ async def lifespan(app: FastAPI):
     try:
         _cmms_pool = db_manager.pool if db_manager is not None else None
         _cmms_memory_ok = (
-            os.environ.get("DC_EPMS_CMMS_FALLBACK", "memory").strip().lower()
-            == "memory"
+            os.environ.get("DC_EPMS_CMMS_FALLBACK", "memory").strip().lower() == "memory"
         )
         if _cmms_pool is not None or _cmms_memory_ok:
             from backend.cmms_repository import (
@@ -435,11 +434,15 @@ async def lifespan(app: FastAPI):
             from backend.cmms_routes import register_cmms_routes
             from backend.cmms_seeder import seed_assets_from_site_model
 
+            # The in-memory repository duck-types the Postgres one (same
+            # async API); routes and seeder are annotated with the Postgres
+            # class, so the shared variable is typed as that class.
+            _cmms_repo_instance: PostgresCMMSRepository
             if _cmms_pool is not None:
                 _cmms_repo_instance = PostgresCMMSRepository(_cmms_pool)
                 app.state.cmms_backend = "postgres"
             else:
-                _cmms_repo_instance = InMemoryCMMSRepository()
+                _cmms_repo_instance = InMemoryCMMSRepository()  # type: ignore[assignment]
                 app.state.cmms_backend = "memory"
                 log.warning(
                     "[BOOT] CMMS running IN-MEMORY (PostgreSQL unavailable): "
@@ -773,7 +776,12 @@ async def lifespan(app: FastAPI):
     # Windows workstation (same family as DC-EPMS-001). Tests that boot
     # the full lifespan set it; a host without the embedding stack
     # (Render, requirements-minimal) loses nothing by setting it.
-    _skip_warmup = os.environ.get("DC_EPMS_SKIP_WARMUP", "").strip().lower() in ("1", "true", "yes", "on")
+    _skip_warmup = os.environ.get("DC_EPMS_SKIP_WARMUP", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
     _s2 = None if _skip_warmup else globals().get("_s2_service")
     if _skip_warmup:
         log.info("[BOOT] Warmup skipped: DC_EPMS_SKIP_WARMUP is set.")
@@ -1222,14 +1230,10 @@ async def get_telemetry_latest():
 
     point = _simulated_kpi_point()
     if point is not None:
-        return JSONResponse(
-            {"latest": point, "ts": time.time(), "source": "simulator"}
-        )
+        return JSONResponse({"latest": point, "ts": time.time(), "source": "simulator"})
     if db_error is not None:
         return JSONResponse({"latest": None, "error": db_error})
-    return JSONResponse(
-        {"latest": None, "ts": time.time(), "source": "timescaledb"}
-    )
+    return JSONResponse({"latest": None, "ts": time.time(), "source": "timescaledb"})
 
 
 @app.get("/api/telemetry/stream")
@@ -3039,10 +3043,7 @@ async def post_auth_login(request: Request):
     payload["session"] = "cookie"
     response = JSONResponse(payload)
     forwarded = request.headers.get("x-forwarded-proto", "")
-    is_https = (
-        request.url.scheme == "https"
-        or forwarded.split(",")[0].strip().lower() == "https"
-    )
+    is_https = request.url.scheme == "https" or forwarded.split(",")[0].strip().lower() == "https"
     response.set_cookie(
         _SESSION_COOKIE,
         payload["access_token"],
@@ -3687,7 +3688,8 @@ try:
     register_power_scenario_routes(app, _power_scenario_library, _power_design)
     log.info(
         "[BOOT] Power plant control mounted (/api/devices, /api/mv, "
-        "/api/power-scenarios, /api/alarms, /api/training; %d scenarios)", len(_power_scenario_library()),
+        "/api/power-scenarios, /api/alarms, /api/training; %d scenarios)",
+        len(_power_scenario_library()),
     )
 except Exception as e:
     log.error("[BOOT] Device control mount failed: %s", e, exc_info=True)
