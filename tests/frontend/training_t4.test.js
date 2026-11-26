@@ -99,6 +99,15 @@ describe('relay_tags', () => {
         expect(st({ enabled: true, live: true, permissive: false, close_armed: true })).toBe('ARMED');
     });
 
+    it('L2: 87T follows the transformer, 27 picks up with 52-T open', () => {
+        const pl = (tr, over = {}) => ({ paths: [{ path: 'a', utility_ok: true, ...over }],
+            devices: [{ kind: 'transfer', path: 'a', transformer: tr }] });
+        const r = (x, a) => x.find((y) => y.ansi === a);
+        expect(r(relayStates('a', pl({ flag_87t: false }), null), '87T')).toMatchObject({ state: 'NORMAL', tone: 'ok' });
+        expect(r(relayStates('a', pl({ flag_87t: true }), null), '87T')).toMatchObject({ state: 'TRIP', tone: 'crit' });
+        expect(r(relayStates('a', pl({}, { incomer_live: false }), null), '27').state).toBe('PICKED UP');
+    });
+
     it('What-If falls back to the DAG utility state', () => {
         const s = relayStates('b', null, { util_b: { tripped: true } });
         expect(s.find((x) => x.ansi === '27').state).toBe('PICKED UP');

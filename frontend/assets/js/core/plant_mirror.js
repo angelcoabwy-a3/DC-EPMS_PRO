@@ -16,6 +16,8 @@
  *   utility lost (T1)      -> util_x tripped; transfer OPEN -> both
  *                             mains open (52-U TRIP when ANSI 27)
  *   battery SOC / load lost -> batt_x soc (0 when the load was lost)
+ *   L2: transformer de-energized (52-T open, 86T) -> xfmr_x tripped;
+ *       52-U opened by 86T -> mains TRIP like ANSI 27
  * then the pure flow pass of power_grid.js (propagateStatic).
  *
  * What the plant does NOT model is left as the base grid has it:
@@ -58,9 +60,16 @@ export function mirrorGrid(baseGrid, plant) {
             tc.ats_pos = xfer.state === 'GENERATORS' ? 'secondary'
                 : (xfer.state === 'OPEN' ? 'open' : 'primary');
             tc.transferring = false;
-            // 52-U tripped by ANSI 27 shows TRIP on the drawing.
-            tc.tripped = xfer.state === 'OPEN' && summary.utility_ok === false;
+            // 52-U tripped by ANSI 27 (or by 86T, L2) shows TRIP on the drawing.
+            const tr = xfer.transformer;
+            tc.tripped = xfer.state === 'OPEN'
+                && (summary.utility_ok === false || !!(tr && tr.lockout_86t));
         }
+        // L2: the transformer is dead with the utility present (52-T
+        // open or 86T): the flow stops at the transformer.
+        const xf = g['xfmr_' + p];
+        const tr = xfer && xfer.transformer;
+        if (xf && tr && tr.energized === false && summary.utility_ok !== false) xf.tripped = true;
         const batt = g['batt_' + p];
         if (batt && summary.battery_soc_pct != null) {
             batt.soc = summary.load_lost ? 0 : Number(summary.battery_soc_pct);

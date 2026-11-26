@@ -24,14 +24,14 @@ const RACK_X = { CONNECTED: 0, TEST: 62, DISCONNECTED: 124 };
 
 const e = (v) => escapeHTML(v === null || v === undefined ? '' : String(v));
 
-function screws(x, y, w, h, inset = 12) {
+export function screws(x, y, w, h, inset = 12) {
     return [[x + inset, y + inset], [x + w - inset, y + inset], [x + inset, y + h - inset], [x + w - inset, y + h - inset]]
         .map(([cx, cy]) => `<g class="fsg-screw" transform="translate(${cx} ${cy})">`
             + '<circle r="5.2" class="fsg-screw-head"/>'
             + '<path d="M-3 -1.7 L0 -3.4 L3 -1.7 L3 1.7 L0 3.4 L-3 1.7 Z" class="fsg-screw-hex"/></g>').join('');
 }
 
-function door(x, y, w, h, cls) {
+export function door(x, y, w, h, cls) {
     return `<rect class="fsg-door ${cls}" x="${x}" y="${y}" width="${w}" height="${h}" rx="3"/>`
         + `<rect class="fsg-door-sheen" x="${x}" y="${y}" width="${w}" height="${h}" rx="3"/>`
         + `<rect class="fsg-hinge" x="${x - 5}" y="${y + 26}" width="7" height="34" rx="1.5"/>`
@@ -41,7 +41,7 @@ function door(x, y, w, h, cls) {
         + screws(x, y, w, h);
 }
 
-function led(cx, cy, colour, label, key) {
+export function led(cx, cy, colour, label, key) {
     return `<g class="fsg-led" data-led="${key}" data-colour="${colour}" transform="translate(${cx} ${cy})">`
         + '<circle r="15" class="fsg-led-bezel"/><circle r="11" class="fsg-led-lens"/>'
         + '<circle r="7" class="fsg-led-fresnel"/><circle r="3.5" class="fsg-led-fresnel"/>'
@@ -181,10 +181,9 @@ function pushButton(brk, kind, x, y, glyph, label) {
         + '<title>Electrical close / trip in CONNECTED and TEST; mechanical in DISCONNECTED (no control power), to release the springs after lockout.</title></g>';
 }
 
-/** Static SVG of the line-up for one path (built once per open). */
-export function fieldLineupSvg(path) {
-    const P = String(path || 'a').toUpperCase();
-    const defs = '<defs>'
+/** Shared SVG defs (powder-coat filter, steel, lenses) for Layer 2 views. */
+export function fsgDefs() {
+    return '<defs>'
         + '<filter id="fsg-powder" x="0" y="0" width="100%" height="100%">'
         + '<feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="n"/>'
         + '<feColorMatrix in="n" type="matrix" values="0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0 0.5  0 0 0 0.07 0" result="g"/>'
@@ -199,6 +198,12 @@ export function fieldLineupSvg(path) {
         + '<radialGradient id="fsg-knob" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#4a4f55"/><stop offset="1" stop-color="#0d0f11"/></radialGradient>'
         + '<linearGradient id="fsg-front" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d4d8dc"/><stop offset="1" stop-color="#aeb4ba"/></linearGradient>'
         + '</defs>';
+}
+
+/** Static SVG of the line-up for one path (built once per open). */
+export function fieldLineupSvg(path) {
+    const P = String(path || 'a').toUpperCase();
+    const defs = fsgDefs();
     const frame = '<rect x="20" y="20" width="940" height="672" rx="4" class="fsg-frame"/>'
         + '<rect x="20" y="20" width="940" height="52" rx="4" class="fsg-topcap"/>'
         + `<text x="44" y="44" class="fsg-head">13.8 kV SWITCHGEAR · PATH ${P}</text>`
@@ -292,21 +297,25 @@ export function resolveClick(target, xfer) {
 }
 
 /** Status display under the line-up: last message + field events. */
-export function fieldLogHtml(events, message = '', deviceId = '') {
+export function fieldLogHtml(events, message = '', deviceId = '', view = null) {
+    // L2: ``view`` = {match(ev), text(ev), empty} for another field view
+    // (transformer). The switchgear log leaves transformer events out.
+    const isXf = (ev) => ev.equipment === 'xfmr' || String(ev.command || '').endsWith('@XFMR');
+    const swgr = (ev) => !isXf(ev)
+        && (ev.field || (ev.event === 'refused' && String(ev.command || '').includes('@'))
+            || ['spring_charged', 'auto_transfer_blocked', 'authority'].includes(ev.event));
     const rows = (events || [])
-        .filter((ev) => ev.device_id === deviceId
-            && (ev.field || (ev.event === 'refused' && String(ev.command || '').includes('@'))
-                || ['spring_charged', 'auto_transfer_blocked', 'authority'].includes(ev.event)))
+        .filter((ev) => ev.device_id === deviceId && (view ? view.match(ev) : swgr(ev)))
         .slice(0, 6)
         .map((ev) => {
             const t = new Date(Number(ev.ts) * 1000);
             const hh = Number.isNaN(t.getTime()) ? '' : t.toISOString().slice(11, 19);
-            const what = ev.event === 'refused' ? `REFUSED ${ev.command}: ${ev.detail || ''}`
+            const what = view ? view.text(ev) : ev.event === 'refused' ? `REFUSED ${ev.command}: ${ev.detail || ''}`
                 : ev.event === 'command' ? `${ev.command} · ${ev.racking || ''}${ev.breaker_closed ? ' · CLOSED' : ''}`
                     : ev.event === 'authority' ? `CONTROL ${ev.previous} → ${ev.authority}`
                         : `${ev.event.replace(/_/g, ' ').toUpperCase()} ${ev.breaker || ''} ${ev.detail || ''}`;
             return `<li data-kind="${e(ev.event)}"><span>${e(hh)}</span><span>${e(what)}</span><span>${e(ev.actor || '')}</span></li>`;
         }).join('');
     return `<div class="fsg-lcd-msg" data-tone="${message ? 'warn' : 'ok'}">${e(message || 'READY · all operations are checked by the server interlocks')}</div>`
-        + `<ul class="fsg-log">${rows || '<li><span></span><span>No switchgear operation yet</span><span></span></li>'}</ul>`;
+        + `<ul class="fsg-log">${rows || `<li><span></span><span>${e((view && view.empty) || 'No switchgear operation yet')}</span><span></span></li>`}</ul>`;
 }

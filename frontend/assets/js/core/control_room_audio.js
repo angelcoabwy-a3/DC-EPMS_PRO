@@ -138,6 +138,18 @@ export class ControlRoomAudio {
         return a;
     }
 
+    /** L2: internal arc in oil, a contained detonation: low thump,
+     *  broadband burst and the tank ringing down. */
+    arc() {
+        const a = this._tone('sine', 62, 24, 0.9, 0.7);
+        if (a) {
+            this._noise(0.8, 0.35, 0, 400);
+            this._noise(0.4, 0.6, 0.05, 1500);
+            this._tone('triangle', 180, 90, 0.15, 1.2, 0.1);
+        }
+        return a;
+    }
+
     /** Padlock shackle or key switch. */
     latch() {
         const a = this._noise(0.3, 0.012, 0, 5200);

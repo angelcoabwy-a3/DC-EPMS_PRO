@@ -4,7 +4,11 @@
  * Honest scope: the simulator models two functions only.
  *   27  incomer undervoltage: real in the simulation (trips 52-U).
  *   25  sync check: real only in closed-transition TRAINING MODE.
- * 87T (transformer differential), 50/51 (incomer overcurrent) and 59
+ * L2 (2026-11-26): 87T follows the transformer model, which operates
+ * it for one case only (internal arc when the DETC is moved energized);
+ * without transformer data it stays an identification tag. 27 also
+ * picks up when the transformer is dead (52-T open, 86T).
+ * 50/51 (incomer overcurrent) and 59
  * (overvoltage) are drawn as identification tags of the design lineup:
  * no settings, no coordination, no trip logic exists for them, and the
  * tag says so. Device numbers per IEEE C37.2.
@@ -15,7 +19,7 @@ export const RELAYS = Object.freeze([
     { ansi: '25', name: 'Sync check (training mode only)', modelled: true },
     { ansi: '50/51', name: 'Incomer overcurrent', modelled: false },
     { ansi: '59', name: 'Incomer overvoltage', modelled: false },
-    { ansi: '87T', name: 'Transformer differential', modelled: false },
+    { ansi: '87T', name: 'Transformer differential (internal-fault case only)', modelled: true },
 ]);
 
 const NOT_MODELLED = { state: 'N/M', tone: 'id', note: 'not modelled: identification only, no settings or trip logic' };
@@ -36,9 +40,13 @@ export function relayStates(path, plant, grid) {
 
     let r27;
     if (summary) {
-        r27 = summary.utility_ok === false
-            ? { state: 'PICKED UP', tone: 'crit', note: 'no utility voltage on the incomer' }
-            : { state: 'NORMAL', tone: 'ok', note: 'utility voltage present' };
+        if (summary.utility_ok === false) {
+            r27 = { state: 'PICKED UP', tone: 'crit', note: 'no utility voltage on the incomer' };
+        } else if (summary.incomer_live === false) {
+            r27 = { state: 'PICKED UP', tone: 'crit', note: 'utility present but the transformer is de-energized (52-T open or 86T)' };
+        } else {
+            r27 = { state: 'NORMAL', tone: 'ok', note: 'utility voltage present' };
+        }
     } else if (grid && grid['util_' + p]) {
         r27 = grid['util_' + p].tripped
             ? { state: 'PICKED UP', tone: 'crit', note: 'What-If: utility tripped in the sandbox' }
@@ -61,8 +69,16 @@ export function relayStates(path, plant, grid) {
         r25 = { state: 'BLOCK', tone: 'warn', note: 'angle or slip outside the window' };
     }
 
+    const tr = xfer && xfer.transformer;
+    let r87 = NOT_MODELLED;
+    if (tr) {
+        r87 = tr.flag_87t
+            ? { state: 'TRIP', tone: 'crit', note: 'operated: internal fault (training model)' }
+            : { state: 'NORMAL', tone: 'ok', note: 'training model: operates only for the modelled internal fault' };
+    }
+
     return RELAYS.map((r) => {
-        const s = r.ansi === '27' ? r27 : (r.ansi === '25' ? r25 : NOT_MODELLED);
+        const s = r.ansi === '27' ? r27 : (r.ansi === '25' ? r25 : (r.ansi === '87T' ? r87 : NOT_MODELLED));
         return { ansi: r.ansi, name: r.name, ...s };
     });
 }

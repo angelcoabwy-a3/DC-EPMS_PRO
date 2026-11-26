@@ -46,6 +46,7 @@ import { faceplateHtml } from '../core/sbo_faceplate.js';
 import { trainingHtml } from '../core/training_view.js';
 import { openPrintable } from '../core/training_print.js';
 import { fieldLineupSvg, applyFieldState, resolveClick, fieldLogHtml } from '../core/field_switchgear.js';
+import { xfmrSvg, applyXfmrState, resolveXfmrClick, isXfmrEvent, xfmrEventText } from '../core/field_xfmr.js';
 import { needleAngle, permissive, etaNow, etaText } from '../core/synchroscope.js';
 import { escapeHTML } from '../core/sanitize.js';
 import { relayRowSvg, relayStates, applyRelays } from '../core/relay_tags.js';
@@ -103,6 +104,7 @@ let _prevSteps = 0;
 let _vp = null;
 // L1: field view of the 13.8 kV switchgear (Layer 2).
 let _fieldPath = null;
+let _fieldEquip = 'swgr';      // L2: 'swgr' | 'xfmr'
 let _fieldMsg = '';
 let _fieldBusy = false;
 let _fieldTimer = null;
@@ -903,7 +905,12 @@ function _onFlatClick(e) {
     const id = node.dataset.sldNode;
     // L1: the 13.8 kV switchgear bus opens the field view in LIVE.
     if (_mode === 'live' && /^mv_swgr_[ab]$/.test(id || '')) {
-        _openField(id.slice(-1));
+        _openField(id.slice(-1), 'swgr');
+        return;
+    }
+    // L2: the utility transformer opens its field view in LIVE.
+    if (_mode === 'live' && /^xfmr_[ab]$/.test(id || '')) {
+        _openField(id.slice(-1), 'xfmr');
         return;
     }
     if (_mode === 'whatif') {
@@ -1052,6 +1059,11 @@ function _applyRelays(grid) {
                 g.setAttribute('data-lockout', c && c.lockout_86 ? '1' : '0');
             }
         }
+        // L2: DETC position and 86T on the transformer symbol (LIVE).
+        const tr = xfer && xfer.transformer;
+        _setMetric(`xfmr_${p}-ratio`, tr
+            ? `27.5/13.8 kV · POS ${tr.tap}${tr.lockout_86t ? ' · 86T' : (tr.primary_closed ? '' : ' · 52-T OPEN')}`
+            : '27.5/13.8 kV');
     }
 }
 
@@ -1361,10 +1373,12 @@ function _ensureField() {
     el.hidden = true;
     el.setAttribute('role', 'dialog');
     el.setAttribute('aria-modal', 'true');
-    el.setAttribute('aria-label', 'Field view: 13.8 kV switchgear');
+    el.setAttribute('aria-label', 'Field view');
     el.innerHTML = '<div class="fsg-shell"><div class="fsg-bar"><span>FIELD VIEW</span>'
         + '<span class="fsg-paths"><button type="button" data-fpath="a">PATH A</button>'
         + '<button type="button" data-fpath="b">PATH B</button></span>'
+        + '<span class="fsg-paths"><button type="button" data-fequip="swgr">SWITCHGEAR</button>'
+        + '<button type="button" data-fequip="xfmr">TRANSFORMER</button></span>'
         + '<span class="fsg-note">Layer 2 · equipment view · every operation is checked by the server interlocks and recorded</span>'
         + '<button type="button" class="fsg-close" data-fclose="1" aria-label="Close field view">CLOSE ✕</button></div>'
         + '<div class="fsg-stage" id="pwr-field-stage"></div><div class="fsg-foot" id="pwr-field-foot"></div></div>';
@@ -1376,14 +1390,20 @@ function _ensureField() {
     return el;
 }
 
-function _openField(path) {
+function _openField(path, equip) {
     const el = _ensureField();
     _fieldPath = String(path || 'a').toLowerCase() === 'b' ? 'b' : 'a';
+    if (equip) _fieldEquip = equip === 'xfmr' ? 'xfmr' : 'swgr';
     _fieldMsg = '';
     _fieldCovers.clear();
-    document.getElementById('pwr-field-stage').innerHTML = fieldLineupSvg(_fieldPath);
+    document.getElementById('pwr-field-stage').innerHTML = _fieldEquip === 'xfmr'
+        ? xfmrSvg(_fieldPath) : fieldLineupSvg(_fieldPath);
+    el.setAttribute('aria-label', _fieldEquip === 'xfmr'
+        ? 'Field view: utility transformer' : 'Field view: 13.8 kV switchgear');
     el.querySelectorAll('[data-fpath]').forEach((b) =>
         b.setAttribute('aria-pressed', String(b.dataset.fpath === _fieldPath)));
+    el.querySelectorAll('[data-fequip]').forEach((b) =>
+        b.setAttribute('aria-pressed', String(b.dataset.fequip === _fieldEquip)));
     el.hidden = false;
     _applyField();
     if (_fieldTimer) clearInterval(_fieldTimer);
@@ -1402,10 +1422,15 @@ function _applyField() {
     if (!_fieldPath) return;
     const stage = document.getElementById('pwr-field-stage');
     const xfer = _fieldXfer();
-    if (stage && xfer) applyFieldState(stage, xfer, { covers: _fieldCovers });
+    const xf = _fieldEquip === 'xfmr';
+    if (stage && xfer) {
+        if (xf) applyXfmrState(stage, xfer.transformer, _fieldPath);
+        else applyFieldState(stage, xfer, { covers: _fieldCovers });
+    }
     const foot = document.getElementById('pwr-field-foot');
     if (foot) {
-        foot.innerHTML = xfer ? fieldLogHtml((_plant && _plant.events) || [], _fieldMsg, xfer.id)
+        const view = xf ? { match: isXfmrEvent, text: xfmrEventText, empty: 'No transformer operation yet' } : null;
+        foot.innerHTML = xfer ? fieldLogHtml((_plant && _plant.events) || [], _fieldMsg, xfer.id, view)
             : '<div class="fsg-lcd-msg" data-tone="warn">Plant not reachable: sign in or wait for the next poll.</div>';
     }
 }
@@ -1417,7 +1442,10 @@ async function _onFieldClick(ev) {
     if (t.closest && t.closest('[data-fclose]')) { _closeField(); return; }
     const pb = t.closest && t.closest('[data-fpath]');
     if (pb) { _openField(pb.dataset.fpath); return; }
+    const eb = t.closest && t.closest('[data-fequip]');
+    if (eb) { _openField(_fieldPath, eb.dataset.fequip); return; }
     if (_fieldBusy) return;
+    if (_fieldEquip === 'xfmr') { await _onXfmrClick(t); return; }
     const xfer = _fieldXfer();
     const r = resolveClick(t, xfer);
     if (!r || !xfer) return;
@@ -1477,6 +1505,55 @@ async function _onFieldClick(ev) {
                     target.classList.add('fsg-shake');
                     setTimeout(() => target.classList.remove('fsg-shake'), 340);
                 }
+            }
+        }
+    } finally {
+        _fieldBusy = false;
+    }
+    await _pollAlarms(true);
+    if (_trView && _trView.active) _trainingTick();
+}
+
+// L2: an operation at the utility transformer (keys, DETC, 52-T, relays).
+async function _onXfmrClick(t) {
+    const xfer = _fieldXfer();
+    const tr = xfer && xfer.transformer;
+    const r = resolveXfmrClick(t, tr);
+    if (!r || !tr) return;
+    const stage = document.getElementById('pwr-field-stage');
+    const target = t.closest('[data-act]');
+    const permitted = ((tr.actions || []).find((a) => a.action === r.action) || {}).permitted;
+    _fieldBusy = true;
+    try {
+        if (permitted && r.kind === 'key') _audio.latch();
+        else if (permitted && r.kind === 'detc') _audio.ratchet(6, 0.6);
+        else if (r.kind === 'button' || r.kind === 'breaker') {
+            const cap = target;
+            if (cap) cap.classList.add('fsg-press');
+            await _wait(90);
+            if (cap) cap.classList.remove('fsg-press');
+        }
+        const res = await plantPost(`/api/devices/${encodeURIComponent(xfer.id)}/xfmr`, { action: r.action });
+        if (res.ok) {
+            const evd = res.data.event || {};
+            _fieldMsg = `${r.action.replace(/_/g, ' ')} · POS ${evd.tap} · ${evd.energized ? 'ENERGIZED' : 'DE-ENERGIZED'}`;
+            if (evd.outcome === 'internal_fault') {
+                _fieldMsg = 'INTERNAL FAULT · 63 + 87T operated · 86T tripped 52-T and 52-U';
+                _audio.arc();
+                if (stage) {
+                    stage.classList.remove('xf-arc');
+                    void stage.offsetWidth;
+                    stage.classList.add('xf-arc');
+                    setTimeout(() => stage.classList.remove('xf-arc'), 950);
+                }
+            } else if (r.kind === 'breaker') _audio.breaker(r.action === 'CLOSE_52T');
+            else if (r.kind === 'selector' || r.kind === 'button') _audio.latch();
+        } else {
+            _fieldMsg = `INTERLOCK · ${res.detail}`;
+            _audio.clunk();
+            if (target) {
+                target.classList.add('fsg-shake');
+                setTimeout(() => target.classList.remove('fsg-shake'), 340);
             }
         }
     } finally {
@@ -1650,7 +1727,7 @@ async function _onFaceplateClick(ev) {
     const btn = ev.target.closest('button');
     if (!btn) return;
     if (btn.dataset.fpClose) { _fpTarget = null; _fpPending.clear(); _renderFaceplate(); return; }
-    if (btn.dataset.fpField) { _openField(btn.dataset.fpField); return; }
+    if (btn.dataset.fpField) { _openField(btn.dataset.fpField, 'swgr'); return; }
     const url = (id, verb) => `/api/devices/${encodeURIComponent(id)}/${verb}`;
     let r = null;
     if (btn.dataset.fpAuth) {

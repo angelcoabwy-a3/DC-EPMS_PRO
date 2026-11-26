@@ -11198,3 +11198,107 @@ table.opt-votes td {
 #view-power .pf-52[data-racked="1"] .pf-52-blade { opacity: .45; }
 .pf-52[data-lockout="1"] .pf-52-cub { fill: #ffb020; }
 .fp-field { margin-top: 6px; width: 100%; }
+/* ════════════════════════════════════════════════════════════════
+ * L2 (2026-11-26): FIELD VIEW · utility transformer (Layer 2).
+ * Marshalling box, DETC with key lock, trapped-key chain, 52-T.
+ * Same hardware look as the L1 switchgear (ADR-014).
+ * ════════════════════════════════════════════════════════════════ */
+.xf-mon { fill: #1a1d21; stroke: #000; stroke-width: 1.5; }
+.xf-mon-head { font: 700 8px var(--font-mono); fill: #c3c8cf; letter-spacing: .08em; }
+.xf-lcd { fill: #0b1a10; stroke: #1f3a26; }
+.xf-lcd-lbl { font: 700 7.5px var(--font-mono); fill: #6fd38a; letter-spacing: .06em; }
+.xf-lcd-big { font: 800 17px var(--font-mono); fill: #9bffb0; font-variant-numeric: tabular-nums; }
+.xf-lcd-line { font: 700 10px var(--font-mono); fill: #9bffb0; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+.xf-seg { fill: #22272c; transition: fill .3s; }
+.xf-seg[data-lit="g"] { fill: #34d058; }
+.xf-seg[data-lit="a"] { fill: #ffb020; }
+.xf-seg[data-lit="r"] { fill: #ff3b30; }
+.xf-scale { font: 600 6.5px var(--font-mono); fill: #8a929a; }
+.xf-mark[data-tone="a"] { fill: #ffb020; }
+.xf-mark[data-tone="r"] { fill: #ff3b30; }
+.xf-stage { font: 800 9px var(--font-mono); fill: #23272c; }
+.xf-dial-bezel { fill: #2b2f33; stroke: #0b0c0d; stroke-width: 2; }
+.xf-dial-face { fill: #f2f1ec; }
+.xf-tick { stroke: #222; stroke-width: 1.2; }
+.xf-scale-d { font: 700 6.5px var(--font-mono); fill: #333; }
+.xf-needle { transition: transform 1.2s cubic-bezier(.3,1.3,.5,1); }
+.xf-needle-shape { fill: #c8102e; }
+.xf-needle-hub { fill: #222; }
+.xf-dial-val { font: 700 7.5px var(--font-mono); fill: #222; }
+.xf-fan-knob { transition: transform .25s ease-out; }
+.xf-fans [data-act] { cursor: pointer; }
+.xf-relay-pan { fill: #23282d; stroke: #0b0c0d; }
+.xf-63-body { fill: #3a4046; stroke: #0b0c0d; stroke-width: 1.5; }
+.xf-63-glass { fill: #0d1013; stroke: #8a929a; }
+.xf-63-flag { transition: transform .25s cubic-bezier(.3,1.6,.5,1); transform: translateY(-22px); opacity: 0; }
+.xf-63-flag-face { fill: #ff7a00; }
+.xf-section[data-63="1"] .xf-63-flag { transform: translateY(0); opacity: 1; }
+.xf-ied { fill: #2c3237; stroke: #0b0c0d; }
+.xf-ied-led { fill: #3a1616; transition: fill .15s; }
+.xf-section[data-87="1"] .xf-ied-led { fill: #ff3b30; filter: drop-shadow(0 0 5px #ff3b30); }
+.xf-ied-txt { font: 700 7px var(--font-mono); fill: #c3c8cf; }
+.xf-86-lbl { font: 700 11px var(--font-mono); fill: #c3c8cf; letter-spacing: .06em; }
+.xf-btn { cursor: pointer; }
+.xf-btn rect { fill: #111; stroke: #555; }
+.xf-btn text { font: 800 7px var(--font-mono); fill: #e6e9ed; }
+.xf-btn:hover rect { fill: #2a2e32; }
+.xf-warn { fill: #c8102e; }
+.xf-warn-txt { font: 900 7.5px sans-serif; fill: #fff; letter-spacing: .06em; }
+.xf-detc-plate { fill: #2b2f33; stroke: #0b0c0d; stroke-width: 2; }
+.xf-detc-ring { fill: #c9ced3; stroke: #6f777e; }
+.xf-pos { font: 800 11px var(--font-mono); fill: #1b1e21; }
+.xf-pos-pct { font: 700 6.5px var(--font-mono); fill: #3b4046; }
+.xf-detc-handle { transition: transform .9s cubic-bezier(.4,0,.2,1); }
+.xf-detc-bar { fill: #1b1e21; stroke: #000; }
+.xf-detc-hub { fill: #8a929a; stroke: #333; }
+.xf-detc-ptr { fill: #ffd21f; }
+.xf-svg [role="button"]:focus { outline: none; }
+.xf-svg [role="button"]:focus-visible { outline: 2px solid #ffd21f; outline-offset: 2px; }
+.xf-detc-pos { font: 800 8px var(--font-mono); fill: #1b1e21; paint-order: stroke; stroke: #c9ced3; stroke-width: 3px; }
+.xf-lock { cursor: pointer; }
+.xf-lock-body { fill: #2b2f33; stroke: #0b0c0d; stroke-width: 2; }
+.xf-lock-cyl { fill: #c9a227; stroke: #5b4a10; }
+.xf-lock-slot { fill: #3a2f08; }
+.xf-lock-plug { transition: transform .3s ease; }
+.xf-lock[data-turned="1"] .xf-lock-plug { transform: rotate(90deg); }
+.xf-lock-key { opacity: 0; transition: opacity .2s; pointer-events: none; }
+.xf-lock[data-key="1"] .xf-lock-key { opacity: 1; }
+.xf-key-bow { fill: #d8dde2; stroke: #555; }
+.xf-key-hole { fill: #2b2f33; }
+.xf-key-blade { fill: #d8dde2; stroke: #555; stroke-width: .5; }
+.xf-key-name { font: 800 7px var(--font-mono); fill: #23272c; }
+.xf-key-spare .xf-key-bow { fill: #ffb020; }
+.xf-chain { stroke: #23272c; stroke-width: 1.6; stroke-dasharray: 4 3; fill: none; }
+.xf-tray { fill: #2b2f33; stroke: #0b0c0d; }
+.xf-tray + text { fill: #c3c8cf; }
+.xf-hand { opacity: .12; transition: opacity .2s; }
+.xf-hand[data-on="1"] { opacity: 1; }
+.xf-hand .xf-key-name { fill: #e6e9ed; }
+.xf-spare { cursor: pointer; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.xf-section[data-spare="1"][data-unlocked-by=""] .xf-spare { opacity: 1; pointer-events: auto; }
+.xf-hook { fill: #8a929a; }
+.xf-hook-wire { stroke: #8a929a; stroke-width: 1.2; }
+.xf-52t-flag { fill: #1f9d48; }
+.xf-section[data-primary="1"] .xf-52t-flag { fill: #d81f26; }
+.xf-section[data-damaged="1"] .xf-lcd-line { fill: #ff7a68; }
+/* internal arc: the whole view jolts, a flash crosses the glass */
+.fsg-stage.xf-arc { animation: xf-arc .9s linear; }
+@keyframes xf-arc {
+    0% { transform: translate(0, 0); filter: brightness(3.2) saturate(.2); }
+    8% { transform: translate(-9px, 4px); filter: brightness(2) sepia(.6); }
+    16% { transform: translate(8px, -5px); }
+    26% { transform: translate(-6px, 3px); filter: brightness(1.3); }
+    40% { transform: translate(4px, -2px); }
+    60% { transform: translate(-2px, 1px); filter: none; }
+    100% { transform: translate(0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .fsg-stage.xf-arc { animation: none; }
+}
+/* L2: the field-view bar carries two selectors (path, equipment);
+ * on phones it wraps and drops the long note. */
+@media (max-width: 899px) {
+    .fsg-bar { flex-wrap: wrap; row-gap: 6px; }
+    .fsg-bar .fsg-note { display: none; }
+    .fsg-bar .fsg-paths button { white-space: nowrap; }
+}
