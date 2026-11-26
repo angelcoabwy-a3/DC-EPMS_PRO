@@ -218,8 +218,14 @@ L5 DIAGNOSTICS (2026-11-26, bf614a5 / 9d38e26, ADR-018):
   events. DRILL-09 hot jar, DRILL-10 false start. Field views
   core/field_battery.js, core/field_wiring.js. Floors (Linux): pytest
   2089 / vitest 925 (55 files).
-NEXT: operator applies the bundle and tries DRILL-09 / DRILL-10; then L6
-  oscillography (COMTRADE) or GO for the -068 closing lote.
+L6 OSCILLOGRAPHY (2026-11-26, 4d16311 / a4077d6, ADR-019):
+  backend/oscillography.py synthesises 3-phase records (MV bus, 480 V load
+  bus) from plant state changes (collapse, open-transition gap 100 ms,
+  static-switch notch 3 ms, sag, inverter-fault harmonics), IEEE 1159
+  classes, COMTRADE C37.111-1999 ASCII. /api/oscillography/*, field view
+  core/field_scope.js. Floors (Linux): pytest 2105 / vitest 934 (56).
+NEXT: master-spec lots L1-L6 delivered. Candidates needing GO: AI
+  instructor (provider decision), DC-EPMS-068 closing lote, DC-EPMS-072.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```

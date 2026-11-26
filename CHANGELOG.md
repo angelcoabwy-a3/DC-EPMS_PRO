@@ -13,6 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### L6 disturbance recorder and oscillography (2026-11-26)
+
+- **Recorder** (ADR-019): `backend/oscillography.py` synthesises three-phase
+  voltage records (13.8 kV MV bus, 480 V critical load bus) from plant
+  state changes: bus collapse, source appearing, open-transition dead time
+  (100 ms model), static-switch notch (3 ms model, spec < 4 ms), closed
+  transition phase step, utility sag, inverter-fault harmonics (THD about
+  11 %). 32 samples per cycle, 0.1 s pre / 0.3 s post. IEEE 1159-2009
+  Table 2 classes from half-cycle RMS; one-cycle DFT THD. COMTRADE
+  C37.111-1999 ASCII export (UTC). Not an electromagnetic simulation.
+- Records are taken when a path's MV source, load feed or frequency
+  changes; manual trigger and a training utility sag (no 52-U trip, model).
+  Routes `/api/oscillography/*`, ledger `DISTURBANCE_RECORDER_ACTION`.
+- Field view `core/field_scope.js` (RECORDER): LIVE sweep at the display
+  frame rate, slow-motion replay, zoom on the trigger, downloads.
+- Floors (Linux): pytest 2105 passed (3 pre-existing test_optimizer
+  errors), vitest 934 / 56 files.
+
 ### L5 field diagnostics: battery room and MV control wiring (2026-11-26)
 
 - **Battery room** (ADR-018): `backend/battery_room.py` per path, 4 strings
