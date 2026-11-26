@@ -205,7 +205,13 @@ L3 GENERATOR + FUEL (2026-11-26, 19a00d8 / 4da2bb2, ADR-016):
   curve, time x30). Unavailable sets leave auto start / START / N+1;
   overload cascade (model). POST /api/devices/{id}/fuel, DRILL-07, field
   view core/field_gen.js. Floors (Linux): pytest 2038 / vitest 903 (52).
-NEXT: operator applies the bundle and tries DRILL-07; then L4 UPS bypass,
+L4 UPS BYPASS (2026-11-26, ADR-017): backend/ups_bypass.py (Q1 / Q2 / Q4
+  MIB / Q3 MBB / QF1 + padlock, SKRU two-key chain), _load_feed() drives
+  battery / maintenance bypass / lost, POST /api/ups-systems/{path}/action,
+  DRILL-08, field view core/field_ups.js. Floors (Linux): pytest 2058 /
+  vitest 910 (53 files).
+NEXT: operator applies the bundle and tries DRILL-08; then L5
+  diagnostics (battery strings, thermography, H2, CPT fuses, multimeter)
   or GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.

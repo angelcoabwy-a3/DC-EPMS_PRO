@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### L4 UPS bank system breakers and maintenance bypass (2026-11-26)
+
+- **L4** (ADR-017): `backend/ups_bypass.py` per path: Q1 rectifier input,
+  Q2 static-bypass input, Q4 MIB, Q3 MBB, QF1 battery breaker with
+  padlock, two-lock key chain with a solenoid key release unit (key
+  released only on static bypass with the bypass live). Sequence from
+  Toshiba G9000, Schneider Galaxy VX and Powerware 9315 manuals.
+  `_load_feed()` now decides maintenance bypass / UPS / battery / lost;
+  QF1 open removes the battery; block commands respect the system.
+  Route `POST /api/ups-systems/{path}/action`, ledger
+  `UPS_SYSTEM_FIELD_ACTION`, alarms `PATH_x_UPS_*`, DRILL-08, field view
+  `core/field_ups.js`. Battery strings, jars and hydrogen stay for L5.
+- Floors (Linux): pytest 2058 passed (3 pre-existing test_optimizer
+  errors), vitest 910 / 53 files.
+
 ### L3 generator set and fuel system (2026-11-26)
 
 - **L3** (`19a00d8`, `4da2bb2`, ADR-016): `backend/gen_fuel.py` per set:
