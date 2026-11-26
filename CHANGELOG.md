@@ -13,6 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### L3 generator set and fuel system (2026-11-26)
+
+- **L3** (`19a00d8`, `4da2bb2`, ADR-016): `backend/gen_fuel.py` per set:
+  engine control STOP / AUTO / RUN, emergency stop, jacket-water heater
+  and coolant model (NFPA 110 Level 1 32 C minimum, quoted from
+  manufacturer manuals), 1,200 L day tank with floats 95 / 85 / 60 / 40 /
+  15 %, duplex pumps HAND-OFF-AUTO with 49/OL, supply solenoid, duplex fuel
+  filter / water separator, rupture-basin float, 50,000 L bulk tank per
+  path. Fuel curve from a Cummins DQLH 2750 kW 60 Hz data sheet (no-load
+  point extrapolated). Sets that cannot run leave auto start, START and
+  N / N+1; shutdowns open 52-G; overload cascade when the remaining sets
+  cannot carry the path (model). Route `POST /api/devices/{id}/fuel`,
+  ledger `GENERATOR_FIELD_ACTION`, new alarms, DRILL-07, field view
+  `core/field_gen.js`. Model values and time x30 said on the panel.
+  Not done: per-set governor / AVR, lube oil, fuel delivery, lead / lag
+  alternation.
+- Floors (Linux): pytest 2038 passed (3 pre-existing test_optimizer
+  errors), vitest 903 / 52 files.
+
 ### L2 utility transformer + iOS meta tag (2026-11-26)
 
 - **L2** (`d872fd4`, `32cac4e`, ADR-015): utility transformer per path as a

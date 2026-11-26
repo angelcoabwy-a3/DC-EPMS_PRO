@@ -198,8 +198,15 @@ L2 TRANSFORMER (2026-11-26, d872fd4 / 32cac4e, ADR-015): backend/mv_xfmr.py
   replaces utility_ok in 52-U logic. POST /api/devices/{id}/xfmr, DRILL-06,
   field view core/field_xfmr.js, 87T chip live. Meta tag fix 251d865.
   Floors (Linux): pytest 2016 / vitest 896 (51 files).
-NEXT: operator applies the bundle and tries DRILL-06; then L3 generator +
-  fuel, or GO for the -068 closing lote.
+L3 GENERATOR + FUEL (2026-11-26, 19a00d8 / 4da2bb2, ADR-016):
+  backend/gen_fuel.py (ECS STOP/AUTO/RUN, e-stop, jacket heater + NFPA 110
+  32 C, day tank floats 95/85/60/40/15, duplex pumps HAND-OFF-AUTO + 49/OL,
+  duplex filter, basin float, 50,000 L bulk per path, Cummins DQLH fuel
+  curve, time x30). Unavailable sets leave auto start / START / N+1;
+  overload cascade (model). POST /api/devices/{id}/fuel, DRILL-07, field
+  view core/field_gen.js. Floors (Linux): pytest 2038 / vitest 903 (52).
+NEXT: operator applies the bundle and tries DRILL-07; then L4 UPS bypass,
+  or GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```
