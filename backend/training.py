@@ -54,11 +54,12 @@ VIOLATION_EVENTS = ("refused", "procedure_blocked", "bay_blocked")
 CHECK_TYPES = (
     "alarms_acked", "gens_started_cover_demand", "gens_on_bus_cover_demand",
     "transfer_state", "device_state", "no_sets_running",
-    "sync_slip_within", "event_seen", "cubicle", "device_authority", "xfmr", "all",
+    "sync_slip_within", "event_seen", "cubicle", "device_authority", "xfmr", "gen_fuel", "all",
 )
-FAIL_TYPES = ("load_lost", "command_used", "xfmr_internal_fault")
+FAIL_TYPES = ("load_lost", "command_used", "xfmr_internal_fault", "gen_shutdown")
 INJECT_TYPES = ("utility_loss", "utility_restore", "preset_on_generators", "ups_fault",
-                "closed_transition_mode", "synchro", "xfmr_spare_key", "utility_voltage")
+                "closed_transition_mode", "synchro", "xfmr_spare_key", "utility_voltage",
+                "gen_condition")
 
 
 class TrainingError(Exception):
@@ -131,6 +132,34 @@ def _events_since(events: list[dict[str, Any]], mark: float) -> list[dict[str, A
     return [e for e in events if e.get("ts", 0) >= mark]
 
 
+def _dig(obj: Any, dotted: Any) -> Any:
+    """Value at a dotted path ("pumps.0.mode"), None when absent."""
+    for part in str(dotted or "").split("."):
+        if isinstance(obj, list):
+            try:
+                obj = obj[int(part)]
+            except (ValueError, IndexError):
+                return None
+        elif isinstance(obj, dict):
+            obj = obj.get(part)
+        else:
+            return None
+    return obj
+
+
+def _match(v: Any, cond: dict[str, Any]) -> bool:
+    if cond.get("truthy"):
+        return bool(v)
+    if "min" in cond or "max" in cond:
+        try:
+            x = float(v)
+        except (TypeError, ValueError):
+            return False
+        return float(cond.get("min", float("-inf"))) <= x <= float(cond.get("max", float("inf")))
+    wanted = cond.get("values") if "values" in cond else [cond.get("value")]
+    return v in wanted
+
+
 def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
           events: list[dict[str, Any]] | None = None) -> bool:
     kind = cond.get("type")
@@ -180,6 +209,10 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
             return float(cond.get("min", float("-inf"))) <= x <= float(cond.get("max", float("inf")))
         wanted = cond.get("values") if "values" in cond else [cond.get("value")]
         return v in wanted
+    if kind == "gen_fuel":
+        # L3: {"device", "field": "pumps.0.mode"} + value / values / truthy / min / max
+        dev = next((d for d in plant.get("devices", []) if d.get("id") == cond.get("device")), {})
+        return _match(_dig(dev.get("fuel"), cond.get("field")), cond)
     if kind == "all":
         return all(check(sub, plant, engine, events) for sub in cond.get("of") or [{}])
     if kind == "device_authority":
@@ -242,6 +275,11 @@ def failed(conds: list[dict[str, Any]], plant: dict[str, Any],
                     return cond.get("reason") or (
                         f"internal fault in XFMR {str(cond.get('path')).upper()}: "
                         "DETC moved with the transformer energized")
+        if cond.get("type") == "gen_shutdown":
+            for e in events or []:
+                if e.get("event") == "protection_trip" and e.get("relay") == "SHUTDOWN" \
+                        and e.get("device_id") == cond.get("device"):
+                    return cond.get("reason") or f"{cond.get('device')} shut down: {e.get('detail')}"
         if cond.get("type") == "command_used":
             for e in events or []:
                 if e.get("event") == "command" and e.get("command") == cond.get("command"):
@@ -318,6 +356,9 @@ class TrainingManager:
                     ctl.set_spare_key(inj["path"], bool(inj.get("available", True)), "training")
                 elif kind == "utility_voltage":
                     ctl.set_grid_voltage(inj["path"], inj["kv"], "training")
+                elif kind == "gen_condition":
+                    params = {k: v for k, v in inj.items() if k not in ("type", "device", "condition")}
+                    ctl.inject_gen_condition(inj["device"], inj["condition"], "training", **params)
             self.session = Session(drill=drill, operator=operator,
                                    started_ms=self._now_ms(), events_mark=mark)
             self.last_report = None

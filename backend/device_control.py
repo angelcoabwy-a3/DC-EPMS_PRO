@@ -66,7 +66,7 @@ from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Request
 
-from backend import mv_cubicle as cub, mv_switching as mv, mv_xfmr as xf
+from backend import gen_fuel as gf, mv_cubicle as cub, mv_switching as mv, mv_xfmr as xf
 
 # ── Kinds ───────────────────────────────────────────────────────────
 KIND_UPS = "ups"
@@ -123,6 +123,7 @@ ACTION_MV_STEP = "MV_SWITCHING_STEP"
 ACTION_MV_WITNESS = "MV_SWITCHING_WITNESS"
 ACTION_MV_FIELD = "MV_SWITCHGEAR_FIELD_ACTION"
 ACTION_XFMR_FIELD = "XFMR_FIELD_ACTION"
+ACTION_GEN_FIELD = "GENERATOR_FIELD_ACTION"
 
 SIMULATION_NOTICE = (
     "SIMULATED plant. No field equipment is connected: states and "
@@ -347,6 +348,10 @@ class DeviceController:
     xfmrs: dict[str, xf.Transformer] = field(default_factory=dict)
     grid_kv: dict[str, float] = field(default_factory=dict)
     _xfmr_at: float | None = None
+    # L3: generator set field model (ECS, e-stop, heater, day tank, pumps)
+    gensets: dict[str, gf.GenSet] = field(default_factory=dict)
+    bulk_l: dict[str, float] = field(default_factory=dict)
+    _gen_at: float | None = None
 
     # ── Construction ────────────────────────────────────────────────
     @classmethod
@@ -374,6 +379,7 @@ class DeviceController:
                 ctl.cubicles[(path, brk)] = cub.Cubicle(breaker=brk)
             ctl.xfmrs[path] = xf.Transformer(path=path)
             ctl.grid_kv[path] = xf.PRIMARY_KV
+            ctl.bulk_l[path] = gf.BULK_TANK_L
             upper = path.upper()
             for n in range(1, int(ups["units_per_path"]) + 1):
                 ctl._add(Device(
@@ -402,6 +408,7 @@ class DeviceController:
                     state=GEN_STANDBY, state_since=now,
                 ))
                 ctl.bays[device_id] = mv.Bay(bay_id=device_id)
+                ctl.gensets[device_id] = gf.GenSet(device_id=device_id, path=path)
         return ctl
 
     def _add(self, dev: Device) -> None:
@@ -443,8 +450,14 @@ class DeviceController:
                 continue
             bay = self.bays[dev.device_id]
             elapsed = now - dev.state_since
-            if dev.state == GEN_CRANKING and elapsed >= CRANK_TIME_S:
-                dev.state, dev.state_since = GEN_RUNNING, dev.state_since + CRANK_TIME_S
+            gs = self.gensets.get(dev.device_id)
+            if gs is not None and dev.state == GEN_CRANKING and gs.crank_cold is None:
+                gs.crank_cold = gf.cold(gs)
+            ready_s = CRANK_TIME_S + (gf.COLD_START_DELAY_S if gs is not None and gs.crank_cold else 0.0)
+            if dev.state == GEN_CRANKING and elapsed >= ready_s:
+                if gs is not None:
+                    gs.crank_cold = None
+                dev.state, dev.state_since = GEN_RUNNING, dev.state_since + ready_s
                 # Auto-synchroniser: 52-G closes only if every interlock
                 # permits it (bay in service, engine at rated).
                 ctx = mv.BayContext(now=now, engine_at_rated=True)
@@ -467,6 +480,7 @@ class DeviceController:
                 if xfer is not None:
                     self._event("spring_charged", xfer, "controller", breaker=brk, by="motor")
         self._advance_xfmrs(now)
+        self._advance_gensets(now)
         self._advance_auto_transfer(now)
         self._advance_battery(now)
         self._advance_sync(now)
@@ -704,6 +718,174 @@ class DeviceController:
             self.grid_kv[path] = kv
             return self._plant_event("utility_voltage", path, actor, kv=kv)
 
+    # ── L3: generator sets (ECS, e-stop, heater, fuel system) ──────
+    def _gen_running(self, dev: Device) -> bool:
+        return dev.state in (GEN_CRANKING, GEN_RUNNING, GEN_ON_LOAD)
+
+    def _gen_kw(self, dev: Device) -> float:
+        if dev.state != GEN_ON_LOAD:
+            return 0.0
+        return self._demand_kw(dev.path) / max(1, len(self._gens_on_bus(dev.path)))
+
+    def _gen_ctx(self, dev: Device, actor: str = "") -> gf.GenContext:
+        return gf.GenContext(
+            running=self._gen_running(dev), stopped=dev.state == GEN_STANDBY,
+            bulk_l=self.bulk_l.get(dev.path, 0.0), actor=actor,
+        )
+
+    def _gen_readings(self, dev: Device) -> list[dict[str, Any]]:
+        gs = self.gensets.get(dev.device_id)
+        if gs is None:
+            return []
+        return [
+            _r("Day tank (model)", gs.level_pct, "%", 1),
+            _r("Coolant temperature (model)", gs.coolant_c, "C", 1),
+            _r("Fuel rate (data sheet curve)", gs.burn_lph, "L/h", 0),
+        ]
+
+    def _bulk_summary(self, path: str) -> dict[str, Any]:
+        bulk = self.bulk_l.get(path)
+        if bulk is None:
+            return {}
+        burn = sum(g.burn_lph for g in self.gensets.values() if g.path == path)
+        return {
+            "bulk_fuel_l": round(bulk),
+            "bulk_fuel_pct": round(bulk / gf.BULK_TANK_L * 100.0, 1),
+            "fuel_burn_lph": round(burn, 1),
+            "bulk_hours_left": round(bulk / burn, 2) if burn > 0 else None,
+        }
+
+    def _gen_trip(self, dev: Device, cause: str, *, cascade: bool = True) -> None:
+        """A set stops on its own protection (shutdown, e-stop): 52-G
+        opens, the engine is stopped. If the remaining sets cannot carry
+        the path, they trip on overload too (model; no load shedding)."""
+        bay = self.bays[dev.device_id]
+        if bay.cb == mv.CLOSED:
+            mv.apply(bay, mv.OP_OPEN_CB, self.clock())
+        dev.state, dev.state_since = GEN_STANDBY, self.clock()
+        self._drop_selections(dev.device_id)
+        self._event("protection_trip", dev, "protection", relay="SHUTDOWN",
+                    breaker="52-G", detail=cause)
+        if cascade:
+            self._check_gen_overload(dev.path)
+
+    def _check_gen_overload(self, path: str) -> None:
+        if not self._path_on_generators(path):
+            return
+        on_bus = self._gens_on_bus(path)
+        cap = sum(d.rated_kw for d in on_bus)
+        demand = self._demand_kw(path)
+        if on_bus and cap < demand:
+            cause = (f"OVERLOAD: {cap / 1000:.2f} MW left on the bus for {demand / 1000:.2f} MW "
+                     "(model: no load shedding, the remaining sets trip)")
+            for d in on_bus:
+                gs = self.gensets.get(d.device_id)
+                if gs is not None:
+                    gs.shutdown = "OVERLOAD"
+                self._gen_trip(d, cause, cascade=False)
+
+    def _advance_gensets(self, now: float) -> None:
+        last = self._gen_at
+        self._gen_at = now
+        dt = 0.0 if last is None else max(0.0, now - last)
+        for dev in self._of_kind(KIND_GENERATOR):
+            gs = self.gensets.get(dev.device_id)
+            if gs is None:
+                continue
+            ctx = self._gen_ctx(dev)
+            frac = self._gen_kw(dev) / dev.rated_kw if dev.rated_kw else 0.0
+            events, drawn = gf.tick(gs, dt, frac, ctx)
+            self.bulk_l[dev.path] = max(0.0, self.bulk_l.get(dev.path, 0.0) - drawn)
+            for ev in events:
+                kind = ev.pop("event")
+                if kind == "gen_shutdown":
+                    self._gen_trip(dev, ev["cause"])
+                else:
+                    self._event(kind, dev, "protection", **ev)
+
+    def gen_action(self, device_id: str, action: str, actor: str) -> dict[str, Any]:
+        """L3: an operation at a generator set (engine control panel,
+        e-stop, jacket heater, day-tank pumps, fuel filter, rupture
+        basin). Recorded as a "command" event named ACTION@GENSET_X_NN."""
+        action = str(action or "").upper()
+        with self._lock:
+            self._advance()
+            dev = self._get(device_id)
+            if dev.kind != KIND_GENERATOR:
+                raise DeviceControlError(400, "generator field actions apply to a generator set")
+            gs = self.gensets[dev.device_id]
+            if action not in gf.ACTIONS:
+                raise DeviceControlError(400, f"action must be one of {list(gf.ACTIONS)}")
+            ctx = self._gen_ctx(dev, actor)
+            reason = gf.interlock(gs, action, ctx)
+            if reason:
+                raise DeviceControlError(409, reason)
+            previous = dev.state
+            effect = gf.apply(gs, action, ctx)
+            now = self.clock()
+            event = self._event(
+                "command", dev, actor, command=f"{action}@{dev.device_id.upper()}", field=True,
+                equipment="gen", action=action, from_state=previous,
+                ecs_mode=gs.ecs_mode, estop=gs.estop, heater_on=gs.heater_on,
+                day_tank_pct=round(gs.level_pct, 1),
+                pumps={"P-1": gs.p1.mode, "P-2": gs.p2.mode}, filter=gs.filter_sel,
+            )
+            if effect == "start" and dev.state in (GEN_STANDBY, GEN_COOLDOWN):
+                dev.state, dev.state_since = GEN_CRANKING, now
+                self._event("local_start", dev, actor, to_state=GEN_CRANKING)
+            elif effect == "stop":
+                bay = self.bays[dev.device_id]
+                if bay.cb == mv.CLOSED:
+                    mv.apply(bay, mv.OP_OPEN_CB, now)
+                dev.state, dev.state_since = GEN_COOLDOWN, now
+                self._event("local_stop", dev, actor, to_state=GEN_COOLDOWN)
+                self._check_gen_overload(dev.path)
+            elif effect == "estop" and self._gen_running(dev):
+                self._gen_trip(dev, "EMERGENCY STOP pushed at the set")
+            self._advance()
+            event["to_state"] = dev.state
+            return event
+
+    def inject_gen_condition(self, device_id: str, condition: str, actor: str,
+                             **params: Any) -> dict[str, Any]:
+        """Training conditions on a generator set (simulation only)."""
+        with self._lock:
+            self._advance()
+            dev = self._get(device_id)
+            if dev.kind != KIND_GENERATOR:
+                raise DeviceControlError(400, "generator conditions apply to a generator set")
+            gs = self.gensets[dev.device_id]
+            if condition == "pump_overload":
+                pump = gs.p1 if str(params.get("pump", "P-1")).upper() in ("P-1", "P1") else gs.p2
+                pump.overload, pump.running = True, False
+            elif condition == "pump_mode":
+                pump = gs.p1 if str(params.get("pump", "P-1")).upper() in ("P-1", "P1") else gs.p2
+                mode = str(params.get("mode", gf.AUTO)).upper()
+                if mode not in gf.PUMP_MODES:
+                    raise DeviceControlError(400, f"pump mode must be one of {list(gf.PUMP_MODES)}")
+                pump.mode = mode
+            elif condition == "basin_leak":
+                gs.leak_present = True
+            elif condition == "filter_clog":
+                side = str(params.get("side", "A")).upper()
+                gs.clog[side] = max(0.0, min(1.0, _num(params.get("value", 1.0))))
+            elif condition == "water_in_fuel":
+                side = str(params.get("side", "A")).upper()
+                gs.water[side] = max(0.0, min(100.0, _num(params.get("pct", 60.0))))
+            elif condition == "day_tank_level":
+                gs.day_l = gf.DAY_TANK_L * max(0.0, min(100.0, _num(params.get("pct", 50.0)))) / 100.0
+            elif condition == "heater_off":
+                gs.heater_on = False
+                if "coolant_c" in params:
+                    gs.coolant_c = _num(params["coolant_c"])
+            elif condition == "bulk_level":
+                self.bulk_l[dev.path] = gf.BULK_TANK_L * max(0.0, min(100.0, _num(params.get("pct", 50.0)))) / 100.0
+            else:
+                raise DeviceControlError(400, f"unknown generator condition {condition!r}")
+            gf.refresh(gs)
+            return self._event("gen_condition", dev, actor, condition=condition,
+                               **{k: v for k, v in params.items() if isinstance(v, int | float | str)})
+
     # ── T3: generator bus vs utility (synchroscope model) ──────────
     def _islanded(self, path: str) -> bool:
         """Generator bus carrying the path with utility voltage present
@@ -859,6 +1041,9 @@ class DeviceController:
             if self._bay_procedure(d.device_id) is not None:
                 continue
             if d.authority == AUTH_LOCAL or (auto_only and d.authority != AUTH_AUTO):
+                continue
+            gs = self.gensets.get(d.device_id)
+            if gs is not None and (gf.available(gs) or gs.ecs_mode != gf.ECS_AUTO):
                 continue
             out.append(d)
         return out
@@ -1048,9 +1233,11 @@ class DeviceController:
             )
             for name in ("devices", "bays", "procedures", "path_share", "utility_ok",
                          "battery_soc", "load_lost", "faults", "closed_transition",
-                         "gen_hz", "sync_angle", "cubicles", "xfmrs", "grid_kv"):
+                         "gen_hz", "sync_angle", "cubicles", "xfmrs", "grid_kv",
+                         "gensets", "bulk_l"):
                 setattr(self, name, getattr(fresh, name))
             self._xfmr_at = None
+            self._gen_at = None
             self._selections.clear()
             self._batt_at = None
             self._sync_at = None
@@ -1077,8 +1264,18 @@ class DeviceController:
         ]
 
     def _gens_available(self, path: str) -> list[Device]:
-        """Sets that could be started: bay in service."""
-        return [d for d in self._of(KIND_GENERATOR, path) if self.bays[d.device_id].in_service]
+        """Sets that could be started: bay in service and, L3, the set
+        itself able to run (no e-stop or latched shutdown, fuel above the
+        critical level, engine control not in STOP)."""
+        out = []
+        for d in self._of(KIND_GENERATOR, path):
+            if not self.bays[d.device_id].in_service:
+                continue
+            gs = self.gensets.get(d.device_id)
+            if gs is not None and (gf.available(gs) or gs.ecs_mode == gf.ECS_STOP):
+                continue
+            out.append(d)
+        return out
 
     def _it_load_kw(self, path: str) -> float:
         return self._it_design_kw * self.path_share.get(path, 0.0)
@@ -1118,6 +1315,7 @@ class DeviceController:
                        XFER_UTILITY if self._bus_energized(path) else "NONE"),
             "utility_ok": self.utility_ok.get(path, True),
             "incomer_live": self._incomer_live(path),
+            **self._bulk_summary(path),
             "bus_energized": self._bus_energized(path),
             "load_lost": self.load_lost.get(path, False),
             "battery_soc_pct": round(self.battery_soc.get(path, 1.0) * 100, 1),
@@ -1221,6 +1419,13 @@ class DeviceController:
             if command == "START":
                 if dev.state != GEN_STANDBY:
                     return f"Engine is {dev.state.replace('_', ' ').lower()}, not in standby."
+                gs = self.gensets.get(dev.device_id)
+                if gs is not None:
+                    why = gf.available(gs)
+                    if why:
+                        return why
+                    if gs.ecs_mode != gf.ECS_AUTO:
+                        return f"Engine control at the set is in {gs.ecs_mode}, not AUTO."
                 if bay.loto:
                     return "Bay is under LOTO."
                 if not bay.in_service:
@@ -1306,6 +1511,14 @@ class DeviceController:
         if dev.state == GEN_ON_LOAD:
             kw = self._demand_kw(dev.path) / max(1, len(self._gens_on_bus(dev.path)))
         return [
+            *self._gen_readings_base(rpm, volts, hz, kw, batt, dev),
+            *self._gen_readings(dev),
+        ]
+
+    @staticmethod
+    def _gen_readings_base(rpm: float, volts: float, hz: float, kw: float, batt: float,
+                           dev: Device) -> list[dict[str, Any]]:
+        return [
             _r("Engine speed", rpm, "rpm", 0),
             _r("Output voltage", volts / 1000, "kV", 1),
             _r("Output frequency", hz, "Hz", 1),
@@ -1361,6 +1574,11 @@ class DeviceController:
                 return {"tone": "crit", "text": "Both mains open: MV bus dead"}
             return {"tone": "warn", "text": "Path on generators"}
         bay = self.bays[dev.device_id]
+        gs = self.gensets.get(dev.device_id)
+        if gs is not None and gs.estop:
+            return {"tone": "crit", "text": "EMERGENCY STOP pushed in at the set"}
+        if gs is not None and gs.shutdown:
+            return {"tone": "crit", "text": f"Shutdown: {gs.shutdown}"}
         if bay.loto:
             return {"tone": "info", "text": "Isolated, earthed and locked out"}
         if not bay.in_service:
@@ -1402,6 +1620,9 @@ class DeviceController:
         }
         if dev.kind == KIND_GENERATOR:
             snap["switching"] = self._switching(dev)
+            gs = self.gensets.get(dev.device_id)
+            if gs is not None:
+                snap["fuel"] = gf.describe(gs, self._gen_ctx(dev))
         if dev.kind == KIND_TRANSFER:
             snap["synchro"] = self.synchro(dev.path)
             snap["cubicles"] = self.cubicles_of(dev)
@@ -2022,6 +2243,28 @@ def register_device_control_routes(
             {k: event.get(k) for k in ("device_id", "action", "tap_from", "tap", "key_k1",
                                         "key_k2", "primary_closed", "detc_unlocked_by",
                                         "energized_before", "energized", "outcome")},
+        )
+        return {"success": True, "event": event, "ledger_entry_id": entry_id}
+
+    @app.post("/api/devices/{device_id}/fuel")
+    async def generator_field_action(
+        device_id: str, request: Request, payload: dict = Body(...),
+    ) -> dict[str, Any]:
+        """L3: an operation at a generator set (engine control panel,
+        e-stop, jacket heater, day-tank pumps, fuel filter, basin)."""
+        actor = authorise(request, payload)
+        ctl = _controller()
+        action = str(payload.get("action") or "")
+        try:
+            event = ctl.gen_action(device_id, action, actor)
+        except DeviceControlError as exc:
+            ctl.refusal_event(device_id, actor, exc.detail,
+                              command=f"{action.upper()}@{device_id.upper()}")
+            raise _fail(exc) from exc
+        entry_id = await _ledger_append(
+            request.app, actor, ACTION_GEN_FIELD,
+            {k: event.get(k) for k in ("device_id", "action", "from_state", "to_state", "ecs_mode",
+                                        "estop", "heater_on", "day_tank_pct", "pumps", "filter")},
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 

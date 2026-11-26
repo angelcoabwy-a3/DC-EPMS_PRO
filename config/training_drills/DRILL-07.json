@@ -1,0 +1,102 @@
+{
+  "id": "DRILL-07",
+  "version": 1,
+  "title": "Day-tank transfer pump trip on generator A1 while path A runs on generators",
+  "summary": "Path A runs on its generator bus. On generator A1 the lead transfer pump P-1 has tripped on its motor overload (49/OL) and the lag pump P-2 was left in OFF after maintenance, so nothing refills the 1,200 L sub-base day tank: it reads 55 % and falls. At the set (field view, GENERATOR, set A1) restore the lag pump P-2 to AUTO, reset the P-1 overload, confirm P-1 is in AUTO, and bring the day tank back above 80 %. If the level reaches 15 % the engine shuts down on low fuel and the drill ends. Fuel time runs x30 (shown on the panel).",
+  "path": "a",
+  "target_s": 90,
+  "time_limit_s": 600,
+  "procedure_commands": [
+    "P2_AUTO@GENSET_A_01",
+    "P2_HAND@GENSET_A_01",
+    "RESET_P1_OL@GENSET_A_01",
+    "P1_AUTO@GENSET_A_01"
+  ],
+  "references": [
+    "Day-tank guide specification (Phillips Pump): Manual-Off-Auto selector per pump, motor circuit breaker per pump, rupture-basin float with alarm and pump shutdown (checked 2026-11-26)",
+    "Fuel burn: Cummins DQLH 2750 kW standby 60 Hz data sheet, 239 / 391 / 542 / 694 L/h at 1/4 to full load (checked 2026-11-26); the no-load value is extrapolated",
+    "Float levels 95 / 85 / 60 / 40 / 15 % and the 1,200 L day tank: operator master specification, not a vendor drawing",
+    "Pump flow, filter, heater and time-compression values are model values"
+  ],
+  "setup": {
+    "inject": [
+      {
+        "type": "preset_on_generators",
+        "path": "a"
+      },
+      {
+        "type": "gen_condition",
+        "device": "genset_a_01",
+        "condition": "pump_overload",
+        "pump": "P-1"
+      },
+      {
+        "type": "gen_condition",
+        "device": "genset_a_01",
+        "condition": "pump_mode",
+        "pump": "P-2",
+        "mode": "OFF"
+      },
+      {
+        "type": "gen_condition",
+        "device": "genset_a_01",
+        "condition": "day_tank_level",
+        "pct": 55
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "LAG_AUTO",
+      "text": "Turn the lag pump P-2 selector to AUTO",
+      "check": {
+        "type": "gen_fuel",
+        "device": "genset_a_01",
+        "field": "pumps.1.mode",
+        "values": [
+          "AUTO"
+        ]
+      }
+    },
+    {
+      "id": "RESET_OL",
+      "text": "Reset the P-1 motor overload relay (49/OL)",
+      "check": {
+        "type": "gen_fuel",
+        "device": "genset_a_01",
+        "field": "pumps.0.overload",
+        "value": false
+      }
+    },
+    {
+      "id": "LEAD_AUTO",
+      "text": "Confirm the lead pump P-1 selector is in AUTO",
+      "check": {
+        "type": "gen_fuel",
+        "device": "genset_a_01",
+        "field": "pumps.0.mode",
+        "value": "AUTO"
+      }
+    },
+    {
+      "id": "REFILL",
+      "text": "Day tank back above 80 %",
+      "check": {
+        "type": "gen_fuel",
+        "device": "genset_a_01",
+        "field": "day_tank_pct",
+        "min": 80
+      }
+    }
+  ],
+  "fail": [
+    {
+      "type": "gen_shutdown",
+      "device": "genset_a_01"
+    },
+    {
+      "type": "load_lost",
+      "path": "a"
+    }
+  ]
+}

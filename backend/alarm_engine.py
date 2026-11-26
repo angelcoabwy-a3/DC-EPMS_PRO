@@ -247,6 +247,13 @@ def conditions_from_plant(plant: dict[str, Any]) -> list[Condition]:
             Condition(f"PATH_{P}_GEN_N1_LOST", gen_n and not bool(p.get("gen_n_plus_1_ok", True)),
                       LOW, f"Path {P} generation lost N+1", src),
         ]
+        # L3: main (bulk) fuel tank of the path.
+        if p.get("bulk_fuel_pct") is not None:
+            hrs = p.get("bulk_hours_left")
+            low = float(p["bulk_fuel_pct"]) < 25.0 or (hrs is not None and float(hrs) < 3.0)
+            out.append(Condition(f"PATH_{P}_BULK_FUEL_LOW", low, MEDIUM,
+                                 f"Path {P} main fuel tank low ({p['bulk_fuel_pct']} %"
+                                 + (f", {hrs} h left at the present burn)" if hrs is not None else ")"), src))
     for d in plant.get("devices", []):
         status = d.get("status") or {}
         did = str(d.get("id"))
@@ -303,4 +310,35 @@ def conditions_from_plant(plant: dict[str, Any]) -> list[Condition]:
         elif d.get("kind") == "generator":
             out.append(Condition(f"DEV_{did}_BAY_OOS", status.get("text") == "Bay not in service",
                                  LOW, f"{d.get('display', did)}: bay not in service", did))
+            # L3: engine control panel and fuel system of the set.
+            f = d.get("fuel")
+            if f:
+                name = d.get("display", did)
+                pumps = f.get("pumps") or []
+                filt = f.get("filter") or {}
+                out += [
+                    Condition(f"DEV_{did}_ESTOP", bool(f.get("estop")), HIGH,
+                              f"{name}: emergency stop pushed in", did),
+                    Condition(f"DEV_{did}_SHUTDOWN", bool(f.get("shutdown")) and not f.get("estop"), HIGH,
+                              f"{name}: shutdown, {f.get('shutdown')}", did),
+                    Condition(f"DEV_{did}_NOT_AUTO", f.get("ecs_mode") != "AUTO", LOW,
+                              f"{name}: engine control in {f.get('ecs_mode')}, not AUTO", did),
+                    Condition(f"DEV_{did}_FUEL_LOW", bool(f.get("low_alarm")), MEDIUM,
+                              f"{name}: day tank low ({f.get('day_tank_pct')} %)", did),
+                    Condition(f"DEV_{did}_FUEL_HIHI", bool(f.get("hi_hi")), MEDIUM,
+                              f"{name}: day tank high-high level, fill stopped", did),
+                    Condition(f"DEV_{did}_PUMP_OL", any(p.get("overload") for p in pumps), MEDIUM,
+                              f"{name}: day-tank pump motor overload tripped", did),
+                    Condition(f"DEV_{did}_PUMP_NOT_AUTO", any(p.get("mode") != "AUTO" for p in pumps), LOW,
+                              f"{name}: day-tank pump selector not in AUTO", did),
+                    Condition(f"DEV_{did}_BASIN_LEAK", bool(f.get("leak")), HIGH,
+                              f"{name}: fuel in the rupture basin, pumps stopped", did),
+                    Condition(f"DEV_{did}_FILTER_DP", bool(f.get("dp_alarm")), MEDIUM,
+                              f"{name}: fuel filter restriction ({filt.get('dp_psi')} psi, model)", did),
+                    Condition(f"DEV_{did}_WATER_IN_FUEL", bool(f.get("water_alarm")), MEDIUM,
+                              f"{name}: water in the fuel filter bowl", did),
+                    Condition(f"DEV_{did}_LOW_COOLANT_TEMP", bool(f.get("coolant_low")), MEDIUM,
+                              f"{name}: coolant {f.get('coolant_c')} C, below the NFPA 110 Level 1 "
+                              "32 C minimum (check the jacket-water heater)", did),
+                ]
     return out
