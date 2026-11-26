@@ -90,6 +90,13 @@ describe('DC-EPMS-064 — drawer state', () => {
 });
 
 describe('DC-EPMS-064 — structural fences', () => {
+    it('declares the standard web-app tag next to the apple- one (no Chrome deprecation warning)', () => {
+        const std = HTML.indexOf('<meta name="mobile-web-app-capable" content="yes">');
+        const apple = HTML.indexOf('<meta name="apple-mobile-web-app-capable" content="yes">');
+        expect(std).toBeGreaterThan(-1);
+        expect(apple).toBeGreaterThan(-1);
+    });
+
     it('viewport meta covers the notch / Dynamic Island (viewport-fit=cover)', () => {
         expect(HTML).toMatch(/name="viewport"[^>]*viewport-fit=cover/);
     });
