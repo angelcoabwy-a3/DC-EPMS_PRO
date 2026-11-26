@@ -1400,12 +1400,14 @@ function _ensureField() {
         + '<button type="button" data-fequip="wiring">CONTROL</button>'
         + '<button type="button" data-fequip="scope">RECORDER</button></span>'
         + '<span class="fsg-note">Layer 2 · equipment view · every operation is checked by the server interlocks and recorded</span>'
+        + '<button type="button" class="fsg-size" data-fsize="1" aria-pressed="false" title="Show the equipment larger (scroll) or fit it in the window">LARGE TEXT</button>'
         + '<button type="button" class="fsg-close" data-fclose="1" aria-label="Close field view">CLOSE ✕</button></div>'
         + '<div class="fsg-stage" id="pwr-field-stage"></div><div class="fsg-foot" id="pwr-field-foot"></div></div>';
     el.addEventListener('click', _onFieldClick);
     document.addEventListener('keydown', (ev) => {
         if (ev.key === 'Escape' && !el.hidden) _closeField();
     });
+    _applyFieldSize(el);
     document.body.appendChild(el);
     return el;
 }
@@ -1503,9 +1505,37 @@ function _applyField() {
 
 const _wait = (ms) => new Promise((r) => { setTimeout(r, ms); });
 
+// Readability: LARGE draws the equipment up to 1600 px wide (the stage
+// scrolls), FIT keeps the whole panel in the window. Remembered per
+// browser; phones start in FIT.
+const FIELD_SIZE_KEY = 'dcepms.field.size';
+function _fieldSize() {
+    try {
+        const v = window.localStorage.getItem(FIELD_SIZE_KEY);
+        if (v === 'large' || v === 'fit') return v;
+    } catch (_e) { /* storage blocked */ }
+    return (typeof window !== 'undefined' && window.innerWidth < 900) ? 'fit' : 'large';
+}
+
+function _applyFieldSize(el, size = _fieldSize()) {
+    el.setAttribute('data-size', size);
+    const b = el.querySelector('[data-fsize]');
+    if (b) {
+        b.setAttribute('aria-pressed', String(size === 'large'));
+        b.textContent = size === 'large' ? 'FIT VIEW' : 'LARGE TEXT';
+    }
+}
+
 async function _onFieldClick(ev) {
     const t = ev.target;
     if (t.closest && t.closest('[data-fclose]')) { _closeField(); return; }
+    if (t.closest && t.closest('[data-fsize]')) {
+        const el = document.getElementById('pwr-field');
+        const next = el.getAttribute('data-size') === 'large' ? 'fit' : 'large';
+        try { window.localStorage.setItem(FIELD_SIZE_KEY, next); } catch (_e) { /* storage blocked */ }
+        _applyFieldSize(el, next);
+        return;
+    }
     const pb = t.closest && t.closest('[data-fpath]');
     if (pb) { _openField(pb.dataset.fpath); return; }
     const eb = t.closest && t.closest('[data-fequip]');

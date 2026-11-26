@@ -11518,3 +11518,12 @@ table.opt-votes td {
 .tr-deb-warn { margin-bottom: 6px; color: #ffa726; }
 .tr-deb-text { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px/1.45 var(--font-sans, inherit); color: #e6e9ed; max-height: 360px; overflow: auto; }
 .tr-deb-foot { margin-top: 6px; color: #8a929c; }
+
+/* Field view readability (2026-11-26): LARGE draws the equipment up to
+ * 1600 px wide and the stage scrolls; FIT keeps the old fit-to-window. */
+.fsg-shell { min-height: 0; }
+.fsg-stage { flex: 1 1 auto; min-height: 0; }
+.pwr-field[data-size="large"] .fsg-shell { width: 98vw; }
+.pwr-field[data-size="large"] .fsg-svg { max-height: none; max-width: 1600px; margin: 0 auto; }
+.fsg-bar .fsg-size { border: 1px solid #2a3038; border-radius: 4px; white-space: nowrap; }
+.fsg-bar .fsg-size[aria-pressed="true"] { background: transparent; color: #ffd21f; border-color: #ffd21f; }
