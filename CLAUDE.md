@@ -210,9 +210,16 @@ L4 UPS BYPASS (2026-11-26, ADR-017): backend/ups_bypass.py (Q1 / Q2 / Q4
   battery / maintenance bypass / lost, POST /api/ups-systems/{path}/action,
   DRILL-08, field view core/field_ups.js. Floors (Linux): pytest 2058 /
   vitest 910 (53 files).
-NEXT: operator applies the bundle and tries DRILL-08; then L5
-  diagnostics (battery strings, thermography, H2, CPT fuses, multimeter)
-  or GO for the -068 closing lote.
+L5 DIAGNOSTICS (2026-11-26, bf614a5 / 9d38e26, ADR-018):
+  backend/battery_room.py (4 x 40 VRLA jars, SB1-4 + padlock + mid-string
+  link, IR scan, analyzer ohmic +30/+50 %, H2 EF-1/EF-2, alarm 1 % LEL,
+  HIHI 25 % LEL) and backend/mv_wiring.py (F-1A utility sensing + 27,
+  F-1B gen bus sensing, TB-1, multimeter). Inspections are "inspection"
+  events. DRILL-09 hot jar, DRILL-10 false start. Field views
+  core/field_battery.js, core/field_wiring.js. Floors (Linux): pytest
+  2089 / vitest 925 (55 files).
+NEXT: operator applies the bundle and tries DRILL-09 / DRILL-10; then L6
+  oscillography (COMTRADE) or GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```

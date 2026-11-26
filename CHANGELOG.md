@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### L5 field diagnostics: battery room and MV control wiring (2026-11-26)
+
+- **Battery room** (ADR-018): `backend/battery_room.py` per path, 4 strings
+  x 40 VRLA jars at 542.1 VDC float behind QF1. String disconnects SB1-SB4
+  with padlock, mid-string link, infrared scan (ironbow view), battery
+  analyzer (jar voltage, ohmic value: +30 % warn, +50 % replace, Battcon
+  2013), jar replacement only with the string isolated, locked and split.
+  H2 exhaust EF-1 lead / EF-2 lag, alarm 1 % LEL (400 ppm, operator spec),
+  high-high 25 % LEL (code limit 1 % by volume). Strings off line scale the
+  battery energy. Heating rate, 60 C runaway, float currents and gas
+  evolution are model values. DRILL-09 (hot jar, string 3 jar 18).
+- **MV control compartment**: `backend/mv_wiring.py`, PT secondary fuses
+  F-1A (utility sensing, also ANSI 27) and F-1B (generator bus sensing),
+  TB-1 test points, multimeter (V AC, V DC, resistance, continuity). The
+  controller uses sensed utility for 27, auto transfer and retransfer, and
+  sensed generator bus before 52-GM closes. A blown F-1A starts a false
+  emergency transfer (no ANSI 60 element in the model). DRILL-10.
+- Inspections are `inspection` events, not unplanned switching. Routes
+  `POST /api/battery-rooms/{path}/action`, `POST /api/devices/{id}/wiring`.
+  Field views `core/field_battery.js`, `core/field_wiring.js`; field bar
+  wraps on phones.
+- Floors (Linux): pytest 2089 passed (3 pre-existing test_optimizer
+  errors), vitest 925 / 55 files.
+
 ### L4 UPS bank system breakers and maintenance bypass (2026-11-26)
 
 - **L4** (ADR-017): `backend/ups_bypass.py` per path: Q1 rectifier input,
