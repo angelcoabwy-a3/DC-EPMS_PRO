@@ -201,3 +201,35 @@ def test_default_provider_uses_muse_spark(monkeypatch):
     assert seen["model"] == ti.DEFAULT_MODEL
     assert "Spanish" in seen["system_prompt"]
     assert r["source"] == "deterministic"
+
+
+def test_failed_drill_debrief_lists_what_was_missing():
+    """DRILL-07 left alone: the engine shuts down on low fuel. The
+    debrief says why it ended and which steps were not reached, and does
+    not call 'no step done' something that went well."""
+    clock = Clock()
+    ctl = dc.DeviceController.from_design(dc.load_design(DESIGN), clock=clock, wall_clock=clock)
+    tm = tr.TrainingManager(tr.load_drills(DRILLS), clock=clock)
+    eng = ae.AlarmEngine()
+    tm.start("DRILL-07", "alice", ctl, eng)
+    for _ in range(200):
+        clock.t += 5
+        view = tm.evaluate(ctl, eng)
+        if not view["active"]:
+            break
+    assert tm.last_report["outcome"] == "FAIL"
+    det = ti.deterministic_debrief(ti.build_brief(tm.last_report, ["DRILL-07"]), "es")
+    assert det["to_correct"][0].startswith("El drill terminó: genset_a_01 shut down")
+    assert any(x.startswith("Pasos que faltaron: LAG_AUTO") for x in det["to_correct"])
+    assert not any("ningún paso" in x for x in det["went_well"])
+    assert det["next"] == "Repite DRILL-07 hasta pasarlo."
+    assert not any("después del tiempo objetivo" in x for x in det["to_correct"])
+
+
+def test_error_hint_from_meta_error_body():
+    from backend.llm_providers import _error_hint
+    body = '{"error": {"message": "Model muse-spark-9 not found", "type": "not_found"}}'
+    assert _error_hint(body) == "Model muse-spark-9 not found"
+    assert _error_hint("<html>\n Not   Found </html>") == "<html> Not Found </html>"
+    assert _error_hint("") == ""
+    assert len(_error_hint("x" * 500)) == 160

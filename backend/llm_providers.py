@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import httpx
 
@@ -91,7 +91,14 @@ class MetaProvider:
                     yield "[Meta API: invalid key (401)]"
                     return
                 if resp.status_code != 200:
-                    yield f"[Meta API error {resp.status_code}]"
+                    # The error body says why (unknown model, no access):
+                    # a short, single-line excerpt; it never carries the key.
+                    try:
+                        body = (await resp.aread()).decode("utf-8", "replace")
+                    except Exception:
+                        body = ""
+                    hint = _error_hint(body)
+                    yield f"[Meta API error {resp.status_code}{': ' + hint if hint else ''}]"
                     return
                 async for line in resp.aiter_lines():
                     if not line or not line.startswith("data: "):
@@ -109,6 +116,22 @@ class MetaProvider:
                         continue
         except Exception as e:
             yield f"[Meta stream error: {e}]"
+
+
+def _error_hint(body: str, limit: int = 160) -> str:
+    """One line from an error response: the JSON error message when
+    there is one, else the start of the body."""
+    text = body.strip()
+    try:
+        obj = json.loads(text)
+        err = obj.get("error", obj) if isinstance(obj, dict) else obj
+        if isinstance(err, dict):
+            text = str(err.get("message") or err.get("code") or err)
+        elif isinstance(err, str):
+            text = err
+    except (json.JSONDecodeError, AttributeError):
+        pass
+    return " ".join(text.split())[:limit]
 
 
 def get_provider(name: str, **kwargs):

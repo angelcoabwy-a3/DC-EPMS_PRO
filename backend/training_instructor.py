@@ -137,6 +137,9 @@ _T = {
         "all_steps": "All {n} procedure steps completed in order.",
         "some_steps": "{n} of {total} steps completed: {ids}.",
         "no_steps": "No procedure step was completed.",
+        "missing": "Steps not reached: {steps}.",
+        "failed": "The drill ended: {reason}.",
+        "next_pass": "Repeat {id} until it passes.",
         "no_errors": "No refused command and no switching outside the procedure.",
         "refused": "{command} was refused by the interlock: {detail}",
         "unplanned": "{command} is not part of this drill's procedure (unplanned switching).",
@@ -153,6 +156,9 @@ _T = {
         "all_steps": "Completaste los {n} pasos del procedimiento en orden.",
         "some_steps": "Completaste {n} de {total} pasos: {ids}.",
         "no_steps": "No completaste ningún paso del procedimiento.",
+        "missing": "Pasos que faltaron: {steps}.",
+        "failed": "El drill terminó: {reason}.",
+        "next_pass": "Repite {id} hasta pasarlo.",
         "no_errors": "Ningún comando rechazado ni maniobras fuera del procedimiento.",
         "refused": "{command} fue rechazado por el enclavamiento: {detail}",
         "unplanned": "{command} no es parte del procedimiento de este drill (maniobra no planificada).",
@@ -175,25 +181,29 @@ def deterministic_debrief(brief: dict[str, Any], lang: str = "en") -> dict[str, 
         summary.append(t["reason"].format(reason=r["reason"]))
     total = len(d["steps"])
     done = [s["id"] for s in r["steps_done"]]
-    good = []
+    good, fix = [], []
+    if r["outcome"] == "FAIL" and r.get("reason"):
+        fix.append(t["failed"].format(reason=r["reason"]))
     if total and len(done) == total:
         good.append(t["all_steps"].format(n=total))
     elif done:
         good.append(t["some_steps"].format(n=len(done), total=total, ids=", ".join(done)))
-    else:
-        good.append(t["no_steps"])
+    missing = [f"{s['id']} ({s['text']})" for s in d["steps"] if s["id"] not in done]
+    if missing:
+        fix.append(t["missing"].format(steps="; ".join(missing)))
     if not r["violations"]:
         good.append(t["no_errors"])
-    fix = []
     for v in r["violations"]:
         key = "unplanned" if v["kind"] == "unplanned_switching" else "refused"
         fix.append(t[key].format(command=v["command"], detail=v["detail"]))
     for rv in r["step_reverts"]:
         fix.append(t["revert"].format(step=rv["step"], event=rv["event"]))
-    if r["late_s"] > 0:
+    if r["late_s"] > 0 and r["outcome"] == "PASS":
         fix.append(t["late"].format(late=r["late_s"]))
     others = [x for x in brief.get("other_drills") or [] if x != d["id"]]
-    if r["outcome"] != "PASS" or r["violations"]:
+    if r["outcome"] != "PASS":
+        nxt = t["next_pass"].format(id=d["id"])
+    elif r["violations"]:
         nxt = t["next_repeat"].format(id=d["id"])
     elif (r["score"] or 0) < 100 or not others:
         nxt = t["next_clean"].format(id=d["id"])
@@ -304,7 +314,7 @@ async def debrief(report: dict[str, Any], lang: str = "en", *, provider: Any = N
             chunks = [f"[Meta stream error: {exc}]"]
         text = "".join(chunks).strip()
         if not text or text.startswith("[Meta"):
-            base["note"] = f"Meta call returned no usable text ({text[:80]}): deterministic debrief."
+            base["note"] = f"Meta call returned no usable text ({text[:200]}): deterministic debrief."
         else:
             text = text[:TEXT_MAX]
             base.update({
