@@ -24,16 +24,21 @@ describe('field view text size', () => {
         expect(boot(430).getAttribute('data-size')).toBe('fit');
     });
 
-    it('toggles and remembers the choice', async () => {
+    it('switches between FIT, MEDIUM and LARGE and remembers it', async () => {
         const el = boot(1400);
-        const btn = el.querySelector('[data-fsize]');
-        expect(btn.textContent).toBe('FIT VIEW');
-        await __power_test__.onFieldClick({ target: btn });
-        expect(el.getAttribute('data-size')).toBe('fit');
-        expect(btn.getAttribute('aria-pressed')).toBe('false');
-        expect(window.localStorage.getItem('dcepms.field.size')).toBe('fit');
-        await __power_test__.onFieldClick({ target: btn });
-        expect(el.getAttribute('data-size')).toBe('large');
-        expect(btn.textContent).toBe('FIT VIEW');
+        const btn = (k) => el.querySelector(`[data-fsize="${k}"]`);
+        expect(btn('large').getAttribute('aria-pressed')).toBe('true');
+        for (const k of ['medium', 'fit', 'large']) {
+            await __power_test__.onFieldClick({ target: btn(k) });
+            expect(el.getAttribute('data-size')).toBe(k);
+            expect(window.localStorage.getItem('dcepms.field.size')).toBe(k);
+            for (const o of ['fit', 'medium', 'large']) {
+                expect(btn(o).getAttribute('aria-pressed')).toBe(String(o === k));
+            }
+        }
+        window.localStorage.setItem('dcepms.field.size', 'medium');
+        __power_test__.closeField();
+        document.getElementById('pwr-field').remove();
+        expect(boot(1400).getAttribute('data-size')).toBe('medium');
     });
 });

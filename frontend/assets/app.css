@@ -11523,7 +11523,8 @@ table.opt-votes td {
  * 1600 px wide and the stage scrolls; FIT keeps the old fit-to-window. */
 .fsg-shell { min-height: 0; }
 .fsg-stage { flex: 1 1 auto; min-height: 0; }
+.pwr-field[data-size="medium"] .fsg-shell,
 .pwr-field[data-size="large"] .fsg-shell { width: 98vw; }
+.pwr-field[data-size="medium"] .fsg-svg { max-height: none; max-width: 1380px; margin: 0 auto; }
 .pwr-field[data-size="large"] .fsg-svg { max-height: none; max-width: 1600px; margin: 0 auto; }
-.fsg-bar .fsg-size { border: 1px solid #2a3038; border-radius: 4px; white-space: nowrap; }
-.fsg-bar .fsg-size[aria-pressed="true"] { background: transparent; color: #ffd21f; border-color: #ffd21f; }
+.fsg-bar .fsg-size { white-space: nowrap; }
