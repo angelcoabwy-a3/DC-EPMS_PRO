@@ -97,6 +97,7 @@ let _syncRaf = null;
 const _audio = new ControlRoomAudio();
 let _drills = [];
 let _trView = null;
+let _trDebrief = null;          // AI-1: {loading, lang, data, error}
 let _trSelected = '';
 let _trMsg = '';
 let _trTimer = null;
@@ -1908,7 +1909,7 @@ function _renderTraining() {
     el.dataset.active = _trView && _trView.active ? '1' : '0';
     el.innerHTML = trainingHtml({
         drills: _drills, view: _trView, pathSummary: ps, selected: _trSelected,
-        message: _trMsg, soundOn: _audio.on, soundSupported: _audio.supported,
+        message: _trMsg, soundOn: _audio.on, soundSupported: _audio.supported, debrief: _trDebrief,
     });
     _renderHud();
 }
@@ -1957,6 +1958,17 @@ async function _onTrainingClick(ev) {
         }
         return;
     }
+    if (btn.dataset.trDebrief) {
+        const lang = btn.dataset.trDebrief === 'es' ? 'es' : 'en';
+        _trDebrief = { loading: true, lang };
+        _renderTraining();
+        const r = await plantPost('/api/training/debrief', { lang });
+        _trDebrief = r.ok ? { lang, data: r.data }
+            : { lang, error: r.status === 401 || r.status === 403
+                ? 'Refused: the debrief needs a FACILITY_MANAGER session.' : `Debrief unavailable: ${r.detail}` };
+        _renderTraining();
+        return;
+    }
     if (btn.dataset.trReport) {
         const r = await plantGet('/api/training/report');
         if (!r.ok) { _trMsg = r.detail; _renderTraining(); return; }
@@ -1968,6 +1980,7 @@ async function _onTrainingClick(ev) {
         if (_mode !== 'live') _setMode('live');
         r = await plantPost('/api/training/start', { drill_id: _trSelected });
         _prevSteps = 0;
+        _trDebrief = null;
     } else if (btn.dataset.trAbort) {
         r = await plantPost('/api/training/abort');
     } else if (btn.dataset.trReset) {

@@ -5,7 +5,9 @@
  *   idle     drill selector + Start + Reset plant
  *   active   title, summary, steps (done / current / pending with
  *            elapsed ms), clock, battery of the drill path, Abort
- *   finished outcome, score, violations, ledger id, Download report
+ *   finished outcome, score, violations, ledger id, Download report,
+ *            AI-1 instructor debrief (EN / ES; Meta or deterministic,
+ *            always labelled)
  * Data: GET /api/training/drills and /api/training/session; battery
  * from the plant path summary. S-SEC-01: everything escaped.
  * ════════════════════════════════════════════════════════════════ */
@@ -33,8 +35,29 @@ function _battery(pathSummary) {
         + `<span>${escapeHTML(txt)} (model)</span></div>`;
 }
 
+/** AI-1: debrief box. state = {loading, lang, data, error}. */
+export function debriefHtml(state = null) {
+    const buttons = '<div class="tr-row tr-deb-btns"><span class="tr-deb-lbl">Instructor debrief</span>'
+        + '<button type="button" class="tr-btn" data-tr-debrief="en">EN</button>'
+        + '<button type="button" class="tr-btn" data-tr-debrief="es">ES</button></div>';
+    if (!state) return buttons;
+    if (state.loading) return buttons + '<div class="tr-debrief" data-source="loading">Preparing the debrief…</div>';
+    if (state.error) return buttons + `<div class="tr-debrief" data-source="error">${escapeHTML(state.error)}</div>`;
+    const d = state.data || {};
+    const ai = d.source === 'meta';
+    const head = ai ? `AI · ${escapeHTML(d.model || 'Meta')}${d.cached ? ' · cached' : ''}` : 'DETERMINISTIC';
+    const warn = (d.unverified_citations || []).length
+        ? `<div class="tr-deb-warn">Not in the drill references, verify: ${escapeHTML(d.unverified_citations.join(', '))}</div>` : '';
+    return buttons + `<div class="tr-debrief" data-source="${escapeHTML(d.source || '')}">`
+        + `<div class="tr-deb-head"><b>${head}</b><span>${escapeHTML(d.label || '')}</span></div>`
+        + warn
+        + `<pre class="tr-deb-text">${escapeHTML(d.text || '')}</pre>`
+        + `<div class="tr-deb-foot">${escapeHTML(d.note || '')}`
+        + `${d.daily_cap != null ? ` · AI calls today ${escapeHTML(String(d.calls_today))} / ${escapeHTML(String(d.daily_cap))}` : ''}</div></div>`;
+}
+
 export function trainingHtml({ drills = [], view = null, pathSummary = null, nowMs = Date.now(),
-    selected = '', message = '', soundOn = false, soundSupported = true } = {}) {
+    selected = '', message = '', soundOn = false, soundSupported = true, debrief = null } = {}) {
     const s = view && view.session;
     const sound = soundSupported
         ? `<button type="button" class="tr-btn tr-sound" data-tr-sound="1" aria-pressed="${soundOn}">Sound ${soundOn ? 'ON' : 'OFF'}</button>` : '';
@@ -75,7 +98,8 @@ export function trainingHtml({ drills = [], view = null, pathSummary = null, now
             + (s.ledger_entry_id ? `<span class="tr-ledger">ledger ${escapeHTML(String(s.ledger_entry_id).slice(0, 12))}</span>` : '')
             + '<button type="button" class="tr-btn" data-tr-print="1">Print report (PDF)</button>'
             + '<button type="button" class="tr-btn" data-tr-report="1">Download report (JSON)</button></div>'
-            + '<div class="tr-note">Rubric: DC-EPMS training rubric v2 (ours, not an industry standard): -10 per refused command or switching outside the procedure, -1 per 10 s late.</div>';
+            + '<div class="tr-note">Rubric: DC-EPMS training rubric v2 (ours, not an industry standard): -10 per refused command or switching outside the procedure, -1 per 10 s late.</div>'
+            + debriefHtml(debrief);
     }
     return head + msg + picker + result;
 }

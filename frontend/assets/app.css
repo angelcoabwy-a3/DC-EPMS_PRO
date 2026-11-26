@@ -11504,3 +11504,17 @@ table.opt-votes td {
 .xo-svg [role="button"]:focus { outline: none; }
 .xo-svg [role="button"]:focus-visible { outline: 2px solid #ffd21f; outline-offset: 2px; }
 .xo-trace, .xo-grid, .xo-axis, .xo-lim, .xo-cursor, .xo-trig, .xo-beam, .xo-scale { pointer-events: none; }
+
+/* ── AI-1 instructor debrief (training coach) ──────────────────── */
+.tr-deb-btns { border-top: 1px solid #3a4048; }
+.tr-deb-lbl { color: #aab1ba; font-weight: 600; letter-spacing: 0.05em; }
+.tr-debrief { margin: 0 10px 10px; padding: 8px 10px; border: 1px solid #3a4048; border-left: 3px solid #8a929c; border-radius: 4px; background: #15181d; }
+.tr-debrief[data-source="meta"] { border-left-color: #7c9cff; }
+.tr-debrief[data-source="error"] { border-left-color: #ef5350; color: #ffa726; }
+.tr-debrief[data-source="loading"] { color: #8a929c; }
+.tr-deb-head { display: flex; flex-wrap: wrap; gap: 4px 10px; color: #aab1ba; margin-bottom: 6px; }
+.tr-deb-head b { color: #e6e9ed; letter-spacing: 0.05em; }
+.tr-debrief[data-source="meta"] .tr-deb-head b { color: #a9bbff; }
+.tr-deb-warn { margin-bottom: 6px; color: #ffa726; }
+.tr-deb-text { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px/1.45 var(--font-sans, inherit); color: #e6e9ed; max-height: 360px; overflow: auto; }
+.tr-deb-foot { margin-top: 6px; color: #8a929c; }
