@@ -13,6 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### L2 utility transformer + iOS meta tag (2026-11-26)
+
+- **L2** (`d872fd4`, `32cac4e`, ADR-015): utility transformer per path as a
+  field device. `backend/mv_xfmr.py` (pure): primary circuit switcher 52-T
+  (model assumption, not in the operator documents), trapped-key chain
+  K1 (52-U) -> K2 (52-T) -> DETC handle, five-position DETC, 63 / 87T / 86T,
+  26 / 49 temperature trips, fan selector, thermal model in the IEEE C57.91
+  Clause 7 form with TYPICAL constants (time x60, exponents not checked
+  against the standard text). `_incomer_live()` replaces `utility_ok` in
+  every 52-U decision. Route `POST /api/devices/{id}/xfmr`, ledger
+  `XFMR_FIELD_ACTION`, alarms `XFMR_x_*`, DRILL-06 (DETC tap change under
+  the key chain; spare key = injected hazard). Field view
+  `core/field_xfmr.js` (Layer 2), SLD shows DETC position / 52-T / 86T,
+  87T relay chip live. Not done: N2 purge, nameplate data, DGA.
+- **Meta tag** (`251d865`): `mobile-web-app-capable` declared next to the
+  apple- tag (Chrome deprecation warning).
+- **Test fix** (`cb5a7dc`): GPU probe forced unavailable in the public
+  no-DB health fixture (failed on a workstation with a real GPU).
+- Floors (Linux): pytest 2016 passed (3 pre-existing test_optimizer
+  errors in this environment), vitest 896 / 51 files.
+
 ### L1b - DRILL-05 in OSHA 1910.147(d) order (2026-11-26)
 
 - Verified against the eCFR text: stored energy is relieved after the

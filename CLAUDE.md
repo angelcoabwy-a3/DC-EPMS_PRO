@@ -191,8 +191,15 @@ L1 FIELD VIEW (2026-11-15): backend/mv_cubicle.py (52-U / 52-GM
 L1b (2026-11-26): DRILL-05 v2 in OSHA 1910.147(d) order (lock, then
   release stored energy, verified against the eCFR); mechanical push
   buttons in DISCONNECTED. pytest 1986 / vitest 886.
-NEXT: operator applies the bundle and eyeballs the Power SLD (strip +
-  sequence in What-If); then GO for the -068 closing lote.
+L2 TRANSFORMER (2026-11-26, d872fd4 / 32cac4e, ADR-015): backend/mv_xfmr.py
+  (52-T primary circuit switcher = model assumption, key chain K1 52-U ->
+  K2 52-T -> DETC, 5-position DETC, 63 / 87T / 86T, 26 / 49 trips, fans,
+  C57.91 Clause 7 form with typical constants, time x60). _incomer_live()
+  replaces utility_ok in 52-U logic. POST /api/devices/{id}/xfmr, DRILL-06,
+  field view core/field_xfmr.js, 87T chip live. Meta tag fix 251d865.
+  Floors (Linux): pytest 2016 / vitest 896 (51 files).
+NEXT: operator applies the bundle and tries DRILL-06; then L3 generator +
+  fuel, or GO for the -068 closing lote.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```
