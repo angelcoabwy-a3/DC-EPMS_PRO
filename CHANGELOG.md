@@ -21,7 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deterministic debrief on FAIL: failure reason first, missing steps
   listed, no "no steps" line under what went well.
 - Field views: FIT / MEDIUM / LARGE text size (LARGE default on desktop,
-  MEDIUM added at operator request).
+  MEDIUM added at operator request). MEDIUM = stage width, LARGE = 1.35x
+  the stage width (fixed px caps made them identical on laptops).
 - Floors (Linux): pytest 2117 / vitest 941 (58 files).
 
 ### AI-1 training instructor debrief (2026-11-26)
