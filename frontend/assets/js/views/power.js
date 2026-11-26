@@ -51,6 +51,9 @@ import { genSvg, applyGenState, resolveGenClick, isGenEvent, genEventText, genId
 import { upsSvg, applyUpsState, resolveUpsClick, isUpsEvent, upsEventText } from '../core/field_ups.js';
 import { batterySvg, applyBatteryState, resolveBatteryClick, isBatteryEvent, batteryEventText } from '../core/field_battery.js';
 import { wiringSvg, applyWiringState, resolveWiringClick, isWiringEvent, wiringEventText } from '../core/field_wiring.js';
+import { scopeSvg, applyScopeState, resolveScopeClick, animate as animateScope, SLOW_MO as SCOPE_SLOW_MO }
+    from '../core/field_scope.js';
+import { getAuthHeader } from '../core/auth.js';
 import { needleAngle, permissive, etaNow, etaText } from '../core/synchroscope.js';
 import { escapeHTML } from '../core/sanitize.js';
 import { relayRowSvg, relayStates, applyRelays } from '../core/relay_tags.js';
@@ -1393,7 +1396,8 @@ function _ensureField() {
         + '<button type="button" data-fequip="gen">GENERATOR</button>'
         + '<button type="button" data-fequip="ups">UPS</button>'
         + '<button type="button" data-fequip="batt">BATTERY</button>'
-        + '<button type="button" data-fequip="wiring">CONTROL</button></span>'
+        + '<button type="button" data-fequip="wiring">CONTROL</button>'
+        + '<button type="button" data-fequip="scope">RECORDER</button></span>'
         + '<span class="fsg-note">Layer 2 · equipment view · every operation is checked by the server interlocks and recorded</span>'
         + '<button type="button" class="fsg-close" data-fclose="1" aria-label="Close field view">CLOSE ✕</button></div>'
         + '<div class="fsg-stage" id="pwr-field-stage"></div><div class="fsg-foot" id="pwr-field-foot"></div></div>';
@@ -1408,22 +1412,29 @@ function _ensureField() {
 function _openField(path, equip, gen) {
     const el = _ensureField();
     _fieldPath = String(path || 'a').toLowerCase() === 'b' ? 'b' : 'a';
-    if (equip) _fieldEquip = ['xfmr', 'gen', 'ups', 'batt', 'wiring'].includes(equip) ? equip : 'swgr';
+    if (equip) _fieldEquip = ['xfmr', 'gen', 'ups', 'batt', 'wiring', 'scope'].includes(equip) ? equip : 'swgr';
+    _scopeHalt();
     if (gen) _fieldGen = Math.min(9, Math.max(1, Number(gen) || 1));
     _fieldMsg = '';
     _fieldCovers.clear();
     document.getElementById('pwr-field-stage').innerHTML = _fieldEquip === 'xfmr'
-        ? xfmrSvg(_fieldPath) : ({ gen: genSvg, ups: upsSvg, batt: batterySvg, wiring: wiringSvg }[_fieldEquip]
+        ? xfmrSvg(_fieldPath) : ({ gen: genSvg, ups: upsSvg, batt: batterySvg, wiring: wiringSvg, scope: scopeSvg }[_fieldEquip]
             || fieldLineupSvg)(_fieldPath);
     el.setAttribute('aria-label', { xfmr: 'Field view: utility transformer', gen: 'Field view: generator set',
         ups: 'Field view: UPS bank', batt: 'Field view: battery room',
-        wiring: 'Field view: MV control compartment' }[_fieldEquip]
+        wiring: 'Field view: MV control compartment', scope: 'Field view: disturbance recorder' }[_fieldEquip]
         || 'Field view: 13.8 kV switchgear');
     el.querySelectorAll('[data-fpath]').forEach((b) =>
         b.setAttribute('aria-pressed', String(b.dataset.fpath === _fieldPath)));
     el.querySelectorAll('[data-fequip]').forEach((b) =>
         b.setAttribute('aria-pressed', String(b.dataset.fequip === _fieldEquip)));
     el.hidden = false;
+    if (_fieldEquip === 'scope') {
+        _scope = { mode: 'live', records: [], record: null, selected: null, playhead: 1, sweep: 0 };
+        _scopePlayAt = null;
+        _scopeLoad();
+        _scopeStart();
+    }
     _applyField();
     if (_fieldTimer) clearInterval(_fieldTimer);
     _fieldTimer = setInterval(() => { if (!_fieldBusy) _pollAlarms(true); }, 1000);
@@ -1433,6 +1444,7 @@ function _openField(path, equip, gen) {
 function _closeField() {
     const el = document.getElementById('pwr-field');
     if (el) el.hidden = true;
+    _scopeHalt();
     _fieldPath = null;
     if (_fieldTimer) { clearInterval(_fieldTimer); _fieldTimer = null; }
 }
@@ -1448,7 +1460,13 @@ function _applyField() {
     const wiring = _fieldEquip === 'wiring';
     const ps = ((_plant && _plant.paths) || []).find((p) => p.path === _fieldPath) || null;
     if (stage && xfer) {
-        if (batt) {
+        if (_fieldEquip === 'scope') {
+            const known = new Set(_scope.records.map((r) => r.id));
+            const fresh = ((_plant && _plant.events) || []).some((ev) => ev.event === 'dfr_record'
+                && ev.device_id === `path_${_fieldPath}` && !known.has(ev.record_id));
+            if (fresh) _scopeLoad();
+            applyScopeState(stage, _scopeUi());
+        } else if (batt) {
             applyBatteryState(stage, ps, _fieldBatt);
         } else if (wiring) {
             applyWiringState(stage, xfer.wiring);
@@ -1464,7 +1482,13 @@ function _applyField() {
     if (foot) {
         const upsIds = [`ups_system_${_fieldPath}`, `path_${_fieldPath}`];
         const battIds = [`battery_room_${_fieldPath}`];
-        const view = batt ? { anyDevice: true, match: (ev) => battIds.includes(ev.device_id) && isBatteryEvent(ev),
+        const scopeIds = [`path_${_fieldPath}`];
+        const view = _fieldEquip === 'scope' ? { anyDevice: true,
+            match: (ev) => scopeIds.includes(ev.device_id) && ['dfr_record', 'utility_sag'].includes(ev.event),
+            text: (ev) => (ev.event === 'dfr_record' ? `RECORD ${ev.record_id} · ${ev.trigger} · LOAD ${ev.detail}`
+                : `UTILITY SAG ${ev.depth_pu} pu · ${ev.cycles} cycles (training)`),
+            empty: 'No record on this path yet' }
+            : batt ? { anyDevice: true, match: (ev) => battIds.includes(ev.device_id) && isBatteryEvent(ev),
             text: batteryEventText, empty: 'No operation in this battery room yet' }
             : wiring ? { match: isWiringEvent, text: wiringEventText, empty: 'No operation in this compartment yet' }
             : ups ? { anyDevice: true, match: (ev) => upsIds.includes(ev.device_id) && isUpsEvent(ev),
@@ -1491,6 +1515,7 @@ async function _onFieldClick(ev) {
     if (_fieldEquip === 'ups') { await _onUpsClick(t); return; }
     if (_fieldEquip === 'batt') { await _onBattClick(t); return; }
     if (_fieldEquip === 'wiring') { await _onWiringClick(t); return; }
+    if (_fieldEquip === 'scope') { await _onScopeClick(t); return; }
     const xfer = _fieldXfer();
     const r = resolveClick(t, xfer);
     if (!r || !xfer) return;
@@ -1594,6 +1619,123 @@ async function _onUpsClick(t) {
     }
     await _pollAlarms(true);
     if (_trView && _trView.active) _trainingTick();
+}
+
+// L6: disturbance recorder. The view keeps its own state; LIVE sweeps at
+// the display frame rate, a record replays at 1/SLOW_MO speed.
+let _scope = { mode: 'live', records: [], record: null, selected: null, playhead: 1, sweep: 0 };
+let _scopeStop = null;
+let _scopePlayAt = null;
+let _scopeLoading = false;
+
+function _scopeUi() {
+    const ps = ((_plant && _plant.paths) || []).find((p) => p.path === _fieldPath) || null;
+    return { ..._scope, dfr: ps && ps.dfr, path: _fieldPath };
+}
+
+function _scopeDraw() {
+    const stage = document.getElementById('pwr-field-stage');
+    if (stage && _fieldEquip === 'scope') applyScopeState(stage, _scopeUi());
+}
+
+async function _scopeLoad(fetchId = null) {
+    if (_scopeLoading && !fetchId) return;
+    _scopeLoading = true;
+    try {
+        await _scopeFetch(fetchId);
+    } finally {
+        _scopeLoading = false;
+    }
+}
+
+async function _scopeFetch(fetchId) {
+    const path = _fieldPath;
+    const res = await plantGet(`/api/oscillography/records?path=${encodeURIComponent(path || 'a')}`);
+    if (res.ok && Array.isArray(res.data.records)) _scope.records = res.data.records;
+    const id = fetchId || null;
+    if (id) {
+        const r = await plantGet(`/api/oscillography/records/${encodeURIComponent(id)}`);
+        if (r.ok && r.data.samples) { _scope.record = r.data; _scope.selected = id; }
+    }
+    _scopeDraw();
+}
+
+function _scopeStart() {
+    _scopeHalt();
+    _scopeStop = animateScope((t) => {
+        if (_fieldEquip !== 'scope' || !_fieldPath) return false;
+        _scope.sweep = (t % 500) / 500;
+        if (_scopePlayAt != null) {
+            const span = ((_scope.record && _scope.record.pre_s + _scope.record.post_s) || 0.4) * 1000 * SCOPE_SLOW_MO;
+            _scope.playhead = Math.min(1, (t - _scopePlayAt) / span);
+            if (_scope.playhead >= 1) _scopePlayAt = null;
+        }
+        _scopeDraw();
+        return true;
+    });
+}
+
+function _scopeHalt() {
+    if (_scopeStop) { _scopeStop(); _scopeStop = null; }
+}
+
+async function _scopeDownload(part) {
+    const id = _scope.selected;
+    if (!id) return;
+    let text = '';
+    try {
+        const res = await fetch(`/api/oscillography/records/${encodeURIComponent(id)}/comtrade?part=${part}`,
+            { credentials: 'same-origin', headers: getAuthHeader() });
+        if (!res.ok) { _fieldMsg = `COMTRADE: HTTP ${res.status}`; _applyField(); return; }
+        text = await res.text();
+    } catch (_e) {
+        _fieldMsg = 'COMTRADE: server unreachable';
+        _applyField();
+        return;
+    }
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${id}.${part}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    _fieldMsg = `COMTRADE ${id}.${part} saved`;
+    _applyField();
+}
+
+async function _onScopeClick(t) {
+    const r = resolveScopeClick(t, _scope);
+    if (!r) return;
+    if (r.ui) _scope = { ..._scope, ...r.ui };
+    if (r.download) { await _scopeDownload(r.download); return; }
+    _fieldBusy = true;
+    try {
+        if (r.action) {
+            const body = r.action === 'sag' ? { depth_pu: 0.6, cycles: 6 } : {};
+            const res = await plantPost(`/api/oscillography/${encodeURIComponent(_fieldPath)}/${r.action}`, body);
+            if (res.ok) {
+                const rec = res.data.record || {};
+                _fieldMsg = `${rec.id}: ${String(rec.trigger || '').toUpperCase()}`;
+                _scope = { ..._scope, mode: 'records', playhead: 0 };
+                await _scopeLoad(rec.id);
+                _scopePlayAt = performance.now();
+            } else {
+                _fieldMsg = `RECORDER · ${res.detail}`;
+                _audio.clunk();
+            }
+        } else if (r.fetch) {
+            await _scopeLoad(r.fetch);
+            if (r.play) _scopePlayAt = performance.now();
+        } else if (r.play) {
+            _scopePlayAt = performance.now();
+        }
+    } finally {
+        _fieldBusy = false;
+    }
+    _scopeDraw();
+    _applyField();
 }
 
 // L5: an operation in the battery room. Tabs and tools are view state;

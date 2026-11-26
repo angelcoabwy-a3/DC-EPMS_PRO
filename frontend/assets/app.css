@@ -11472,3 +11472,35 @@ table.opt-votes td {
 .xw-lead-black { stroke: #111; }
 .xw-section[data-mode="OFF"] .xw-lcd-big { fill: #66705a; }
 .xw-warn { font: 800 9px var(--font-mono); fill: #ff7a68; }
+
+/* ── L6 disturbance recorder (scope screens) ───────────────────── */
+.xo-screen { fill: #07110b; stroke: #000; stroke-width: 2; }
+.xo-grid { stroke: #183323; stroke-width: 1; }
+.xo-axis { stroke: #2f5a3f; stroke-width: 1.2; }
+.xo-lim { stroke: #8a6a10; stroke-width: 1; stroke-dasharray: 4 4; }
+.xo-scale { font: 700 8px var(--font-mono); fill: #9aa4b2; }
+.xo-trace { fill: none; stroke-width: 1.6; stroke-linejoin: round; }
+.xo-trace[data-ph="A"] { stroke: #ff5a4f; }
+.xo-trace[data-ph="B"] { stroke: #ffd21f; }
+.xo-trace[data-ph="C"] { stroke: #4fa3ff; }
+.xo-cursor { stroke: #e6e9ed; stroke-width: 1; opacity: .5; }
+.xo-section[data-mode="live"] .xo-cursor, .xo-section[data-mode="live"] .xo-trig { display: none; }
+.xo-trig { stroke: #ff3b30; stroke-width: 1.2; stroke-dasharray: 3 3; }
+.xo-beam { fill: #eaffef; filter: drop-shadow(0 0 4px #9bffb0); }
+.xo-section[data-mode="records"] .xo-beam { display: none; }
+.xo-btn, .xo-rec { cursor: pointer; }
+.xo-section[data-mode="records"] .xo-screen { cursor: zoom-in; }
+.xo-btn rect { fill: #24282c; stroke: #000; }
+.xo-btn text { font: 800 8.5px var(--font-mono); fill: #e6e9ed; letter-spacing: .03em; }
+.xo-btn[data-on="1"] rect { fill: #ffd21f; }
+.xo-btn[data-on="1"] text { fill: #111; }
+.xo-rec rect { fill: #1b1e21; stroke: #000; }
+.xo-rec[data-on="1"] rect { fill: #2c3a2f; stroke: #9bffb0; }
+.xo-rec[data-empty="1"] { pointer-events: none; }
+.xo-rec[data-empty="1"] rect { fill: #2a2e33; }
+.xo-rec-id { font: 800 8px var(--font-mono); fill: #9bffb0; }
+.xo-rec-t { font: 700 7.5px var(--font-mono); fill: #c3c8cf; }
+.xo-section[data-load-hit="1"] [data-txt="s3"] { fill: #ff7a68; }
+.xo-svg [role="button"]:focus { outline: none; }
+.xo-svg [role="button"]:focus-visible { outline: 2px solid #ffd21f; outline-offset: 2px; }
+.xo-trace, .xo-grid, .xo-axis, .xo-lim, .xo-cursor, .xo-trig, .xo-beam, .xo-scale { pointer-events: none; }
