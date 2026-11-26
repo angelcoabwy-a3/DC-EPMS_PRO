@@ -266,6 +266,37 @@ def conditions_from_plant(plant: dict[str, Any]) -> list[Condition]:
                 Condition(f"PATH_{P}_UPS_SKRU_KEY_OUT", int(us.get("skru_keys", 1)) == 0, LOW,
                           f"Path {P} maintenance bypass key out of the SKRU", src),
             ]
+        # L5: battery room (string monitor, H2 sensor, exhaust fans).
+        room = p.get("battery_room")
+        if room:
+            ppm = float(room.get("h2_ppm") or 0.0)
+            lel = room.get("h2_pct_lel")
+            fans = room.get("fans") or []
+            strs = room.get("strings") or []
+            high = [str(s_["n"]) for s_ in strs if s_.get("float_high")]
+            opened = [str(s_["n"]) for s_ in strs if not s_.get("online")]
+            out += [
+                Condition(f"PATH_{P}_BATT_STRING_CURRENT", bool(high), MEDIUM,
+                          f"Path {P} battery string {', '.join(high)} float current high "
+                          "(string monitor)", src),
+                Condition(f"PATH_{P}_BATT_STRING_OFFLINE", bool(opened), LOW,
+                          f"Path {P} battery string {', '.join(opened)} off line "
+                          f"({room.get('strings_online')} of {len(strs)} on line)", src),
+                Condition(f"PATH_{P}_BATT_H2_HIGH",
+                          float(room.get("h2_alarm_ppm") or 400) <= ppm < float(room.get("h2_hihi_ppm") or 1e4),
+                          MEDIUM, f"Path {P} battery room H2 {ppm:.0f} ppm ({lel} % LEL)", src),
+                Condition(f"PATH_{P}_BATT_H2_HIHI", ppm >= float(room.get("h2_hihi_ppm") or 1e4), HIGH,
+                          f"Path {P} battery room H2 {ppm:.0f} ppm ({lel} % LEL): code limit", src),
+                Condition(f"PATH_{P}_BATT_FAN_FAIL", any(f.get("failed") for f in fans), MEDIUM,
+                          f"Path {P} battery room exhaust fan failed "
+                          f"({', '.join(f['name'] for f in fans if f.get('failed'))})", src),
+                Condition(f"PATH_{P}_BATT_FAN_NOT_AUTO", any(f.get("mode") != "AUTO" for f in fans), LOW,
+                          f"Path {P} battery room exhaust fan not in AUTO", src),
+                Condition(f"PATH_{P}_BATT_NO_VENT", fans != [] and not any(f.get("running") for f in fans),
+                          HIGH, f"Path {P} battery room without exhaust ventilation", src),
+                Condition(f"PATH_{P}_BATT_THERMAL_RUNAWAY", bool(room.get("runaway")), HIGH,
+                          f"Path {P} battery jar vented ({', '.join(room.get('runaway') or [])})", src),
+            ]
         # L3: main (bulk) fuel tank of the path.
         if p.get("bulk_fuel_pct") is not None:
             hrs = p.get("bulk_hours_left")

@@ -67,9 +67,11 @@ from typing import Any
 from fastapi import Body, FastAPI, HTTPException, Request
 
 from backend import (
+    battery_room as br,
     gen_fuel as gf,
     mv_cubicle as cub,
     mv_switching as mv,
+    mv_wiring as mw,
     mv_xfmr as xf,
     ups_bypass as ub,
 )
@@ -131,6 +133,8 @@ ACTION_MV_FIELD = "MV_SWITCHGEAR_FIELD_ACTION"
 ACTION_XFMR_FIELD = "XFMR_FIELD_ACTION"
 ACTION_GEN_FIELD = "GENERATOR_FIELD_ACTION"
 ACTION_UPS_FIELD = "UPS_SYSTEM_FIELD_ACTION"
+ACTION_BATT_FIELD = "BATTERY_ROOM_FIELD_ACTION"
+ACTION_WIRING_FIELD = "MV_CONTROL_WIRING_ACTION"
 
 SIMULATION_NOTICE = (
     "SIMULATED plant. No field equipment is connected: states and "
@@ -361,6 +365,11 @@ class DeviceController:
     _gen_at: float | None = None
     # L4: UPS bank system breakers + external maintenance bypass per path
     ups_systems: dict[str, ub.UpsSystem] = field(default_factory=dict)
+    # L5: battery room per path (strings, jars, H2 exhaust)
+    battery_rooms: dict[str, br.BatteryRoom] = field(default_factory=dict)
+    _room_at: float | None = None
+    # L5: MV control compartment (PT fuses F-1A / F-1B, TB-1, multimeter)
+    wirings: dict[str, mw.ControlWiring] = field(default_factory=dict)
 
     # ── Construction ────────────────────────────────────────────────
     @classmethod
@@ -390,6 +399,8 @@ class DeviceController:
             ctl.grid_kv[path] = xf.PRIMARY_KV
             ctl.bulk_l[path] = gf.BULK_TANK_L
             ctl.ups_systems[path] = ub.UpsSystem(path=path)
+            ctl.battery_rooms[path] = br.BatteryRoom(path=path)
+            ctl.wirings[path] = mw.ControlWiring(path=path)
             upper = path.upper()
             for n in range(1, int(ups["units_per_path"]) + 1):
                 ctl._add(Device(
@@ -490,9 +501,11 @@ class DeviceController:
                 if xfer is not None:
                     self._event("spring_charged", xfer, "controller", breaker=brk, by="motor")
         self._advance_xfmrs(now)
+        self._advance_sensing()
         self._advance_gensets(now)
         self._advance_auto_transfer(now)
         self._advance_battery(now)
+        self._advance_battery_rooms(now)
         self._advance_sync(now)
 
     # ── L1: draw-out cubicles of 52-U / 52-GM ───────────────────────
@@ -526,11 +539,13 @@ class DeviceController:
                         "from the switchgear: open 52-GM first (dead-bus transfer).")
             if path in self.xfmrs and xf.u_lock_reason(self.xfmrs[path]):
                 return xf.u_lock_reason(self.xfmrs[path])
-            if not self._incomer_live(path):
+            if not self._utility_sensed(path):
                 return "No utility voltage on the incomer: ANSI 27 holds 52-U open."
             return None
         if xfer.state == XFER_UTILITY:
             return "Interlock: 52-U is closed (open-transition design): open 52-U first."
+        if self._gens_on_bus(path) and not self._genbus_sensed(path):
+            return "Generator bus voltage not sensed by the controller: 52-GM close held."
         on_bus = sum(d.rated_kw for d in self._gens_on_bus(path))
         demand = self._demand_kw(path)
         if on_bus < demand:
@@ -987,6 +1002,180 @@ class DeviceController:
             sys_.qf1 = False
             return self._plant_event("qf1_shunt_trip", path, actor, breaker="QF1")
 
+    # ── L5: MV control compartment (PT fuses, TB-1, multimeter) ────
+    def _utility_sensed(self, path: str) -> bool:
+        """What the transfer controller and its ANSI 27 element see:
+        utility voltage through the F-1A PT secondary fuse."""
+        w = self.wirings.get(path)
+        live = self._incomer_live(path)
+        return live if w is None else mw.utility_sensed(w, live)
+
+    def _genbus_sensed(self, path: str) -> bool:
+        w = self.wirings.get(path)
+        live = bool(self._gens_on_bus(path))
+        return live if w is None else mw.genbus_sensed(w, live)
+
+    def _wiring_ctx(self, path: str, actor: str = "") -> mw.WiringContext:
+        xfer = next(iter(self._of(KIND_TRANSFER, path)), None)
+        state = xfer.state if xfer is not None else XFER_UTILITY
+        cu = self.cubicles.get((path, cub.BREAKER_U))
+        cg = self.cubicles.get((path, cub.BREAKER_GM))
+        running = any(d.state in (GEN_CRANKING, GEN_RUNNING, GEN_ON_LOAD)
+                      for d in self._of(KIND_GENERATOR, path))
+        return mw.WiringContext(
+            utility_pu=(self._incomer_kv(path) / SECONDARY_KV_DEFAULT) if self._incomer_live(path) else 0.0,
+            genbus_live=bool(self._gens_on_bus(path)),
+            start_contact=state != XFER_UTILITY or running,
+            u_closed=state == XFER_UTILITY, gm_closed=state == XFER_GENERATORS,
+            u_close_ok=cu is None or (not cu.lockout_86 and cu.racking != cub.DISCONNECTED),
+            gm_close_ok=cg is None or (not cg.lockout_86 and cg.racking != cub.DISCONNECTED),
+            actor=actor,
+        )
+
+    def _advance_sensing(self) -> None:
+        """Utility live but not sensed (F-1A blown or pulled): the 27
+        element picks up and trips 52-U, as on a real undervoltage."""
+        for xfer in self._of_kind(KIND_TRANSFER):
+            path = xfer.path
+            if xfer.state == XFER_UTILITY and self._incomer_live(path) and not self._utility_sensed(path):
+                xfer.state, xfer.state_since = XFER_OPEN, self.clock()
+                self._drop_selections(xfer.device_id)
+                self._event("protection_trip", xfer, "protection", relay="27", breaker="52-U",
+                            detail="incomer undervoltage", cause="loss_of_potential")
+
+    def wiring_action(self, device_id: str, action: str, actor: str) -> dict[str, Any]:
+        """L5: an operation in the MV control compartment of a transfer
+        controller: PT fuse holders and the multimeter. Meter actions are
+        "inspection" events with their reading."""
+        action = str(action or "").upper()
+        with self._lock:
+            self._advance()
+            dev = self._get(device_id)
+            if dev.kind != KIND_TRANSFER or dev.path not in self.wirings:
+                raise DeviceControlError(400, "control wiring belongs to an MV transfer controller")
+            w = self.wirings[dev.path]
+            ctx = self._wiring_ctx(dev.path, actor)
+            reason = mw.interlock(w, action, ctx)
+            if reason:
+                raise DeviceControlError(409 if action in mw.ACTIONS else 400, reason)
+            reading = mw.apply(w, action, ctx)
+            event = {
+                "ts": round(self.wall_clock(), 3),
+                "event": "inspection" if mw.is_inspection(action) else "command",
+                "device_id": device_id, "actor": actor,
+                "command": f"{action}@{device_id.upper()}", "field": True, "equipment": "wiring",
+                "action": action, "path": dev.path,
+                **({"reading": reading} if reading else {}),
+            }
+            self._events.append(event)
+            self._advance()
+            event["transfer_state"] = dev.state
+            event["utility_sensed"] = self._utility_sensed(dev.path)
+            return event
+
+    def inject_wiring_fault(self, path: str, fuse: str, actor: str) -> dict[str, Any]:
+        """Training: a PT secondary fuse blows (F-1A or F-1B)."""
+        with self._lock:
+            w = self.wirings.get(path)
+            if w is None:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            name = str(fuse or "").upper()
+            name = mw.FUSE_KEY.get(name.replace("-", ""), name)
+            if name not in mw.FUSES:
+                raise DeviceControlError(400, f"fuse must be one of {list(mw.FUSES)}")
+            w.fuses[name].ok = False
+            event = self._plant_event("wiring_fault", path, actor, fuse=name)
+            self._advance()
+            return event
+
+    # ── L5: battery room (strings, jars, analyzer, H2 exhaust) ─────
+    def _room_ctx(self, path: str, actor: str = "") -> br.BatteryContext:
+        sys_ = self.ups_systems.get(path)
+        qf1 = sys_ is None or sys_.qf1
+        charging = qf1 and self._bus_energized(path) and (sys_ is None or sys_.q1) \
+            and not self.load_lost.get(path, False)
+        return br.BatteryContext(qf1=qf1, charging=charging,
+                                 discharging=self._on_battery(path), actor=actor)
+
+    def _advance_battery_rooms(self, now: float) -> None:
+        last = self._room_at
+        self._room_at = now
+        dt = 0.0 if last is None else max(0.0, now - last)
+        for path, room in self.battery_rooms.items():
+            for ev in br.tick(room, dt, self._room_ctx(path)):
+                kind = ev.pop("event")
+                self._events.append({"ts": round(self.wall_clock(), 3), "event": kind,
+                                     "device_id": f"battery_room_{path}", "actor": "protection",
+                                     "equipment": "battery", "path": path, **ev})
+
+    def battery_action(self, path: str, action: str, actor: str) -> dict[str, Any]:
+        """L5: an operation in the battery room of ``path``. Inspections
+        (IR_SCAN_Sn, MEASURE_Sn_Jm) are "inspection" events with their
+        reading; the rest are "command" events named ACTION@BATT_P."""
+        action = str(action or "").upper()
+        path = str(path or "").lower()
+        with self._lock:
+            self._advance()
+            room = self.battery_rooms.get(path)
+            if room is None:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            if br.parse_action(action) is None:
+                raise DeviceControlError(400, f"unknown battery room action {action!r}")
+            ctx = self._room_ctx(path, actor)
+            reason = br.interlock(room, action, ctx)
+            if reason:
+                raise DeviceControlError(409, reason)
+            reading = br.apply(room, action, ctx)
+            event = {
+                "ts": round(self.wall_clock(), 3),
+                "event": "inspection" if br.is_inspection(action) else "command",
+                "device_id": f"battery_room_{path}", "actor": actor,
+                "command": f"{action}@BATT_{path.upper()}", "field": True, "equipment": "battery",
+                "action": action, "path": path,
+                **({"reading": reading} if reading else {}),
+            }
+            self._events.append(event)
+            self._advance()
+            event["strings_online"] = br.strings_online(room)
+            event["load_feed"] = self._load_feed(path)[1]
+            return event
+
+    def battery_refusal(self, path: str, actor: str, detail: str, action: str) -> None:
+        with self._lock:
+            p = str(path or "").lower()
+            self._events.append({
+                "ts": round(self.wall_clock(), 3), "event": "refused",
+                "device_id": f"battery_room_{p}", "actor": actor, "detail": detail,
+                "command": f"{str(action or '').upper()}@BATT_{p.upper()}",
+            })
+
+    def inject_battery_condition(self, path: str, condition: str, actor: str,
+                                 **params: Any) -> dict[str, Any]:
+        """Training: hot_jar (string, jar, temp_c, r_mohm, v), fan_fail
+        (fan), h2 (ppm)."""
+        with self._lock:
+            self._advance()
+            room = self.battery_rooms.get(path)
+            if room is None:
+                raise DeviceControlError(404, f"unknown path {path!r}")
+            if condition == "hot_jar":
+                d = {**br.DEFAULT_DEFECT, **{k: v for k, v in params.items() if k in br.DEFAULT_DEFECT}}
+                s, j = int(d["string"]), int(d["jar"])
+                if not (1 <= s <= br.STRINGS and 1 <= j <= br.JARS):
+                    raise DeviceControlError(400, "string 1..4 and jar 1..40")
+                br.inject_defect(room, s, j, d["temp_c"], d["r_mohm"], d["v"])
+            elif condition == "fan_fail":
+                fan = str(params.get("fan", "EF1")).upper()
+                if fan not in br.FANS:
+                    raise DeviceControlError(400, f"fan must be one of {list(br.FANS)}")
+                room.fans[fan].failed = True
+            elif condition == "h2":
+                room.h2_ppm = max(0.0, _num(params.get("ppm", br.H2_ALARM_PPM)))
+            else:
+                raise DeviceControlError(400, f"unknown battery room condition {condition!r}")
+            return self._plant_event("battery_condition", path, actor, condition=condition,
+                                     **{k: v for k, v in params.items() if isinstance(v, int | float | str)})
+
     # ── T3: generator bus vs utility (synchroscope model) ──────────
     def _islanded(self, path: str) -> bool:
         """Generator bus carrying the path with utility voltage present
@@ -1160,13 +1349,13 @@ class DeviceController:
                 continue
             path = xfer.path
             u_block = self._cubicle_reason(path, cub.BREAKER_U)
-            if self._incomer_live(path) and u_block:
+            if self._utility_sensed(path) and u_block:
                 # Utility is there but its breaker cannot close (racked
                 # out, 86 tripped, spring discharged): the controller
                 # treats the normal source as unavailable and goes on
                 # to the emergency source below.
                 self._auto_block(xfer, u_block)
-            elif self._incomer_live(path):
+            elif self._utility_sensed(path):
                 xfer.state, xfer.state_since = XFER_UTILITY, now
                 self._closed_main(path, cub.BREAKER_U)
                 self._auto_blocked.pop(path, None)
@@ -1178,7 +1367,9 @@ class DeviceController:
                 self._event("auto_start", gen, "controller", to_state=GEN_CRANKING)
             on_bus = sum(d.rated_kw for d in self._gens_on_bus(path))
             if on_bus > 0 and on_bus >= self._demand_kw(path):
-                why = self._cubicle_reason(path, cub.BREAKER_GM)
+                why = self._cubicle_reason(path, cub.BREAKER_GM) or (
+                    None if self._genbus_sensed(path) else
+                    "generator bus voltage not sensed by the controller (PT secondary)")
                 if why:
                     self._auto_block(xfer, why)
                     continue
@@ -1230,9 +1421,11 @@ class DeviceController:
         sys_ = self.ups_systems.get(path)
         if sys_ is not None and not sys_.qf1:
             return 0.0          # L4: battery breaker QF1 open
+        room = self.battery_rooms.get(path)
+        frac = br.strings_online(room) / br.STRINGS if room is not None else 1.0
         runtime_min = _num(self.design["ups"].get("runtime_full_load_min"))
         rated = sum(d.rated_kw for d in self._of(KIND_UPS, path) if d.state in _UPS_PROTECTING)
-        return rated * runtime_min / 60.0
+        return rated * runtime_min / 60.0 * frac   # L5: strings off line carry nothing
 
     def _battery_runtime_min(self, path: str) -> float:
         """Minutes left on battery at the present IT load (model)."""
@@ -1365,10 +1558,11 @@ class DeviceController:
             for name in ("devices", "bays", "procedures", "path_share", "utility_ok",
                          "battery_soc", "load_lost", "faults", "closed_transition",
                          "gen_hz", "sync_angle", "cubicles", "xfmrs", "grid_kv",
-                         "gensets", "bulk_l", "ups_systems"):
+                         "gensets", "bulk_l", "ups_systems", "battery_rooms", "wirings"):
                 setattr(self, name, getattr(fresh, name))
             self._xfmr_at = None
             self._gen_at = None
+            self._room_at = None
             self._selections.clear()
             self._batt_at = None
             self._sync_at = None
@@ -1449,10 +1643,13 @@ class DeviceController:
                        XFER_UTILITY if self._bus_energized(path) else "NONE"),
             "utility_ok": self.utility_ok.get(path, True),
             "incomer_live": self._incomer_live(path),
+            "utility_sensed": self._utility_sensed(path),
             "on_battery": self._on_battery(path),
             "load_feed": self._load_feed(path)[1],
             **({"ups_system": ub.describe(self.ups_systems[path], self._ups_ctx(path))}
                if path in self.ups_systems else {}),
+            **({"battery_room": br.describe(self.battery_rooms[path], self._room_ctx(path))}
+               if path in self.battery_rooms else {}),
             **self._bulk_summary(path),
             "bus_energized": self._bus_energized(path),
             "load_lost": self.load_lost.get(path, False),
@@ -1534,7 +1731,7 @@ class DeviceController:
                             "retransfers in open transition.")
                 if dev.state != XFER_GENERATORS:
                     return "Path is not on generators."
-                if not self._incomer_live(dev.path):
+                if not self._utility_sensed(dev.path):
                     return "No utility voltage on the incomer (ANSI 27 picked up)."
                 if dev.path in self._sync_close:
                     return "A supervised close is already armed: wait or cancel it."
@@ -1555,11 +1752,13 @@ class DeviceController:
                         f"Generator bus has {on_bus / 1000:.1f} MW synchronised, below the "
                         f"{demand / 1000:.1f} MW the path is drawing."
                     )
+                if not self._genbus_sensed(dev.path):
+                    return "Generator bus voltage not sensed by the controller: 52-GM close held."
                 return self._cubicle_reason(dev.path, cub.BREAKER_GM)
             if command == "RETRANSFER_TO_UTILITY":
                 if dev.state == XFER_UTILITY:
                     return "Path is already on utility."
-                if not self._incomer_live(dev.path):
+                if not self._utility_sensed(dev.path):
                     return "No utility voltage on the incomer (ANSI 27 picked up)."
                 return self._cubicle_reason(dev.path, cub.BREAKER_U)
         elif dev.kind == KIND_GENERATOR:
@@ -1683,7 +1882,7 @@ class DeviceController:
                 {"label": "52-GM generator main",
                  "value": mv.CLOSED if dev.state == XFER_GENERATORS else mv.OPEN},
                 {"label": "ANSI 27 incomer undervoltage",
-                 "value": "NORMAL" if self._incomer_live(dev.path) else "PICKED UP"},
+                 "value": "NORMAL" if self._utility_sensed(dev.path) else "PICKED UP"},
             ] + self._xfmr_indications(dev.path) + [
                 {"label": f"{b} cubicle", "value": _cubicle_text(self.cubicles[(dev.path, b)])}
                 for b in cub.BREAKERS if (dev.path, b) in self.cubicles
@@ -1717,7 +1916,7 @@ class DeviceController:
                 t = self.xfmrs.get(dev.path)
                 if t is not None and t.lockout_86t:
                     return {"tone": "crit", "text": "52-U tripped by 86T (transformer): MV bus dead"}
-                if not self._incomer_live(dev.path):
+                if not self._utility_sensed(dev.path):
                     return {"tone": "crit", "text": "52-U tripped (ANSI 27): MV bus dead"}
                 return {"tone": "crit", "text": "Both mains open: MV bus dead"}
             return {"tone": "warn", "text": "Path on generators"}
@@ -1777,6 +1976,8 @@ class DeviceController:
             snap["auto_blocked"] = self._auto_blocked.get(dev.path)
             if dev.path in self.xfmrs:
                 snap["transformer"] = xf.describe(self.xfmrs[dev.path], self._xfmr_ctx(dev.path))
+            if dev.path in self.wirings:
+                snap["wiring"] = mw.describe(self.wirings[dev.path], self._wiring_ctx(dev.path))
         return snap
 
     def _switching(self, dev: Device) -> dict[str, Any]:
@@ -2372,6 +2573,27 @@ def register_device_control_routes(
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 
+    @app.post("/api/devices/{device_id}/wiring")
+    async def control_wiring_action(
+        device_id: str, request: Request, payload: dict = Body(...),
+    ) -> dict[str, Any]:
+        """L5: an operation in the MV control compartment (PT fuse
+        holders F-1A / F-1B, multimeter on TB-1)."""
+        actor = authorise(request, payload)
+        ctl = _controller()
+        action = str(payload.get("action") or "")
+        try:
+            event = ctl.wiring_action(device_id, action, actor)
+        except DeviceControlError as exc:
+            ctl.refusal_event(device_id, actor, exc.detail, command=f"{action.upper()}@{device_id.upper()}")
+            raise _fail(exc) from exc
+        entry_id = await _ledger_append(
+            request.app, actor, ACTION_WIRING_FIELD,
+            {k: event.get(k) for k in ("device_id", "event", "action", "path", "reading",
+                                        "transfer_state", "utility_sensed")},
+        )
+        return {"success": True, "event": event, "ledger_entry_id": entry_id}
+
     @app.post("/api/devices/{device_id}/xfmr")
     async def transformer_field_action(
         device_id: str, request: Request, payload: dict = Body(...),
@@ -2434,6 +2656,28 @@ def register_device_control_routes(
             request.app, actor, ACTION_UPS_FIELD,
             {k: event.get(k) for k in ("device_id", "action", "path", "mode_before", "mode",
                                         "breakers", "skru_keys", "qf1_padlock", "load_feed")},
+        )
+        return {"success": True, "event": event, "ledger_entry_id": entry_id}
+
+    @app.post("/api/battery-rooms/{path}/action")
+    async def battery_room_action(
+        path: str, request: Request, payload: dict = Body(...),
+    ) -> dict[str, Any]:
+        """L5: an operation in the battery room of a path (infrared scan,
+        analyzer reading, string disconnects, padlocks, mid-string links,
+        jar replacement, exhaust fans)."""
+        actor = authorise(request, payload)
+        ctl = _controller()
+        action = str(payload.get("action") or "")
+        try:
+            event = ctl.battery_action(path, action, actor)
+        except DeviceControlError as exc:
+            ctl.battery_refusal(path, actor, exc.detail, action)
+            raise _fail(exc) from exc
+        entry_id = await _ledger_append(
+            request.app, actor, ACTION_BATT_FIELD,
+            {k: event.get(k) for k in ("device_id", "event", "action", "path", "reading",
+                                        "strings_online", "load_feed")},
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 

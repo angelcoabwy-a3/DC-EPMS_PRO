@@ -1,0 +1,132 @@
+{
+  "id": "DRILL-09",
+  "version": 1,
+  "title": "Find and replace a failing jar in battery string 3 (UPS bank A)",
+  "summary": "Path A runs normally on utility. The string monitor of the UPS A battery room raises a float current alarm on string 3: one jar in that string is failing and heating. Find it before it reaches thermal runaway. In the battery room (field view, BATTERY): scan string 3 with the infrared camera, confirm the jar with the battery analyzer (voltage and internal ohmic value), then take the string off line in OSHA order: open the string disconnect SB3, apply your padlock, split the string at its mid-string link (the string is a 542 V source by itself), replace the jar, put the link back, remove your padlock and close SB3. The other three strings keep the UPS protected meanwhile. If the jar reaches 60 C it vents and the drill ends.",
+  "path": "a",
+  "target_s": 150,
+  "time_limit_s": 600,
+  "procedure_commands": [
+    "OPEN_SB3@BATT_A",
+    "PADLOCK_SB3@BATT_A",
+    "BREAK_LINK_S3@BATT_A",
+    "REPLACE_S3_J18@BATT_A",
+    "MAKE_LINK_S3@BATT_A",
+    "UNPADLOCK_SB3@BATT_A",
+    "CLOSE_SB3@BATT_A"
+  ],
+  "references": [
+    "Operator master specification (digital twin EPMS), subsystem 4: 4 strings of 40 jars, 542.1 VDC, infrared (ironbow) and impedance analyzer, example jar 18 of string 3 at 48.6 C, 14.2 mOhm, 10.4 V; H2 alarm at 1 % LEL",
+    "Battcon 2013, 'Batteries die in thirds' (Vertiv): ohmic value changes of 30 % to 50 % and greater over baseline indicate aging and loss of capacity (model thresholds +30 % warn, +50 % replace), checked 2026-11-26",
+    "Hydrogen LEL 4 % by volume; IFC / NFPA 1 and NYC MC 502.4.1 limit a VRLA battery room to 1 % hydrogen by volume (25 % LEL) by ventilation, checked 2026-11-26",
+    "OSHA 29 CFR 1910.147 (d): isolate, apply the lockout device, then release or restrain stored energy; the padlock on SB3 is the employee's own",
+    "Model values: float currents, heating rate, 60 C runaway limit, gas evolution and the mid-string link are this simulator's, not a vendor procedure"
+  ],
+  "setup": {
+    "inject": [
+      {
+        "type": "battery_condition",
+        "path": "a",
+        "condition": "hot_jar",
+        "string": 3,
+        "jar": 18,
+        "temp_c": 48.6,
+        "r_mohm": 14.2,
+        "v": 10.4
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "SCAN",
+      "text": "Scan string 3 with the infrared camera",
+      "check": {
+        "type": "battery_room",
+        "path": "a",
+        "field": "scanned",
+        "contains": 3
+      }
+    },
+    {
+      "id": "MEASURE",
+      "text": "Measure the hot jar with the battery analyzer (jar 18)",
+      "check": {
+        "type": "battery_room",
+        "path": "a",
+        "field": "measured",
+        "contains": "S3J18"
+      }
+    },
+    {
+      "id": "ISOLATE",
+      "text": "Open the string disconnect SB3",
+      "check": {
+        "type": "battery_room",
+        "path": "a",
+        "field": "strings.2.closed",
+        "value": false
+      }
+    },
+    {
+      "id": "LOCK",
+      "text": "Apply your padlock to SB3",
+      "check": {
+        "type": "battery_room",
+        "path": "a",
+        "field": "strings.2.padlock",
+        "truthy": true
+      }
+    },
+    {
+      "id": "SPLIT",
+      "text": "Remove the mid-string link of string 3",
+      "check": {
+        "type": "battery_room",
+        "path": "a",
+        "field": "strings.2.link",
+        "value": false
+      }
+    },
+    {
+      "id": "REPLACE",
+      "text": "Replace jar 18",
+      "check": {
+        "type": "battery_room",
+        "path": "a",
+        "field": "replaced",
+        "contains": "S3J18"
+      }
+    },
+    {
+      "id": "RESTORE",
+      "text": "Link back, padlock off, SB3 closed: string 3 on line",
+      "check": {
+        "type": "all",
+        "of": [
+          {
+            "type": "battery_room",
+            "path": "a",
+            "field": "strings.2.online",
+            "value": true
+          },
+          {
+            "type": "battery_room",
+            "path": "a",
+            "field": "strings.2.padlock",
+            "value": null
+          }
+        ]
+      }
+    }
+  ],
+  "fail": [
+    {
+      "type": "load_lost",
+      "path": "a"
+    },
+    {
+      "type": "battery_runaway",
+      "path": "a"
+    }
+  ]
+}

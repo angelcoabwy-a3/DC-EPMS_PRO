@@ -1,0 +1,123 @@
+{
+  "id": "DRILL-10",
+  "version": 1,
+  "title": "False emergency start on path A: find the blown PT fuse",
+  "summary": "Path A tripped off utility on ANSI 27 and the transfer controller started the generators: the path is now on generators. The utility company reports no outage. Find out why before you retransfer. In the control compartment of the MV transfer lineup (field view, CONTROL): with the multimeter on V AC, measure both sides of the utility sensing fuse F-1A on TB-1; pull the F-1A fuse holder and check the fuse with the resistance range; replace the fuse and put the holder back. Then retransfer to utility (open transition, MV transfer A in REMOTE) and stop the generator bus.",
+  "path": "a",
+  "target_s": 180,
+  "time_limit_s": 900,
+  "procedure_commands": [
+    "PULL_F1A@MVTC_A",
+    "REPLACE_F1A@MVTC_A",
+    "INSERT_F1A@MVTC_A",
+    "RETRANSFER_TO_UTILITY",
+    "STOP_GENERATORS",
+    "STOP"
+  ],
+  "references": [
+    "Operator master specification (digital twin EPMS), subsystem 2: CPT and draw-out fuse holders F-1A / F-1B; a blown F-1A leaves 0 V AC on the secondary with 27.5 kV on the primary and starts a false emergency transfer; TB-1 with a true-RMS multimeter on F-1A (120 V AC), P1-N1 (125 V DC), 73-74 and the 52TC / 52CC circuits",
+    "Model reading: F-1A also feeds the ANSI 27 element, so 52-U trips. Many relays supervise PT fuses (ANSI 60 loss of potential) and block 27 instead; this model has no 60 element",
+    "Fuse check practice: about 0 V across an intact fuse in circuit, about the supply voltage across a blown one; resistance only with the fuse out of circuit",
+    "Retransfer as DRILL-02: open transition, 52-U and 52-GM never closed together"
+  ],
+  "setup": {
+    "inject": [
+      {
+        "type": "wiring_fault",
+        "path": "a",
+        "fuse": "F-1A"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "LINE",
+      "text": "Measure F-1A line side to N on V AC (utility PT secondary: about 120 V)",
+      "check": {
+        "type": "wiring",
+        "path": "a",
+        "field": "measured",
+        "contains": "F1A_LINE:VAC"
+      }
+    },
+    {
+      "id": "LOAD",
+      "text": "Measure F-1A load side to N on V AC (0 V: the controller sees no utility)",
+      "check": {
+        "type": "wiring",
+        "path": "a",
+        "field": "measured",
+        "contains": "F1A_LOAD:VAC"
+      }
+    },
+    {
+      "id": "PULL",
+      "text": "Pull the F-1A fuse holder",
+      "check": {
+        "type": "wiring",
+        "path": "a",
+        "field": "fuses.F-1A.pulled",
+        "value": true
+      }
+    },
+    {
+      "id": "TEST",
+      "text": "Check the fuse on the resistance range (OL = open)",
+      "check": {
+        "type": "wiring",
+        "path": "a",
+        "field": "measured",
+        "contains": "F1A_FUSE:OHM"
+      }
+    },
+    {
+      "id": "REPLACE",
+      "text": "Replace the fuse and put the holder back",
+      "check": {
+        "type": "all",
+        "of": [
+          {
+            "type": "wiring",
+            "path": "a",
+            "field": "fuses.F-1A.ok",
+            "value": true
+          },
+          {
+            "type": "wiring",
+            "path": "a",
+            "field": "fuses.F-1A.pulled",
+            "value": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "RETRANSFER",
+      "text": "Retransfer to utility (MV transfer A in REMOTE: Retransfer to utility)",
+      "check": {
+        "type": "transfer_state",
+        "path": "a",
+        "state": "UTILITY"
+      },
+      "holds": {
+        "type": "transfer_state",
+        "path": "a",
+        "state": "UTILITY"
+      }
+    },
+    {
+      "id": "STOP",
+      "text": "Stop the generator bus",
+      "check": {
+        "type": "no_sets_running",
+        "path": "a"
+      }
+    }
+  ],
+  "fail": [
+    {
+      "type": "load_lost",
+      "path": "a"
+    }
+  ]
+}

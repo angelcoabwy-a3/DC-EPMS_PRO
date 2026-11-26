@@ -54,12 +54,14 @@ VIOLATION_EVENTS = ("refused", "procedure_blocked", "bay_blocked")
 CHECK_TYPES = (
     "alarms_acked", "gens_started_cover_demand", "gens_on_bus_cover_demand",
     "transfer_state", "device_state", "no_sets_running",
-    "sync_slip_within", "event_seen", "cubicle", "device_authority", "xfmr", "gen_fuel", "ups_system", "all",
+    "sync_slip_within", "event_seen", "cubicle", "device_authority", "xfmr", "gen_fuel", "ups_system",
+    "battery_room", "wiring", "all",
 )
-FAIL_TYPES = ("load_lost", "command_used", "xfmr_internal_fault", "gen_shutdown")
+FAIL_TYPES = ("load_lost", "command_used", "xfmr_internal_fault", "gen_shutdown", "battery_runaway")
 INJECT_TYPES = ("utility_loss", "utility_restore", "preset_on_generators", "ups_fault",
                 "closed_transition_mode", "synchro", "xfmr_spare_key", "utility_voltage",
-                "gen_condition", "qf1_shunt_trip", "ups_mode")
+                "gen_condition", "qf1_shunt_trip", "ups_mode", "battery_condition",
+                "wiring_fault")
 
 
 class TrainingError(Exception):
@@ -148,6 +150,11 @@ def _dig(obj: Any, dotted: Any) -> Any:
 
 
 def _match(v: Any, cond: dict[str, Any]) -> bool:
+    if "contains" in cond:
+        # L5: a list (or text) that must hold a value, e.g. scanned strings
+        return isinstance(v, list | str) and cond["contains"] in v
+    if "lacks" in cond:
+        return isinstance(v, list | str) and cond["lacks"] not in v
     if cond.get("truthy"):
         return bool(v)
     if "min" in cond or "max" in cond:
@@ -216,6 +223,13 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
     if kind == "ups_system":
         # L4: {"path", "field": "breakers.Q3"} + value / values / truthy / min / max
         return _match(_dig(_path(plant, path).get("ups_system"), cond.get("field")), cond)
+    if kind == "battery_room":
+        # L5: {"path", "field": "strings.2.closed"} + value / values / truthy / contains
+        return _match(_dig(_path(plant, path).get("battery_room"), cond.get("field")), cond)
+    if kind == "wiring":
+        # L5: {"path", "field": "fuses.F-1A.ok"} on the transfer controller
+        xfer = next(iter(_devices(plant, "transfer", path)), {})
+        return _match(_dig(xfer.get("wiring"), cond.get("field")), cond)
     if kind == "all":
         return all(check(sub, plant, engine, events) for sub in cond.get("of") or [{}])
     if kind == "device_authority":
@@ -283,6 +297,11 @@ def failed(conds: list[dict[str, Any]], plant: dict[str, Any],
                 if e.get("event") == "protection_trip" and e.get("relay") == "SHUTDOWN" \
                         and e.get("device_id") == cond.get("device"):
                     return cond.get("reason") or f"{cond.get('device')} shut down: {e.get('detail')}"
+        if cond.get("type") == "battery_runaway":
+            for e in events or []:
+                if e.get("event") == "thermal_runaway" \
+                        and e.get("device_id") == f"battery_room_{cond.get('path')}":
+                    return cond.get("reason") or f"thermal runaway: jar {e.get('jar')} vented"
         if cond.get("type") == "command_used":
             for e in events or []:
                 if e.get("event") == "command" and e.get("command") == cond.get("command"):
@@ -363,6 +382,11 @@ class TrainingManager:
                     ctl.inject_qf1_shunt_trip(inj["path"], "training")
                 elif kind == "ups_mode":
                     ctl.ups_action(inj["path"], inj["action"], "training")
+                elif kind == "wiring_fault":
+                    ctl.inject_wiring_fault(inj["path"], inj["fuse"], "training")
+                elif kind == "battery_condition":
+                    params = {k: v for k, v in inj.items() if k not in ("type", "path", "condition")}
+                    ctl.inject_battery_condition(inj["path"], inj["condition"], "training", **params)
                 elif kind == "gen_condition":
                     params = {k: v for k, v in inj.items() if k not in ("type", "device", "condition")}
                     ctl.inject_gen_condition(inj["device"], inj["condition"], "training", **params)
