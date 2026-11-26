@@ -47,6 +47,7 @@ import { trainingHtml } from '../core/training_view.js';
 import { openPrintable } from '../core/training_print.js';
 import { fieldLineupSvg, applyFieldState, resolveClick, fieldLogHtml } from '../core/field_switchgear.js';
 import { xfmrSvg, applyXfmrState, resolveXfmrClick, isXfmrEvent, xfmrEventText } from '../core/field_xfmr.js';
+import { genSvg, applyGenState, resolveGenClick, isGenEvent, genEventText, genId } from '../core/field_gen.js';
 import { needleAngle, permissive, etaNow, etaText } from '../core/synchroscope.js';
 import { escapeHTML } from '../core/sanitize.js';
 import { relayRowSvg, relayStates, applyRelays } from '../core/relay_tags.js';
@@ -104,7 +105,8 @@ let _prevSteps = 0;
 let _vp = null;
 // L1: field view of the 13.8 kV switchgear (Layer 2).
 let _fieldPath = null;
-let _fieldEquip = 'swgr';      // L2: 'swgr' | 'xfmr'
+let _fieldEquip = 'swgr';      // L2: 'swgr' | 'xfmr'; L3: 'gen'
+let _fieldGen = 1;             // L3: set number shown (1..9)
 let _fieldMsg = '';
 let _fieldBusy = false;
 let _fieldTimer = null;
@@ -1359,6 +1361,11 @@ function _focusDrill() {
 }
 
 // ── L1: field view of the 13.8 kV switchgear ─────────────────────
+function _fieldGenDev() {
+    const id = genId(_fieldPath, _fieldGen);
+    return ((_plant && _plant.devices) || []).find((d) => d.id === id) || null;
+}
+
 function _fieldXfer() {
     const id = `mvtc_${_fieldPath}`;
     return ((_plant && _plant.devices) || []).find((d) => d.id === id) || null;
@@ -1378,7 +1385,8 @@ function _ensureField() {
         + '<span class="fsg-paths"><button type="button" data-fpath="a">PATH A</button>'
         + '<button type="button" data-fpath="b">PATH B</button></span>'
         + '<span class="fsg-paths"><button type="button" data-fequip="swgr">SWITCHGEAR</button>'
-        + '<button type="button" data-fequip="xfmr">TRANSFORMER</button></span>'
+        + '<button type="button" data-fequip="xfmr">TRANSFORMER</button>'
+        + '<button type="button" data-fequip="gen">GENERATOR</button></span>'
         + '<span class="fsg-note">Layer 2 · equipment view · every operation is checked by the server interlocks and recorded</span>'
         + '<button type="button" class="fsg-close" data-fclose="1" aria-label="Close field view">CLOSE ✕</button></div>'
         + '<div class="fsg-stage" id="pwr-field-stage"></div><div class="fsg-foot" id="pwr-field-foot"></div></div>';
@@ -1390,16 +1398,17 @@ function _ensureField() {
     return el;
 }
 
-function _openField(path, equip) {
+function _openField(path, equip, gen) {
     const el = _ensureField();
     _fieldPath = String(path || 'a').toLowerCase() === 'b' ? 'b' : 'a';
-    if (equip) _fieldEquip = equip === 'xfmr' ? 'xfmr' : 'swgr';
+    if (equip) _fieldEquip = ['xfmr', 'gen'].includes(equip) ? equip : 'swgr';
+    if (gen) _fieldGen = Math.min(9, Math.max(1, Number(gen) || 1));
     _fieldMsg = '';
     _fieldCovers.clear();
     document.getElementById('pwr-field-stage').innerHTML = _fieldEquip === 'xfmr'
-        ? xfmrSvg(_fieldPath) : fieldLineupSvg(_fieldPath);
-    el.setAttribute('aria-label', _fieldEquip === 'xfmr'
-        ? 'Field view: utility transformer' : 'Field view: 13.8 kV switchgear');
+        ? xfmrSvg(_fieldPath) : (_fieldEquip === 'gen' ? genSvg(_fieldPath) : fieldLineupSvg(_fieldPath));
+    el.setAttribute('aria-label', { xfmr: 'Field view: utility transformer', gen: 'Field view: generator set' }[_fieldEquip]
+        || 'Field view: 13.8 kV switchgear');
     el.querySelectorAll('[data-fpath]').forEach((b) =>
         b.setAttribute('aria-pressed', String(b.dataset.fpath === _fieldPath)));
     el.querySelectorAll('[data-fequip]').forEach((b) =>
@@ -1423,14 +1432,19 @@ function _applyField() {
     const stage = document.getElementById('pwr-field-stage');
     const xfer = _fieldXfer();
     const xf = _fieldEquip === 'xfmr';
+    const gen = _fieldEquip === 'gen' ? _fieldGenDev() : null;
     if (stage && xfer) {
-        if (xf) applyXfmrState(stage, xfer.transformer, _fieldPath);
+        if (gen) {
+            const ps = ((_plant && _plant.paths) || []).find((p) => p.path === _fieldPath) || null;
+            applyGenState(stage, gen, ps, _fieldGen);
+        } else if (xf) applyXfmrState(stage, xfer.transformer, _fieldPath);
         else applyFieldState(stage, xfer, { covers: _fieldCovers });
     }
     const foot = document.getElementById('pwr-field-foot');
     if (foot) {
-        const view = xf ? { match: isXfmrEvent, text: xfmrEventText, empty: 'No transformer operation yet' } : null;
-        foot.innerHTML = xfer ? fieldLogHtml((_plant && _plant.events) || [], _fieldMsg, xfer.id, view)
+        const view = gen ? { match: isGenEvent, text: genEventText, empty: 'No operation at this set yet' }
+            : (xf ? { match: isXfmrEvent, text: xfmrEventText, empty: 'No transformer operation yet' } : null);
+        foot.innerHTML = xfer ? fieldLogHtml((_plant && _plant.events) || [], _fieldMsg, gen ? gen.id : xfer.id, view)
             : '<div class="fsg-lcd-msg" data-tone="warn">Plant not reachable: sign in or wait for the next poll.</div>';
     }
 }
@@ -1446,6 +1460,7 @@ async function _onFieldClick(ev) {
     if (eb) { _openField(_fieldPath, eb.dataset.fequip); return; }
     if (_fieldBusy) return;
     if (_fieldEquip === 'xfmr') { await _onXfmrClick(t); return; }
+    if (_fieldEquip === 'gen') { await _onGenClick(t); return; }
     const xfer = _fieldXfer();
     const r = resolveClick(t, xfer);
     if (!r || !xfer) return;
@@ -1505,6 +1520,46 @@ async function _onFieldClick(ev) {
                     target.classList.add('fsg-shake');
                     setTimeout(() => target.classList.remove('fsg-shake'), 340);
                 }
+            }
+        }
+    } finally {
+        _fieldBusy = false;
+    }
+    await _pollAlarms(true);
+    if (_trView && _trView.active) _trainingTick();
+}
+
+// L3: an operation at a generator set (control panel, e-stop, heater,
+// day-tank pumps, fuel filter, basin). The set selector is UI only.
+async function _onGenClick(t) {
+    const dev = _fieldGenDev();
+    const r = resolveGenClick(t, dev);
+    if (!r) return;
+    if (r.set) {
+        _fieldGen = r.set;
+        _fieldMsg = '';
+        _audio.latch();
+        _applyField();
+        return;
+    }
+    if (!dev) return;
+    const target = t.closest('[data-act]');
+    const permitted = ((dev.fuel.actions || []).find((a) => a.action === r.action) || {}).permitted;
+    _fieldBusy = true;
+    try {
+        if (permitted && (r.kind === 'selector' || r.kind === 'breaker')) _audio.latch();
+        else if (permitted && r.kind === 'estop') _audio.breaker(false);
+        const res = await plantPost(`/api/devices/${encodeURIComponent(dev.id)}/fuel`, { action: r.action });
+        if (res.ok) {
+            const evd = res.data.event || {};
+            _fieldMsg = `${r.action.replace(/_/g, ' ')} · ${String(evd.to_state || '').replace(/_/g, ' ')} · DAY TANK ${evd.day_tank_pct} %`;
+            if (r.action === 'ECS_RUN') _audio.engineStart();
+        } else {
+            _fieldMsg = `INTERLOCK · ${res.detail}`;
+            _audio.clunk();
+            if (target) {
+                target.classList.add('fsg-shake');
+                setTimeout(() => target.classList.remove('fsg-shake'), 340);
             }
         }
     } finally {
@@ -1727,7 +1782,10 @@ async function _onFaceplateClick(ev) {
     const btn = ev.target.closest('button');
     if (!btn) return;
     if (btn.dataset.fpClose) { _fpTarget = null; _fpPending.clear(); _renderFaceplate(); return; }
-    if (btn.dataset.fpField) { _openField(btn.dataset.fpField, 'swgr'); return; }
+    if (btn.dataset.fpField) {
+        _openField(btn.dataset.fpField, btn.dataset.fpEquip || 'swgr', btn.dataset.fpGen);
+        return;
+    }
     const url = (id, verb) => `/api/devices/${encodeURIComponent(id)}/${verb}`;
     let r = null;
     if (btn.dataset.fpAuth) {

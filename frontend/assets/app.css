@@ -11302,3 +11302,55 @@ table.opt-votes td {
     .fsg-bar .fsg-note { display: none; }
     .fsg-bar .fsg-paths button { white-space: nowrap; }
 }
+/* ════════════════════════════════════════════════════════════════
+ * L3 (2026-11-26): FIELD VIEW · generator set and fuel system.
+ * ════════════════════════════════════════════════════════════════ */
+.xg-sel [data-act], .xg-estop, .xg-brk, .xg-ol, .xg-setbtn { cursor: pointer; }
+.xg-knob { transition: transform .25s ease-out; }
+.xg-setbtn rect { fill: #24282c; stroke: #000; }
+.xg-setbtn text { font: 700 8px var(--font-mono); fill: #c3c8cf; }
+.xg-setbtn[data-on="1"] rect { fill: #9aa4b2; }
+.xg-setbtn[data-on="1"] text { fill: #0b0d10; }
+.xg-estop-collar { fill: #ffd21f; stroke: #5a4a00; stroke-width: 2; }
+.xg-estop-txt { font: 900 7px sans-serif; fill: #111; letter-spacing: .08em; }
+.xg-estop-shadow { fill: #4a0a12; }
+.xg-estop-red { fill: #d81f26; stroke: #6a0c12; stroke-width: 1.5; }
+.xg-estop-glint { fill: rgba(255,255,255,.35); }
+.xg-estop-cap { transition: transform .2s cubic-bezier(.3,1.6,.5,1); transform: scale(1); }
+.xg-section[data-estop="1"] .xg-estop-cap { transform: scale(.86) rotate(30deg); }
+.xg-section[data-estop="1"] .xg-estop-red { fill: #a5141a; }
+.xg-brk-body { fill: #1b1e21; stroke: #000; }
+.xg-brk-slot { fill: #050607; }
+.xg-brk-toggle { fill: #2f3a44; stroke: #000; }
+.xg-brk-handle { transition: transform .2s ease; transform: translateY(20px); }
+.xg-section[data-heater="1"] .xg-brk-handle { transform: translateY(0); }
+.xg-section[data-heater="1"] .xg-brk-toggle { fill: #d81f26; }
+.xg-cool { font: 800 16px var(--font-mono); fill: #e6e9ed; }
+.xg-cool-lbl { fill: #9aa4b2; }
+.xg-tank { fill: #1a1d21; stroke: #6c747b; stroke-width: 2; }
+.xg-fuel { transition: transform 1s ease-in-out; }
+.xg-fuel-body { fill: #b8862b; opacity: .85; }
+.xg-wave { fill: #d4a54a; animation: xg-wave 3s linear infinite; }
+@keyframes xg-wave { to { transform: translateX(30px); } }
+.xg-mark line { stroke: #ffd21f; stroke-width: 1; stroke-dasharray: 3 2; }
+.xg-mark-dot { fill: #3a4046; stroke: #000; }
+.xg-mark[data-wet="1"] .xg-mark-dot { fill: #ffd21f; }
+.xg-tank-pct { font: 800 14px var(--font-mono); fill: #1b1e21; }
+.xg-ol-body { fill: #2a2e32; stroke: #000; }
+.xg-ol-btn { fill: #7a1016; stroke: #000; }
+.xg-ol[data-trip="1"] .xg-ol-btn { fill: #ff3b30; filter: drop-shadow(0 0 5px #ff3b30); }
+.xg-filter-head { fill: #3a4046; stroke: #000; }
+.xg-bowl { fill: rgba(220, 235, 255, .25); stroke: #c9ced3; stroke-width: 1.5; }
+.xg-bowl-fuel { fill: #d4a54a; opacity: .55; }
+.xg-bowl-water { fill: #3a8ee6; transition: height .6s, y .6s; }
+[data-bowl][data-insvc="0"] .xg-bowl-fuel { opacity: .2; }
+.xg-basin { fill: #2b2f33; stroke: #000; }
+.xg-basin-fuel { fill: #b8862b; opacity: 0; transition: opacity .3s; }
+.xg-section[data-leak-present="1"] .xg-basin-fuel { opacity: .85; }
+.xg-float { transition: transform .4s ease; }
+.xg-section[data-leak-present="1"] .xg-float { transform: translateY(-14px); }
+.xg-float-body { fill: #e6e9ed; stroke: #333; }
+@media (prefers-reduced-motion: reduce) { .xg-wave { animation: none; } }
+/* L3: the field-view bar now carries three equipment buttons. */
+.fsg-bar .fsg-paths { flex-shrink: 0; }
+.fsg-bar .fsg-note { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

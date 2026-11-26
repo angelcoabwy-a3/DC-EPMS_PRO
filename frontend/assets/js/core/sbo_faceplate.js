@@ -70,6 +70,8 @@ export function faceplateHtml(target, plant, { pending = new Map(), nowMs = Date
             + (d.kind === 'transfer' && d.synchro ? synchroscopeHtml(d.id, d.synchro) : '')
             + (d.kind === 'transfer' && d.cubicles
                 ? `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(d.path)}">Field view: 13.8 kV switchgear (racking, springs, 86, padlock)</button>` : '')
+            + (d.kind === 'generator' && d.fuel
+                ? `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(d.path)}" data-fp-equip="gen" data-fp-gen="${escapeHTML(Number(String(d.id).slice(-2)) || 1)}">Field view: set panel, day tank, pumps, filter</button>` : '')
             + _commands(d, pending, nowMs) + '</div>';
     }).join('');
     return `<div class="fp-head"><span>${escapeHTML(head)} · SELECT then EXECUTE</span>`
