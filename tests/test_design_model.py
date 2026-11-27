@@ -166,6 +166,9 @@ def test_frontend_contract():
     assert body["basis"]["it_kw"]["value"] > 0
     ids = {c["id"] for c in body["chain"]}
     assert {"row_busways", "rack_feeds", "mv_rectifiers", "cdus"} <= ids
+    bw = next(c for c in body["chain"] if c["id"] == "row_busways")
+    assert bw["racks"] >= 1
+    assert bw["rating"]["value"] > 0
     cdus = next(c for c in body["chain"] if c["id"] == "cdus")
     assert cdus["per_row"] >= 1
     lay = body["layout"]

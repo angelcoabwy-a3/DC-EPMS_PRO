@@ -11582,3 +11582,7 @@ table.opt-votes td {
   #view-hall-3d .h3d-rack { left: 8px; right: 8px; width: auto; top: auto; bottom: 48px; max-height: 45%; }
   #view-hall-3d .h3d-callout { font-size: 10px; }
 }
+/* 3D Hall lote 5: 2N what-if banner (sandbox) */
+#view-hall-3d .h3d-whatif { position: absolute; left: 50%; transform: translateX(-50%); bottom: 58px; max-width: min(680px, 62%); z-index: 2; font-size: 12px; padding: 6px 10px; border-radius: 4px; background: rgba(60,44,8,.92); color: #ffe9a8; border: 1px solid #f2c037; }
+#view-hall-3d .h3d-whatif[data-ok="false"] { background: rgba(70,14,14,.92); color: #ffd6d6; border-color: #ff4b3e; }
+@media (max-width: 900px) { #view-hall-3d .h3d-whatif { bottom: 214px; max-width: 92%; font-size: 11px; } }

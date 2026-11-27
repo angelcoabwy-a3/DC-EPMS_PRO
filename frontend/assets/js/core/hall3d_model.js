@@ -313,6 +313,8 @@ export function callouts(spec, design, live) {
                 `${_fmt(val(bw, 'current'))} A of ${_fmt(val(bw, 'rating'))} A rating (MODEL)`,
                 live?.busV !== null && live?.busV !== undefined
                     ? `bus ${_fmt(live.busV, 1)} V (LIVE, simulator)` : 'bus voltage: no live data',
+                ...(live?.whatIf?.tripped ? [`what-if: path ${live.whatIf.tripped.toUpperCase()} tripped, `
+                    + `this busway ${live.whatIf.tripped === b0.path ? 'dead' : `at ${Math.round((live.whatIf.paths[b0.path].utilisation ?? 0) * 100)} %`}`] : []),
             ],
         });
     }
@@ -364,4 +366,56 @@ export function laneLayout(heights, stageH, top = 140, gap = 10) {
 export function ndcToStage(ndc, w, h) {
     if (!ndc || ndc.z > 1 || ndc.z < -1 || Math.abs(ndc.x) > 1.05 || Math.abs(ndc.y) > 1.05) return null;
     return [((ndc.x + 1) / 2) * w, ((1 - ndc.y) / 2) * h];
+}
+
+// ════════════════════════════════════════════════════════════════
+//  Lote 5: 2N path what-if (sandbox, local, never sent anywhere).
+// ════════════════════════════════════════════════════════════════
+
+export const WHATIF_CYCLE = Object.freeze([null, 'a', 'b']);
+
+/**
+ * Per-path busway loading with one path tripped (or none). Each rack
+ * draws its current half from each path in normal 2N; with a path
+ * tripped the other carries all of it. Rack current = live MODEL value
+ * when available, otherwise the design full-load feed current.
+ * Busway current = racks on the busway x rack current x share.
+ */
+export function pathScenario(design, live, tripped = null) {
+    const bw = chainEntry(design, 'row_busways');
+    const feed = chainEntry(design, 'rack_feeds');
+    const val = (e, k) => (e?.[k] && typeof e[k] === 'object' ? Number(e[k].value) : null);
+    const rating = val(bw, 'rating');
+    const racksPerBusway = Number(bw?.racks) || 0;
+    const liveA = Number.isFinite(live?.rackA) ? live.rackA : null;
+    const rackA = liveA ?? val(feed, 'current');
+    const source = liveA !== null ? 'MODEL from LIVE' : 'DESIGN full load';
+    const out = { tripped: tripped === 'a' || tripped === 'b' ? tripped : null, source, paths: {} };
+    for (const p of ['a', 'b']) {
+        let share = 0.5;
+        let state = 'normal';
+        if (out.tripped === p) { share = 0; state = 'tripped'; }
+        else if (out.tripped) { share = 1; state = 'carrying'; }
+        const current = rackA !== null ? racksPerBusway * rackA * share : null;
+        out.paths[p] = {
+            state, share, current,
+            rating,
+            utilisation: current !== null && rating ? current / rating : null,
+        };
+    }
+    const worst = Math.max(...['a', 'b'].map((p) => out.paths[p].utilisation ?? 0));
+    out.ok = worst <= 0.8 + 1e-9;           // continuous loading rule (ADR-021)
+    return out;
+}
+
+export function whatIfText(sc) {
+    if (!sc?.tripped) return '';
+    const other = sc.tripped === 'a' ? 'b' : 'a';
+    const p = sc.paths[other];
+    const pct = p.utilisation !== null ? Math.round(p.utilisation * 100) : null;
+    const amps = Number.isFinite(p.current) ? Math.round(p.current).toLocaleString('en-US') : '-';
+    return `WHAT-IF (sandbox): path ${sc.tripped.toUpperCase()} tripped. Path ${other.toUpperCase()} `
+        + `busways carry ${amps} A of ${Number(p.rating).toLocaleString('en-US')} A`
+        + (pct !== null ? ` (${pct} %)` : '') + `, ${sc.source}. `
+        + (sc.ok ? 'Within the 80 % continuous rule.' : 'ABOVE the 80 % continuous rule.');
 }

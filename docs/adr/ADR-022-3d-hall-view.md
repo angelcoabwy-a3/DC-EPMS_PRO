@@ -57,6 +57,14 @@ a real-time browser view on a mid-range laptop GPU.
      samples under 30 fps; never climbs back on its own; the HUD button
      sets it by hand.
 
+7. Lote 5 (same ADR): 2N path what-if. A HUD button cycles NORMAL /
+   TRIP A / TRIP B, in the browser only (sandbox, nothing sent to the
+   plant or the ledger). The tripped path's busways go dark, the other
+   path's flow doubles, and a banner gives the surviving busway current
+   against its rating and the 80 percent continuous rule, from
+   `pathScenario()` (racks per busway x rack current x share; rack
+   current = live MODEL value, else the design full-load feed).
+
 ## Consequences
 
 - Frame rate must be measured on the operator's GPU; the headless check

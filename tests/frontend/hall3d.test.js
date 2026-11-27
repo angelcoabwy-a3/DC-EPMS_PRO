@@ -18,6 +18,7 @@ import {
     buildSceneSpec, busways, rackBox, tapOffs, labelIsVocabSafe, MM,
     liveFromChannels, derivedLive, governQuality, qualitySettings,
     tourKeyframes, ease, callouts, laneLayout, ndcToStage, LIVE_KEYS,
+    pathScenario, whatIfText, WHATIF_CYCLE,
 } from '/assets/js/core/hall3d_model.js';
 import { __hall3d_test__ as V, initHall3dView } from '/assets/js/views/hall3d.js';
 import { isRegistered } from '/assets/js/core/router.js';
@@ -40,7 +41,7 @@ function design(overrides = {}) {
         dc: { nominal_v: 800, polarity: 'unipolar', earthing: 'TN-S', min_continuous_v: 640, overvoltage_limit_v: 840 },
         basis: { it_kw: { value: 1600, unit: 'kW', tag: 'MODEL' } },
         chain: [
-            { id: 'row_busways', total: 8, current: { value: 500 }, rating: { value: 630 } },
+            { id: 'row_busways', total: 8, racks: 2, current: { value: 500 }, rating: { value: 630 } },
             { id: 'rack_feeds', current: { value: 250 } },
             { id: 'mv_rectifiers', total: 4 },
             { id: 'cdus', per_row: 3, rack_flow: { value: 111.7 }, row_flow: { value: 447 } },
@@ -272,5 +273,48 @@ describe('hall3d lote 3: live, governor, tour, callouts', () => {
         expect(html).toContain('data-band="normal"');
         expect(html).not.toContain('-0 A');
         expect(html).toContain('LIVE (simulator)');
+    });
+});
+
+describe('hall3d lote 5: 2N path what-if', () => {
+    it('normal 2N: each path carries half of every rack', () => {
+        const sc = pathScenario(design(), null, null);
+        expect(sc.tripped).toBeNull();
+        expect(sc.paths.a).toMatchObject({ state: 'normal', share: 0.5, current: 250, rating: 630 });
+        expect(sc.paths.b.current).toBe(250);
+        expect(sc.source).toBe('DESIGN full load');
+        expect(sc.ok).toBe(true);
+        expect(whatIfText(sc)).toBe('');
+    });
+
+    it('path A tripped: B carries the whole rack current, A goes dead', () => {
+        const sc = pathScenario(design(), null, 'a');
+        expect(sc.paths.a).toMatchObject({ state: 'tripped', share: 0, current: 0 });
+        expect(sc.paths.b).toMatchObject({ state: 'carrying', share: 1, current: 500 });
+        expect(sc.paths.b.utilisation).toBeCloseTo(500 / 630);
+        expect(sc.ok).toBe(true);                       // 79 % <= 80 %
+        expect(whatIfText(sc)).toContain('path A tripped. Path B busways carry 500 A of 630 A (79 %)');
+    });
+
+    it('uses the live MODEL rack current when present and flags the 80 % rule', () => {
+        const sc = pathScenario(design(), { rackA: 270 }, 'b');
+        expect(sc.source).toBe('MODEL from LIVE');
+        expect(sc.paths.a.current).toBe(540);
+        expect(sc.ok).toBe(false);                      // 86 % > 80 %
+        expect(whatIfText(sc)).toContain('ABOVE the 80 % continuous rule');
+    });
+
+    it('ignores an unknown path and cycles normal -> A -> B', () => {
+        expect(pathScenario(design(), null, 'c').tripped).toBeNull();
+        expect(WHATIF_CYCLE).toEqual([null, 'a', 'b']);
+    });
+
+    it('busway callout reports the what-if', () => {
+        const spec = buildSceneSpec(design(), racks());
+        const live = { whatIf: pathScenario(design(), null, 'a') };
+        const bus = callouts(spec, design(), live).find((c) => c.id === 'busway');
+        expect(bus.lines.join(' ')).toContain('what-if: path A tripped, this busway dead');
+        const liveB = { whatIf: pathScenario(design(), null, 'b') };
+        expect(callouts(spec, design(), liveB)[0].lines.join(' ')).toContain('this busway at 79 %');
     });
 });

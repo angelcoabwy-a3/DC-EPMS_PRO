@@ -32,6 +32,7 @@ import {
     buildSceneSpec, chainEntry, COLOURS, DRAW,
     liveFromChannels, derivedLive, governQuality, qualitySettings,
     tourKeyframes, ease, callouts, laneLayout, ndcToStage,
+    pathScenario, whatIfText, WHATIF_CYCLE,
 } from '../core/hall3d_model.js';
 
 const VIEW_ID = 'view-hall-3d';
@@ -89,9 +90,11 @@ function _shell(root) {
             <div class="h3d-hud" data-h3d-hud>
                 <button type="button" class="h3d-btn" data-h3d-tour>TOUR</button>
                 <button type="button" class="h3d-btn" data-h3d-callouts aria-pressed="true">CALLOUTS</button>
+                <button type="button" class="h3d-btn" data-h3d-whatif title="Sandbox: trip one 2N path and see the other carry the hall. Nothing is sent to the plant.">WHAT-IF: 2N</button>
                 <button type="button" class="h3d-btn" data-h3d-quality title="Rendering quality. Drops automatically below 30 fps; click to change by hand.">HIGH</button>
                 <span data-h3d-fps>- fps</span>
             </div>
+            <div class="h3d-whatif" data-h3d-whatif-banner role="status" hidden></div>
             <div class="h3d-live" data-h3d-live aria-live="polite"></div>
             <div class="h3d-rack" data-h3d-rack hidden></div>
             <div class="h3d-labels" data-h3d-labels></div>
@@ -260,7 +263,7 @@ function _busways(scene, spec) {
         const hs = new THREE.Mesh(new THREE.BoxGeometry(b.length, bh * 0.25, bw), housing);
         hs.position.set(b.center[0], b.y + bh * 0.42, b.z);
         scene.add(hs);
-        flows.push({ tex, sign: b.flowSign });
+        flows.push({ tex, sign: b.flowSign, path: b.path, mat: core });
     }
     // tap-offs and drops
     const tapMat = new THREE.MeshStandardMaterial({ color: 0x5b626b, roughness: 0.5, metalness: 0.6 });
@@ -359,7 +362,7 @@ function _build(root, spec, design) {
     const ctx = { renderer, composer, bloom, scene, camera, controls, flows, raf: 0, stage, spec, design,
         labelHost, calloutItems: [], showCallouts: stage.clientWidth >= 900,
         rackParts, cutaway, selected: null, live: null, derived: null,
-        quality: { level: 2, low: 0, manual: false }, tour: null,
+        quality: { level: 2, low: 0, manual: false }, tour: null, tripped: null,
         frames: 0, fpsT: performance.now(), last: performance.now(),
         fpsEl: root.querySelector('[data-h3d-fps]'), root };
     _buildCallouts(ctx);
@@ -431,7 +434,10 @@ function _layoutCallouts(ctx) {
 
 function _liveForText(ctx) {
     const live = ctx.live || {};
-    return { ...live, rackKw: ctx.derived?.rackKw ?? null, rackA: ctx.derived?.rackA ?? null };
+    return {
+        ...live, rackKw: ctx.derived?.rackKw ?? null, rackA: ctx.derived?.rackA ?? null,
+        whatIf: ctx.tripped ? pathScenario(ctx.design, ctx.derived, ctx.tripped) : null,
+    };
 }
 
 function _refreshCallouts(ctx) {
@@ -485,6 +491,7 @@ function _onChannels(channels) {
         led.emissive.setHex(c);
     }
     if (ctx.showCallouts) _refreshCallouts(ctx);
+    if (ctx.tripped) _refreshWhatIf(ctx);
     if (ctx.selected) _renderRackPanel(ctx, ctx.selected.data);
 }
 
@@ -567,6 +574,9 @@ function _wireInput(ctx) {
             if (ctx.highlight) ctx.highlight.visible = false;
         } else if (e.target.closest('[data-h3d-tour]')) {
             _startTour(ctx);
+        } else if (e.target.closest('[data-h3d-whatif]')) {
+            const i = WHATIF_CYCLE.indexOf(ctx.tripped);
+            _setTripped(ctx, WHATIF_CYCLE[(i + 1) % WHATIF_CYCLE.length]);
         } else if (e.target.closest('[data-h3d-callouts]')) {
             _setCallouts(ctx, !ctx.showCallouts);
         } else if (e.target.closest('[data-h3d-quality]')) {
@@ -574,6 +584,28 @@ function _wireInput(ctx) {
             _applyQuality(ctx, { level: next, low: 0, manual: true });
         }
     });
+}
+
+function _setTripped(ctx, path) {
+    ctx.tripped = path;
+    for (const f of ctx.flows) {
+        const dead = path && f.path === path;
+        f.mat.emissiveIntensity = dead ? 0 : (path ? 5.0 : 4.0);
+        f.mat.color.setHex(dead ? 0x3a3f46 : 0x1a0016);
+    }
+    const btn = ctx.root.querySelector('[data-h3d-whatif]');
+    if (btn) btn.textContent = path ? `WHAT-IF: TRIP ${path.toUpperCase()}` : 'WHAT-IF: 2N';
+    _refreshWhatIf(ctx);
+    if (ctx.showCallouts) _refreshCallouts(ctx);
+}
+
+function _refreshWhatIf(ctx) {
+    const el = ctx.root.querySelector('[data-h3d-whatif-banner]');
+    if (!el) return;
+    const sc = pathScenario(ctx.design, ctx.derived, ctx.tripped);
+    el.textContent = whatIfText(sc);
+    el.hidden = !ctx.tripped;
+    el.dataset.ok = String(sc.ok);
 }
 
 function _applyQuality(ctx, q) {
@@ -613,7 +645,10 @@ function _frame(now) {
     const dt = Math.min(0.1, (now - ctx.last) / 1000);
     ctx.last = now;
     const scale = ctx.derived?.flowScale ?? 1;
-    for (const f of ctx.flows) f.tex.offset.x -= f.sign * dt * 0.6 * scale;
+    for (const f of ctx.flows) {
+        const share = ctx.tripped ? (f.path === ctx.tripped ? 0 : 2) : 1;
+        f.tex.offset.x -= f.sign * dt * 0.6 * scale * share;
+    }
     if (ctx.tour) {
         const t = ease((now - ctx.tour.t0) / (TOUR_SECONDS * 1000));
         ctx.camera.position.copy(ctx.tour.pos.getPoint(t));
