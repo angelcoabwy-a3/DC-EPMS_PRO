@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Lots 8-10 (2026-11-27)
+
+- **ADR-021 rev 3** (`cbabb2c`): 13.8 kV generator bus split into 2
+  sections per path, each N+1: 2 x (12 + 1) = 26 x 3.2 MW per path, 52
+  total. Section bus 1,492 A on 2,000 A (75 %). Correction: revision 2
+  reported "93 % of 4,000 A", which was the required rating over the
+  rating; the real load was 75 %. The chain now reports `current` and
+  `utilisation` beside `required`.
+- **DC-EPMS-076 step 2** (`8b1b674`): What-If DAG and Power SLD draw
+  Building D as 2N (path B utility, rectifier group, SSCB, 800 VDC bus,
+  BESS). Losing one whole path is a warning; losing both darkens the
+  hall. Node registry channel prefixes take `!` exclusions and match on
+  a `_` or `:` boundary, so path A no longer captures path B channels.
+  Open: one standby farm drawn for both paths; farm block still sized
+  by `power_budget.js`; Building D SLD numbers not bound to telemetry.
+- **DC-EPMS-072 RESOLVED** (`88fd7ac`): all 50 Phase 1 racks carry a 2N
+  power chain (one busway per row per path, +6 components: 124 legacy,
+  188 v2). Busways 1,600 -> 2,500 A, RPP-A1/B1 5,400 kW, RPP-A2/B2
+  3,600 kW so one path carries the full load at 80 % continuous (480 V,
+  pf 0.95 model assumption). LOTO on RPP-A1 now affects 30 racks, still
+  safe. UPS sizing remains DC-EPMS-057.
+- Floors (Linux, Python 3.13): pytest 2135 passed on legacy and v2,
+  3 pre-existing `test_optimizer` errors; vitest 969 / 60 files.
+
 ### Lots 4 to 7: design sized upward, 2N what-if, DC-EPMS-075, DC-EPMS-076 step 1 (2026-11-26)
 
 - ADR-021 revision 2 (operator: always size upward): BESS 10 min (15 MWh

@@ -261,11 +261,22 @@ LOTS 4-7 (2026-11-26): d0a7c8e ADR-021 rev 2 sized upward (BESS 10 min /
   the Building D DC side, 118 components, load_share 0.5, 3D shows A / B
   live). Format-only commits d762187 / 085f0e3 / b82ff53 so hooks pass.
   pytest 2129 / vitest 965 (59 files).
-NEXT: DC-EPMS-076 step 2 (Power SLD + What-If DAG draw Building D as 2N;
-  per-path standby farms), 13.8 kV gen bus split (93 % of 4,000 A), RAG
-  re-seed after the corpus fix, operator fps check on the G14,
-  DC-EPMS-068 closing lote, DC-EPMS-072. Meta debrief 404 still to
-  confirm on Render.
+LOTS 8-10 (2026-11-27): cbabb2c ADR-021 rev 3 (13.8 kV gen bus split in
+  2 sections per path x (12+1) = 26 per path / 52 total, section bus
+  1,492 A of 2,000 A = 75 %; correction: rev 2 "93 %" compared the
+  required rating, real load was 75 % of 4,000 A); 8b1b674 DC-EPMS-076
+  step 2 (What-If DAG + Power SLD draw Building D as 2N: path B nodes
+  *_d_b, RPPs fed by both buses, one path out = warning; node registry
+  '!' exclusions + '_'/':' boundary; D-A / D-B labels, BESS 15 MWh);
+  88fd7ac DC-EPMS-072 RESOLVED (one busway per row per path, all 50
+  Phase 1 racks 2N, busways 2,500 A, RPP-A1/B1 5,400 kW, RPP-A2/B2
+  3,600 kW at the 80 % rule; components 124 / v2 188). pytest 2135 on
+  legacy AND v2, vitest 969 / 60 files (Linux).
+NEXT: per-path standby farms in the SLD (still one farm drawn for both
+  paths, farm block still on the power_budget 22 x 3.2 MW sizing, not
+  ADR-021 rev 3), bind Building D SLD numbers to telemetry, operator fps
+  check on the G14, DC-EPMS-068 closing lote, DC-EPMS-057 UPS sizing in
+  site_model. Meta debrief 404 still to confirm on Render.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```
