@@ -13,6 +13,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Lots 4 to 7: design sized upward, 2N what-if, DC-EPMS-075, DC-EPMS-076 step 1 (2026-11-26)
+
+- ADR-021 revision 2 (operator: always size upward): BESS 10 min (15 MWh
+  per path), BESS recharge as a load, 5 % minimum unit margin. 28
+  rectifiers, 48 generators (margin 8.6 %), 22 BESS converters, 40 CDUs.
+  New checks D-RECT-MARGIN / D-GEN-MARGIN; all PASS.
+- 3D hall: WHAT-IF button trips path A or B in the browser only; the
+  surviving busways show current vs rating and the 80 % rule.
+- DC-EPMS-075 RESOLVED: README and three RAG corpus docs said 40 L/min
+  per Phase 1 rack (needs a 53.5 K rise); aligned to the physics model
+  nominal 100 L/min. The thermal corpus doc also overstated DLC capacity
+  (2,677 kW for a 5,400 kW load); corrected. Re-seed the RAG locally.
+- DC-EPMS-076 step 1: Building D path B mirror (5 components, 113 -> 118)
+  in site_model + simulator (each rectifier group carries 50 %); the 3D
+  hall shows A and B live. Still aggregated per path; SLD still one chain.
+- Hooks: format-only commits for telemetry_simulator.py, site_model.yml
+  (yamllint --strict, YAML identical) and two test files.
+- Floors (Linux): pytest 2129 (3 pre-existing optimizer errors), vitest
+  965 / 59 files.
+
 ### 3D Hall lote 3: live data, rack click, callouts, tour, governor (2026-11-26)
 
 - Live values from the Building D simulator channels (bus voltage,

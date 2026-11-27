@@ -253,11 +253,19 @@ FIX (2026-11-26, 8a61eba / c0baa8f): live debrief hit Meta 404; provider
   load, bus band vs 640 / 840 V, rack click panel, 3 callouts in a screen
   lane with SVG leaders, 14 s tour, quality governor (30 fps floor).
   pytest 2127 / vitest 959 (59 files).
-NEXT: operator measures fps on the G14 and checks the live view; open
-  candidates: DC-EPMS-076 (simulator + site_model to the ADR-021 plant),
-  generator margin decision (0.75 %), BESS ride-through (5 vs 10 min),
+LOTS 4-7 (2026-11-26): d0a7c8e ADR-021 rev 2 sized upward (BESS 10 min /
+  15 MWh per path, recharge as load, min_unit_margin 0.05: 28 rect, 48
+  gens 8.6 %, 40 CDUs) + DC-EPMS-075 RESOLVED (README / corpus 40 -> 100
+  L/min, thermal doc capacity fixed); 1df46ae 3D 2N path what-if
+  (pathScenario, sandbox); 26e59e3 DC-EPMS-076 step 1 (path B mirror of
+  the Building D DC side, 118 components, load_share 0.5, 3D shows A / B
+  live). Format-only commits d762187 / 085f0e3 / b82ff53 so hooks pass.
+  pytest 2129 / vitest 965 (59 files).
+NEXT: DC-EPMS-076 step 2 (Power SLD + What-If DAG draw Building D as 2N;
+  per-path standby farms), 13.8 kV gen bus split (93 % of 4,000 A), RAG
+  re-seed after the corpus fix, operator fps check on the G14,
   DC-EPMS-068 closing lote, DC-EPMS-072. Meta debrief 404 still to
-  confirm on Render after f6a3013.
+  confirm on Render.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```
