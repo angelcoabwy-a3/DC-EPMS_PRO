@@ -41,25 +41,45 @@ def test_sizing_numbers_follow_from_the_inputs(inp):
     assert sec["current"]["value"] == 31250
     assert sec["rating"]["value"] == 40000
     rect = _chain(s, "mv_rectifiers")
-    assert rect["per_section"] == 6
-    assert rect["required_per_section"] == 5
-    assert s["totals"]["rectifiers"] == 24
+    assert rect["per_section"] == 7  # 6 + 1, IT + recharge + 5 % margin
+    assert rect["required_per_section"] == 6
+    assert s["totals"]["rectifiers"] == 28
     gen = _chain(s, "generators")
-    assert gen["per_path"] == 21
-    assert s["totals"]["generators"] == 42
+    assert gen["per_path"] == 24  # 23 + 1
+    assert s["totals"]["generators"] == 48
     bess = _chain(s, "bess")
-    assert bess["installed"]["value"] == 7.5
-    assert bess["per_path"] == 3
+    assert bess["installed"]["value"] == 15.0  # 10 min target
+    assert bess["per_path"] == 6
+    assert bess["recharge"]["value"] == pytest.approx(4167, abs=1)
+    assert bess["converters"] == 22
     cap = _chain(s, "capacitor_banks")
     assert cap["capacitance"]["value"] == pytest.approx(8.68, abs=0.01)
     cdu = _chain(s, "cdus")
     assert cdu["rack_flow"]["value"] == pytest.approx(111.7, abs=0.1)
 
 
-def test_every_design_check_passes_and_phase1_flow_is_flagged(inp):
+def test_margins_hold_with_one_unit_out(inp):
+    """Revision 2: every unit sized at 100 percent keeps >= 5 percent margin
+    with its redundant unit counted out, BESS recharge included."""
+    s = size(inp)
+    checks = {c["id"]: c for c in s["checks"]}
+    assert checks["D-RECT-MARGIN"]["status"] == "PASS"
+    assert checks["D-GEN-MARGIN"]["status"] == "PASS"
+    assert s["basis"]["bess_recharge_kw"]["value"] == pytest.approx(4167, abs=1)
+    gen = _chain(s, "generators")
+    assert gen["with_one_out_kw"]["value"] >= s["basis"]["path_demand_kw"]["value"] * 1.05
+    cdu = _chain(s, "cdus")
+    assert (cdu["per_row"] - 1) * cdu["unit"]["value"] >= s["basis"]["row_kw"]["value"] * 1.05
+
+
+def test_every_design_check_passes_and_the_old_phase1_flow_is_flagged(inp):
     checks = {c["id"]: c["status"] for c in size(inp)["checks"]}
-    assert checks.pop("P1-DLC-FLOW") == "WARN"
     assert set(checks.values()) == {"PASS"}, checks
+    # DC-EPMS-075 regression: the old 40 L/min figure must still be flagged
+    old = copy.deepcopy(inp)
+    old["phase1_dlc_check"]["flow_l_min"] = 40
+    flagged = {c["id"]: c["status"] for c in size(old)["checks"]}
+    assert flagged["P1-DLC-FLOW"] == "WARN"
 
 
 def test_vocabulary_fence_dc_has_no_phases(inp):
@@ -78,6 +98,7 @@ def test_vocabulary_fence_dc_has_no_phases(inp):
 
 def test_redundancy_failure_is_reported(inp):
     bad = copy.deepcopy(inp)
+    bad["rules"]["min_unit_margin"] = 0.0
     bad["rectifier"]["redundancy_per_section"] = 0
     bad["rectifier"]["unit_kw"] = 4000  # 25 MW / 4 MW = 7 units, no spare
     bad["generators"]["redundancy_per_path"] = 0

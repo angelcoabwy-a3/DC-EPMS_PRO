@@ -227,7 +227,9 @@ DC-EPMS_PRO/
 
 - 118 x NVIDIA GB200 NVL72 Blackwell racks @ 142 kW DLC = 16,756 kW nominal
 - Tier IV 2N, 67 MW total facility capacity (Path C2: 16.8 MW Phase 1 IT + 50 MW Phase 2 IT design)
-- DLC inlet 18C, outlet max 45C, flow 40 L/min glycol
+- DLC inlet 18C, outlet max 45C, flow modelled at 100 L/min per rack nominal
+  (minimum about 79 L/min for 142 kW across 18 to 45 C;
+  `backend/physics/it_thermal.py`, DC-EPMS-075)
 
 ## Author
 

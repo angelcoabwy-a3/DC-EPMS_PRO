@@ -65,7 +65,8 @@ implementation:
 - Coolant: 50/50 propylene glycol-water (PGW)
 - Supply temperature (TCS): 18°C target, 20°C maximum
 - Return temperature (TCR): 45°C maximum
-- Flow rate: 40 L/min per rack (nominal), 60 L/min peak
+- Flow rate: 100 L/min per rack (nominal), 150 L/min peak (A3-Alpha model value;
+  minimum about 79 L/min at 142 kW across 18 to 45 C)
 - System pressure: 3.5 bar primary, 2.5 bar secondary
 - Filtration: 50-micron cartridge, replaced quarterly
 

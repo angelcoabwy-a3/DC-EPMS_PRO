@@ -73,7 +73,8 @@ Facility chilled water       Technology Cooling Water (TCW) manifold
 - Supply temperature (TCS): 18°C ±1°C
 - Return temperature (TCR): 40-45°C (under full load)
 - Approach ΔT: 22-27°C (GPU junction to TCS)
-- Flow rate per rack: 40 L/min nominal, 60 L/min peak
+- Flow rate per rack: 100 L/min nominal, 150 L/min peak (A3-Alpha model value;
+  at 142 kW and a 27 K rise the minimum is about 79 L/min)
 - System pressure: 2.5 bar secondary loop, 3.5 bar primary
 - pH: 9.0-10.5 (corrosion inhibitor target)
 - Conductivity: <500 µS/cm (limits galvanic corrosion)
@@ -130,7 +131,7 @@ Each Blackwell B200 has a custom cold plate:
 ### Normal operation
 
 - Both A and B manifolds active
-- Flow ~40 L/min per rack
+- Flow ~100 L/min per rack (model nominal)
 - Coolant return 35-45°C depending on IT load
 - PUE contribution from DLC loop: 1.03-1.05 (very efficient)
 
@@ -200,7 +201,8 @@ Per-GPU monitoring via NVIDIA NVSM (NVIDIA System Management):
 ### High GPU temperatures (>85°C) across the rack
 
 - Check DLC supply temperature (should be 18°C ±1°C)
-- Check per-rack flow (should be 40 L/min)
+- Check per-rack flow (model nominal 100 L/min; below about 79 L/min the 27 K
+  rise is exceeded at full load)
 - Inspect cold plate thermal paste (if serviced recently)
 - Check quick-disconnect seating (full click)
 

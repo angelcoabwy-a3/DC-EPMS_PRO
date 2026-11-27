@@ -75,10 +75,13 @@ CRAH units per hall (air side):
 - Good margin for transients
 
 DLC loop per hall (liquid side):
-- 40 racks × 40 L/min = 1600 L/min per hall
+- 40 racks × 100 L/min = 4000 L/min per hall (model nominal)
 - ΔT = 24°C (18°C supply, 42°C return typical)
-- Q_DLC = 1600 L/min × 1 kg/L × 4.186 kJ/kg/K × 24°C / 60s = 2677 kW
-- This captures the ~5400 kW DLC load per hall (with margin)
+- Q_DLC = 4000 L/min × 1 kg/L × 4.186 kJ/kg/K × 24°C / 60s = 6698 kW with water
+  properties; with 50/50 PGW (cp about 3.5 kJ/kg/K, density about 1.04 kg/L)
+  about 5800 kW
+- Either way this covers the ~5400 kW DLC load per hall (40 × 134.9 kW).
+  The earlier 40 L/min figure gave 2677 kW, which does not (DC-EPMS-075)
 
 ## Newton's Law of Cooling — transient model
 

@@ -79,3 +79,39 @@ at 40 L/min implies a 53.5 K rise, outside 18 to 45 C (DC-EPMS-075).
 - `config/site_model.yml` still holds the old Building D (DC-EPMS-076).
   The SLD, What-If and simulator keep reading it until it is migrated.
 - Supersedes the component inventory of `03_TECHNICAL_SPECS_800VDC.md`.
+
+## Revision 2 (2026-11-26): sized upward
+
+Operator direction: "always adjust upward to the best, structured to
+reality". The two open decisions of the first version are closed that
+way:
+
+- BESS ride-through 10 min (same as the Phase 1 battery spec) instead of
+  5 min: 8.33 MWh usable per path, 6 x 2.5 MWh = 15 MWh installed per
+  path, 11.5 min.
+- BESS recharge is now a load: usable energy back in 2 h (assumption) =
+  4.17 MW per path, carried by the rectifiers (DC bus) and, in recovery,
+  by the generators.
+- New rule `min_unit_margin: 0.05`: every unit rated at 100 percent
+  (rectifiers, generators, BESS converters, mechanical unit subs,
+  critical mechanical UPS, CDUs) keeps at least 5 percent over its load
+  with the redundant unit counted out.
+
+| Element | Revision 1 | Revision 2 |
+|---|---|---|
+| MV rectifiers 5 MW per section | 5+1 (24 total), 0 % margin | 6+1 (28 total), 10.8 % margin |
+| Generators 3.2 MW per path | 20+1 (42 total), 0.75 % margin | 23+1 (48 total), 8.6 % margin |
+| Path demand | 63.5 MW | 67.8 MW (recharge included) |
+| Utility feed required | 83.6 MVA | 89.2 MVA |
+| 35 kV bus | 1,600 A | 1,600 A (1,471 A required) |
+| 13.8 kV generator bus | 4,000 A (3,497 A req.) | 4,000 A (3,731 A req.) |
+| BESS per path | 7.5 MWh, 21 converters | 15 MWh, 22 converters |
+| Mechanical unit subs / critical UPS per path | 5 / 3 | 5 / 4 |
+| CDUs | 3 per row (30) | 4 per row (40) |
+| Step-up 80 MVA 1+1 | 66.9 MVA | 71.3 MVA |
+
+New checks D-RECT-MARGIN and D-GEN-MARGIN. All checks PASS.
+
+Still open: the 13.8 kV generator bus runs at 93 percent of 4,000 A
+(next step would be splitting it into two sections); DC fault level not
+computed; DC-EPMS-076.

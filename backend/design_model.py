@@ -42,6 +42,11 @@ def _next_rating(value: float, ratings: list[float]) -> float | None:
     return None
 
 
+def _units(load: float, unit: float, margin: float) -> int:
+    """Units at 100 percent of rating so that N x unit >= load x (1 + margin)."""
+    return max(1, math.ceil(load * (1.0 + margin) / unit - 1e-9))
+
+
 def _r(x: float, nd: int = 1) -> float:
     return round(float(x), nd)
 
@@ -72,6 +77,7 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
     it, dc, lay = inp["it"], inp["dc"], inp["layout"]
     red, rules, std = inp["redundancy"], inp["rules"], inp["standard_ratings"]
     k_cont = float(rules["continuous_factor"])
+    margin = float(rules.get("min_unit_margin", 0.0))
     v_dc = float(dc["nominal_v"])
     paths = list(red["paths"])
     sections = int(red["sections_per_path"])
@@ -98,10 +104,18 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
     sec_a = section_kw * 1000 / v_dc
     sec_rating = _next_rating(sec_a / k_cont, std["breaker_a"])
 
-    # MV rectifiers per section, N + r
+    # BESS recharge after an outage rides on the rectifiers (DC bus) and,
+    # during the recovery, on the generators. ADR-021 revision 2.
+    bess = inp["bess"]
+    e_usable_mwh = it_kw / 1000 * float(bess["ride_through_min"]) / 60.0
+    recharge_h = float(bess.get("recharge_hours") or 0)
+    recharge_kw = e_usable_mwh * 1000 / recharge_h if recharge_h > 0 else 0.0
+    section_dc_kw = section_kw + recharge_kw / sections
+
+    # MV rectifiers per section, N + r, with the unit margin
     rect = inp["rectifier"]
     rect_kw = float(rect["unit_kw"])
-    rect_n = math.ceil(section_kw / rect_kw)
+    rect_n = _units(section_dc_kw, rect_kw, margin)
     rect_inst = rect_n + int(rect["redundancy_per_section"])
     rect_out_a = rect_kw * 1000 / v_dc
     rect_in_kw = rect_kw / float(rect["efficiency"])
@@ -116,11 +130,9 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
     cap_f = 2 * e_j / (v_dc**2 - v2**2)
 
     # BESS per path
-    bess = inp["bess"]
-    e_usable_mwh = it_kw / 1000 * float(bess["ride_through_min"]) / 60.0
     e_name_mwh = e_usable_mwh / float(bess["usable_fraction"])
     blocks = math.ceil(e_name_mwh / float(bess["block_mwh"]) - 1e-9)
-    conv_n = math.ceil(it_kw / float(bess["converter_kw"]))
+    conv_n = _units(it_kw, float(bess["converter_kw"]), margin)
     conv_inst = conv_n + int(bess["converter_redundancy"])
     installed_mwh = blocks * float(bess["block_mwh"])
     ride_min_installed = installed_mwh * float(bess["usable_fraction"]) / (it_kw / 1000) * 60
@@ -129,14 +141,14 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
     mech = inp["mechanical"]
     mech_kw = it_kw * float(mech["fraction_of_it"])
     mech_kva = mech_kw / float(mech["power_factor"])
-    sub_n = math.ceil(mech_kva / float(mech["unit_sub_kva"]))
+    sub_n = _units(mech_kva, float(mech["unit_sub_kva"]), margin)
     sub_inst = sub_n + int(mech["unit_sub_redundancy"])
     crit_kw = it_kw * float(mech["critical_fraction_of_it"])
-    cups_n = math.ceil(crit_kw / float(mech["critical_ups_kw"]))
+    cups_n = _units(crit_kw, float(mech["critical_ups_kw"]), margin)
     cups_inst = cups_n + int(mech["critical_ups_redundancy"])
 
     # Path MV demand: one path carries all IT (through rectifiers) + all mechanical
-    rect_path_in_kw = it_kw / float(rect["efficiency"])
+    rect_path_in_kw = (it_kw + recharge_kw) / float(rect["efficiency"])
     path_kw = rect_path_in_kw + mech_kw
     path_kva = path_kw / float(inp["utility"]["power_factor"])
     util_required_mva = path_kva / 1000 / k_cont
@@ -145,7 +157,7 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
 
     # Generators per path, N + r, stepped up to 35 kV
     gen = inp["generators"]
-    gen_n = math.ceil(path_kw / float(gen["unit_kw"]))
+    gen_n = _units(path_kw, float(gen["unit_kw"]), margin)
     gen_inst = gen_n + int(gen["redundancy_per_path"])
     gen_kv = float(gen["voltage_kv"])
     gen_bus_a_req = path_kva / (math.sqrt(3) * gen_kv) / k_cont
@@ -158,7 +170,7 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
     dT = float(cool["return_max_c"]) - float(cool["supply_c"])
     cp, rho = float(cool["cp_kj_per_kg_k"]), float(cool["density_kg_per_l"])
     rack_flow = rack_kw / (cp * dT) / rho * 60.0  # L/min
-    cdu_n = math.ceil(row_kw / float(cool["cdu_kw"]))
+    cdu_n = _units(row_kw, float(cool["cdu_kw"]), margin)
     cdu_inst = cdu_n + int(cool["cdu_redundancy_per_row"])
     p1 = inp["phase1_dlc_check"]
     p1_dT = float(p1["rack_kw"]) / (cp * rho * float(p1["flow_l_min"]) / 60.0)
@@ -233,6 +245,9 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
             "total": rect_inst * sections * P,
             "per_section": rect_inst,
             "required_per_section": rect_n,
+            "section_dc_load": _v(
+                _r(section_dc_kw, 0), "kW", "MODEL", "section IT + BESS recharge share"
+            ),
             "redundancy": f"N+{rect['redundancy_per_section']} per section",
             "unit": _v(rect_kw, "kW", "DESIGN"),
             "dc_out_current": _v(_r(rect_out_a, 0), "A", "MODEL"),
@@ -261,6 +276,9 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
             "required_nameplate": _v(_r(e_name_mwh, 2), "MWh", "MODEL"),
             "installed": _v(installed_mwh, "MWh", "MODEL"),
             "ride_through_installed": _v(_r(ride_min_installed, 1), "min", "MODEL"),
+            "recharge": _v(
+                _r(recharge_kw, 0), "kW", "MODEL", f"usable energy back in {recharge_h:g} h"
+            ),
             "converters": conv_inst,
             "converter_unit": _v(float(bess["converter_kw"]), "kW", "DESIGN"),
             "redundancy": f"converters N+{bess['converter_redundancy']} per path",
@@ -346,8 +364,9 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
 
     checks = _checks(
         it_kw=it_kw,
-        section_kw=section_kw,
+        section_kw=section_dc_kw,
         sections=sections,
+        margin=margin,
         rect=(rect_n, rect_inst, rect_kw),
         gen=(gen_n, gen_inst, float(gen["unit_kw"])),
         path_kw=path_kw,
@@ -376,8 +395,13 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
             "section_kw": _v(section_kw, "kW", "MODEL"),
             "mechanical_kw": _v(mech_kw, "kW", "MODEL"),
             "path_demand_kw": _v(
-                _r(path_kw, 0), "kW", "MODEL", "IT through rectifiers + all mechanical, one path"
+                _r(path_kw, 0),
+                "kW",
+                "MODEL",
+                "IT + BESS recharge through rectifiers + all mechanical, one path",
             ),
+            "bess_recharge_kw": _v(_r(recharge_kw, 0), "kW", "MODEL"),
+            "min_unit_margin": margin,
             "path_demand_kva": _v(_r(path_kva, 0), "kVA", "MODEL"),
             "dc_nominal_v": _v(v_dc, "V", "DESIGN"),
             "topology": red["topology"],
@@ -408,13 +432,27 @@ def _checks(**k: Any) -> list[dict[str, Any]]:
     add(
         "D-RECT-N1",
         (ri - 1) * rk >= sec,
-        f"rectifiers per section with one out: {(ri - 1) * rk:,.0f} kW >= section load {sec:,.0f} kW",
+        f"rectifiers per section with one out: {(ri - 1) * rk:,.0f} kW >= section load {sec:,.0f} kW "
+        "(IT + BESS recharge)",
+    )
+    m = k["margin"]
+    add(
+        "D-RECT-MARGIN",
+        (ri - 1) * rk >= sec * (1 + m) - 1e-6,
+        f"rectifier margin with one out: {((ri - 1) * rk / sec - 1) * 100:.1f} % >= {m * 100:.0f} %",
+        warn=True,
     )
     gn, gi, gk = k["gen"]
     add(
         "D-GEN-N1",
         (gi - 1) * gk >= k["path_kw"],
         f"generators per path with one out: {(gi - 1) * gk:,.0f} kW >= path demand {k['path_kw']:,.0f} kW",
+    )
+    add(
+        "D-GEN-MARGIN",
+        (gi - 1) * gk >= k["path_kw"] * (1 + m) - 1e-6,
+        f"generator margin with one out: {((gi - 1) * gk / k['path_kw'] - 1) * 100:.1f} % >= {m * 100:.0f} %",
+        warn=True,
     )
     add(
         "D-STX",
@@ -452,8 +490,8 @@ def _checks(**k: Any) -> list[dict[str, Any]]:
     add(
         "P1-DLC-FLOW",
         k["p1_dT"] <= k["dT"] + 1e-9,
-        f"Phase 1 README: 142 kW at 40 L/min implies dT {k['p1_dT']:.1f} K; "
-        f"18 to 45 C allows {k['dT']:g} K. Flow or temperatures need review (DC-EPMS-075).",
+        f"Phase 1 flow: 142 kW at the stated flow implies dT {k['p1_dT']:.1f} K; "
+        f"18 to 45 C allows {k['dT']:g} K. Above the window = flow too low (DC-EPMS-075).",
         warn=True,
     )
     return out

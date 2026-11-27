@@ -47,6 +47,10 @@ rules:
   # Conductors and overcurrent devices: continuous load at most 80 percent
   # of rating (the 125 percent continuous-load rule, e.g. CEC / NEC).
   continuous_factor: 0.8
+  # Units sized at 100 percent (rectifiers, generators) must also leave
+  # this margin over the load with the redundant unit counted out
+  # (operator direction 2026-11-26: size upward). Revision 2, ADR-021.
+  min_unit_margin: 0.05
   # Transformers, rectifiers, converters and generators: 100 percent of
   # rating with the stated redundancy.
 
@@ -61,11 +65,13 @@ capacitor_bank:                 # per row, per path
   discharge_to_v: 640           # down to U2
 
 bess:                           # per path, on the 800 VDC bus via DC/DC
-  ride_through_min: 5           # assumption (gen start + farm paralleling + margin)
+  ride_through_min: 10          # revision 2: same as the Phase 1 battery spec (10 min)
   usable_fraction: 0.64         # assumption: 80 percent DoD x 80 percent end of life
   block_mwh: 2.5                # 03_TECHNICAL_SPECS_800VDC.md BESS size, used as block
   converter_kw: 2500            # assumption, bidirectional DC/DC per converter
   converter_redundancy: 1
+  recharge_hours: 2             # assumption: full usable energy back in 2 h,
+                                # carried by rectifiers and generators
 
 mechanical:
   fraction_of_it: 0.25          # operator decision 2026-11-14 (power_plant.yml)
@@ -99,10 +105,12 @@ cooling:
   cdu_kw: 2500                  # assumption, per CDU
   cdu_redundancy_per_row: 1
 
-# Cross-check of the Phase 1 README figure (not Building D):
+# Cross-check of the Phase 1 flow figure (not Building D). DC-EPMS-075:
+# README and corpus said 40 L/min; aligned 2026-11-26 to the physics
+# model nominal (backend/physics/it_thermal.py DLC_FLOW_NOMINAL_L_MIN).
 phase1_dlc_check:
   rack_kw: 142
-  flow_l_min: 40                # README.md "flow 40 L/min glycol"
+  flow_l_min: 100
 
 standard_ratings:
   breaker_a: [250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500,
