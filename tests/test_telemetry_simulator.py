@@ -56,7 +56,9 @@ def test_simulator_loads_inventory_from_site_model(sim):
     # Path C2 Phase 1 baseline: 50 racks + 3 chillers + 6 cdus + 2 ups
     # + 3 pumps + 2 cooling tower fields = 66 emitting components.
     # Channel total: 50*4 + 3*2 + 6*2 + 2*5 + 3*2 + 2*2 = 238.
-    assert sim.component_count >= 60, f"expected >=60 emitting components, got {sim.component_count}"
+    assert (
+        sim.component_count >= 60
+    ), f"expected >=60 emitting components, got {sim.component_count}"
     assert sim.channel_count >= 200, f"expected >=200 channels, got {sim.channel_count}"
 
 
@@ -111,9 +113,7 @@ def test_ups_emits_three_phase_voltage_phase1_schema(sim):
     for k in phase_keys:
         assert k in window, f"missing Phase 1 schema field: {k}"
     # Vocabulary fence: NO dc_bus field on Phase 1 components
-    assert f"{ups_id}:voltage_v_dc_bus" not in window, (
-        "Phase 1 UPS must NOT emit dc_bus channel"
-    )
+    assert f"{ups_id}:voltage_v_dc_bus" not in window, "Phase 1 UPS must NOT emit dc_bus channel"
 
 
 def test_chiller_and_pump_channels_present(sim):
@@ -179,7 +179,7 @@ def test_dc_bus_sag_anomaly_drives_design_chain(sim):
     """The dc_bus_sag profile sags the 800 VDC bus and spikes the
     rectifier load — the transient the SSCB clearing window bounds."""
     affected = sim.inject_anomaly("main_bus_dc_d", "dc_bus_sag", duration_samples=40)
-    assert affected == 1   # the bus emits exactly the DC voltage metric
+    assert affected == 1  # the bus emits exactly the DC voltage metric
     window = sim.get_window(n_samples=20)
     sagged = window["main_bus_dc_d:voltage_v_dc_bus"]
     assert abs(sagged.mean() - 760.0) < 8.0, f"expected ~760 V sag, got {sagged.mean():.1f}"
@@ -195,9 +195,7 @@ def test_steady_state_within_path_c2_bounds(sim):
     inlet = window[f"{rack_id}:rack_inlet_T_c"]
     mean, std = PHASE1_BASELINES["rack_inlet_T_c"]
     # 5 sigma bound: extremely unlikely any sample exits this range
-    assert np.all(np.abs(inlet - mean) < 5 * std), (
-        f"rack_inlet samples out of bounds: {inlet}"
-    )
+    assert np.all(np.abs(inlet - mean) < 5 * std), f"rack_inlet samples out of bounds: {inlet}"
     # Sanity: gpu_Tj higher than rack inlet (workload heat)
     gpu = window[f"{rack_id}:gpu_Tj_c"]
     assert gpu.mean() > inlet.mean() + 20, "gpu_Tj should be markedly hotter than inlet"
@@ -239,9 +237,9 @@ def test_inject_thermal_runaway_visible_in_gpu_Tj(sim):  # noqa: N802 - gpu_Tj c
     gpu = window[f"{rack_id}:gpu_Tj_c"]
     baseline_mean, baseline_std = PHASE1_BASELINES["gpu_Tj_c"]
     # Profile delta is +25 C; baseline mean 68 C -> expected ~93 C
-    assert gpu.mean() > baseline_mean + 15, (
-        f"gpu_Tj should be elevated under thermal_runaway, got mean={gpu.mean():.1f}"
-    )
+    assert (
+        gpu.mean() > baseline_mean + 15
+    ), f"gpu_Tj should be elevated under thermal_runaway, got mean={gpu.mean():.1f}"
 
 
 def test_inject_pump_cavitation_drops_npsh(sim):
@@ -251,9 +249,9 @@ def test_inject_pump_cavitation_drops_npsh(sim):
     npsh = window[f"{pump_id}:pump_NPSH_margin_m"]
     baseline_mean, _ = PHASE1_BASELINES["pump_NPSH_margin_m"]
     # Profile delta -2.5 m: baseline 3.5 m -> expected ~1.0 m, possibly negative
-    assert npsh.mean() < baseline_mean - 1.5, (
-        f"NPSH should drop under pump_cavitation, got mean={npsh.mean():.2f}"
-    )
+    assert (
+        npsh.mean() < baseline_mean - 1.5
+    ), f"NPSH should drop under pump_cavitation, got mean={npsh.mean():.2f}"
 
 
 def test_anomaly_auto_clears_after_duration(sim):
@@ -267,9 +265,9 @@ def test_anomaly_auto_clears_after_duration(sim):
     window = sim.get_window(n_samples=10)
     gpu = window[f"{rack_id}:gpu_Tj_c"]
     baseline_mean, baseline_std = PHASE1_BASELINES["gpu_Tj_c"]
-    assert abs(gpu.mean() - baseline_mean) < 5 * baseline_std, (
-        f"after auto-clear, gpu_Tj should be back to baseline; got mean={gpu.mean():.1f}"
-    )
+    assert (
+        abs(gpu.mean() - baseline_mean) < 5 * baseline_std
+    ), f"after auto-clear, gpu_Tj should be back to baseline; got mean={gpu.mean():.1f}"
 
 
 def test_unknown_anomaly_kind_raises(sim):
@@ -297,9 +295,7 @@ def test_all_anomaly_profiles_target_known_metrics():
     PHASE2_DESIGN_BASELINES (MVP S2 design-sim) — the known-metric set
     is the union of all three.
     """
-    region_metrics = {
-        m for profile in REGION_PROFILES.values() for m in profile
-    }
+    region_metrics = {m for profile in REGION_PROFILES.values() for m in profile}
     known = set(PHASE1_BASELINES) | set(PHASE2_DESIGN_BASELINES) | region_metrics
     for kind, profile in ANOMALY_PROFILES.items():
         for metric in profile:

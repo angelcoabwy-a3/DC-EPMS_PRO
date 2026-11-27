@@ -67,13 +67,17 @@ def _fake_model(components, power=None, cooling=None, site=None):
 
 def _comp(cid, ctype="ups", building="b1", room="r1", row=None, **meta):
     loc = SimpleNamespace(
-        building_id=building, building_display=building and building.upper(),
-        room_id=room, room_display=room and room.upper(),
-        row_id=row, row_display=row and row.upper(),
+        building_id=building,
+        building_display=building and building.upper(),
+        room_id=room,
+        room_display=room and room.upper(),
+        row_id=row,
+        row_display=row and row.upper(),
         path="/".join(x for x in (building, room, row) if x),
     )
-    return SimpleNamespace(canonical_id=cid, display=cid.upper(), type=ctype,
-                           location=loc, metadata=meta)
+    return SimpleNamespace(
+        canonical_id=cid, display=cid.upper(), type=ctype, location=loc, metadata=meta
+    )
 
 
 class TestPureHelpers:
@@ -146,7 +150,7 @@ class TestStageStructure:
         assert "custom double a3semi:meta:voltage_kv = 27.5" in usda
 
     def test_power_edges_become_relationships(self, usda):
-        block = usda[usda.index('def Cube "ups_a"'):]
+        block = usda[usda.index('def Cube "ups_a"') :]
         block = block[: block.index("\n                }")]
         assert "custom rel a3semi:powerFeeds = [" in block
         assert "/er_a/rpp_a_01>" in block
@@ -160,7 +164,7 @@ class TestStageStructure:
         assert leafs <= known
 
     def test_vocabulary_fence_on_the_dc_bus(self, usda):
-        block = usda[usda.index('def Cube "main_bus_dc_d"'):]
+        block = usda[usda.index('def Cube "main_bus_dc_d"') :]
         block = block[: block.index("\n                }")].lower()
         assert "custom int a3semi:meta:voltage_v_dc = 800" in block
         assert "unipolar" in block
@@ -199,8 +203,17 @@ class TestSyntheticModels:
         assert text.count("{") == text.count("}")
 
     def test_metadata_types(self):
-        comp = _comp("x1", flag=True, count=3, ratio=0.985, name="n", nothing=None,
-                     items=[1, 2], nested={"b": 1, "a": 2}, bad=float("nan"))
+        comp = _comp(
+            "x1",
+            flag=True,
+            count=3,
+            ratio=0.985,
+            name="n",
+            nothing=None,
+            items=[1, 2],
+            nested={"b": 1, "a": 2},
+            bad=float("nan"),
+        )
         text = build_usda(_fake_model([comp]))
         assert "custom bool a3semi:meta:flag = true" in text
         assert "custom int a3semi:meta:count = 3" in text
