@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 3D Hall view, lote 2 of the 3D hall track (2026-11-26)
+
+- New view "3D Hall" (`#hall-3d`, ADR-022): Building D hall DH1 drawn
+  from the ADR-021 design model. 250 racks (one cutaway), 40 overhead
+  800 VDC busways with animated flow and bloom, tap-offs, DLC headers
+  and drops, 30 CDUs. Orbit controls and an fps meter.
+- three.js r166 addons vendored from `three@0.166.0`; vendor folder
+  excluded from the pre-commit hooks.
+- Not yet: live telemetry, rack click, callouts, fly-through, quality
+  governor (lote 3). fps not measured on a real GPU.
+- Floors (Linux): pytest 2127 (3 pre-existing optimizer errors), vitest
+  952 / 59 files.
+
 ### Building D 800 VDC design model, lote 1 of the 3D hall track (2026-11-26)
 
 - `config/design/building_d.yml` (inputs) + `backend/design_model.py`

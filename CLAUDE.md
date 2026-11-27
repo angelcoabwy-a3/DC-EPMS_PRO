@@ -243,10 +243,14 @@ FIX (2026-11-26, 8a61eba / c0baa8f): live debrief hit Meta 404; provider
   DESIGN / MODEL. DC-EPMS-075 (Phase 1 DLC flow) and -076 (site_model
   Building D stale) open. Commits now pass pre-commit hooks, no
   --no-verify. pytest 2126 / vitest 941.
-NEXT: 3D hall lote 2 (scene: detailed rack, instanced row, 800 VDC
-  busway with bloom, pipes); lote 3 (live data, click, callouts,
-  fly-through, quality governor). Meta debrief 404 still to confirm on
-  Render after f6a3013.
+3D HALL lote 2 (2026-11-26, 41e3b33, ADR-022): views/hall3d.js +
+  core/hall3d_model.js (pure geometry), route #hall-3d. Instanced racks
+  + cutaway, 800 VDC busways (flow texture + UnrealBloom), tap-offs,
+  DLC headers, CDUs. three r166 addons vendored (three@0.166.0), vendor
+  dir excluded from pre-commit. pytest 2127 / vitest 952 (59 files).
+NEXT: 3D hall lote 3 (live telemetry, rack click, callouts with leader
+  lines, fly-through, quality governor); operator measures fps on the
+  G14. Meta debrief 404 still to confirm on Render after f6a3013.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```
