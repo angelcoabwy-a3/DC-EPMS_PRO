@@ -590,6 +590,8 @@ def design_payload(path: str | Path | None = None) -> dict[str, Any]:
             "nominal_v": inp["dc"]["nominal_v"],
             "polarity": "unipolar",
             "earthing": inp["dc"]["earthing"],
+            "min_continuous_v": inp["dc"]["min_continuous_v"],
+            "overvoltage_limit_v": inp["dc"]["overvoltage_limit_v"],
         },
         **d["sizing"],
         "layout": {k: v for k, v in d["layout"].items() if k != "racks"},

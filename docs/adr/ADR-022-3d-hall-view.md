@@ -17,7 +17,7 @@ a real-time browser view on a mid-range laptop GPU.
 
 1. Renderer: the three.js r166 already vendored for Mission Control.
    Addons (OrbitControls, EffectComposer, RenderPass, UnrealBloomPass,
-   OutputPass, CSS2DRenderer, RoomEnvironment) are vendored from
+   OutputPass, RoomEnvironment) are vendored from
    `three@0.166.0`, the same release (hash checked). Only change: the
    bare `'three'` import becomes a relative path, so no import map and a
    single three.js instance. No CDN.
@@ -36,11 +36,29 @@ a real-time browser view on a mid-range laptop GPU.
 5. Vendored third-party code is excluded from the pre-commit hooks so it
    stays byte-identical to upstream.
 
+6. Lote 3 (same ADR):
+   - Live values come from the simulator channels already on the state
+     bus (`main_bus_dc_d:voltage_v_dc_bus`, `mv_rectifier_d:*`,
+     `sscb_d_01:*`, `bess_d_01:*`). The simulator still models the
+     single-path Building D (DC-EPMS-076), so per-rack load and current
+     are MODEL: rectifier load / rack count, current at the live bus
+     voltage. The rack status strip shows the bus band against the
+     design limits (640 / 840 V); there is no per-rack telemetry.
+   - Rack click: raycast on the instanced mesh, rack panel from
+     `/api/design/building-d/racks/{id}`, cyan outline.
+   - Callouts: three labels in a fixed screen lane with SVG leader lines
+     to anchors projected each frame. Chosen over 3D-anchored labels
+     (CSS2DRenderer, tried and removed) because fixed offsets overlapped
+     the panels from some camera angles.
+   - Tour: Catmull-Rom camera path over 14 s on first load, cancelled by
+     any pointer input, skipped under prefers-reduced-motion.
+   - Quality governor: HIGH (bloom, pixel ratio 1.5) to MEDIUM (no
+     bloom) to LOW (pixel ratio 1.0) after two consecutive one-second
+     samples under 30 fps; never climbs back on its own; the HUD button
+     sets it by hand.
+
 ## Consequences
 
-- Lote 3 adds live telemetry, rack selection, callouts with leader lines
-  (CSS2DRenderer is already vendored), the scripted fly-through and a
-  quality governor (bloom off / lower pixel ratio below 30 fps).
 - Frame rate must be measured on the operator's GPU; the headless check
   here runs SwiftShader (software) at about 5 fps, which says nothing
   about a real GPU.

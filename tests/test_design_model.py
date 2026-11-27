@@ -141,6 +141,7 @@ def test_frontend_contract():
     views/hall3d.js (3D Hall lote 2). Rename here = break the 3D view."""
     body = design_payload()
     assert {"site", "hall", "dc", "basis", "chain", "layout"} <= set(body)
+    assert {"nominal_v", "min_continuous_v", "overvoltage_limit_v"} <= set(body["dc"])
     assert body["basis"]["it_kw"]["value"] > 0
     ids = {c["id"] for c in body["chain"]}
     assert {"row_busways", "rack_feeds", "mv_rectifiers", "cdus"} <= ids

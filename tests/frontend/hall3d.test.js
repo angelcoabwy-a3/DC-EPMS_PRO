@@ -16,6 +16,8 @@ import { resolve } from 'node:path';
 
 import {
     buildSceneSpec, busways, rackBox, tapOffs, labelIsVocabSafe, MM,
+    liveFromChannels, derivedLive, governQuality, qualitySettings,
+    tourKeyframes, ease, callouts, laneLayout, ndcToStage, LIVE_KEYS,
 } from '/assets/js/core/hall3d_model.js';
 import { __hall3d_test__ as V, initHall3dView } from '/assets/js/views/hall3d.js';
 import { isRegistered } from '/assets/js/core/router.js';
@@ -34,14 +36,15 @@ function design(overrides = {}) {
         ]),
     }));
     return Object.assign({
-        site: 'A3-Alpha Toronto Area', hall: 'DH1',
-        dc: { nominal_v: 800, polarity: 'unipolar', earthing: 'TN-S' },
+        site: 'A3-Alpha Toronto Area', hall: 'DH1', rack_count: 8,
+        dc: { nominal_v: 800, polarity: 'unipolar', earthing: 'TN-S', min_continuous_v: 640, overvoltage_limit_v: 840 },
         basis: { it_kw: { value: 1600, unit: 'kW', tag: 'MODEL' } },
         chain: [
             { id: 'row_busways', total: 8, current: { value: 500 }, rating: { value: 630 } },
             { id: 'rack_feeds', current: { value: 250 } },
             { id: 'mv_rectifiers', total: 4 },
-            { id: 'cdus', per_row: 3 },
+            { id: 'cdus', per_row: 3, rack_flow: { value: 111.7 }, row_flow: { value: 447 } },
+            { id: 'racks', label: 'NVIDIA GB300 NVL144', unit: { value: 200 } },
         ],
         layout: { hall: 'DH1', rows, extent_mm: { x: 2400, y: 3600 } },
     }, overrides);
@@ -176,5 +179,98 @@ describe('hall3d view', () => {
         }
         expect(used.size).toBeGreaterThan(5);
         for (const c of used) expect(css, c).toContain(`.${c}`);
+    });
+});
+
+function channels(over = {}) {
+    const base = {
+        [LIVE_KEYS.busV]: 799.6, [LIVE_KEYS.rectMw]: 1.5, [LIVE_KEYS.rectEff]: 0.982,
+        [LIVE_KEYS.sscbC]: 55.1, [LIVE_KEYS.bessSoc]: 85, [LIVE_KEYS.bessA]: -0.2,
+    };
+    const all = { ...base, ...over };
+    return Object.fromEntries(Object.entries(all).map(([k, v]) => [k, { last_emission: v }]));
+}
+
+describe('hall3d lote 3: live, governor, tour, callouts', () => {
+    it('reads the Building D simulator channels and ignores junk', () => {
+        const live = liveFromChannels(channels());
+        expect(live.busV).toBe(799.6);
+        expect(live.rectMw).toBe(1.5);
+        expect(live.any).toBe(true);
+        expect(liveFromChannels({ [LIVE_KEYS.busV]: { last_emission: 'x' } }).any).toBe(false);
+        expect(liveFromChannels(undefined).any).toBe(false);
+    });
+
+    it('derives per-rack MODEL load and the bus band from the design limits', () => {
+        const d = derivedLive(liveFromChannels(channels()), design());
+        expect(d.rackKw).toBeCloseTo(187.5);               // 1.5 MW / 8 racks
+        expect(d.rackA).toBeCloseTo(187500 / 799.6);
+        expect(d.band).toBe('normal');
+        expect(derivedLive(liveFromChannels(channels({ [LIVE_KEYS.busV]: 630 })), design()).band).toBe('under');
+        expect(derivedLive(liveFromChannels(channels({ [LIVE_KEYS.busV]: 845 })), design()).band).toBe('over');
+        expect(derivedLive(liveFromChannels(channels({ [LIVE_KEYS.busV]: 770 })), design()).band).toBe('off-nominal');
+        expect(derivedLive(liveFromChannels({}), design())).toMatchObject({ rackKw: null, band: 'unknown' });
+    });
+
+    it('quality governor steps down after two slow seconds and never oscillates up', () => {
+        let q = { level: 2, low: 0 };
+        q = governQuality(q, 25);
+        expect(q.level).toBe(2);
+        q = governQuality(q, 25);
+        expect(q.level).toBe(1);
+        q = governQuality(q, 60);
+        q = governQuality(q, 60);
+        expect(q.level).toBe(1);
+        q = governQuality(governQuality(q, 10), 10);
+        expect(q.level).toBe(0);
+        expect(governQuality(governQuality(q, 5), 5).level).toBe(0);
+        expect(governQuality({ level: 2, manual: true }, 5).level).toBe(2);
+        expect(qualitySettings(2)).toMatchObject({ bloom: true, pixelRatio: 1.5 });
+        expect(qualitySettings(0)).toMatchObject({ bloom: false, pixelRatio: 1 });
+    });
+
+    it('tour ends on the home view and easing is clamped', () => {
+        const keys = tourKeyframes(buildSceneSpec(design(), racks()));
+        expect(keys.length).toBeGreaterThanOrEqual(3);
+        for (const k of keys) expect(k.pos[1]).toBeGreaterThan(0);
+        expect(ease(-1)).toBe(0);
+        expect(ease(2)).toBe(1);
+        expect(ease(0.5)).toBeCloseTo(0.5);
+    });
+
+    it('three callouts, numbers from design and live, vocabulary-safe', () => {
+        const spec = buildSceneSpec(design(), racks());
+        const d = derivedLive(liveFromChannels(channels()), design());
+        const cs = callouts(spec, design(), { ...liveFromChannels(channels()), rackKw: d.rackKw, rackA: d.rackA });
+        expect(cs.map((c) => c.id)).toEqual(['busway', 'rack', 'cooling']);
+        const text = (c) => [c.title, ...c.lines].join(' | ');
+        expect(text(cs[0])).toContain('800 VDC BUSWAY (UNIPOLAR TN-S)');
+        expect(text(cs[0])).toContain('500 A of 630 A rating (MODEL)');
+        expect(text(cs[0])).toContain('bus 799.6 V (LIVE, simulator)');
+        expect(text(cs[1])).toContain('load 200 kW (DESIGN)');
+        expect(text(cs[1])).toContain('~188 kW');
+        expect(text(cs[2])).toContain('111.7 L/min per rack (MODEL)');
+        for (const c of cs) expect(labelIsVocabSafe(c.domain, text(c))).toBe(true);
+        const none = callouts(spec, design(), {});
+        expect(none[0].lines.join(' ')).toContain('no live data');
+    });
+
+    it('lane layout stacks labels and keeps them inside the stage', () => {
+        expect(laneLayout([60, 70, 60], 800)).toEqual([140, 210, 290]);
+        const tight = laneLayout([60, 70, 60], 300);
+        for (const y of tight) expect(y).toBeLessThanOrEqual(300 - 60);
+        expect(ndcToStage({ x: 0, y: 0, z: 0.5 }, 1000, 500)).toEqual([500, 250]);
+        expect(ndcToStage({ x: 0, y: 0, z: 1.5 }, 1000, 500)).toBeNull();
+        expect(ndcToStage({ x: 1.4, y: 0, z: 0.5 }, 1000, 500)).toBeNull();
+    });
+
+    it('live panel: honest empty state, escaped values, no negative zero', () => {
+        expect(V.livePanelHtml({ any: false }, null)).toContain('No Building D channels yet');
+        const live = liveFromChannels(channels({ [LIVE_KEYS.bessA]: -0.2 }));
+        const html = V.livePanelHtml(live, derivedLive(live, design()));
+        expect(html).toContain('799.6 V');
+        expect(html).toContain('data-band="normal"');
+        expect(html).not.toContain('-0 A');
+        expect(html).toContain('LIVE (simulator)');
     });
 });

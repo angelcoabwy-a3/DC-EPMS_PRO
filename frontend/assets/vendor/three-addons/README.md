@@ -9,4 +9,4 @@ Only change: the bare `from 'three'` import is rewritten to the relative
 and every addon shares the single vendored three.js instance.
 
 Used by the 3D Hall view (ADR-021 track): OrbitControls, EffectComposer,
-RenderPass, UnrealBloomPass, OutputPass, CSS2DRenderer, RoomEnvironment.
+RenderPass, UnrealBloomPass, OutputPass, RoomEnvironment.

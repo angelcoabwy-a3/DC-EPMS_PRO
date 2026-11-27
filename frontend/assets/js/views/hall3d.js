@@ -27,13 +27,20 @@ import { OutputPass } from '/assets/vendor/three-addons/postprocessing/OutputPas
 import { RoomEnvironment } from '/assets/vendor/three-addons/environments/RoomEnvironment.js';
 import { registerRoute } from '../core/router.js';
 import { escapeHTML } from '../core/sanitize.js';
-import { buildSceneSpec, chainEntry, COLOURS, DRAW } from '../core/hall3d_model.js';
+import { getState, subscribe } from '../core/state.js';
+import {
+    buildSceneSpec, chainEntry, COLOURS, DRAW,
+    liveFromChannels, derivedLive, governQuality, qualitySettings,
+    tourKeyframes, ease, callouts, laneLayout, ndcToStage,
+} from '../core/hall3d_model.js';
 
 const VIEW_ID = 'view-hall-3d';
 const ROUTE_ID = 'hall-3d';
 const DESIGN_URL = '/api/design/building-d';
 const RACKS_URL = '/api/design/building-d/racks';
 const MAX_PIXEL_RATIO = 1.5;
+const TOUR_SECONDS = 14;
+const BAND_COLOUR = { normal: 0x3ccf7a, 'off-nominal': 0xf2c037, under: 0xff4b3e, over: 0xff4b3e, unknown: 0x8a949e };
 
 let _initialized = false;
 let _ctx = null;          // { renderer, composer, scene, camera, controls, flows, raf, ... }
@@ -80,8 +87,14 @@ function _shell(root) {
             <canvas class="h3d-canvas" data-h3d-canvas role="img"
                 aria-label="3D view of Building D hall DH1: racks, 800 VDC busways, cooling pipes"></canvas>
             <div class="h3d-hud" data-h3d-hud>
+                <button type="button" class="h3d-btn" data-h3d-tour>TOUR</button>
+                <button type="button" class="h3d-btn" data-h3d-callouts aria-pressed="true">CALLOUTS</button>
+                <button type="button" class="h3d-btn" data-h3d-quality title="Rendering quality. Drops automatically below 30 fps; click to change by hand.">HIGH</button>
                 <span data-h3d-fps>- fps</span>
             </div>
+            <div class="h3d-live" data-h3d-live aria-live="polite"></div>
+            <div class="h3d-rack" data-h3d-rack hidden></div>
+            <div class="h3d-labels" data-h3d-labels></div>
             <div class="h3d-legend">
                 <div><i style="background:#ff2bd6"></i>800 VDC busway, path A</div>
                 <div><i style="background:#b04dff"></i>800 VDC busway, path B</div>
@@ -89,7 +102,8 @@ function _shell(root) {
                 <div><i style="background:#ff4b3e"></i>DLC return</div>
             </div>
             <div class="h3d-note" role="note">DESIGN layout of a simulated facility (ADR-021). Rack internals,
-                tap-off boxes and pipe sizes are schematic. Live telemetry binding comes in the next lot.</div>
+                tap-off boxes and pipe sizes are schematic. LIVE values come from the simulator, which still models the
+                single-path Building D (DC-EPMS-076); per-rack load is MODEL. Click a rack for its data.</div>
         </div>`;
 }
 
@@ -168,13 +182,16 @@ function _racks(scene, spec) {
     const list = spec.instanced;
     if (!list.length) return;
     const [w, h, d] = list[0].size;
-    scene.add(_instanced(new THREE.BoxGeometry(w * 0.98, h, d * 0.98), body, list,
-        (r, p) => p.set(...r.center)));
+    const bodyMesh = _instanced(new THREE.BoxGeometry(w * 0.98, h, d * 0.98), body, list,
+        (r, p) => p.set(...r.center));
+    bodyMesh.userData.rackIds = list.map((r) => r.id);
+    scene.add(bodyMesh);
     // front door panel (cold-aisle side) and a status strip
     scene.add(_instanced(new THREE.BoxGeometry(w * 0.9, h * 0.94, 0.02), door, list,
         (r, p) => p.set(r.center[0], r.center[1], r.center[2] - d / 2 - 0.006)));
     scene.add(_instanced(new THREE.BoxGeometry(w * 0.6, 0.02, 0.01), led, list,
         (r, p) => p.set(r.center[0], h * 0.92, r.center[2] - d / 2 - 0.02)));
+    return { bodyMesh, led };
 }
 
 function _cutawayRack(scene, spec) {
@@ -221,7 +238,9 @@ function _cutawayRack(scene, spec) {
         const a = new THREE.Mesh(hose, sup); a.position.set(0.1, y, d * 0.84); g.add(a);
         const b = new THREE.Mesh(hose, ret); b.position.set(w - 0.1, y, d * 0.84); g.add(b);
     }
+    g.userData.rackId = r.id;
     scene.add(g);
+    return g;
 }
 
 function _busways(scene, spec) {
@@ -288,7 +307,7 @@ function _cdus(scene, spec) {
 }
 
 // ── renderer / loop ─────────────────────────────────────────────
-function _build(root, spec) {
+function _build(root, spec, design) {
     const canvas = root.querySelector('[data-h3d-canvas]');
     const stage = root.querySelector('[data-h3d-stage]');
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -308,8 +327,8 @@ function _build(root, spec) {
     scene.add(sun);
 
     _hallShell(scene, spec);
-    _racks(scene, spec);
-    _cutawayRack(scene, spec);
+    const rackParts = _racks(scene, spec);
+    const cutaway = _cutawayRack(scene, spec);
     const flows = _busways(scene, spec);
     _pipes(scene, spec);
     _cdus(scene, spec);
@@ -318,14 +337,15 @@ function _build(root, spec) {
     const detail = spec.racks.find((x) => x.id === spec.detail);
     // Portrait screens see less sideways: start further back and higher.
     const portrait = stage.clientWidth < stage.clientHeight;
+    const home = tourKeyframes(spec).at(-1);
     if (portrait) camera.position.set(-4.8, 3.6, -8.0);
-    else camera.position.set(-1.6, 2.1, -3.4);
+    else camera.position.set(...home.pos);
     const controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
     controls.maxPolarAngle = Math.PI * 0.49;
     controls.minDistance = 1.5;
     controls.maxDistance = 90;
-    controls.target.set(detail ? detail.center[0] + 2.6 : spec.center[0], 1.5, detail ? detail.center[2] + 0.4 : spec.center[2]);
+    controls.target.set(...home.target);
 
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
@@ -333,8 +353,18 @@ function _build(root, spec) {
     composer.addPass(bloom);
     composer.addPass(new OutputPass());
 
-    const ctx = { renderer, composer, bloom, scene, camera, controls, flows, raf: 0, stage,
-        frames: 0, fpsT: performance.now(), last: performance.now(), fpsEl: root.querySelector('[data-h3d-fps]') };
+    // Callout labels (DOM) + leader lines (SVG) over the canvas.
+    const labelHost = root.querySelector('[data-h3d-labels]');
+
+    const ctx = { renderer, composer, bloom, scene, camera, controls, flows, raf: 0, stage, spec, design,
+        labelHost, calloutItems: [], showCallouts: stage.clientWidth >= 900,
+        rackParts, cutaway, selected: null, live: null, derived: null,
+        quality: { level: 2, low: 0, manual: false }, tour: null,
+        frames: 0, fpsT: performance.now(), last: performance.now(),
+        fpsEl: root.querySelector('[data-h3d-fps]'), root };
+    _buildCallouts(ctx);
+    _setCallouts(ctx, ctx.showCallouts);
+
     const resize = () => {
         const w = Math.max(1, stage.clientWidth);
         const h = Math.max(1, stage.clientHeight);
@@ -347,7 +377,233 @@ function _build(root, spec) {
     ctx.resize = resize;
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(resize).observe(stage);
     resize();
+    _wireInput(ctx);
     return ctx;
+}
+
+// ── callouts with leader lines ──────────────────────────────────
+function _calloutHtml(c) {
+    return `<div class="h3d-co-title">${escapeHTML(c.title)}</div>`
+        + c.lines.map((l) => `<div class="h3d-co-line">${escapeHTML(l)}</div>`).join('');
+}
+
+function _buildCallouts(ctx) {
+    const host = ctx.labelHost;
+    host.innerHTML = '<svg class="h3d-leaders" data-h3d-leaders aria-hidden="true"></svg>';
+    const svg = host.querySelector('[data-h3d-leaders]');
+    for (const c of callouts(ctx.spec, ctx.design, _liveForText(ctx))) {
+        const el = document.createElement('div');
+        el.className = `h3d-callout h3d-co-${c.id}`;
+        el.innerHTML = _calloutHtml(c);
+        host.appendChild(el);
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        line.setAttribute('class', `h3d-leader h3d-leader-${c.id}`);
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.setAttribute('r', '4');
+        dot.setAttribute('class', `h3d-leader-dot h3d-leader-${c.id}`);
+        svg.append(line, dot);
+        ctx.calloutItems.push({ id: c.id, el, line, dot, anchor: new THREE.Vector3(...c.anchor) });
+    }
+}
+
+function _layoutCallouts(ctx) {
+    const w = ctx.stage.clientWidth;
+    const h = ctx.stage.clientHeight;
+    const tops = laneLayout(ctx.calloutItems.map((it) => it.el.offsetHeight || 60), h);
+    const v = new THREE.Vector3();
+    ctx.calloutItems.forEach((it, i) => {
+        it.el.style.top = `${tops[i]}px`;
+        const p = ndcToStage(v.copy(it.anchor).project(ctx.camera), w, h);
+        if (!p) {
+            it.line.setAttribute('points', '');
+            it.dot.setAttribute('visibility', 'hidden');
+            return;
+        }
+        const x0 = 12 + it.el.offsetWidth;
+        const y0 = tops[i] + (it.el.offsetHeight || 60) / 2;
+        const elbow = Math.min(p[0], x0 + 24);
+        it.line.setAttribute('points', `${x0},${y0} ${elbow},${y0} ${p[0]},${p[1]}`);
+        it.dot.setAttribute('cx', String(p[0]));
+        it.dot.setAttribute('cy', String(p[1]));
+        it.dot.setAttribute('visibility', 'visible');
+    });
+}
+
+function _liveForText(ctx) {
+    const live = ctx.live || {};
+    return { ...live, rackKw: ctx.derived?.rackKw ?? null, rackA: ctx.derived?.rackA ?? null };
+}
+
+function _refreshCallouts(ctx) {
+    for (const c of callouts(ctx.spec, ctx.design, _liveForText(ctx))) {
+        const it = ctx.calloutItems.find((x) => x.id === c.id);
+        if (it) it.el.innerHTML = _calloutHtml(c);
+    }
+}
+
+function _setCallouts(ctx, on) {
+    ctx.showCallouts = on;
+    ctx.root.querySelector('[data-h3d-labels]').hidden = !on;
+    ctx.root.querySelector('[data-h3d-callouts]')?.setAttribute('aria-pressed', String(on));
+}
+
+// ── live data (simulator channels) ──────────────────────────────
+function _fmt(v, d = 0) {
+    if (!Number.isFinite(v)) return '-';
+    const r = Number(v.toFixed(d));
+    return (Object.is(r, -0) ? 0 : r).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+}
+
+export function livePanelHtml(live, derived) {
+    if (!live?.any) {
+        return '<div class="h3d-live-h">LIVE (simulator)</div><div class="h3d-live-r">No Building D channels yet.</div>';
+    }
+    const rows = [
+        ['800 VDC bus', `${_fmt(live.busV, 1)} V`, derived?.band || 'unknown'],
+        ['Rectifier load', `${_fmt(live.rectMw, 1)} MW`, ''],
+        ['Rectifier efficiency', `${_fmt((live.rectEff ?? NaN) * 100, 1)} %`, ''],
+        ['SSCB junction', `${_fmt(live.sscbC, 1)} C`, ''],
+        ['BESS SOC', `${_fmt(live.bessSoc, 1)} %`, ''],
+        ['BESS current', `${_fmt(live.bessA, 0)} A`, ''],
+        ['Per rack (MODEL)', `${_fmt(derived?.rackKw, 0)} kW · ${_fmt(derived?.rackA, 0)} A`, ''],
+    ];
+    return '<div class="h3d-live-h">LIVE (simulator)</div>' + rows.map(([k, v, band]) =>
+        `<div class="h3d-live-r"><span>${escapeHTML(k)}</span><b${band ? ` data-band="${escapeHTML(band)}"` : ''}>${escapeHTML(v)}</b></div>`).join('');
+}
+
+function _onChannels(channels) {
+    const ctx = _ctx;
+    if (!ctx) return;
+    ctx.live = liveFromChannels(channels);
+    ctx.derived = derivedLive(ctx.live, ctx.design);
+    const panel = ctx.root.querySelector('[data-h3d-live]');
+    if (panel) panel.innerHTML = livePanelHtml(ctx.live, ctx.derived);
+    const led = ctx.rackParts?.led;
+    if (led) {
+        const c = BAND_COLOUR[ctx.derived.band] ?? BAND_COLOUR.unknown;
+        led.color.setHex(c);
+        led.emissive.setHex(c);
+    }
+    if (ctx.showCallouts) _refreshCallouts(ctx);
+    if (ctx.selected) _renderRackPanel(ctx, ctx.selected.data);
+}
+
+// ── rack selection ──────────────────────────────────────────────
+function _renderRackPanel(ctx, r) {
+    const el = ctx.root.querySelector('[data-h3d-rack]');
+    if (!el || !r) return;
+    const v = (x) => (x && typeof x === 'object' ? `${_fmt(Number(x.value), 1)} ${x.unit} (${x.tag})` : '-');
+    const feeds = (r.feeds || []).map((f) =>
+        `<div class="h3d-live-r"><span>Feed ${escapeHTML(String(f.path).toUpperCase())} · ${escapeHTML(f.busway)} · ${escapeHTML(f.section)}</span><b>${escapeHTML(v(f.current_full))}</b></div>`).join('');
+    const d = ctx.derived;
+    el.innerHTML = `
+        <div class="h3d-rack-h"><span>${escapeHTML(r.id)}</span>
+            <button type="button" class="h3d-btn" data-h3d-rack-close aria-label="Close rack panel">CLOSE</button></div>
+        <div class="h3d-live-r"><span>Model</span><b>${escapeHTML(r.model || '')}</b></div>
+        <div class="h3d-live-r"><span>Power</span><b>${escapeHTML(v(r.power_kw))}</b></div>
+        ${feeds}
+        <div class="h3d-live-r"><span>DLC flow</span><b>${escapeHTML(v(r.cooling?.flow))}</b></div>
+        <div class="h3d-live-r"><span>Supply / return max</span><b>${escapeHTML(`${_fmt(r.cooling?.supply?.value)} / ${_fmt(r.cooling?.return_max?.value)} C (DESIGN)`)}</b></div>
+        <div class="h3d-live-r"><span>Now (MODEL from LIVE)</span><b>${escapeHTML(d?.rackKw != null ? `${_fmt(d.rackKw, 0)} kW · ${_fmt(d.rackA, 0)} A` : 'no live data')}</b></div>
+        <div class="h3d-rack-note">${escapeHTML(r.devices?.not_modelled || '')}</div>`;
+    el.hidden = false;
+}
+
+async function _select(ctx, rackId) {
+    const box = ctx.spec.racks.find((x) => x.id === rackId);
+    if (!box) return;
+    if (!ctx.highlight) {
+        ctx.highlight = new THREE.LineSegments(
+            new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+            new THREE.LineBasicMaterial({ color: 0x35e0ff }),
+        );
+        ctx.scene.add(ctx.highlight);
+    }
+    ctx.highlight.scale.set(box.size[0] + 0.04, box.size[1] + 0.04, box.size[2] + 0.04);
+    ctx.highlight.position.set(...box.center);
+    ctx.highlight.visible = true;
+    try {
+        const data = await _getJson(`${RACKS_URL}/${encodeURIComponent(rackId)}`);
+        ctx.selected = { id: rackId, data };
+        _renderRackPanel(ctx, data);
+    } catch (e) {
+        const el = ctx.root.querySelector('[data-h3d-rack]');
+        el.innerHTML = `<div class="h3d-error" role="alert">${escapeHTML(e.message)}</div>`;
+        el.hidden = false;
+    }
+}
+
+function _pick(ctx, ev) {
+    const rect = ctx.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(ndc, ctx.camera);
+    const targets = [ctx.rackParts?.bodyMesh, ctx.cutaway].filter(Boolean);
+    const hit = ray.intersectObjects(targets, true)[0];
+    if (!hit) return null;
+    if (hit.object.isInstancedMesh && hit.instanceId != null) return hit.object.userData.rackIds?.[hit.instanceId] ?? null;
+    let o = hit.object;
+    while (o && !o.userData.rackId) o = o.parent;
+    return o?.userData.rackId ?? null;
+}
+
+// ── input, tour, quality ────────────────────────────────────────
+function _wireInput(ctx) {
+    const canvas = ctx.renderer.domElement;
+    let down = null;
+    canvas.addEventListener('pointerdown', (e) => { down = [e.clientX, e.clientY]; ctx.tour = null; });
+    canvas.addEventListener('pointerup', (e) => {
+        if (!down) return;
+        const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]);
+        down = null;
+        if (moved > 5) return;                 // a drag orbits, it does not select
+        const id = _pick(ctx, e);
+        if (id) _select(ctx, id);
+    });
+    ctx.root.addEventListener('click', (e) => {
+        if (e.target.closest('[data-h3d-rack-close]')) {
+            ctx.root.querySelector('[data-h3d-rack]').hidden = true;
+            ctx.selected = null;
+            if (ctx.highlight) ctx.highlight.visible = false;
+        } else if (e.target.closest('[data-h3d-tour]')) {
+            _startTour(ctx);
+        } else if (e.target.closest('[data-h3d-callouts]')) {
+            _setCallouts(ctx, !ctx.showCallouts);
+        } else if (e.target.closest('[data-h3d-quality]')) {
+            const next = (ctx.quality.level + 2) % 3;     // HIGH -> LOW -> MEDIUM -> HIGH
+            _applyQuality(ctx, { level: next, low: 0, manual: true });
+        }
+    });
+}
+
+function _applyQuality(ctx, q) {
+    ctx.quality = q;
+    const set = qualitySettings(q.level);
+    ctx.bloom.enabled = set.bloom;
+    ctx.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, set.pixelRatio));
+    ctx.resize();
+    const b = ctx.root.querySelector('[data-h3d-quality]');
+    if (b) b.textContent = set.label + (q.manual ? '' : ' (auto)');
+}
+
+function _startTour(ctx) {
+    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const keys = tourKeyframes(ctx.spec);
+    if (ctx.stage.clientWidth < ctx.stage.clientHeight) {
+        // portrait: end further back so the row fits the narrow frame
+        keys[keys.length - 1] = { pos: [-4.8, 3.6, -8.0], target: keys[keys.length - 1].target };
+    }
+    if (reduce) {
+        const last = keys[keys.length - 1];
+        ctx.camera.position.set(...last.pos);
+        ctx.controls.target.set(...last.target);
+        return;
+    }
+    ctx.tour = {
+        t0: performance.now(),
+        pos: new THREE.CatmullRomCurve3(keys.map((k) => new THREE.Vector3(...k.pos))),
+        tgt: new THREE.CatmullRomCurve3(keys.map((k) => new THREE.Vector3(...k.target))),
+    };
 }
 
 function _frame(now) {
@@ -356,13 +612,24 @@ function _frame(now) {
     if ($root()?.hidden) { ctx.raf = 0; return; }
     const dt = Math.min(0.1, (now - ctx.last) / 1000);
     ctx.last = now;
-    for (const f of ctx.flows) f.tex.offset.x -= f.sign * dt * 0.6;
+    const scale = ctx.derived?.flowScale ?? 1;
+    for (const f of ctx.flows) f.tex.offset.x -= f.sign * dt * 0.6 * scale;
+    if (ctx.tour) {
+        const t = ease((now - ctx.tour.t0) / (TOUR_SECONDS * 1000));
+        ctx.camera.position.copy(ctx.tour.pos.getPoint(t));
+        ctx.controls.target.copy(ctx.tour.tgt.getPoint(t));
+        if (t >= 1) ctx.tour = null;
+    }
     ctx.controls.update();
     ctx.composer.render();
+    if (ctx.showCallouts) _layoutCallouts(ctx);
     ctx.frames += 1;
     if (now - ctx.fpsT >= 1000) {
         const fps = (ctx.frames * 1000) / (now - ctx.fpsT);
         if (ctx.fpsEl) ctx.fpsEl.textContent = `${fps.toFixed(0)} fps`;
+        const q = governQuality(ctx.quality, fps);
+        if (q.level !== ctx.quality.level) _applyQuality(ctx, q);
+        else ctx.quality = q;
         ctx.frames = 0; ctx.fpsT = now;
     }
     ctx.raf = requestAnimationFrame(_frame);
@@ -371,6 +638,8 @@ function _frame(now) {
 function _start() {
     if (_ctx && !_ctx.raf) {
         _ctx.last = performance.now();
+        _ctx.fpsT = _ctx.last;
+        _ctx.frames = 0;
         _ctx.raf = requestAnimationFrame(_frame);
     }
 }
@@ -391,7 +660,9 @@ async function _boot() {
     root.querySelector('[data-h3d-head]').innerHTML = headerHtml(design);
     const spec = buildSceneSpec(design, racks.racks);
     try {
-        _ctx = _build(root, spec);
+        _ctx = _build(root, spec, design);
+        _onChannels(getState('channels'));
+        _startTour(_ctx);
     } catch (e) {
         root.querySelector('[data-h3d-stage]').insertAdjacentHTML('afterbegin',
             `<div class="h3d-error" role="alert">WebGL is not available in this browser: ${escapeHTML(e.message)}</div>`);
@@ -410,7 +681,8 @@ export function initHall3dView() {
             else { _ctx?.resize?.(); _start(); }
         },
     });
+    try { subscribe('channels', _onChannels); } catch { /* state bus optional */ }
     _initialized = true;
 }
 
-export const __hall3d_test__ = { headerHtml, boot: _boot, ctx: () => _ctx };
+export const __hall3d_test__ = { headerHtml, livePanelHtml, boot: _boot, ctx: () => _ctx, onChannels: _onChannels };
