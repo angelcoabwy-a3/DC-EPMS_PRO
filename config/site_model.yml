@@ -279,52 +279,52 @@ buildings:
 # ════════════════════════════════════════════════════════════════════════
 power_chains:
   # ── Path A: utility/genset → ATS → xfmr → switchgear → UPS → RPP → busway → rack
-  - {from: utility_feed_a,  to: ats_a}
-  - {from: genset_a_01,     to: ats_a}
-  - {from: genset_a_02,     to: ats_a}
-  - {from: ats_a,           to: xfmr_a}
-  - {from: xfmr_a,          to: switchgear_a}
-  - {from: switchgear_a,    to: ups_a}
-  - {from: ups_a,           to: rpp_a_01}
-  - {from: ups_a,           to: rpp_a_02}
-  - {from: rpp_a_01,        to: busway_a_01}
-  - {from: rpp_a_02,        to: busway_a_02}
-  - {from: busway_a_01,     to: rack_a_01_01}
-  - {from: busway_a_01,     to: rack_a_01_02}
-  - {from: busway_a_01,     to: rack_a_01_03}
-  - {from: busway_a_01,     to: rack_a_01_04}
-  - {from: busway_a_01,     to: rack_a_01_05}
-  - {from: busway_a_01,     to: rack_a_01_06}
-  - {from: busway_a_01,     to: rack_a_01_07}
-  - {from: busway_a_01,     to: rack_a_01_08}
-  - {from: busway_a_01,     to: rack_a_01_09}
-  - {from: busway_a_01,     to: rack_a_01_10}
+  - {from: utility_feed_a, to: ats_a}
+  - {from: genset_a_01, to: ats_a}
+  - {from: genset_a_02, to: ats_a}
+  - {from: ats_a, to: xfmr_a}
+  - {from: xfmr_a, to: switchgear_a}
+  - {from: switchgear_a, to: ups_a}
+  - {from: ups_a, to: rpp_a_01}
+  - {from: ups_a, to: rpp_a_02}
+  - {from: rpp_a_01, to: busway_a_01}
+  - {from: rpp_a_02, to: busway_a_02}
+  - {from: busway_a_01, to: rack_a_01_01}
+  - {from: busway_a_01, to: rack_a_01_02}
+  - {from: busway_a_01, to: rack_a_01_03}
+  - {from: busway_a_01, to: rack_a_01_04}
+  - {from: busway_a_01, to: rack_a_01_05}
+  - {from: busway_a_01, to: rack_a_01_06}
+  - {from: busway_a_01, to: rack_a_01_07}
+  - {from: busway_a_01, to: rack_a_01_08}
+  - {from: busway_a_01, to: rack_a_01_09}
+  - {from: busway_a_01, to: rack_a_01_10}
 
   # ── Path B mirror: each rack ALSO receives a feed from Path B
-  - {from: utility_feed_b,  to: ats_b}
-  - {from: genset_b_01,     to: ats_b}
-  - {from: genset_b_02,     to: ats_b}
-  - {from: ats_b,           to: xfmr_b}
-  - {from: xfmr_b,          to: switchgear_b}
-  - {from: switchgear_b,    to: ups_b}
-  - {from: ups_b,           to: rpp_b_01}
-  - {from: ups_b,           to: rpp_b_02}
-  - {from: rpp_b_01,        to: busway_b_01}
-  - {from: rpp_b_02,        to: busway_b_02}
+  - {from: utility_feed_b, to: ats_b}
+  - {from: genset_b_01, to: ats_b}
+  - {from: genset_b_02, to: ats_b}
+  - {from: ats_b, to: xfmr_b}
+  - {from: xfmr_b, to: switchgear_b}
+  - {from: switchgear_b, to: ups_b}
+  - {from: ups_b, to: rpp_b_01}
+  - {from: ups_b, to: rpp_b_02}
+  - {from: rpp_b_01, to: busway_b_01}
+  - {from: rpp_b_02, to: busway_b_02}
 
   # The CRITICAL 2N feature: same rack_a_01_01 receives from BOTH
   # busway_a_01 (Path A) AND busway_b_01 (Path B). If A is opened
   # for LOTO, the rack stays up on Path B with zero IT outage.
-  - {from: busway_b_01,     to: rack_a_01_01}
-  - {from: busway_b_01,     to: rack_a_01_02}
-  - {from: busway_b_01,     to: rack_a_01_03}
-  - {from: busway_b_01,     to: rack_a_01_04}
-  - {from: busway_b_01,     to: rack_a_01_05}
-  - {from: busway_b_01,     to: rack_a_01_06}
-  - {from: busway_b_01,     to: rack_a_01_07}
-  - {from: busway_b_01,     to: rack_a_01_08}
-  - {from: busway_b_01,     to: rack_a_01_09}
-  - {from: busway_b_01,     to: rack_a_01_10}
+  - {from: busway_b_01, to: rack_a_01_01}
+  - {from: busway_b_01, to: rack_a_01_02}
+  - {from: busway_b_01, to: rack_a_01_03}
+  - {from: busway_b_01, to: rack_a_01_04}
+  - {from: busway_b_01, to: rack_a_01_05}
+  - {from: busway_b_01, to: rack_a_01_06}
+  - {from: busway_b_01, to: rack_a_01_07}
+  - {from: busway_b_01, to: rack_a_01_08}
+  - {from: busway_b_01, to: rack_a_01_09}
+  - {from: busway_b_01, to: rack_a_01_10}
 
   # ── Fuel chain (separate but supports power continuity)
   - {from: fuel_tank_a, to: genset_a_01}
@@ -338,22 +338,22 @@ power_chains:
   #    the BESS is parallel storage (charge/discharge), NOT in series with
   #    the IT load. Routing all rack power through the battery would be
   #    electrically wrong; the SLD flow terminates at the DC bus.
-  - {from: utility_feed_d,  to: mv_rectifier_d}
-  - {from: mv_rectifier_d,  to: sscb_d_01}
-  - {from: sscb_d_01,       to: main_bus_dc_d}
-  - {from: main_bus_dc_d,   to: bess_d_01}
-  - {from: main_bus_dc_d,   to: rpp_d_01}
-  - {from: main_bus_dc_d,   to: rpp_d_02}
-  - {from: bess_d_01,       to: main_bus_dc_d}   # BESS discharges back onto the DC bus
+  - {from: utility_feed_d, to: mv_rectifier_d}
+  - {from: mv_rectifier_d, to: sscb_d_01}
+  - {from: sscb_d_01, to: main_bus_dc_d}
+  - {from: main_bus_dc_d, to: bess_d_01}
+  - {from: main_bus_dc_d, to: rpp_d_01}
+  - {from: main_bus_dc_d, to: rpp_d_02}
+  - {from: bess_d_01, to: main_bus_dc_d}   # BESS discharges back onto the DC bus
 
   # ── Path D standby generation (50 MW track — genset farm, design)
   #    >50 MW cannot be one prime mover: N+2 farm of 3.2 MW MV units on a
   #    13.8 kV paralleling bus (ANSI 25 sync, dead-bus black start),
   #    stepped UP to 35 kV before joining the rectifier's AC side — the
   #    farm is AC plant ONLY; it never touches the 800 VDC fence.
-  - {from: gen_farm_d,      to: mv_bus_d}
-  - {from: mv_bus_d,        to: stepup_xfmr_d}
-  - {from: stepup_xfmr_d,   to: mv_rectifier_d}   # standby alternate onto the 35 kV AC side
+  - {from: gen_farm_d, to: mv_bus_d}
+  - {from: mv_bus_d, to: stepup_xfmr_d}
+  - {from: stepup_xfmr_d, to: mv_rectifier_d}   # standby alternate onto the 35 kV AC side
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -523,16 +523,16 @@ components:
 
   # ── Power Path B (mirror)
   utility_feed_b: {display: "Utility Feed B", type: utility_intake, voltage_kv: 27.5, rated_capacity_mw: 30.0}
-  ats_b:          {display: "ATS-B", type: ats, vendor: asco, model: "7000 Series Group G", rated_amps: 4000, voltage_v: 480}
-  genset_b_01:    {display: "Genset B1 (Cummins QSK95)", type: genset, vendor: cummins, model: "QSK95", rated_kw: 2750}
-  genset_b_02:    {display: "Genset B2 (Cummins QSK95)", type: genset, vendor: cummins, model: "QSK95", rated_kw: 2750}
-  xfmr_b:         {display: "Transformer B", type: transformer, rated_kva: 30000}
-  switchgear_b:   {display: "Switchgear B", type: switchgear, voltage_v: 480, rated_amps: 4000}
-  ups_b:          {display: "UPS B", type: ups, rated_kw: 2500, runtime_full_load_min: 7}
-  rpp_b_01:       {display: "RPP-B1", type: rpp, rated_kw: 1200}
-  rpp_b_02:       {display: "RPP-B2", type: rpp, rated_kw: 1200}
-  busway_b_01:    {display: "Busway B-01", type: busway, rated_amps: 1600, voltage_v: 480}
-  busway_b_02:    {display: "Busway B-02", type: busway, rated_amps: 1600, voltage_v: 480}
+  ats_b: {display: "ATS-B", type: ats, vendor: asco, model: "7000 Series Group G", rated_amps: 4000, voltage_v: 480}
+  genset_b_01: {display: "Genset B1 (Cummins QSK95)", type: genset, vendor: cummins, model: "QSK95", rated_kw: 2750}
+  genset_b_02: {display: "Genset B2 (Cummins QSK95)", type: genset, vendor: cummins, model: "QSK95", rated_kw: 2750}
+  xfmr_b: {display: "Transformer B", type: transformer, rated_kva: 30000}
+  switchgear_b: {display: "Switchgear B", type: switchgear, voltage_v: 480, rated_amps: 4000}
+  ups_b: {display: "UPS B", type: ups, rated_kw: 2500, runtime_full_load_min: 7}
+  rpp_b_01: {display: "RPP-B1", type: rpp, rated_kw: 1200}
+  rpp_b_02: {display: "RPP-B2", type: rpp, rated_kw: 1200}
+  busway_b_01: {display: "Busway B-01", type: busway, rated_amps: 1600, voltage_v: 480}
+  busway_b_02: {display: "Busway B-02", type: busway, rated_amps: 1600, voltage_v: 480}
 
   # ── Power Path D (Phase 2 / Building D — 800 VDC unipolar TN-S, design Q2 2026)
   utility_feed_d:
