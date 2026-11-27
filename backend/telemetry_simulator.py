@@ -68,28 +68,28 @@ log = logging.getLogger(__name__)
 # physical noise floor of each sensor type.
 PHASE1_BASELINES: dict[str, tuple[float, float]] = {
     # IT thermal — PT100 in stable enclosure, R=0.05 K
-    "rack_inlet_T_c":      (22.0, 0.4),
-    "gpu_Tj_c":            (68.0, 4.0),    # workload-driven, larger variance
-    "dlc_supply_T_c":      (30.0, 0.3),    # pump-stabilized loop
-    "dlc_return_T_c":      (45.0, 0.5),
+    "rack_inlet_T_c": (22.0, 0.4),
+    "gpu_Tj_c": (68.0, 4.0),  # workload-driven, larger variance
+    "dlc_supply_T_c": (30.0, 0.3),  # pump-stabilized loop
+    "dlc_return_T_c": (45.0, 0.5),
     # Electrical — Schneider Galaxy VX class
-    "voltage_v_phase_ab":  (480.0, 2.4),   # 0.5% regulation
-    "voltage_v_phase_bc":  (480.0, 2.4),
-    "voltage_v_phase_ca":  (480.0, 2.4),
-    "ups_soc_pct":         (98.5, 0.5),
-    "batt_runtime_min":    (15.0, 0.3),
+    "voltage_v_phase_ab": (480.0, 2.4),  # 0.5% regulation
+    "voltage_v_phase_bc": (480.0, 2.4),
+    "voltage_v_phase_ca": (480.0, 2.4),
+    "ups_soc_pct": (98.5, 0.5),
+    "batt_runtime_min": (15.0, 0.3),
     # Mechanical — York YZ chiller, CDU, pumps
-    "chiller_LWT_c":       (6.8, 0.15),
-    "chiller_cop":         (5.8, 0.2),
-    "cdu_primary_supply_T_c":   (30.5, 0.25),  # BPHE facility (district CHW) side
+    "chiller_LWT_c": (6.8, 0.15),
+    "chiller_cop": (5.8, 0.2),
+    "cdu_primary_supply_T_c": (30.5, 0.25),  # BPHE facility (district CHW) side
     "cdu_secondary_supply_T_c": (32.0, 0.22),  # BPHE technology (clean coolant) side -> IT
-    "cdu_flow_lpm":             (180.0, 5.0),  # secondary-loop flow; 142 LPM = starvation
-    "cdu_filter_dp_kpa":        (22.0, 4.0),   # filter differential pressure (nominal 10-35 kPa)
-    "pump_NPSH_margin_m":  (3.5, 0.15),
-    "pump_flow_gpm":       (4500.0, 50.0),
+    "cdu_flow_lpm": (180.0, 5.0),  # secondary-loop flow; 142 LPM = starvation
+    "cdu_filter_dp_kpa": (22.0, 4.0),  # filter differential pressure (nominal 10-35 kPa)
+    "pump_NPSH_margin_m": (3.5, 0.15),
+    "pump_flow_gpm": (4500.0, 50.0),
     # Heat rejection — ECWT and weather-driven wet bulb
-    "ecwt_c":              (24.0, 0.5),
-    "outdoor_wet_bulb_c":  (15.0, 1.5),
+    "ecwt_c": (24.0, 0.5),
+    "outdoor_wet_bulb_c": (15.0, 1.5),
 }
 
 
@@ -103,18 +103,18 @@ PHASE1_BASELINES: dict[str, tuple[float, float]] = {
 # voltage_v_dc_bus — a DC metric NEVER carries a phase suffix.
 PHASE2_DESIGN_BASELINES: dict[str, tuple[float, float]] = {
     # MV rectifier (35 kVAC 3-phase in -> 800 VDC unipolar out)
-    "rect_load_mw":           (50.0, 1.2),    # 250 racks x 200 kW design point
-    "rect_efficiency_ratio":  (0.985, 0.002),
+    "rect_load_mw": (50.0, 1.2),  # 250 racks x 200 kW design point
+    "rect_efficiency_ratio": (0.985, 0.002),
     # Solid-state circuit breaker (IEC 60947-2, 1-100 us clearing)
-    "sscb_junction_T_c":      (55.0, 1.2),
+    "sscb_junction_T_c": (55.0, 1.2),
     # 800 VDC unipolar TN-S main bus — 0.2% ripple class
-    "voltage_v_dc_bus":       (800.0, 1.6),
+    "voltage_v_dc_bus": (800.0, 1.6),
     # BESS 2.5 MWh (bus-parallel storage; current swings around zero)
-    "bess_soc_pct":           (85.0, 0.8),
-    "bess_dc_current_a":      (0.0, 12.0),
+    "bess_soc_pct": (85.0, 0.8),
+    "bess_dc_current_a": (0.0, 12.0),
     # Genset farm (22 x 3.2 MW standby): dead 13.8 kV bus until called
     "farm_units_online_count": (0.0, 0.05),
-    "farm_bus_voltage_kv":     (0.0, 0.02),
+    "farm_bus_voltage_kv": (0.0, 0.02),
 }
 
 # Unified lookup for _noise() — Phase 1 field-calibrated + Phase 2 design.
@@ -151,19 +151,19 @@ ANOMALY_PROFILES: dict[str, dict[str, float]] = {
         "chiller_cop": -1.4,
     },
     "cdu_flow_starvation": {
-        "cdu_flow_lpm": -38.0,        # 180 LPM nominal -> 142 LPM secondary-loop starvation
-        "cdu_filter_dp_kpa": +28.0,   # clogged filter element drives the flow loss
+        "cdu_flow_lpm": -38.0,  # 180 LPM nominal -> 142 LPM secondary-loop starvation
+        "cdu_filter_dp_kpa": +28.0,  # clogged filter element drives the flow loss
     },
     "gen_desync": {
-        "genset_phase_angle_deg": +8.0,   # nominal 0 deg -> 8 deg, past the 5 deg fault gate
-        "genset_freq_hz": +0.35,          # frequency slip accompanies loss of sync
-        "genset_breaker_status": -1.0,    # protective SSCB trip on desynchronization
+        "genset_phase_angle_deg": +8.0,  # nominal 0 deg -> 8 deg, past the 5 deg fault gate
+        "genset_freq_hz": +0.35,  # frequency slip accompanies loss of sync
+        "genset_breaker_status": -1.0,  # protective SSCB trip on desynchronization
     },
     # Phase 2 DESIGN-sim: 800 VDC bus sag under a load transient — the
     # scenario the SSCB's 1-100 us clearing window exists to bound.
     "dc_bus_sag": {
-        "voltage_v_dc_bus": -40.0,        # 800 V -> 760 V (5% sag)
-        "rect_load_mw": +5.0,             # the transient that drives it
+        "voltage_v_dc_bus": -40.0,  # 800 V -> 760 V (5% sag)
+        "rect_load_mw": +5.0,  # the transient that drives it
     },
 }
 
@@ -177,18 +177,18 @@ ANOMALY_PROFILES: dict[str, dict[str, float]] = {
 # region. Values are (baseline_mean, gaussian_std) per channel.
 REGION_PROFILES: dict[str, dict[str, tuple[float, float]]] = {
     "toronto_60hz": {
-        "genset_voltage_v":       (480.0, 2.4),
-        "genset_freq_hz":         (60.00, 0.02),
-        "genset_phase_angle_deg": (0.0,   0.4),
-        "phase_sequence_match":   (1.0,   0.02),
-        "genset_breaker_status":  (1.0,   0.02),
+        "genset_voltage_v": (480.0, 2.4),
+        "genset_freq_hz": (60.00, 0.02),
+        "genset_phase_angle_deg": (0.0, 0.4),
+        "phase_sequence_match": (1.0, 0.02),
+        "genset_breaker_status": (1.0, 0.02),
     },
     "emea_50hz": {
-        "genset_voltage_v":       (416.0, 2.1),
-        "genset_freq_hz":         (50.00, 0.02),
-        "genset_phase_angle_deg": (0.0,   0.4),
-        "phase_sequence_match":   (1.0,   0.02),
-        "genset_breaker_status":  (1.0,   0.02),
+        "genset_voltage_v": (416.0, 2.1),
+        "genset_freq_hz": (50.00, 0.02),
+        "genset_phase_angle_deg": (0.0, 0.4),
+        "phase_sequence_match": (1.0, 0.02),
+        "genset_breaker_status": (1.0, 0.02),
     },
 }
 
@@ -200,9 +200,7 @@ def set_region(region_key: str) -> None:
     """Select the active regional sync band. Raises ValueError on unknown key."""
     global _active_region
     if region_key not in REGION_PROFILES:
-        raise ValueError(
-            f"unknown region: {region_key}; valid: {sorted(REGION_PROFILES)}"
-        )
+        raise ValueError(f"unknown region: {region_key}; valid: {sorted(REGION_PROFILES)}")
     _active_region = region_key
     log.info("[telemetry_sim] active region set to %s", region_key)
 
@@ -215,6 +213,7 @@ def get_region() -> str:
 @dataclass
 class _AnomalyState:
     """In-flight anomaly affecting one component's channels."""
+
     component_id: str
     kind: str
     magnitude: float
@@ -231,17 +230,17 @@ def _noise(rng: np.random.Generator, key: str, n: int) -> np.ndarray:
 
 def _gen_it_rack(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
     return {
-        "rack_inlet_T_c":  _noise(rng, "rack_inlet_T_c", n),
-        "gpu_Tj_c":        _noise(rng, "gpu_Tj_c", n),
-        "dlc_supply_T_c":  _noise(rng, "dlc_supply_T_c", n),
-        "dlc_return_T_c":  _noise(rng, "dlc_return_T_c", n),
+        "rack_inlet_T_c": _noise(rng, "rack_inlet_T_c", n),
+        "gpu_Tj_c": _noise(rng, "gpu_Tj_c", n),
+        "dlc_supply_T_c": _noise(rng, "dlc_supply_T_c", n),
+        "dlc_return_T_c": _noise(rng, "dlc_return_T_c", n),
     }
 
 
 def _gen_chiller(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
     return {
-        "chiller_LWT_c":  _noise(rng, "chiller_LWT_c", n),
-        "chiller_cop":    _noise(rng, "chiller_cop", n),
+        "chiller_LWT_c": _noise(rng, "chiller_LWT_c", n),
+        "chiller_cop": _noise(rng, "chiller_cop", n),
     }
 
 
@@ -250,34 +249,36 @@ def _gen_cdu(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str
     # thermally separates the facility (primary) loop from the technology
     # (secondary) loop that delivers clean coolant to the IT racks.
     return {
-        "cdu_primary_supply_T_c":   _noise(rng, "cdu_primary_supply_T_c", n),
+        "cdu_primary_supply_T_c": _noise(rng, "cdu_primary_supply_T_c", n),
         "cdu_secondary_supply_T_c": _noise(rng, "cdu_secondary_supply_T_c", n),
-        "cdu_flow_lpm":             _noise(rng, "cdu_flow_lpm", n),
-        "cdu_filter_dp_kpa":        _noise(rng, "cdu_filter_dp_kpa", n),
+        "cdu_flow_lpm": _noise(rng, "cdu_flow_lpm", n),
+        "cdu_filter_dp_kpa": _noise(rng, "cdu_filter_dp_kpa", n),
     }
 
 
 def _gen_ups(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
     return {
-        "voltage_v_phase_ab":  _noise(rng, "voltage_v_phase_ab", n),
-        "voltage_v_phase_bc":  _noise(rng, "voltage_v_phase_bc", n),
-        "voltage_v_phase_ca":  _noise(rng, "voltage_v_phase_ca", n),
-        "ups_soc_pct":         _noise(rng, "ups_soc_pct", n),
-        "batt_runtime_min":    _noise(rng, "batt_runtime_min", n),
+        "voltage_v_phase_ab": _noise(rng, "voltage_v_phase_ab", n),
+        "voltage_v_phase_bc": _noise(rng, "voltage_v_phase_bc", n),
+        "voltage_v_phase_ca": _noise(rng, "voltage_v_phase_ca", n),
+        "ups_soc_pct": _noise(rng, "ups_soc_pct", n),
+        "batt_runtime_min": _noise(rng, "batt_runtime_min", n),
     }
 
 
 def _gen_pump(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
     return {
-        "pump_NPSH_margin_m":  _noise(rng, "pump_NPSH_margin_m", n),
-        "pump_flow_gpm":       _noise(rng, "pump_flow_gpm", n),
+        "pump_NPSH_margin_m": _noise(rng, "pump_NPSH_margin_m", n),
+        "pump_flow_gpm": _noise(rng, "pump_flow_gpm", n),
     }
 
 
-def _gen_cooling_tower_field(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+def _gen_cooling_tower_field(
+    _comp: ComponentInfo, n: int, rng: np.random.Generator
+) -> dict[str, np.ndarray]:
     return {
-        "ecwt_c":              _noise(rng, "ecwt_c", n),
-        "outdoor_wet_bulb_c":  _noise(rng, "outdoor_wet_bulb_c", n),
+        "ecwt_c": _noise(rng, "ecwt_c", n),
+        "outdoor_wet_bulb_c": _noise(rng, "outdoor_wet_bulb_c", n),
     }
 
 
@@ -288,12 +289,13 @@ def _gen_genset(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[
     # whose z-score flags a desync fault when phase angle drifts past 5 deg.
     profile = REGION_PROFILES[_active_region]
     return {
-        metric: rng.normal(loc=mean, scale=std, size=n)
-        for metric, (mean, std) in profile.items()
+        metric: rng.normal(loc=mean, scale=std, size=n) for metric, (mean, std) in profile.items()
     }
 
 
-def _gen_utility_intake(comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+def _gen_utility_intake(
+    comp: ComponentInfo, n: int, rng: np.random.Generator
+) -> dict[str, np.ndarray]:
     # Baseline from the component's OWN rated voltage: Phase 1 feeds run
     # 27.5 kV (Toronto Hydro), the Phase 2 Building D intake (DESIGN)
     # runs 35 kV. 0.5% regulation noise either way.
@@ -302,9 +304,11 @@ def _gen_utility_intake(comp: ComponentInfo, n: int, rng: np.random.Generator) -
 
 
 # ── Phase 2 DESIGN-sim generators (Building D — MVP S2) ─────────────
-def _gen_mv_rectifier(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+def _gen_mv_rectifier(
+    _comp: ComponentInfo, n: int, rng: np.random.Generator
+) -> dict[str, np.ndarray]:
     return {
-        "rect_load_mw":          _noise(rng, "rect_load_mw", n),
+        "rect_load_mw": _noise(rng, "rect_load_mw", n),
         "rect_efficiency_ratio": _noise(rng, "rect_efficiency_ratio", n),
     }
 
@@ -320,39 +324,41 @@ def _gen_dc_bus(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[
 
 def _gen_bess(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
     return {
-        "bess_soc_pct":      _noise(rng, "bess_soc_pct", n),
+        "bess_soc_pct": _noise(rng, "bess_soc_pct", n),
         "bess_dc_current_a": _noise(rng, "bess_dc_current_a", n),
     }
 
 
-def _gen_genset_farm(_comp: ComponentInfo, n: int, rng: np.random.Generator) -> dict[str, np.ndarray]:
+def _gen_genset_farm(
+    _comp: ComponentInfo, n: int, rng: np.random.Generator
+) -> dict[str, np.ndarray]:
     # Standby farm: 13.8 kV paralleling bus is DEAD until called
     # (dead-bus black start). Aggregate channels only — per-unit
     # telemetry is future scope past the MVP.
     return {
         "farm_units_online_count": _noise(rng, "farm_units_online_count", n),
-        "farm_bus_voltage_kv":     _noise(rng, "farm_bus_voltage_kv", n),
+        "farm_bus_voltage_kv": _noise(rng, "farm_bus_voltage_kv", n),
     }
 
 
 GeneratorFn = Callable[[ComponentInfo, int, np.random.Generator], dict[str, np.ndarray]]
 
 _GENERATORS: dict[str, GeneratorFn] = {
-    "it_rack":              _gen_it_rack,
-    "chiller":              _gen_chiller,
-    "cdu":                  _gen_cdu,
-    "ups":                  _gen_ups,
-    "pump":                 _gen_pump,
-    "cooling_tower_field":  _gen_cooling_tower_field,
-    "genset":               _gen_genset,
+    "it_rack": _gen_it_rack,
+    "chiller": _gen_chiller,
+    "cdu": _gen_cdu,
+    "ups": _gen_ups,
+    "pump": _gen_pump,
+    "cooling_tower_field": _gen_cooling_tower_field,
+    "genset": _gen_genset,
     # Utility intakes (Phase 1 27.5 kV + Phase 2 35 kV, metadata-keyed)
-    "utility_intake":       _gen_utility_intake,
+    "utility_intake": _gen_utility_intake,
     # Phase 2 DESIGN-sim (Building D)
-    "mv_rectifier":         _gen_mv_rectifier,
-    "sscb":                 _gen_sscb,
-    "dc_bus":               _gen_dc_bus,
-    "bess":                 _gen_bess,
-    "genset_farm":          _gen_genset_farm,
+    "mv_rectifier": _gen_mv_rectifier,
+    "sscb": _gen_sscb,
+    "dc_bus": _gen_dc_bus,
+    "bess": _gen_bess,
+    "genset_farm": _gen_genset_farm,
 }
 
 
@@ -467,10 +473,7 @@ class TelemetrySimulator:
         duration_samples controls persistence in get_window() calls.
         """
         if kind not in ANOMALY_PROFILES:
-            raise ValueError(
-                f"unknown anomaly kind: {kind}; "
-                f"valid: {sorted(ANOMALY_PROFILES)}"
-            )
+            raise ValueError(f"unknown anomaly kind: {kind}; " f"valid: {sorted(ANOMALY_PROFILES)}")
         try:
             comp = self._site.get_component(component_id)
         except Exception as e:
@@ -480,7 +483,8 @@ class TelemetrySimulator:
         if gen is None:
             log.warning(
                 "[telemetry_sim] component %s type %s does not emit telemetry",
-                component_id, comp.type,
+                component_id,
+                comp.type,
             )
             return 0
 
@@ -501,7 +505,11 @@ class TelemetrySimulator:
 
         log.info(
             "[telemetry_sim] injected %s on %s (mag=%.2f, %d samples, %d channels)",
-            kind, component_id, magnitude, duration_samples, affected,
+            kind,
+            component_id,
+            magnitude,
+            duration_samples,
+            affected,
         )
         return affected
 
@@ -526,8 +534,7 @@ def get_simulator(
     if _simulator is None:
         if site_model is None:
             raise RuntimeError(
-                "telemetry_simulator not initialized; "
-                "first call must pass site_model"
+                "telemetry_simulator not initialized; " "first call must pass site_model"
             )
         _simulator = TelemetrySimulator(site_model, seed=seed)
     return _simulator
