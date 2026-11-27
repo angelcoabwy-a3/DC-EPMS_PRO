@@ -248,9 +248,16 @@ FIX (2026-11-26, 8a61eba / c0baa8f): live debrief hit Meta 404; provider
   + cutaway, 800 VDC busways (flow texture + UnrealBloom), tap-offs,
   DLC headers, CDUs. three r166 addons vendored (three@0.166.0), vendor
   dir excluded from pre-commit. pytest 2127 / vitest 952 (59 files).
-NEXT: 3D hall lote 3 (live telemetry, rack click, callouts with leader
-  lines, fly-through, quality governor); operator measures fps on the
-  G14. Meta debrief 404 still to confirm on Render after f6a3013.
+3D HALL lote 3 (2026-11-26, 5dae0e3, ADR-022): live Building D channels
+  (main_bus_dc_d / mv_rectifier_d / sscb_d_01 / bess_d_01), per-rack MODEL
+  load, bus band vs 640 / 840 V, rack click panel, 3 callouts in a screen
+  lane with SVG leaders, 14 s tour, quality governor (30 fps floor).
+  pytest 2127 / vitest 959 (59 files).
+NEXT: operator measures fps on the G14 and checks the live view; open
+  candidates: DC-EPMS-076 (simulator + site_model to the ADR-021 plant),
+  generator margin decision (0.75 %), BESS ride-through (5 vs 10 min),
+  DC-EPMS-068 closing lote, DC-EPMS-072. Meta debrief 404 still to
+  confirm on Render after f6a3013.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.
 ```

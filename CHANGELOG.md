@@ -13,6 +13,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 3D Hall lote 3: live data, rack click, callouts, tour, governor (2026-11-26)
+
+- Live values from the Building D simulator channels (bus voltage,
+  rectifier load / efficiency, SSCB, BESS); per-rack load is MODEL.
+  Status strip = bus band vs design 640 / 840 V.
+- Click a rack: panel with feeds A / B, busway, section, DLC flow, design
+  power and the MODEL load from live.
+- Three callouts with leader lines (busway, rack, DLC), camera tour on
+  load, quality governor HIGH / MEDIUM / LOW below 30 fps. ADR-022.
+- CSS2DRenderer removed from the vendored addons (not used).
+- Floors (Linux): pytest 2127 (3 pre-existing optimizer errors), vitest
+  959 / 59 files.
+
 ### 3D Hall view, lote 2 of the 3D hall track (2026-11-26)
 
 - New view "3D Hall" (`#hall-3d`, ADR-022): Building D hall DH1 drawn
