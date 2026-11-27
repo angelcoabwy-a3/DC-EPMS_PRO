@@ -61,11 +61,15 @@ class TestBuild:
         comps = model["components"]
         for p in ("a", "b"):
             ups = [c for c in comps if c.startswith(f"ups_{p}_") and comps[c]["type"] == "ups"]
-            gens = [c for c in comps if c.startswith(f"genset_{p}_") and comps[c]["type"] == "genset"]
+            gens = [
+                c for c in comps if c.startswith(f"genset_{p}_") and comps[c]["type"] == "genset"
+            ]
             assert len(ups) == 8
             assert len(gens) == 9
             assert all(comps[u]["model"] == "Trinergy 2500" for u in ups)
-            assert all(comps[g]["rated_kw"] == 2750 and comps[g]["voltage_kv"] == 13.8 for g in gens)
+            assert all(
+                comps[g]["rated_kw"] == 2750 and comps[g]["voltage_kv"] == 13.8 for g in gens
+            )
             assert comps[f"mvtc_{p}"]["type"] == "mv_transfer_controller"
             for legacy_id in (f"ats_{p}", f"xfmr_{p}", f"switchgear_{p}", f"ups_{p}"):
                 assert legacy_id not in comps
@@ -79,8 +83,12 @@ class TestBuild:
 
     def test_sizing_assumptions_are_stated(self, model):
         size = v2.sizing(PLANT)
-        assert size == {"unit_sub_kva": 3500, "lv_swbd_amps": 5000,
-                        "lv_secondary_amps": 4210, "mv_xfmr_kva": 25000}
+        assert size == {
+            "unit_sub_kva": 3500,
+            "lv_swbd_amps": 5000,
+            "lv_secondary_amps": 4210,
+            "mv_xfmr_kva": 25000,
+        }
         assert "assumption" in model["components"]["unit_sub_a_01"]["sizing"]
         assert "assumption" in model["components"]["mv_xfmr_a"]["sizing"]
 
@@ -90,7 +98,9 @@ class TestBuild:
         assert comps["genset_a_01"]["parent"] == "sys_backup_power"
 
     def test_building_d_and_cooling_are_untouched(self, model):
-        d_old = [e for e in LEGACY["power_chains"] if e["from"].endswith("_d") or "_d_" in e["from"]]
+        d_old = [
+            e for e in LEGACY["power_chains"] if e["from"].endswith("_d") or "_d_" in e["from"]
+        ]
         d_new = [e for e in model["power_chains"] if e["from"].endswith("_d") or "_d_" in e["from"]]
         assert d_old == d_new
         assert d_old
@@ -99,7 +109,12 @@ class TestBuild:
             assert model["components"][cid] == LEGACY["components"][cid]
 
     def test_every_new_component_has_a_room(self, model):
-        located = {c for b in model["buildings"] for r in b.get("rooms") or [] for c in r.get("components") or []}
+        located = {
+            c
+            for b in model["buildings"]
+            for r in b.get("rooms") or []
+            for c in r.get("components") or []
+        }
         for p in ("a", "b"):
             for members in v2.phase1_ids(p, PLANT).values():
                 assert set(members) <= located
@@ -119,14 +134,22 @@ class TestValidatorFences:
 
     def test_broken_2n_is_caught(self, model):
         broken = copy.deepcopy(model)
-        broken["power_chains"] = [e for e in broken["power_chains"]
-                                  if not (e["from"] == "rpp_b_01" and e["to"] == "busway_b_01")]
-        assert any("rack_a_01_01 is not fed through mvtc_b" in p for p in v2.validate(broken, PLANT))
+        broken["power_chains"] = [
+            e
+            for e in broken["power_chains"]
+            if not (e["from"] == "rpp_b_01" and e["to"] == "busway_b_01")
+        ]
+        assert any(
+            "rack_a_01_01 is not fed through mvtc_b" in p for p in v2.validate(broken, PLANT)
+        )
 
     def test_voltage_mismatch_is_caught(self, model):
         broken = copy.deepcopy(model)
         broken["components"]["lv_swbd_a_03"]["voltage_v"] = 600
-        assert any("unit_sub_a_03 (0.48 kV) -> lv_swbd_a_03 (0.6 kV)" in p for p in v2.validate(broken, PLANT))
+        assert any(
+            "unit_sub_a_03 (0.48 kV) -> lv_swbd_a_03 (0.6 kV)" in p
+            for p in v2.validate(broken, PLANT)
+        )
 
     def test_dangling_chain_is_caught(self, model):
         broken = copy.deepcopy(model)
@@ -161,7 +184,10 @@ class TestCommittedFiles:
     def test_generated_files_are_not_stale(self):
         result = subprocess.run(
             [sys.executable, str(PROJECT_ROOT / "scripts" / "build_site_model_v2.py"), "--check"],
-            capture_output=True, text=True, cwd=PROJECT_ROOT, timeout=60,
+            capture_output=True,
+            text=True,
+            cwd=PROJECT_ROOT,
+            timeout=60,
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert "GENERATED" in V2_PATH.read_text(encoding="utf-8").splitlines()[0]
@@ -169,8 +195,11 @@ class TestCommittedFiles:
     def test_power_controls_roster_is_a_subset_of_v2(self, model):
         ctl = DeviceController.from_design(load_design(PROJECT_ROOT / "config" / "power_plant.yml"))
         assert set(ctl.devices) <= set(model["components"])
-        assert set(ctl.bays) == {c for c, m in model["components"].items() if m.get("type") == "genset"
-                                 and m.get("path") in ("a", "b")}
+        assert set(ctl.bays) == {
+            c
+            for c, m in model["components"].items()
+            if m.get("type") == "genset" and m.get("path") in ("a", "b")
+        }
 
 
 class TestTelemetryMapping:
@@ -193,9 +222,15 @@ class TestTelemetryMapping:
         assert "/api/devices" in mapping["write_path"]
 
     def test_every_legacy_power_tag_is_mapped(self):
-        tags = yaml.safe_load((PROJECT_ROOT / "config" / "bms_tags.yml").read_text(encoding="utf-8"))
+        tags = yaml.safe_load(
+            (PROJECT_ROOT / "config" / "bms_tags.yml").read_text(encoding="utf-8")
+        )
         tags = tags.get("tags", tags)
-        names = list(tags) if isinstance(tags, dict) else [t.get("tag") or t.get("id") for t in tags]
-        legacy = [n for n in names if str(n).startswith(("PWR.UPS", "PWR.ATS", "PWR.GEN", "PWR.XFMR"))]
+        names = (
+            list(tags) if isinstance(tags, dict) else [t.get("tag") or t.get("id") for t in tags]
+        )
+        legacy = [
+            n for n in names if str(n).startswith(("PWR.UPS", "PWR.ATS", "PWR.GEN", "PWR.XFMR"))
+        ]
         assert legacy
         assert sorted(set(legacy) - set(v2.LEGACY_TAG_MAP)) == []

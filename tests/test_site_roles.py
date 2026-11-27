@@ -94,7 +94,9 @@ def test_roles_v2(monkeypatch):
         assert summary[p]["ups"] == [f"ups_{p}_{i:02d}" for i in range(1, 9)]
         assert summary[p]["utility_transformer"] == f"mv_xfmr_{p}"
     assert roles.primary_ups(m, "b") == "ups_b_01"
-    flat = {v for s in summary.values() for v in [s["transfer"], s["utility_transformer"], *s["ups"]]}
+    flat = {
+        v for s in summary.values() for v in [s["transfer"], s["utility_transformer"], *s["ups"]]
+    }
     assert not flat & RETIRED
 
 
@@ -151,7 +153,10 @@ def test_hld_key_v2_groups(monkeypatch):
 def test_simulate_block_loto_keeps_path():
     base = build_steady_state_measurements()
     sim = simulate_loto_measurements(
-        base, target_id="ups_a_01", target_type="ups", target_path="A",
+        base,
+        target_id="ups_a_01",
+        target_type="ups",
+        target_path="A",
         ups_path_remaining_kw=17500.0,
     )
     assert sim.get("ups_a_online", True) is True
@@ -163,7 +168,10 @@ def test_simulate_block_loto_keeps_path():
 def test_simulate_short_remaining_falls_back_to_path_loss():
     base = build_steady_state_measurements()
     sim = simulate_loto_measurements(
-        base, target_id="ups_a_01", target_type="ups", target_path="A",
+        base,
+        target_id="ups_a_01",
+        target_type="ups",
+        target_path="A",
         ups_path_remaining_kw=12500.0,  # below the 16.76 MW full-path load
     )
     assert sim["ups_a_online"] is False
@@ -242,7 +250,9 @@ def test_copilot_maps_block_to_hld_group(monkeypatch):
 
     async def fake_topology():
         return {
-            "hld_nodes": {"ups_a": {"label": "UPS Galaxy A", "severity": "ok", "health": 1.0, "metrics": {}}},
+            "hld_nodes": {
+                "ups_a": {"label": "UPS Galaxy A", "severity": "ok", "health": 1.0, "metrics": {}}
+            },
             "redundancy_mode": "2N",
             "site_health": 1.0,
         }

@@ -18,12 +18,12 @@ import pytest
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "backend"))
 
-import site_routes
-from agent_site_tool import TOOL_DEFINITION, tool_query_site_model
-from cmms_site_enrichment import enrich_wo_with_location
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from site_model import reset_site_model
+import site_routes  # noqa: E402
+from agent_site_tool import TOOL_DEFINITION, tool_query_site_model  # noqa: E402
+from cmms_site_enrichment import enrich_wo_with_location  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from site_model import reset_site_model  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
