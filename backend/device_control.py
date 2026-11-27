@@ -48,8 +48,10 @@ Control discipline
   * Everything is appended to the Forensic Ledger (ADR-011) when one
     is available.
 
-Vocabulary fence (S-VOCAB-01): AC equipment only. The 800 VDC
-unipolar TN-S side is out of scope here.
+Vocabulary fence (S-VOCAB-01): the Phase 1 plant here is AC equipment.
+Lot 12 (ADR-023) adds the Building D devices (rectifier groups, bus main
+SSCBs, BESS, generator farms) as thin wrappers over ``backend/bldg_d.py``,
+whose 800 VDC side is unipolar TN-S (no phases).
 """
 
 from __future__ import annotations
@@ -69,6 +71,7 @@ from fastapi.responses import PlainTextResponse
 
 from backend import (
     battery_room as br,
+    bldg_d as bd,
     gen_fuel as gf,
     mv_cubicle as cub,
     mv_switching as mv,
@@ -82,7 +85,7 @@ from backend import (
 KIND_UPS = "ups"
 KIND_TRANSFER = "transfer"
 KIND_GENERATOR = "generator"
-KINDS = (KIND_UPS, KIND_TRANSFER, KIND_GENERATOR)
+KINDS = (KIND_UPS, KIND_TRANSFER, KIND_GENERATOR, *bd.KINDS)
 
 # ── Authority ───────────────────────────────────────────────────────
 AUTH_AUTO = "AUTO"
@@ -138,6 +141,7 @@ ACTION_UPS_FIELD = "UPS_SYSTEM_FIELD_ACTION"
 ACTION_BATT_FIELD = "BATTERY_ROOM_FIELD_ACTION"
 ACTION_WIRING_FIELD = "MV_CONTROL_WIRING_ACTION"
 ACTION_DFR = "DISTURBANCE_RECORDER_ACTION"
+ACTION_BLDG_D_INJECT = "BUILDING_D_SIMULATION_INJECTION"
 DFR_RECORDS_MAX = 24
 
 SIMULATION_NOTICE = (
@@ -255,6 +259,9 @@ COMMANDS: dict[str, dict[str, tuple[str, str]]] = {
         ),
     },
 }
+
+# Lot 12: Building D device commands live with their plant model.
+COMMANDS.update(bd.COMMANDS)
 
 _NEXT_STATE = {
     "ENTER_DYNAMIC_ONLINE": UPS_DYNAMIC_ONLINE,
@@ -379,6 +386,9 @@ class DeviceController:
     _dfr_records: deque = field(default_factory=lambda: deque(maxlen=DFR_RECORDS_MAX))
     _dfr_seq: int = 0
     _dfr_mark: float = 0.0
+    # Lot 12: Building D (Phase 2) plant, None when not configured
+    bldg_d: bd.BuildingD | None = None
+    bldg_d_params: bd.Params | None = None
 
     # ── Construction ────────────────────────────────────────────────
     @classmethod
@@ -388,6 +398,7 @@ class DeviceController:
         *,
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], float] = time.time,
+        building_d: bd.Params | None = None,
     ) -> DeviceController:
         design = validate_design(design)
         ctl = cls(design=design, clock=clock, wall_clock=wall_clock)
@@ -458,7 +469,130 @@ class DeviceController:
                 )
                 ctl.bays[device_id] = mv.Bay(bay_id=device_id)
                 ctl.gensets[device_id] = gf.GenSet(device_id=device_id, path=path)
+        if building_d is not None:
+            ctl._add_building_d(building_d, now)
         return ctl
+
+    def _add_building_d(self, params: bd.Params, now: float) -> None:
+        self.bldg_d_params = params
+        self.bldg_d = bd.BuildingD.create(params, now)
+        names = {
+            bd.KIND_RECT: (
+                "Rectifier group",
+                float(params.rect_units * params.rect_unit_kw),
+                params.utility_kv * 1000.0,
+            ),
+            bd.KIND_SSCB: ("Bus main SSCB", params.it_kw, params.nominal_v),
+            bd.KIND_BESS: ("BESS", params.bess_conv_kw, params.nominal_v),
+            bd.KIND_FARM: ("Generator farm", params.farm_sets * params.farm_set_kw, 13800.0),
+        }
+        for path in bd.PATHS:
+            for kind, device_id in bd.device_ids(path).items():
+                label, kw, volts = names[kind]
+                self._add(
+                    Device(
+                        device_id=device_id,
+                        kind=kind,
+                        display=f"{label} D-{path.upper()}",
+                        path=bd.device_path(path),
+                        vendor="",
+                        model="Building D design (ADR-021)",
+                        rated_kw=kw,
+                        voltage_v=volts,
+                        state=self.bldg_d.state_of(kind, path),
+                        state_since=now,
+                    )
+                )
+
+    # ── Building D (lot 12) ─────────────────────────────────────────
+    def _d_path(self, dev: Device) -> str:
+        return dev.path[1:]
+
+    def _advance_bldg_d(self, now: float) -> None:
+        if self.bldg_d is None:
+            return
+        self.bldg_d.advance(now)
+        self._sync_bldg_d(now)
+
+    def _sync_bldg_d(self, now: float) -> None:
+        plant = self.bldg_d
+        if plant is None:
+            return
+        for dev in self.devices.values():
+            if dev.kind in bd.KINDS:
+                state = plant.state_of(dev.kind, self._d_path(dev))
+                if state != dev.state:
+                    dev.state, dev.state_since = state, now
+        for e in plant.drain_events():
+            kind = e.pop("event")
+            self._events.append(
+                {
+                    "ts": round(self.wall_clock(), 3),
+                    "event": kind,
+                    "device_id": e.pop("device_id"),
+                    "actor": "plant",
+                    **e,
+                }
+            )
+
+    def bldg_d_overlay(self) -> dict[str, float]:
+        """Telemetry values for Building D channels (simulator overlay)."""
+        with self._lock:
+            if self.bldg_d is None:
+                return {}
+            self._advance_bldg_d(self.clock())
+            return self.bldg_d.telemetry_overlay()
+
+    def inject_bldg_d(self, kind: str, actor: str, **params: Any) -> dict[str, Any]:
+        """Training / bench injections on the Building D plant."""
+        with self._lock:
+            if self.bldg_d is None:
+                raise DeviceControlError(404, "Building D plant is not configured")
+            now = self.clock()
+            self._advance_bldg_d(now)
+            path = str(params.get("path") or "a").lower()
+            if path not in bd.PATHS and kind != "load_step":
+                raise DeviceControlError(400, "path must be 'a' or 'b'")
+            plant = self.bldg_d
+            if kind == "utility_loss":
+                plant.utility_loss(path)
+            elif kind == "utility_restore":
+                plant.utility_restore(path)
+            elif kind == "bus_fault":
+                plant.bus_fault(path)
+            elif kind == "bess_open":
+                plant.set_bess_breaker(path, bd.OPEN)
+            elif kind == "farm_manual":
+                plant.set_farm_auto(path, False)
+            elif kind == "preset":
+                plant.preset(
+                    path,
+                    now,
+                    out_of_service=bool(params.get("out_of_service")),
+                    on_farm=bool(params.get("on_farm")),
+                )
+            elif kind == "load_step":
+                plant.schedule_load_step(
+                    now,
+                    float(params.get("delay_s", 0.0)),
+                    float(params.get("kw", 0.0)),
+                    float(params.get("duration_s", 60.0)),
+                )
+            else:
+                raise DeviceControlError(400, f"unknown Building D injection {kind!r}")
+            plant._tick(0.0, now)
+            event = {
+                "ts": round(self.wall_clock(), 3),
+                "event": "bldg_d_injection",
+                "device_id": "building_d",
+                "actor": actor,
+                "injection": kind,
+                **{k: v for k, v in params.items() if k != "path"},
+                "path": path,
+            }
+            self._events.append(event)
+            self._sync_bldg_d(now)
+            return event
 
     def _add(self, dev: Device) -> None:
         self.devices[dev.device_id] = dev
@@ -538,6 +672,7 @@ class DeviceController:
         self._advance_battery_rooms(now)
         self._advance_sync(now)
         self._advance_dfr()
+        self._advance_bldg_d(now)
 
     # ── L1: draw-out cubicles of 52-U / 52-GM ───────────────────────
     def _main_closed(self, path: str, brk: str) -> bool:
@@ -1975,6 +2110,7 @@ class DeviceController:
                 self.design,
                 clock=self.clock,
                 wall_clock=self.wall_clock,
+                building_d=self.bldg_d_params,
             )
             for name in (
                 "devices",
@@ -1996,6 +2132,7 @@ class DeviceController:
                 "ups_systems",
                 "battery_rooms",
                 "wirings",
+                "bldg_d",
             ):
                 setattr(self, name, getattr(fresh, name))
             self._xfmr_at = None
@@ -2138,6 +2275,10 @@ class DeviceController:
     def blocked_reason(self, dev: Device, command: str) -> str | None:
         """Why ``command`` cannot run now, or None when permitted.
         Authority is checked separately (``authority_reason``)."""
+        if dev.kind in bd.KINDS:
+            if self.bldg_d is None:
+                return "Building D plant is not configured."
+            return self.bldg_d.blocked(dev.kind, self._d_path(dev), command)
         if dev.kind == KIND_UPS:
             fault = self.faults.get(dev.device_id)
             if fault and command in ("ENTER_DYNAMIC_ONLINE", "RETURN_TO_DOUBLE_CONVERSION"):
@@ -2266,6 +2407,8 @@ class DeviceController:
 
     # ── Readings ────────────────────────────────────────────────────
     def _readings(self, dev: Device) -> list[dict[str, Any]]:
+        if dev.kind in bd.KINDS and self.bldg_d is not None:
+            return self.bldg_d.readings(dev.kind, self._d_path(dev))
         if dev.kind == KIND_UPS:
             carrying = dev.state in _UPS_CARRYING
             load_kw = self._ups_block_load_kw(dev.path) if carrying else 0.0
@@ -2344,6 +2487,8 @@ class DeviceController:
         ]
 
     def _indications(self, dev: Device) -> list[dict[str, str]]:
+        if dev.kind in bd.KINDS:
+            return []
         if dev.kind == KIND_TRANSFER:
             return (
                 [
@@ -2373,6 +2518,8 @@ class DeviceController:
 
     def _status(self, dev: Device) -> dict[str, str]:
         """Operator-facing condition: tone is ok / warn / crit / info."""
+        if dev.kind in bd.KINDS and self.bldg_d is not None:
+            return self.bldg_d.status(dev.kind, self._d_path(dev))
         if dev.kind == KIND_UPS:
             fault = self.faults.get(dev.device_id)
             if fault and dev.state in _UPS_PROTECTING:
@@ -2506,6 +2653,7 @@ class DeviceController:
             "timing": {"crank_s": CRANK_TIME_S, "cooldown_s": COOLDOWN_TIME_S},
             "paths": paths,
             "devices": devices,
+            "building_d": self.bldg_d.summary(self.clock()) if self.bldg_d is not None else None,
             "events": list(self._events)[::-1][:30],
         }
 
@@ -2618,6 +2766,31 @@ class DeviceController:
             # Second interlock evaluation: the plant may have moved.
             self._check(dev, sel.command)
             previous = dev.state
+            if dev.kind in bd.KINDS and self.bldg_d is not None:
+                now = self.clock()
+                self.bldg_d.operate(dev.kind, self._d_path(dev), sel.command, now)
+                pending = self.bldg_d.drain_events()
+                self._sync_bldg_d(now)
+                event = self._event(
+                    "command",
+                    dev,
+                    actor,
+                    command=sel.command,
+                    from_state=previous,
+                    to_state=dev.state,
+                )
+                for e in pending:
+                    kind = e.pop("event")
+                    self._events.append(
+                        {
+                            "ts": round(self.wall_clock(), 3),
+                            "event": kind,
+                            "device_id": e.pop("device_id"),
+                            "actor": "plant",
+                            **e,
+                        }
+                    )
+                return event
             if sel.command == "START_GENERATORS":
                 started = self._start_candidates(dev.path, auto_only=False)
                 for gen in started:
@@ -3422,6 +3595,30 @@ def register_device_control_routes(
             },
         )
         return {"success": True, "record": rec, "ledger_entry_id": entry_id}
+
+    @app.post("/api/bldg-d/inject")
+    async def bldg_d_inject(request: Request, payload: dict = Body(...)) -> dict[str, Any]:
+        """Lot 12 bench / training injection on the simulated Building D
+        plant: utility_loss | utility_restore | bus_fault | bess_open |
+        farm_manual | preset (path a / b; out_of_service, on_farm) or
+        load_step (kw, delay_s, duration_s)."""
+        actor = authorise(request, payload)
+        kind = str(payload.get("injection") or "")
+        params = {
+            k: payload[k]
+            for k in ("path", "kw", "delay_s", "duration_s", "out_of_service", "on_farm")
+            if k in payload
+        }
+        try:
+            event = _controller().inject_bldg_d(kind, actor, **params)
+        except DeviceControlError as exc:
+            raise _fail(exc) from exc
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, f"invalid injection parameters: {exc}") from exc
+        entry_id = await _ledger_append(
+            request.app, actor, ACTION_BLDG_D_INJECT, {k: v for k, v in event.items() if k != "ts"}
+        )
+        return {"success": True, "event": event, "ledger_entry_id": entry_id}
 
     @app.post("/api/battery-rooms/{path}/action")
     async def battery_room_action(

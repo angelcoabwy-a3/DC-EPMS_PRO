@@ -3667,9 +3667,35 @@ try:
             design = _power_design()
             if design is None:
                 return None
-            ctl = DeviceController.from_design(design)
+            ctl = DeviceController.from_design(design, building_d=_bldg_d_params())
             app.state.device_controller = ctl
         return ctl
+
+    def _bldg_d_params():
+        """Lot 12 (ADR-023): Building D plant numbers from the ADR-021
+        design model. None (no Building D devices) if it cannot load."""
+        try:
+            from backend import bldg_d as _bd
+            from backend.design_model import get_design as _get_bd_design
+
+            return _bd.params_from_sizing(_get_bd_design()["sizing"])
+        except Exception as exc:  # the Phase 1 plant must still run
+            log.warning("[BOOT] Building D plant not loaded: %s", exc)
+            return None
+
+    def _bldg_d_overlay():
+        ctl = getattr(app.state, "device_controller", None)
+        return ctl.bldg_d_overlay() if ctl is not None else {}
+
+    # The live loop imports the simulator as a top-level module, other
+    # code as backend.telemetry_simulator: register on both.
+    import importlib as _importlib
+
+    for _modname in ("telemetry_simulator", "backend.telemetry_simulator"):
+        try:
+            _importlib.import_module(_modname).set_state_overlay(_bldg_d_overlay)
+        except Exception as _exc:
+            log.warning("[BOOT] telemetry overlay not registered on %s: %s", _modname, _exc)
 
     def _power_scenario_library():
         library = getattr(app.state, "power_scenario_library", None)

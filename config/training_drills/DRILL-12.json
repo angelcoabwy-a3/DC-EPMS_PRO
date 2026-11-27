@@ -1,0 +1,34 @@
+{
+  "id": "DRILL-12",
+  "version": 1,
+  "title": "Building D: 800 VDC bus fault on path D-A",
+  "summary": "A fault on the 800 VDC bus of path D-A: the bus main SSCB and the BESS breaker cleared it. The hall rides on path D-B. Isolate the bus from its source, record the fault cleared (training step for the insulation test and repair), then reset and re-energise in order: rectifier input, SSCB, BESS. Simulated plant (ADR-023). Lockout at the equipment is outside this simulator. Switching the procedure does not call for counts as a violation.",
+  "path": "da",
+  "target_s": 120,
+  "time_limit_s": 900,
+  "procedure_commands": ["OPEN_INPUT", "CLEAR_FAULT", "RESET", "CLOSE_INPUT", "CLOSE", "CLOSE_BREAKER"],
+  "references": ["IEC 60947-2 (circuit-breakers, including solid-state)", "ADR-021 Building D design model", "ADR-023 Building D simulated plant"],
+  "setup": {
+    "authority": {"mv_rect_d": "REMOTE", "sscb_d": "REMOTE", "bess_d": "REMOTE"},
+    "inject": [{"type": "bldg_d", "injection": "bus_fault", "path": "a"}]
+  },
+  "steps": [
+    {"id": "ACK", "text": "Acknowledge the Building D path A alarms in the alarm banner",
+     "check": {"type": "alarms_acked", "prefix": "BLDG_DA_"}},
+    {"id": "ISOLATE", "text": "Open the rectifier group A input breaker (bus isolated from its source)",
+     "check": {"type": "device_state", "device": "mv_rect_d", "state": "INPUT_OPEN"}},
+    {"id": "CLEAR", "text": "Record the bus fault cleared (SSCB D-A: Record fault cleared)",
+     "check": {"type": "bldg_d", "path": "a", "field": "bus_fault", "value": false}},
+    {"id": "RESET", "text": "Reset the SSCB D-A trip",
+     "check": {"type": "device_state", "device": "sscb_d", "states": ["OPEN", "CLOSED"]}},
+    {"id": "INPUT", "text": "Close the rectifier group A input breaker",
+     "check": {"type": "device_state", "device": "mv_rect_d", "state": "UTILITY"}},
+    {"id": "CLOSE", "text": "Close SSCB D-A: path D-A carries load again",
+     "check": {"type": "all", "of": [
+       {"type": "device_state", "device": "sscb_d", "state": "CLOSED"},
+       {"type": "bldg_d", "path": "a", "field": "carrying_kw", "min": 1000}]}},
+    {"id": "BESS", "text": "Reset and close the BESS D-A breaker (ride-through restored)",
+     "check": {"type": "bldg_d", "path": "a", "field": "bess_breaker", "value": "CLOSED"}}
+  ],
+  "fail": [{"type": "hall_d_lost"}]
+}

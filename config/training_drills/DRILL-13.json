@@ -1,0 +1,29 @@
+{
+  "id": "DRILL-13",
+  "version": 1,
+  "title": "Building D: load step on one path, on the farm, without its BESS",
+  "summary": "Path D-A is out for maintenance and path D-B runs on its generator farm (35 kV utility lost). The BESS D-B breaker was left open after an inspection. A synchronised training job will step the hall by +12 MW in 90 s. The farm accepts load at a limited rate (model); without the BESS the bus cannot follow the step and the hall goes dark. Restore the BESS before the step, then watch it carry the step. Simulated plant (ADR-023), model values. Switching the procedure does not call for counts as a violation.",
+  "path": "db",
+  "target_s": 120,
+  "time_limit_s": 300,
+  "procedure_commands": ["CLOSE_BREAKER"],
+  "references": ["ISO 8528-5 (generator set load acceptance)", "ADR-021 Building D design model", "ADR-023 Building D simulated plant"],
+  "setup": {
+    "authority": {"bess_d_b": "REMOTE"},
+    "inject": [
+      {"type": "bldg_d", "injection": "preset", "path": "a", "out_of_service": true},
+      {"type": "bldg_d", "injection": "preset", "path": "b", "on_farm": true},
+      {"type": "bldg_d", "injection": "bess_open", "path": "b"},
+      {"type": "bldg_d", "injection": "load_step", "kw": 12000, "delay_s": 90, "duration_s": 20}
+    ]
+  },
+  "steps": [
+    {"id": "ACK", "text": "Acknowledge the Building D path B alarms in the alarm banner",
+     "check": {"type": "alarms_acked", "prefix": "BLDG_DB_"}},
+    {"id": "BESS", "text": "Close the BESS D-B breaker before the load step",
+     "check": {"type": "bldg_d", "path": "b", "field": "bess_breaker", "value": "CLOSED"}},
+    {"id": "ABSORB", "text": "Watch the BESS carry the step until the job settles",
+     "check": {"type": "event_seen", "event": "load_step_end"}}
+  ],
+  "fail": [{"type": "hall_d_lost"}]
+}

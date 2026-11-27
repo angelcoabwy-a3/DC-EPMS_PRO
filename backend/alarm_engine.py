@@ -448,6 +448,7 @@ def conditions_from_plant(plant: dict[str, Any]) -> list[Condition]:
                     src,
                 )
             )
+    out += conditions_from_building_d(plant.get("building_d"))
     for d in plant.get("devices", []):
         status = d.get("status") or {}
         did = str(d.get("id"))
@@ -672,4 +673,94 @@ def conditions_from_plant(plant: dict[str, Any]) -> list[Condition]:
                         did,
                     ),
                 ]
+    return out
+
+
+def conditions_from_building_d(bd: dict[str, Any] | None) -> list[Condition]:
+    """Lot 12 (ADR-023): alarm conditions of the simulated Building D
+    plant (``snapshot_all()["building_d"]``). S-VOCAB-01: the 800 VDC
+    bus is unipolar; only the 35 kV feed is 3-phase AC."""
+    if not bd:
+        return []
+    src = "building_d"
+    out = [
+        Condition(
+            "BLDG_D_HALL_LOAD_LOST",
+            bool(bd.get("load_lost")),
+            HIGH,
+            "Building D hall CRITICAL LOAD LOST (both 800 VDC buses dark)",
+            src,
+        )
+    ]
+    for p in bd.get("paths", []):
+        P = f"D{str(p.get('path', '?')).upper()}"
+        lbl = p.get("label", P)
+        energized = bool(p.get("bus_energized"))
+        on_bess = energized and float(p.get("bess_kw") or 0.0) > 1.0
+        bess_brk = p.get("bess_breaker")
+        out += [
+            Condition(
+                f"BLDG_{P}_UTILITY_LOST",
+                p.get("utility_ok") is False,
+                MEDIUM,
+                f"{lbl} 35 kV utility feed lost",
+                src,
+            ),
+            Condition(
+                f"BLDG_{P}_BUS_DEAD",
+                not energized and not bd.get("load_lost"),
+                HIGH,
+                f"{lbl} 800 VDC bus dead: hall on the other path only",
+                src,
+            ),
+            Condition(
+                f"BLDG_{P}_BUS_FAULT",
+                bool(p.get("bus_fault")),
+                HIGH,
+                f"{lbl} 800 VDC bus fault (SSCB cleared)",
+                src,
+            ),
+            Condition(
+                f"BLDG_{P}_SSCB_TRIPPED",
+                p.get("sscb") == "TRIPPED",
+                HIGH,
+                f"{lbl} bus main SSCB tripped ({str(p.get('sscb_trip') or '').lower()})",
+                src,
+            ),
+            Condition(
+                f"BLDG_{P}_ON_BESS",
+                on_bess,
+                HIGH,
+                f"{lbl} bus on BESS ({float(p.get('soc_pct') or 0):.1f} % SOC)",
+                src,
+            ),
+            Condition(
+                f"BLDG_{P}_BESS_UNAVAILABLE",
+                bess_brk != "CLOSED",
+                MEDIUM,
+                f"{lbl} BESS breaker {str(bess_brk).lower()}: no ride-through",
+                src,
+            ),
+            Condition(
+                f"BLDG_{P}_ON_FARM",
+                p.get("source") == "FARM" and bool(p.get("input_live")),
+                MEDIUM,
+                f"{lbl} rectifier input on the generator farm",
+                src,
+            ),
+            Condition(
+                f"BLDG_{P}_FARM_NOT_AUTO",
+                p.get("farm_auto") is False,
+                LOW,
+                f"{lbl} generator farm auto start OFF",
+                src,
+            ),
+            Condition(
+                f"BLDG_{P}_RECT_N1_LOST",
+                p.get("rect_n1_ok") is False,
+                LOW,
+                f"{lbl} rectifier group at N (N+1 used)",
+                src,
+            ),
+        ]
     return out

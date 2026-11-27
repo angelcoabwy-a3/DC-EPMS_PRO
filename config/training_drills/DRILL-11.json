@@ -1,0 +1,31 @@
+{
+  "id": "DRILL-11",
+  "version": 1,
+  "title": "Building D: utility D-A lost, farm auto start OFF",
+  "summary": "The 35 kV utility feed of Building D path A is lost. The farm of path A was left with auto start OFF after a test, so it does not start. The hall rides on path D-B alone (2N lost). Start the farm of path A, put the rectifier group A input on it and set auto start back ON. Simulated plant (ADR-023): every timing and limit is a model value. Switching the procedure does not call for counts as a violation.",
+  "path": "da",
+  "target_s": 90,
+  "time_limit_s": 900,
+  "procedure_commands": ["START", "TRANSFER_TO_FARM", "SET_AUTO"],
+  "references": ["NFPA 110 (Type 10 start for Level 1 systems)", "ADR-021 Building D design model", "ADR-023 Building D simulated plant"],
+  "setup": {
+    "authority": {"farm_d": "REMOTE", "mv_rect_d": "REMOTE"},
+    "inject": [
+      {"type": "bldg_d", "injection": "farm_manual", "path": "a"},
+      {"type": "bldg_d", "injection": "utility_loss", "path": "a"}
+    ]
+  },
+  "steps": [
+    {"id": "ACK", "text": "Acknowledge the Building D path A alarms in the alarm banner",
+     "check": {"type": "alarms_acked", "prefix": "BLDG_DA_"}},
+    {"id": "START", "text": "Start the generator farm of path A (Farm D-A: Start farm)",
+     "check": {"type": "device_state", "device": "farm_d", "states": ["CRANKING", "RUNNING", "ON_LOAD"]}},
+    {"id": "TRANSFER", "text": "When the farm is on its bus, transfer the rectifier group A input to it",
+     "check": {"type": "device_state", "device": "mv_rect_d", "state": "FARM"}},
+    {"id": "SHARE", "text": "Check that path D-A carries load again (2N restored)",
+     "check": {"type": "bldg_d", "path": "a", "field": "carrying_kw", "min": 1000}},
+    {"id": "AUTO", "text": "Set auto start of the farm D-A back ON",
+     "check": {"type": "bldg_d", "path": "a", "field": "farm_auto", "value": true}}
+  ],
+  "fail": [{"type": "hall_d_lost"}]
+}

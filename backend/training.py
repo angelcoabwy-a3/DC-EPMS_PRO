@@ -68,8 +68,16 @@ CHECK_TYPES = (
     "battery_room",
     "wiring",
     "all",
+    "bldg_d",
 )
-FAIL_TYPES = ("load_lost", "command_used", "xfmr_internal_fault", "gen_shutdown", "battery_runaway")
+FAIL_TYPES = (
+    "load_lost",
+    "command_used",
+    "xfmr_internal_fault",
+    "gen_shutdown",
+    "battery_runaway",
+    "hall_d_lost",
+)
 INJECT_TYPES = (
     "utility_loss",
     "utility_restore",
@@ -85,6 +93,7 @@ INJECT_TYPES = (
     "battery_condition",
     "wiring_fault",
     "utility_sag",
+    "bldg_d",
 )
 
 
@@ -271,6 +280,15 @@ def check(
         # L5: {"path", "field": "fuses.F-1A.ok"} on the transfer controller
         xfer = next(iter(_devices(plant, "transfer", path)), {})
         return _match(_dig(xfer.get("wiring"), cond.get("field")), cond)
+    if kind == "bldg_d":
+        # Lot 12: {"path": "a" | "b" | null (hall), "field": "sscb"} + value / values / truthy / min / max
+        bd = plant.get("building_d") or {}
+        if path:
+            node = next((p for p in bd.get("paths", []) if p.get("path") == path), None)
+            if node is None:
+                return False
+            return _match(_dig(node, cond.get("field")), cond)
+        return _match(_dig(bd, cond.get("field")), cond)
     if kind == "all":
         return all(check(sub, plant, engine, events) for sub in cond.get("of") or [{}])
     if kind == "device_authority":
@@ -365,6 +383,8 @@ def failed(
                     and e.get("device_id") == f"battery_room_{cond.get('path')}"
                 ):
                     return cond.get("reason") or f"thermal runaway: jar {e.get('jar')} vented"
+        if cond.get("type") == "hall_d_lost" and (plant.get("building_d") or {}).get("load_lost"):
+            return cond.get("reason") or "Building D hall load lost (both 800 VDC buses dark)"
         if cond.get("type") == "command_used":
             for e in events or []:
                 if e.get("event") == "command" and e.get("command") == cond.get("command"):
@@ -459,6 +479,9 @@ class TrainingManager:
                     ctl.inject_battery_condition(
                         inj["path"], inj["condition"], "training", **params
                     )
+                elif kind == "bldg_d":
+                    params = {k: v for k, v in inj.items() if k not in ("type", "injection")}
+                    ctl.inject_bldg_d(inj["injection"], "training", **params)
                 elif kind == "gen_condition":
                     params = {
                         k: v for k, v in inj.items() if k not in ("type", "device", "condition")

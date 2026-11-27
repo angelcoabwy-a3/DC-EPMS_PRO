@@ -346,6 +346,33 @@ def _gen_genset_farm(
 
 GeneratorFn = Callable[[ComponentInfo, int, np.random.Generator], dict[str, np.ndarray]]
 
+# Lot 12 (ADR-023): an optional state overlay. A plant model (the
+# simulated Building D plant) can pin the mean of selected channels,
+# '<component>:<metric>' -> value, so live numbers follow its state.
+# The simulator keeps its own zero-mean jitter around the pinned value
+# (none when the value is 0: a dead bus reads 0). No extra RNG draws.
+StateOverlay = Callable[[], dict[str, float]]
+_state_overlay: StateOverlay | None = None
+
+
+def set_state_overlay(fn: StateOverlay | None) -> None:
+    """Register (or clear with None) the state overlay."""
+    global _state_overlay
+    _state_overlay = fn
+
+
+def _overlay_values() -> dict[str, float]:
+    fn = _state_overlay
+    if fn is None:
+        return {}
+    try:
+        values = fn() or {}
+    except Exception as exc:  # an overlay failure must never stop telemetry
+        log.warning("[telemetry_sim] state overlay failed: %s", exc)
+        return {}
+    return {k: float(v) for k, v in values.items()}
+
+
 _GENERATORS: dict[str, GeneratorFn] = {
     "it_rack": _gen_it_rack,
     "chiller": _gen_chiller,
@@ -436,11 +463,16 @@ class TelemetrySimulator:
         del dt_seconds  # reserved for future time-correlated drift
         out: dict[str, np.ndarray] = {}
         expired: list[str] = []
+        pinned = _overlay_values()
 
         for comp, gen in self._inventory:
             channels = gen(comp, n_samples, self._rng)
             for metric, samples in channels.items():
                 ch_id = f"{comp.canonical_id}:{metric}"
+                if ch_id in pinned:
+                    value = pinned[ch_id]
+                    jitter = samples - float(np.mean(samples))
+                    samples = value + jitter if value != 0.0 else np.zeros_like(samples)
                 state = self._anomalies.get(ch_id)
                 if state is not None:
                     delta = ANOMALY_PROFILES.get(state.kind, {}).get(metric, 0.0)
