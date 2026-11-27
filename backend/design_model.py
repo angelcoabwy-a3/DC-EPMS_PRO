@@ -157,10 +157,18 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
 
     # Generators per path, N + r, stepped up to 35 kV
     gen = inp["generators"]
-    gen_n = _units(path_kw, float(gen["unit_kw"]), margin)
-    gen_inst = gen_n + int(gen["redundancy_per_path"])
+    # Revision 3: the 13.8 kV bus is split into sections, each carrying its
+    # share of the path with its own N + r (one section at 93 % of 4,000 A
+    # in revision 2). Losing a section is covered by the other path (2N).
+    gen_secs = int(gen.get("bus_sections_per_path", 1))
+    gen_red = int(gen.get("redundancy_per_section", gen.get("redundancy_per_path", 1)))
+    gen_sec_kw = path_kw / gen_secs
+    gen_n_sec = _units(gen_sec_kw, float(gen["unit_kw"]), margin)
+    gen_inst_sec = gen_n_sec + gen_red
+    gen_n = gen_n_sec * gen_secs
+    gen_inst = gen_inst_sec * gen_secs
     gen_kv = float(gen["voltage_kv"])
-    gen_bus_a_req = path_kva / (math.sqrt(3) * gen_kv) / k_cont
+    gen_bus_a_req = path_kva / gen_secs / (math.sqrt(3) * gen_kv) / k_cont
     gen_bus_rating = _next_rating(gen_bus_a_req, std["mv_bus_a"])
     stx_mva = _next_rating(path_kva / 1000, std["transformer_mva"])
     stx_inst = 1 + int(inp["stepup_transformer"]["redundancy_per_path"])
@@ -209,21 +217,37 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
             "phases": 3,
             "per_path": gen_inst,
             "total": gen_inst * P,
-            "redundancy": f"N+{gen['redundancy_per_path']} per path, 2N",
+            "redundancy": f"N+{gen_red} per bus section, {gen_secs} sections per path, 2N",
             "unit": _v(float(gen["unit_kw"]), "kW", "DESIGN"),
             "required_units": gen_n,
+            "per_section": gen_inst_sec,
+            "sections": gen_secs,
+            "section_load": _v(_r(gen_sec_kw, 0), "kW", "MODEL"),
             "installed_kw": _v(gen_inst * float(gen["unit_kw"]), "kW", "MODEL"),
-            "with_one_out_kw": _v((gen_inst - 1) * float(gen["unit_kw"]), "kW", "MODEL"),
+            "with_one_out_kw": _v(
+                (gen_inst - gen_secs) * float(gen["unit_kw"]),
+                "kW",
+                "MODEL",
+                "one set out in every section",
+            ),
         },
         {
             "id": "gen_bus",
-            "label": "13.8 kV generator paralleling bus",
+            "label": "13.8 kV generator paralleling bus sections",
             "domain": "ac",
             "phases": 3,
-            "per_path": 1,
-            "total": P,
-            "required": _v(_r(gen_bus_a_req, 0), "A", "MODEL"),
+            "per_path": gen_secs,
+            "total": gen_secs * P,
+            "current": _v(
+                _r(gen_bus_a_req * k_cont, 0), "A", "MODEL", "continuous load per section"
+            ),
+            "required": _v(_r(gen_bus_a_req, 0), "A", "MODEL", "current / continuous factor"),
             "rating": _v(gen_bus_rating, "A", "MODEL"),
+            "utilisation": _v(
+                _r(100 * gen_bus_a_req * k_cont / gen_bus_rating, 1) if gen_bus_rating else None,
+                "%",
+                "MODEL",
+            ),
         },
         {
             "id": "stepup_transformers",
@@ -368,7 +392,8 @@ def size(inp: dict[str, Any]) -> dict[str, Any]:
         sections=sections,
         margin=margin,
         rect=(rect_n, rect_inst, rect_kw),
-        gen=(gen_n, gen_inst, float(gen["unit_kw"])),
+        gen=(gen_n_sec, gen_inst_sec, float(gen["unit_kw"])),
+        gen_sec_kw=gen_sec_kw,
         path_kw=path_kw,
         path_kva=path_kva,
         stx_mva=stx_mva,
@@ -445,13 +470,13 @@ def _checks(**k: Any) -> list[dict[str, Any]]:
     gn, gi, gk = k["gen"]
     add(
         "D-GEN-N1",
-        (gi - 1) * gk >= k["path_kw"],
-        f"generators per path with one out: {(gi - 1) * gk:,.0f} kW >= path demand {k['path_kw']:,.0f} kW",
+        (gi - 1) * gk >= k["gen_sec_kw"],
+        f"generators per bus section with one out: {(gi - 1) * gk:,.0f} kW >= section load {k['gen_sec_kw']:,.0f} kW",
     )
     add(
         "D-GEN-MARGIN",
-        (gi - 1) * gk >= k["path_kw"] * (1 + m) - 1e-6,
-        f"generator margin with one out: {((gi - 1) * gk / k['path_kw'] - 1) * 100:.1f} % >= {m * 100:.0f} %",
+        (gi - 1) * gk >= k["gen_sec_kw"] * (1 + m) - 1e-6,
+        f"generator margin per section with one out: {((gi - 1) * gk / k['gen_sec_kw'] - 1) * 100:.1f} % >= {m * 100:.0f} %",
         warn=True,
     )
     add(

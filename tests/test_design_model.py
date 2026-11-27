@@ -45,8 +45,14 @@ def test_sizing_numbers_follow_from_the_inputs(inp):
     assert rect["required_per_section"] == 6
     assert s["totals"]["rectifiers"] == 28
     gen = _chain(s, "generators")
-    assert gen["per_path"] == 24  # 23 + 1
-    assert s["totals"]["generators"] == 48
+    assert gen["per_path"] == 26  # 2 sections x (12 + 1)
+    assert gen["sections"] == 2
+    assert gen["per_section"] == 13
+    assert s["totals"]["generators"] == 52
+    gbus = _chain(s, "gen_bus")
+    assert gbus["per_path"] == 2
+    assert gbus["rating"]["value"] == 2000
+    assert gbus["utilisation"]["value"] <= 80.0  # actual continuous load, not the 125 % figure
     bess = _chain(s, "bess")
     assert bess["installed"]["value"] == 15.0  # 10 min target
     assert bess["per_path"] == 6
@@ -68,6 +74,7 @@ def test_margins_hold_with_one_unit_out(inp):
     assert s["basis"]["bess_recharge_kw"]["value"] == pytest.approx(4167, abs=1)
     gen = _chain(s, "generators")
     assert gen["with_one_out_kw"]["value"] >= s["basis"]["path_demand_kw"]["value"] * 1.05
+    assert (gen["per_section"] - 1) * gen["unit"]["value"] >= gen["section_load"]["value"] * 1.05
     cdu = _chain(s, "cdus")
     assert (cdu["per_row"] - 1) * cdu["unit"]["value"] >= s["basis"]["row_kw"]["value"] * 1.05
 
@@ -101,7 +108,7 @@ def test_redundancy_failure_is_reported(inp):
     bad["rules"]["min_unit_margin"] = 0.0
     bad["rectifier"]["redundancy_per_section"] = 0
     bad["rectifier"]["unit_kw"] = 4000  # 25 MW / 4 MW = 7 units, no spare
-    bad["generators"]["redundancy_per_path"] = 0
+    bad["generators"]["redundancy_per_section"] = 0
     checks = {c["id"]: c["status"] for c in size(bad)["checks"]}
     assert checks["D-RECT-N1"] == "FAIL"
     assert checks["D-GEN-N1"] == "FAIL"

@@ -91,7 +91,8 @@ generators:                     # per path, MV, stepped up to 35 kV
   unit_kw: 3200                 # existing gen_farm_d unit (site_model.yml)
   unit_kva: 4000                # 0.8 pf rating (assumption)
   voltage_kv: 13.8
-  redundancy_per_path: 1        # N+1 per path, 2N across paths
+  redundancy_per_section: 1     # N+1 per 13.8 kV bus section, 2N across paths
+  bus_sections_per_path: 2      # revision 3: split bus, one section was at 93 % of 4,000 A
 
 stepup_transformer:             # 13.8 kV -> 35 kV, per path
   redundancy_per_path: 1

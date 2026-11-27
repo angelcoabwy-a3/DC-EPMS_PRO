@@ -131,3 +131,21 @@ Still aggregated, so still open under DC-EPMS-076: one node per path
 for the 14 rectifiers, the 2 bus sections, the 20 busways and the BESS
 blocks; one standby farm feeding both paths (the design has one farm per
 path); the Power SLD / What-If DAG still draws Building D as one chain.
+
+## Revision 3 (2026-11-27): split 13.8 kV generator bus
+
+Correction first: revision 2 reported the 13.8 kV generator bus "at 93
+percent of 4,000 A". That compared the required rating (load / 0.8) with
+the rating. The actual continuous load was 2,985 A, 75 percent of 4,000
+A, inside the 80 percent rule. The bus was not overloaded. The chain now
+reports `current` and `utilisation` next to `required` so the two are
+not confused again.
+
+The split is kept on its own merits: two 13.8 kV sections per path, each
+with its own N+1, halve the fault level per section and let one section
+be maintained while the path still runs (the other path covers the loss
+of a whole section, 2N).
+
+- Generators 3.2 MW: 2 sections x (12 + 1) per path = 26 per path, 52
+  total (was 48); margin per section with one set out 13.3 percent.
+- Section bus: 1,492 A continuous, 2,000 A rating, 75 percent.
