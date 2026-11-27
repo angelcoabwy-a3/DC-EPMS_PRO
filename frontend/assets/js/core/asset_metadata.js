@@ -359,6 +359,31 @@ Object.assign(ASSET_METADATA, {
     },
 });
 
+// 2N Building D (DC-EPMS-076): path D-B mirrors the path D-A design
+// assets; labels name the path, BESS sized per ADR-021 rev 2.
+ASSET_METADATA.bess_d.label = 'BESS D-A';
+ASSET_METADATA.bess_d.rating = '15 MWh per path · 10 min at 50 MW · bidirectional';
+ASSET_METADATA.bess_d.details = [
+    { k: 'Capacity', v: '15 MWh (6 x 2.5 MWh blocks, ADR-021 rev 2)' },
+    { k: 'Role', v: 'Ride-through + peak shaving on the path A DC bus' },
+];
+for (const [a, b, letter] of [['util_d', 'util_d_b', 'B'], ['mv_rect_d', 'mv_rect_d_b', 'B'],
+    ['sscb_d', 'sscb_d_b', 'B'], ['dc_bus_d', 'dc_bus_d_b', 'B'], ['bess_d', 'bess_d_b', 'B']]) {
+    const src = ASSET_METADATA[a];
+    ASSET_METADATA[b] = {
+        ...src,
+        label: String(src.label).replace(/\bD(-A|-01)?\b/, `D-${letter}`).replace(/ D$/, ` D-${letter}`),
+        details: [...(src.details || []), { k: 'Path', v: 'D-B (2N mirror of path D-A)' }],
+    };
+}
+// Path A labels name their path too, once the B clones are made.
+for (const a of ['util_d', 'mv_rect_d', 'sscb_d', 'dc_bus_d']) {
+    const m = ASSET_METADATA[a];
+    if (!/D-A\b/.test(m.label)) {
+        m.label = String(m.label).replace(/\bD(-01)?\b/, 'D-A').replace(/ D$/, ' D-A');
+    }
+}
+
 export function getAssetMeta(id) {
     return ASSET_METADATA[id] || null;
 }

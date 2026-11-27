@@ -73,11 +73,19 @@ const ENTRIES = [
     // ── Phase 2 power chain — Building D (Path C2 design) ────────
     // Upstream of the MV Rectifier: 35 kV 3-phase AC. Downstream:
     // 800 VDC UNIPOLAR TN-S (no phases). S-VOCAB-01 fence.
-    { id: 'util_d',   label: 'UTILITY D · 35 kV AC', type: 'util',     phase: 2, chain: 'power', topo: null, graph: ['utility_feed_d'], channels: ['util_d', 'utility_feed_d'] },
-    { id: 'mv_rect_d', label: 'MV RECTIFIER',        type: 'rectifier', phase: 2, chain: 'power', topo: null, graph: ['mv_rectifier_d'], channels: ['mv_rect'] },
-    { id: 'sscb_d',   label: 'SSCB · IEC 60947-2',   type: 'sscb',     phase: 2, chain: 'power', topo: null, graph: ['sscb_d_01'],      channels: ['sscb_d'] },
-    { id: 'dc_bus_d', label: '800 VDC BUS · UNIPOLAR TN-S', type: 'dcbus', phase: 2, chain: 'power', topo: null, graph: ['main_bus_dc_d'], channels: ['dc_bus'] },
-    { id: 'bess_d',   label: 'BESS 2.5 MWh',         type: 'bess',     phase: 2, chain: 'power', topo: null, graph: ['bess_d_01'],      channels: ['bess_d'] },
+    // 2N since DC-EPMS-076: path D-A keeps the original ids; path D-B
+    // carries the _b suffix. '!' prefixes exclude the B channels that
+    // would otherwise fall under an A prefix (utility_feed_d_b ...).
+    { id: 'util_d',   label: 'UTILITY D-A · 35 kV AC', type: 'util',     phase: 2, chain: 'power', topo: null, graph: ['utility_feed_d'], channels: ['util_d', 'utility_feed_d', '!utility_feed_d_b'] },
+    { id: 'mv_rect_d', label: 'MV RECTIFIER GROUP A', type: 'rectifier', phase: 2, chain: 'power', topo: null, graph: ['mv_rectifier_d'], channels: ['mv_rect', 'mv_rectifier_d', '!mv_rectifier_d_b'] },
+    { id: 'sscb_d',   label: 'SSCB D-A · IEC 60947-2', type: 'sscb',     phase: 2, chain: 'power', topo: null, graph: ['sscb_d_01'],      channels: ['sscb_d', '!sscb_d_b'] },
+    { id: 'dc_bus_d', label: '800 VDC BUS D-A · UNIPOLAR TN-S', type: 'dcbus', phase: 2, chain: 'power', topo: null, graph: ['main_bus_dc_d'], channels: ['dc_bus', 'main_bus_dc_d', '!main_bus_dc_d_b'] },
+    { id: 'bess_d',   label: 'BESS D-A · 15 MWh',      type: 'bess',     phase: 2, chain: 'power', topo: null, graph: ['bess_d_01'],      channels: ['bess_d', '!bess_d_b'] },
+    { id: 'util_d_b', label: 'UTILITY D-B · 35 kV AC', type: 'util',     phase: 2, chain: 'power', topo: null, graph: ['utility_feed_d_b'], channels: ['util_d_b', 'utility_feed_d_b'] },
+    { id: 'mv_rect_d_b', label: 'MV RECTIFIER GROUP B', type: 'rectifier', phase: 2, chain: 'power', topo: null, graph: ['mv_rectifier_d_b'], channels: ['mv_rectifier_d_b'] },
+    { id: 'sscb_d_b', label: 'SSCB D-B · IEC 60947-2', type: 'sscb',     phase: 2, chain: 'power', topo: null, graph: ['sscb_d_b_01'],    channels: ['sscb_d_b'] },
+    { id: 'dc_bus_d_b', label: '800 VDC BUS D-B · UNIPOLAR TN-S', type: 'dcbus', phase: 2, chain: 'power', topo: null, graph: ['main_bus_dc_d_b'], channels: ['main_bus_dc_d_b'] },
+    { id: 'bess_d_b', label: 'BESS D-B · 15 MWh',      type: 'bess',     phase: 2, chain: 'power', topo: null, graph: ['bess_d_b_01'],    channels: ['bess_d_b'] },
     { id: 'rpp_d1',   label: 'RPP D1',               type: 'rpp',      phase: 2, chain: 'power', topo: null, graph: ['rpp_d_01'],       channels: ['rpp_d1'] },
     { id: 'rpp_d2',   label: 'RPP D2',               type: 'rpp',      phase: 2, chain: 'power', topo: null, graph: ['rpp_d_02'],       channels: ['rpp_d2'] },
     // 50 MW track — genset farm (design): MV paralleling at 13.8 kV,
@@ -148,11 +156,11 @@ export function sldToTopoMap() {
  */
 export function matchesChannel(channelId, prefixes) {
     const c = String(channelId || '').toLowerCase();
-    for (const p of prefixes || []) {
-        const pl = String(p).toLowerCase();
-        if (c === pl || c.startsWith(pl + '_')) return true;
-    }
-    return false;
+    const hit = (pl) => c === pl || c.startsWith(pl + '_') || c.startsWith(pl + ':');
+    const list = (prefixes || []).map((p) => String(p).toLowerCase());
+    // '!prefix' excludes (2N siblings that share a stem, DC-EPMS-076).
+    if (list.some((p) => p.startsWith('!') && hit(p.slice(1)))) return false;
+    return list.some((p) => !p.startsWith('!') && hit(p));
 }
 
 /** Channel prefixes for a canonical id ([] when unknown). */

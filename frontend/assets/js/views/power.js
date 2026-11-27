@@ -337,10 +337,11 @@ const _FLAT = {
     // between the transfer controller and the UPS bank.
     p1: { u52: 330, swgr: 676, usub: 730 },
     spineY: { A: 232, B: 540 },
-    phase2: { spineY: 880, headerY: 766, dividerY: 726, fenceX: 484 },
+    // 2N Building D (DC-EPMS-076): path D-A on spineY, path D-B on spineYB.
+    phase2: { spineY: 880, spineYB: 1140, headerY: 766, dividerY: 726, fenceX: 484 },
     // 50 MW track: genset farm row + power-budget caption block.
-    farm: { busY: 1110, genY: 1180, tieX: 304 },
-    viewBox: '0 0 1200 1260',
+    farm: { busY: 1440, genY: 1510, tieX: 304 },
+    viewBox: '0 0 1200 1590',
 };
 
 // Node types that are operable breakers — clickable in the control plane.
@@ -545,67 +546,75 @@ function _flatPhase2() {
     const T = _FLAT.tierX;
     const P = _FLAT.phase2;
     const S = P.spineY;
+    const SB = P.spineYB;
     const F = P.fenceX;
     const busHalf = 120;            // dcbus symbol half-width
     const bessY = S + 108;
-    const rppD1Y = S - 44;
-    const rppD2Y = S + 44;
+    const bessYB = SB + 108;
+    const mid = (S + SB) / 2;
+    const rppD1Y = mid - 62;
+    const rppD2Y = mid + 62;
+    const riserA = T.pdu - 76;      // path A enters the RPPs from the left
+    const riserB = T.pdu + 98;      // path B enters them from the right
 
     const header =
         `<line class="pf-section-divider" x1="24" y1="${P.dividerY}" x2="1176" y2="${P.dividerY}"/>`
         + `<text class="pf-section-title" x="150" y="${P.headerY}">`
-        + `PHASE 2 — BUILDING D · PATH C2 (DESIGN · TARGET Q2 2026)</text>`;
+        + `PHASE 2 — BUILDING D · PATH C2 · 2N A + B (DESIGN · ADR-021)</text>`;
 
-    // The vocabulary fence: AC world | DC world.
+    // The vocabulary fence: AC world | DC world, across both paths.
     const fence =
-        `<line class="pf-fence" x1="${F}" y1="${P.headerY + 14}" x2="${F}" y2="${S + 178}"/>`
+        `<line class="pf-fence" x1="${F}" y1="${P.headerY + 14}" x2="${F}" y2="${SB + 150}"/>`
         + `<text class="pf-fence-label" x="${F - 12}" y="${P.headerY + 34}" `
         + `text-anchor="end">3-PHASE AC · 35 kV</text>`
         + `<text class="pf-fence-label pf-fence-label-dc" x="${F + 12}" y="${P.headerY + 34}">`
         + `800 VDC · UNIPOLAR TN-S</text>`;
 
-    // ── orthogonal wiring (kit-enforced 90°) ──
-    const wires = [
-        // 35 kV AC feed -> MV Rectifier (AC side)
-        wire([[T.util + 40, S], [T.gen - 40, S]], 'pf-ac'),
-        // MV Rectifier -> SSCB (DC side starts at the rectifier output)
-        wire([[T.gen + 40, S], [T.ats - 26, S]], 'pf-dc'),
-        // SSCB -> 800 VDC bus
-        wire([[T.ats + 26, S], [T.ups - busHalf, S]], 'pf-dc'),
-        // bus <-> BESS (bidirectional: charge / discharge)
-        wire([[T.ups, S + 6], [T.ups, bessY - 23]], 'pf-dc'),
-        // bus -> RPP D1 / D2
-        wire([[T.ups + busHalf, S], [T.pdu - 76, S], [T.pdu - 76, rppD1Y], [T.pdu - 40, rppD1Y]], 'pf-dc'),
-        wire([[T.pdu - 76, S], [T.pdu - 76, rppD2Y], [T.pdu - 40, rppD2Y]], 'pf-dc'),
+    // One DC chain per path (same geometry, its own spine).
+    const chainWires = (y, by) => [
+        wire([[T.util + 40, y], [T.gen - 40, y]], 'pf-ac'),
+        wire([[T.gen + 40, y], [T.ats - 26, y]], 'pf-dc'),
+        wire([[T.ats + 26, y], [T.ups - busHalf, y]], 'pf-dc'),
+        wire([[T.ups, y + 6], [T.ups, by - 23]], 'pf-dc'),
     ].join('');
+    const wires = chainWires(S, bessY) + chainWires(SB, bessYB)
+        // bus A -> RPP D1 / D2 (left side)
+        + wire([[T.ups + busHalf, S], [riserA, S], [riserA, rppD1Y], [T.pdu - 40, rppD1Y]], 'pf-dc')
+        + wire([[riserA, rppD1Y], [riserA, rppD2Y], [T.pdu - 40, rppD2Y]], 'pf-dc')
+        // bus B -> RPP D1 / D2 (right side): every rack takes A and B
+        + wire([[T.ups + busHalf, SB], [riserB, SB], [riserB, rppD2Y], [T.pdu + 40, rppD2Y]], 'pf-dc')
+        + wire([[riserB, rppD2Y], [riserB, rppD1Y], [T.pdu + 40, rppD1Y]], 'pf-dc');
 
     // ── nodes (design — not operable: breaker:false) ──
-    const nodes = [
-        _flatNode('util_d', 'util', 'UTILITY D · 35 kV AC', T.util, S,
-            [{ key: 'util_d-kv', text: '35.0 kV' }, { key: 'util_d-kw', text: '— kW' }],
+    const chainNodes = (sfx, letter, y, by) => [
+        _flatNode(`util_d${sfx}`, 'util', `UTILITY D-${letter} · 35 kV AC`, T.util, y,
+            [{ key: `util_d${sfx}-kv`, text: '35.0 kV' }, { key: `util_d${sfx}-kw`, text: '— kW' }],
             { breaker: false }),
-        _flatNode('mv_rect_d', 'rectifier', 'MV RECTIFIER', T.gen, S,
-            [{ key: 'mv_rect_d-load', text: '— MW' }], { breaker: false }),
-        _flatNode('sscb_d', 'sscb', 'SSCB · IEC 60947-2', T.ats, S,
-            [{ key: 'sscb_d-state', text: 'CLOSED' },
-             { key: 'sscb_d-clear', text: '1-100 µs clearing' }], { breaker: false }),
-        _flatNode('dc_bus_d', 'dcbus', '800 VDC BUS · UNIPOLAR TN-S', T.ups, S,
-            [{ key: 'dc_bus_d-v', text: '800 VDC' }], { breaker: false }),
-        _flatNode('bess_d', 'bess', 'BESS 2.5 MWh', T.ups, bessY,
-            [{ key: 'bess_d-soc', text: 'SOC — %' }], { breaker: false }),
-        _flatNode('rpp_d1', 'rpp', 'RPP D1', T.pdu, rppD1Y,
-            [{ key: 'rpp_d1-kw', text: '— kW' }], { breaker: false }),
-        _flatNode('rpp_d2', 'rpp', 'RPP D2', T.pdu, rppD2Y,
-            [{ key: 'rpp_d2-kw', text: '— kW' }], { breaker: false }),
+        _flatNode(`mv_rect_d${sfx}`, 'rectifier', `MV RECTIFIER GROUP ${letter} · 14 × 5 MW`, T.gen, y,
+            [{ key: `mv_rect_d${sfx}-load`, text: '— MW' }], { breaker: false }),
+        _flatNode(`sscb_d${sfx}`, 'sscb', `SSCB D-${letter} · IEC 60947-2`, T.ats, y,
+            [{ key: `sscb_d${sfx}-state`, text: 'CLOSED' },
+             { key: `sscb_d${sfx}-clear`, text: '1-100 µs clearing' }], { breaker: false }),
+        _flatNode(`dc_bus_d${sfx}`, 'dcbus', `800 VDC BUS D-${letter} · UNIPOLAR TN-S`, T.ups, y,
+            [{ key: `dc_bus_d${sfx}-v`, text: '800 VDC' }], { breaker: false }),
+        _flatNode(`bess_d${sfx}`, 'bess', `BESS D-${letter} · 15 MWh`, T.ups, by,
+            [{ key: `bess_d${sfx}-soc`, text: 'SOC — % · charge / discharge' }], { breaker: false }),
     ].join('');
+    const nodes = chainNodes('', 'A', S, bessY) + chainNodes('_b', 'B', SB, bessYB)
+        + _flatNode('rpp_d1', 'rpp', 'RPP D1 · A + B', T.pdu, rppD1Y,
+            [{ key: 'rpp_d1-kw', text: '— kW' }], { breaker: false })
+        + _flatNode('rpp_d2', 'rpp', 'RPP D2 · A + B', T.pdu, rppD2Y,
+            [{ key: 'rpp_d2-kw', text: '— kW' }], { breaker: false });
 
     const caption =
-        `<text class="pf-caption" x="${T.pdu}" y="${S + 124}">→ GB300 NVL144 · 250 racks @ 200 kW (design)</text>`
-        + `<text class="pf-caption" x="${T.ups}" y="${bessY + 44}">charge / discharge</text>`;
+        `<text class="pf-caption" x="1176" y="${SB + 60}" style="text-anchor:end">→ GB300 NVL144 · 250 racks @ 200 kW</text>`
+        + `<text class="pf-caption" x="1176" y="${SB + 78}" style="text-anchor:end">every rack fed A + B (design)</text>`;
 
+    // Farm first: its tie riser crosses the path B label row, so the
+    // labels (with their halo) must paint over it.
     return `<g class="pf-pathgroup pf-phase2" data-phase="2">`
-        + header + fence + wires + nodes + caption
-        + _flatGensetFarm() + `</g>`;
+        + _flatGensetFarm()
+        + header + fence + wires + nodes + caption + `</g>`;
 }
 
 /**
@@ -627,7 +636,7 @@ function _flatPhase2() {
 let _farmLod = 0;   // 0 = collapsed lineup block | 1 = per-unit focus
 
 // Focused viewBox: the farm band only (budget block through captions).
-const _FARM_FOCUS_VIEWBOX = '40 988 1140 264';
+const _FARM_FOCUS_VIEWBOX = '40 1318 1140 264';
 
 const _FARM_GEOM = { busL: 86, busR: 1114 };
 
@@ -650,7 +659,10 @@ function _farmTie() {
         wire([[F.tieX, F.busY - 6], [F.tieX, F.busY - 36]], 'pf-ac')
         + wire([[F.tieX, F.busY - 58], [F.tieX, S + 96]], 'pf-ac')
         + wire([[F.tieX, S + 52], [F.tieX, S]], 'pf-ac');
-    return wires
+    // The same step-up also backs rectifier group B (dot = tap onto its
+    // 35 kV AC side). The design has one farm per path (DC-EPMS-076).
+    const tapB = `<circle class="pf-tap" cx="${F.tieX}" cy="${_FLAT.phase2.spineYB}" r="4"/>`;
+    return wires + tapB
         + _breaker52(F.tieX, F.busY - 47, true)
         + `<g class="sld-node pf-node" data-sld-node="stepup_d">`
         + symbol('xfmr', F.tieX, S + 74)
@@ -743,8 +755,8 @@ function _farmExpanded(sizing, units) {
 
     const back =
         `<g class="pf-farm-back" data-farm-back="1" role="button" tabindex="0">`
-        + `<rect x="48" y="996" width="110" height="24" rx="3"/>`
-        + `<text x="103" y="1012" text-anchor="middle">&lt; FULL SLD</text>`
+        + `<rect x="48" y="${F.busY - 114}" width="110" height="24" rx="3"/>`
+        + `<text x="103" y="${F.busY - 98}" text-anchor="middle">&lt; FULL SLD</text>`
         + `</g>`;
 
     const captions =

@@ -149,3 +149,24 @@ of a whole section, 2N).
 - Generators 3.2 MW: 2 sections x (12 + 1) per path = 26 per path, 52
   total (was 48); margin per section with one set out 13.3 percent.
 - Section bus: 1,492 A continuous, 2,000 A rating, 75 percent.
+
+## DC-EPMS-076 step 2 (2026-11-27): Power SLD and What-If DAG in 2N
+
+- What-If DAG (`core/power_grid.js`): path B nodes `util_d_b`,
+  `mv_rect_d_b`, `sscb_d_b`, `dc_bus_d_b`, `bess_d_b`. Both RPPs take
+  both DC buses, so the loss of a whole path is a warning in the N-1
+  shadow, not a load loss. Losing both buses (or both SSCBs) darkens
+  the hall.
+- Power SLD: two parallel chains, path A riser on the left of the RPPs,
+  path B riser on the right (no wire crossings). The S-VOCAB-01 fence is
+  drawn across both paths.
+- Node registry: channel prefixes now accept `!` exclusions and match on
+  a `_` or `:` boundary, so path A (`bess_d`) no longer captures path B
+  channels (`bess_d_b_01:...`).
+- Labels: path A is D-A, path B is D-B, BESS 15 MWh per path.
+
+Still open, stated plainly: one standby farm and one step-up feed both
+rectifier groups in the drawing (the design has one farm per path); the
+farm block still uses the `power_budget.js` sizing (22 x 3.2 MW N+2),
+not the ADR-021 revision 3 sizing (26 per path); Building D numbers on
+the SLD are not yet bound to telemetry.

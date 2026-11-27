@@ -73,16 +73,23 @@ describe('S2 — steadyStatePower() over Building D', () => {
         expect(s.get('ups_a').degraded).toBe(false);
     });
 
-    it('SSCB loss kills the DC side — no standby source past the fence', () => {
+    it('SSCB D-A loss darkens bus A; the hall rides path B (2N, DC-EPMS-076)', () => {
         const s = steadyStatePower(new Set(['sscb_d']));
         expect(s.get('dc_bus_d').alive).toBe(false);
-        expect(s.get('hall_d').alive).toBe(false);
+        expect(s.get('dc_bus_d_b').alive).toBe(true);
+        expect(s.get('hall_d').alive).toBe(true);
+        // both SSCBs out (N-2): no standby source past the fence
+        const both = steadyStatePower(new Set(['sscb_d', 'sscb_d_b']));
+        expect(both.get('hall_d').alive).toBe(false);
     });
 
-    it('utility D + farm double loss kills chain D (that is N-2)', () => {
+    it('utility D-A + farm double loss kills chain D-A, path B carries the hall', () => {
         const s = steadyStatePower(new Set(['util_d', 'gen_farm_d']));
         expect(s.get('mv_rect_d').alive).toBe(false);
-        expect(s.get('hall_d').alive).toBe(false);
+        expect(s.get('mv_rect_d_b').alive).toBe(true);
+        expect(s.get('hall_d').alive).toBe(true);
+        const all = steadyStatePower(new Set(['util_d', 'util_d_b', 'gen_farm_d']));
+        expect(all.get('hall_d').alive).toBe(false);
     });
 });
 
@@ -94,11 +101,13 @@ describe('S2 — n1Power() badges over Building D', () => {
         expect(e.degraded).toContain('hall_d');
     });
 
-    it('dc_bus_d and sscb_d contingencies are critical: the GB300 hall drops', () => {
+    it('2N: losing one DC bus or SSCB costs redundancy, never the hall (warning)', () => {
         const r = n1Power();
-        expect(r.get('dc_bus_d').tone).toBe('critical');
-        expect(r.get('dc_bus_d').lost).toContain('hall_d');
-        expect(r.get('sscb_d').tone).toBe('critical');
+        for (const id of ['dc_bus_d', 'sscb_d', 'mv_rect_d', 'dc_bus_d_b', 'sscb_d_b', 'mv_rect_d_b']) {
+            expect(r.get(id).tone, id).toBe('warning');
+            expect(r.get(id).lost, id).not.toContain('hall_d');
+        }
+        expect(r.get('dc_bus_d').lost).toContain('bess_d');
     });
 
     it('one RPP-D contingency is absorbed by the 2N pair', () => {
@@ -191,12 +200,12 @@ describe('N1 — overlay on the Power SLD', () => {
         expect(atsBadge.textContent).toMatch(/^N-1:\d+$/);
         const utilBadge = document.querySelector('[data-n1-badge="util_a"]');
         expect(utilBadge.getAttribute('data-tone')).toBe('warning');
-        // MVP S2-C: Building D is INSIDE the contingency model — the
-        // rectifier carries its badge (critical: losing it drops the
-        // GB300 hall; no standby source exists past the AC/DC fence).
+        // Building D is INSIDE the contingency model. Since DC-EPMS-076
+        // (2N) losing rectifier group A costs redundancy, not the hall.
         const rectBadge = document.querySelector('[data-n1-badge="mv_rect_d"]');
         expect(rectBadge).not.toBeNull();
-        expect(rectBadge.getAttribute('data-tone')).toBe('critical');
+        expect(rectBadge.getAttribute('data-tone')).toBe('warning');
+        expect(document.querySelector('[data-n1-badge="mv_rect_d_b"]')).not.toBeNull();
     });
 
     it('setN1(false) removes every badge and glow', () => {

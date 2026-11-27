@@ -215,7 +215,7 @@ describe('T2.1 — views/power.js buildFlatMarkup() orthogonal SLD', () => {
         const svg = document.querySelector('#view-power .pid-svg');
         expect(svg.innerHTML).toContain('data-sld-node="ups_a"');
         // 50 MW track: canvas hosts Phase 2 + the genset farm row.
-        expect(svg.getAttribute('viewBox')).toBe('0 0 1200 1260');
+        expect(svg.getAttribute('viewBox')).toBe('0 0 1200 1590');
     });
 
     it('tags RPP nodes as operable breakers; the MV transfer controller is not (Power Controls owns it)', () => {
@@ -258,7 +258,7 @@ describe('B1 — views/power.js Phase 2 Building D branch', () => {
     it('marks the branch as Phase 2 design (data-phase, dashed group)', () => {
         const svg = buildFlatMarkup();
         expect(svg).toMatch(/class="pf-pathgroup pf-phase2" data-phase="2"/);
-        expect(svg).toContain('DESIGN · TARGET Q2 2026');
+        expect(svg).toContain('2N A + B (DESIGN · ADR-021)');
     });
 
     it('draws the AC/DC vocabulary fence with both side labels', () => {
@@ -298,8 +298,10 @@ describe('B1 — views/power.js Phase 2 Building D branch', () => {
         const p2 = buildPhase2Markup();
         expect(p2).toContain('IEC 60947-2');
         expect(p2).toContain('1-100 µs clearing');
-        expect(p2).toContain('BESS 2.5 MWh');
-        expect(p2).toContain('GB300 NVL144 · 250 racks @ 200 kW (design)');
+        expect(p2).toContain('BESS D-A · 15 MWh');
+        expect(p2).toContain('BESS D-B · 15 MWh');
+        expect(p2).toContain('GB300 NVL144 · 250 racks @ 200 kW');
+        expect(p2).toContain('every rack fed A + B (design)');
     });
 
     it('50MW: expanded LOD draws EVERY farm unit as a switchgear cubicle', async () => {
@@ -402,7 +404,7 @@ describe('SLD-R2 — genset farm level-of-detail', () => {
         onFlatClick({ target: back });
         expect(getFarmLod()).toBe(0);
         const svg = document.querySelector('#view-power .pid-svg');
-        expect(svg.getAttribute('viewBox')).toBe('0 0 1200 1260');
+        expect(svg.getAttribute('viewBox')).toBe('0 0 1200 1590');
         expect(svg.innerHTML).toContain('data-farm-toggle="1"');
     });
 

@@ -412,10 +412,15 @@ function _designSection(id) {
         mv_rect_d: ['AC/DC BOUNDARY', '35 kV 3-phase AC in → 800 VDC out. Everything downstream is UNIPOLAR TN-S — no phases exist past this point (S-VOCAB-01).'],
         sscb_d: ['SOLID-STATE CLEARING', 'IEC 60947-2 · 1-100 µs clearing (vs ~50 ms electromechanical). No arc, no moving parts.'],
         dc_bus_d: ['800 VDC UNIPOLAR TN-S', 'Single-pole bus, earthed neutral system. Never "trifásico" — a DC bus has no phases.'],
-        bess_d: ['BESS 2.5 MWh', 'Grid-side buffer on the DC bus: ride-through + peak shaving. Bidirectional charge/discharge.'],
+        bess_d: ['BESS D-A · 15 MWh', 'Path A buffer on the DC bus: 10 min ride-through at 50 MW (ADR-021 rev 2) + peak shaving. Bidirectional charge/discharge.'],
+        bess_d_b: ['BESS D-B · 15 MWh', 'Path B buffer on its own DC bus: 10 min ride-through at 50 MW (ADR-021 rev 2). Bidirectional charge/discharge.'],
+        mv_rect_d_b: ['AC/DC BOUNDARY · PATH B', 'Rectifier group B: 35 kV 3-phase AC in → 800 VDC out. Each group carries half the hall normally and all of it with the other path out (2N).'],
+        sscb_d_b: ['SOLID-STATE CLEARING · PATH B', 'IEC 60947-2 · 1-100 µs clearing on the path B DC bus.'],
+        dc_bus_d_b: ['800 VDC UNIPOLAR TN-S · PATH B', 'Second DC bus of the 2N pair. No phases on a DC bus.'],
+        util_d_b: ['35 kV INTAKE · PATH B', 'Second utility intake (2N). Last point of phase vocabulary on path B.'],
         util_d: ['35 kV INTAKE', '3-phase AC utility feed for Building D (the LAST point where phase vocabulary applies).'],
-        rpp_d1: ['DC DISTRIBUTION', '800 VDC RPP feeding GB300 NVL144 racks @ 200 kW.'],
-        rpp_d2: ['DC DISTRIBUTION', '800 VDC RPP feeding GB300 NVL144 racks @ 200 kW.'],
+        rpp_d1: ['DC DISTRIBUTION · A + B', '800 VDC RPP fed from both DC buses; every GB300 NVL144 rack (200 kW) takes feed A and feed B.'],
+        rpp_d2: ['DC DISTRIBUTION · A + B', '800 VDC RPP fed from both DC buses; every GB300 NVL144 rack (200 kW) takes feed A and feed B.'],
         gen_farm_d: ['GENSET FARM · 13.8 kV', 'N+2 farm of 3.2 MW MV units on paralleling switchgear: ANSI 25 sync check, dead-bus black-start priority, PLC load shedding <100 ms. >50 MW is never one prime mover.'],
         mv_bus_d: ['MV PARALLELING BUS', '13.8 kV arc-resistant switchgear; every unit closes via its 52 breaker only on ANSI 25 permissive.'],
         stepup_d: ['STEP-UP 13.8→35 kV', 'Farm voltage matched to the rectifier AC intake — never tie 13.8 kV onto a 35 kV bus directly.'],
@@ -430,7 +435,9 @@ function _designSection(id) {
 }
 
 // ─── Dispatcher ────────────────────────────────────────────────────
-const _P2_IDS = new Set(['util_d', 'mv_rect_d', 'sscb_d', 'dc_bus_d', 'bess_d', 'rpp_d1', 'rpp_d2', 'hall_d', 'gen_farm_d', 'mv_bus_d', 'stepup_d']);
+const _P2_IDS = new Set(['util_d', 'mv_rect_d', 'sscb_d', 'dc_bus_d', 'bess_d',
+    'util_d_b', 'mv_rect_d_b', 'sscb_d_b', 'dc_bus_d_b', 'bess_d_b',
+    'rpp_d1', 'rpp_d2', 'hall_d', 'gen_farm_d', 'mv_bus_d', 'stepup_d']);
 
 /**
  * DC-EPMS-068 "vida 1": the UPS bank opened into its blocks. One row

@@ -38,7 +38,7 @@ describe('sld_viewport pure helpers', () => {
 
     it('pan is clamped to the drawing; an oversize view is centred', () => {
         expect(panBy([0, 0, 600, 300], -500, -500)).toEqual([0, 0, 600, 300]);
-        expect(panBy([0, 0, 600, 300], 5000, 5000)).toEqual([600, 960, 600, 300]);
+        expect(panBy([0, 0, 600, 300], 5000, 5000)).toEqual([600, 1290, 600, 300]);
         const big = clampVb([0, 0, 1800, 1890]);
         expect(big[0]).toBe(-300);
     });
@@ -67,7 +67,7 @@ describe('sld_viewport pure helpers', () => {
 
 describe('attachViewport', () => {
     const svgEl = () => {
-        document.body.innerHTML = '<svg class="pid-svg" viewBox="0 0 1200 1260"></svg>';
+        document.body.innerHTML = '<svg class="pid-svg" viewBox="0 0 1200 1590"></svg>';
         const svg = document.querySelector('svg');
         svg.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1200, height: 600 });
         return svg;
@@ -125,7 +125,7 @@ describe('fitPreset', () => {
     });
     it('keeps the view inside the drawing at the bottom edge', () => {
         const v = fitPreset([0, 722, 1200, 330], 1200, 900);
-        expect(v[1] + v[3]).toBeLessThanOrEqual(1260);
+        expect(v[1] + v[3]).toBeLessThanOrEqual(1590);
     });
     it('an element with no size leaves the view unchanged', () => {
         expect(fitPreset([0, 40, 1200, 384], 0, 0)).toEqual([0, 40, 1200, 384]);

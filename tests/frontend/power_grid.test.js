@@ -50,16 +50,22 @@ describe('S2 — Building D design chain in the DAG (MVP S2-C)', () => {
         expect(g.ups_a.on_battery).toBe(false);
     });
 
-    it('SSCB trip kills the DC side: bus, BESS, RPPs and the hall go dark', () => {
+    it('SSCB D-A trip darkens bus A and its BESS; path B keeps the RPPs and hall (2N)', () => {
         tripNode('sscb_d');
-        const g = getGridState();
+        let g = getGridState();
         expect(g.dc_bus_d.alive).toBe(false);
         expect(g.bess_d.alive).toBe(false);
-        expect(g.rpp_d1.alive).toBe(false);
-        expect(g.rpp_d2.alive).toBe(false);
-        expect(g.hall_d.alive).toBe(false);
+        expect(g.dc_bus_d_b.alive).toBe(true);
+        expect(g.rpp_d1.alive).toBe(true);
+        expect(g.rpp_d2.alive).toBe(true);
+        expect(g.hall_d.alive).toBe(true);
         // The AC side upstream of the SSCB stays energized.
         expect(g.mv_rect_d.alive).toBe(true);
+        // Both SSCBs out: the whole DC side goes dark.
+        tripNode('sscb_d_b');
+        g = getGridState();
+        expect(g.rpp_d1.alive).toBe(false);
+        expect(g.hall_d.alive).toBe(false);
     });
 
     it('one RPP trip is absorbed by the 2N pair; both kill the hall', () => {

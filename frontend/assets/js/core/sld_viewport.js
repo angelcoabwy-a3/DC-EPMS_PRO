@@ -10,18 +10,18 @@
  * viewBox.
  */
 
-export const SLD_BOUNDS = Object.freeze([0, 0, 1200, 1260]);
+export const SLD_BOUNDS = Object.freeze([0, 0, 1200, 1590]);
 export const MIN_W = 240;
 
 /** Named views (x, y, w, h in SLD user units). Ranges measured on the
- *  rendered drawing: Path A 50-410, Path B 360-710, Phase 2 726-1040,
- *  farm 988-1252. */
+ *  rendered drawing: Path A 50-410, Path B 360-710, Phase 2 (2N A + B)
+ *  726-1300, farm 1318-1582. */
 export const SLD_PRESETS = Object.freeze({
     p1: { label: 'PHASE 1', vb: [0, 14, 1200, 712] },
     a: { label: 'PATH A', vb: [0, 40, 1200, 384] },
     b: { label: 'PATH B', vb: [0, 348, 1200, 384] },
-    p2: { label: 'PHASE 2', vb: [0, 722, 1200, 330] },
-    farm: { label: 'FARM', vb: [40, 988, 1140, 264] },
+    p2: { label: 'PHASE 2', vb: [0, 722, 1200, 590] },
+    farm: { label: 'FARM', vb: [40, 1318, 1140, 264] },
     all: { label: 'ALL', vb: [...SLD_BOUNDS] },
 });
 export const DEFAULT_PRESET = 'p1';

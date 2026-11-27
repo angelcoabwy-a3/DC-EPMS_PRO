@@ -7792,6 +7792,10 @@ body {
 .pf-wire.pf-a    { stroke: #27d3ee; filter: drop-shadow(0 0 4px rgba(39,211,238,0.8)); }
 .pf-wire.pf-b    { stroke: #b06cf7; filter: drop-shadow(0 0 4px rgba(176,108,247,0.8)); }
 .pf-wire.pf-cold { stroke: #39424f; opacity: 0.7; }
+/* DC-EPMS-076 step 2: farm tie tap onto the path B spine (junction dot) */
+.pf-tap { fill: #8b95a3; stroke: none; }
+/* Phase 2 labels sit over the farm tie riser: halo keeps them legible. */
+#view-power .pf-phase2 .pf-name { paint-order: stroke; stroke: var(--hmi-bg); stroke-width: 5px; stroke-linejoin: round; }
 
 /* Equipment symbols — sharp IEEE-style geometry */
 .pf-sym {

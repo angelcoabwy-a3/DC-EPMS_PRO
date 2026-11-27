@@ -104,19 +104,30 @@ export const TOPOLOGY = {
     // bus -> step-up 13.8/35 kV -> the rectifier's AC side. Dead-bus
     // black start is modeled INSTANT in the sandbox (the real farm
     // takes ~10 s; design-sim honesty note in the UI).
+    // 2N (ADR-021, DC-EPMS-076): path D-A and path D-B each carry the
+    // whole hall; the RPPs take a feed from both DC buses. The standby
+    // farm still feeds both rectifier groups through one step-up here
+    // (the design has one farm per path: still open under DC-EPMS-076).
     util_d:     { type: 'util',   path: 'D', sources: [],                        targets: ['mv_rect_d'] },
-    gen_farm_d: { type: 'farm',   path: 'D', sources: [],                        targets: ['mv_bus_d'] },
+    util_d_b:   { type: 'util',   path: 'D', sources: [],                        targets: ['mv_rect_d_b'] },
+    gen_farm_d: { type: 'farm',   path: 'D', sources: [],                        targets: ['mv_bus_d'],
+                  utils: ['util_d', 'util_d_b'] },
     mv_bus_d:   { type: 'mvbus',  path: 'D', sources: ['gen_farm_d'],            targets: ['stepup_d'] },
-    stepup_d:   { type: 'xfmr',   path: 'D', sources: ['mv_bus_d'],              targets: ['mv_rect_d'] },
+    stepup_d:   { type: 'xfmr',   path: 'D', sources: ['mv_bus_d'],              targets: ['mv_rect_d', 'mv_rect_d_b'] },
     mv_rect_d:  { type: 'mvrect', path: 'D', sources: ['util_d', 'stepup_d'],    targets: ['sscb_d'],
                   primary: 'util_d', secondary: 'stepup_d' },
     sscb_d:     { type: 'sscb',   path: 'D', sources: ['mv_rect_d'],             targets: ['dc_bus_d'] },
     dc_bus_d:   { type: 'dcbus',  path: 'D', sources: ['sscb_d'],                targets: ['bess_d', 'rpp_d1', 'rpp_d2'] },
+    mv_rect_d_b: { type: 'mvrect', path: 'D', sources: ['util_d_b', 'stepup_d'], targets: ['sscb_d_b'],
+                   primary: 'util_d_b', secondary: 'stepup_d' },
+    sscb_d_b:   { type: 'sscb',   path: 'D', sources: ['mv_rect_d_b'],           targets: ['dc_bus_d_b'] },
+    dc_bus_d_b: { type: 'dcbus',  path: 'D', sources: ['sscb_d_b'],              targets: ['bess_d_b', 'rpp_d1', 'rpp_d2'] },
+    bess_d_b:   { type: 'bess',   path: 'D', sources: ['dc_bus_d_b'],            targets: [] },
     // BESS is bus-parallel storage (a load/reserve, never a steady-
     // state source in this DAG — same finite-holdup rule as batteries).
     bess_d:     { type: 'bess',   path: 'D', sources: ['dc_bus_d'],              targets: [] },
-    rpp_d1:     { type: 'rpp',    path: 'D', sources: ['dc_bus_d'],              targets: ['hall_d'] },
-    rpp_d2:     { type: 'rpp',    path: 'D', sources: ['dc_bus_d'],              targets: ['hall_d'] },
+    rpp_d1:     { type: 'rpp',    path: 'D', sources: ['dc_bus_d', 'dc_bus_d_b'], targets: ['hall_d'] },
+    rpp_d2:     { type: 'rpp',    path: 'D', sources: ['dc_bus_d', 'dc_bus_d_b'], targets: ['hall_d'] },
     hall_d:     { type: 'hall',   path: 'D', sources: ['rpp_d1', 'rpp_d2'],      targets: [] },
 };
 
@@ -143,8 +154,10 @@ const TOPO_ORDER = [
     'ddu_b1', 'ddu_b2', 'ddu_b3', 'ddu_b4', 'ddu_b5', 'ddu_b6',
     // Phase 2 Building D — util first so the farm's auto-standby
     // decision (runs iff the utility feed is dead) sees fresh state.
-    'util_d', 'gen_farm_d', 'mv_bus_d', 'stepup_d', 'mv_rect_d',
-    'sscb_d', 'dc_bus_d', 'bess_d', 'rpp_d1', 'rpp_d2', 'hall_d',
+    'util_d', 'util_d_b', 'gen_farm_d', 'mv_bus_d', 'stepup_d',
+    'mv_rect_d', 'sscb_d', 'dc_bus_d', 'bess_d',
+    'mv_rect_d_b', 'sscb_d_b', 'dc_bus_d_b', 'bess_d_b',
+    'rpp_d1', 'rpp_d2', 'hall_d',
 ];
 
 // Per-node mutable state (engine-private; published via setState)
@@ -245,7 +258,9 @@ function _flow(_grid) {
             // Phase 2 standby farm: auto-runs the moment the Building D
             // utility feed is dead (dead-bus black start, instant in
             // the sandbox). util_d is evaluated earlier in TOPO_ORDER.
-            const utilDown = !_grid.util_d.alive;
+            // Runs when ANY utility it backs is dead (2N: per-rectifier
+            // merge decides which group actually takes the farm).
+            const utilDown = (t.utils || ['util_d']).some((u) => _grid[u] && !_grid[u].alive);
             n.running = utilDown;
             n.alive = utilDown;
             n.state = utilDown ? 'running' : 'standby';
