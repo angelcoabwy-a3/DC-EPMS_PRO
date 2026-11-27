@@ -42,7 +42,8 @@ import { apiFetch } from '../services/api.js';
 import { mirrorGrid, plantModeLabel, isPlantSnapshot } from '../core/plant_mirror.js';
 import { ControlRoomAudio } from '../core/control_room_audio.js';
 import { plantPost, plantGet } from '../core/plant_client.js';
-import { faceplateHtml } from '../core/sbo_faceplate.js';
+import { faceplateHtml, isFaceplateTarget } from '../core/sbo_faceplate.js';
+import { metricsFromChannels, metricsFromPlant, hallCaption } from '../core/phase2_live.js';
 import { trainingHtml } from '../core/training_view.js';
 import { openPrintable } from '../core/training_print.js';
 import { fieldLineupSvg, applyFieldState, resolveClick, fieldLogHtml } from '../core/field_switchgear.js';
@@ -304,6 +305,8 @@ function _onTelemetryFrame(payload) {
     if (payload && payload.channels) {
         _applyTelemetry(payload.channels);
         _updateSparklines(payload.channels);
+        // Lot 11: live numbers on the Building D branch.
+        for (const [k, v] of Object.entries(metricsFromChannels(payload.channels))) _setMetric(k, v);
     }
     // HMI H4: live alarms ride the telemetry cadence (throttled).
     _pollAlarms();
@@ -608,7 +611,9 @@ function _flatPhase2() {
 
     const caption =
         `<text class="pf-caption" x="1176" y="${SB + 60}" style="text-anchor:end">→ GB300 NVL144 · 250 racks @ 200 kW</text>`
-        + `<text class="pf-caption" x="1176" y="${SB + 78}" style="text-anchor:end">every rack fed A + B (design)</text>`;
+        + `<text class="pf-caption" x="1176" y="${SB + 78}" style="text-anchor:end">every rack fed A + B (design)</text>`
+        + `<text class="pf-caption pf-live" x="1176" y="${SB + 96}" style="text-anchor:end" data-sld-metric="hall_d-live">`
+        + 'carried by: live in LIVE mode (simulated plant)</text>';
 
     // Farm first: its tie riser crosses the path B label row, so the
     // labels (with their halo) must paint over it.
@@ -951,7 +956,7 @@ function _onFlatClick(e) {
     } else {
         setState('selectedAsset', id);
     }
-    if (/^(mvtc|genset|ups)_[ab]$/.test(id)) _openFaceplate(id);
+    if (isFaceplateTarget(id)) _openFaceplate(id);
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1089,16 +1094,23 @@ function _applyRelays(grid) {
     }
 }
 
+const _FARM_CHAIN = new Set(['mv_bus_d', 'stepup_d']);
+
 function _applyGrid(grid) {
     if (!grid) return;
     document.querySelectorAll('#view-power .pid-svg .pf-node').forEach((node) => {
         const n = grid[node.dataset.sldNode];
         if (!n) return;
         let sev = 'ok';
-        if (n.type === 'genset' && !n.tripped) {
+        if ((n.type === 'genset' || n.type === 'farm') && !n.tripped) {
             // A standby generator bus is healthy, not a fault: only a
             // crank in progress or running on load is worth a colour.
             sev = n.state === 'cranking' ? 'warning' : (n.alive ? 'warning' : 'ok');
+        } else if (_FARM_CHAIN.has(node.dataset.sldNode) && !n.tripped && !n.alive
+                   && !(grid.gen_farm_d && grid.gen_farm_d.running)) {
+            // The farm's 13.8 kV bus and step-up are dead by design while
+            // the farm stands by (Building D, lot 12).
+            sev = 'ok';
         } else if (n.tripped || n.alive === false) sev = 'critical';
         else if (n.on_battery || n.energized_by === 'genset' || n.plant_mode === 'static_bypass') sev = 'warning';
         node.querySelectorAll('.pid-symbol').forEach((s) => s.setAttribute('data-sev', sev));
@@ -1237,6 +1249,13 @@ async function _pollAlarms(force = false) {
         const g = getState('grid');
         if (g) _applyGrid(_effGrid(g));
         _renderAlarms();
+        // Lot 12: Building D breaker states and who carries the hall.
+        const bd = _plant && _plant.building_d;
+        if (bd) {
+            for (const [k, v] of Object.entries(metricsFromPlant(bd))) _setMetric(k, v);
+            const cap = hallCaption(bd);
+            if (cap) _setMetric('hall_d-live', `LIVE · ${cap}`);
+        }
     }
     _renderFaceplate();
     _applyField();
@@ -2152,6 +2171,16 @@ async function _onFaceplateClick(ev) {
         _fpPending.delete(btn.dataset.fpCancel);
         _renderFaceplate();
         return;
+    } else if (btn.dataset.fpInject) {
+        // Lot 12: bench injection on the simulated Building D plant.
+        const body = { injection: btn.dataset.fpInject };
+        if (btn.dataset.fpPath) body.path = btn.dataset.fpPath;
+        if (btn.dataset.fpKw) {
+            body.kw = Number(btn.dataset.fpKw);
+            body.delay_s = Number(btn.dataset.fpDelay);
+            body.duration_s = Number(btn.dataset.fpDur);
+        }
+        r = await plantPost('/api/bldg-d/inject', body);
     }
     if (!r) return;
     _fpMsg = r.ok ? '' : (r.status === 401 || r.status === 403
@@ -2486,6 +2515,7 @@ export const __power_test__ = {
     onTelemetryFrame: _onTelemetryFrame,
     buildFlatMarkup: _buildFlatMarkup,
     buildPhase2Markup: _flatPhase2,
+    applyGrid: _applyGrid,
     flatViewBox: _FLAT.viewBox,
     renderFlatSld: _renderFlatSld,
     openBreakerModal: _openBreakerModal,

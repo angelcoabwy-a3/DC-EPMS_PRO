@@ -41,6 +41,14 @@ const KIND_TITLES = {
     generator: 'Generators and 13.8 kV bays',
 };
 const KIND_ORDER = ['transfer', 'ups', 'generator'];
+// Lot 12 (ADR-023): Building D paths (device paths 'da' / 'db').
+const D_KIND_ORDER = ['rectifier', 'sscb', 'bess', 'farm'];
+const D_KIND_TITLES = {
+    rectifier: 'Rectifier group (35 kV 3-phase AC in, 800 VDC out)',
+    sscb: 'Bus main SSCB (800 VDC unipolar TN-S)',
+    bess: 'BESS (on the 800 VDC bus)',
+    farm: 'Generator farm (13.8 kV, stepped up to 35 kV)',
+};
 const TONES = ['ok', 'warn', 'crit', 'info'];
 const AUTHORITY_HINT = {
     AUTO: 'The device follows its own controller. Remote commands are refused.',
@@ -99,11 +107,43 @@ function secondsLeft(pending) {
 }
 
 function pathsOf(payload) {
-    return (payload && Array.isArray(payload.paths) ? payload.paths : []).map((p) => p.path);
+    const out = (payload && Array.isArray(payload.paths) ? payload.paths : []).map((p) => p.path);
+    const bd = payload && payload.building_d;
+    if (bd && Array.isArray(bd.paths)) bd.paths.forEach((p) => out.push(`d${p.path}`));
+    return out;
+}
+
+function isDPath(path) {
+    return /^d[ab]$/.test(String(path || ''));
+}
+
+function pathLabel(path) {
+    return isDPath(path) ? `BLDG D-${path.slice(1).toUpperCase()}` : `PATH ${String(path).toUpperCase()}`;
+}
+
+function renderDSummary(payload, path) {
+    const bd = payload && payload.building_d;
+    const s = bd && (bd.paths || []).find((p) => `d${p.path}` === path);
+    if (!s) return '';
+    const tile = (lbl, val, tone) => `<div class="dvc-tile" data-tone="${tone}">`
+        + `<div class="dvc-tile-lbl">${escapeHTML(lbl)}</div><div class="dvc-tile-val">${escapeHTML(val)}</div></div>`;
+    const hall = bd.load_lost ? 'LOAD LOST'
+        : `${(Number(bd.demand_kw || 0) / 1000).toFixed(1)} MW on ${bd.paths_carrying} path(s)`;
+    return `<section class="dvc-summary" aria-label="Building D path">`
+        + tile('Rectifier input', s.input_closed ? (s.input_live ? s.source : 'NO INPUT') : 'OPEN',
+               s.input_live ? (s.source === 'FARM' ? 'warn' : 'ok') : 'crit')
+        + tile('800 VDC bus', s.bus_energized ? `${Number(s.bus_v).toFixed(0)} V` : 'DEAD', s.bus_energized ? 'ok' : 'crit')
+        + tile('Path load', `${(Number(s.carrying_kw) / 1000).toFixed(1)} MW`, 'info')
+        + tile('BESS', `${s.bess_breaker} · SOC ${Number(s.soc_pct).toFixed(1)} %`, s.bess_breaker === 'CLOSED' ? 'ok' : 'warn')
+        + tile('Rectifiers', `${s.rect_units_in} of ${s.rect_units}${s.rect_n1_ok ? ' (N+1)' : ' (N)'}`, s.rect_n1_ok ? 'ok' : 'warn')
+        + tile('Hall', hall, bd.load_lost ? 'crit' : 'info')
+        + '</section>'
+        + `<div class="dvc-notice" role="note">${escapeHTML(bd.notice || '')}</div>`;
 }
 
 function groupByKind(devices, path) {
-    const groups = new Map(KIND_ORDER.map((k) => [k, []]));
+    const order = isDPath(path) ? D_KIND_ORDER : KIND_ORDER;
+    const groups = new Map(order.map((k) => [k, []]));
     (Array.isArray(devices) ? devices : []).forEach((d) => {
         if (d.path === path && groups.has(d.kind)) groups.get(d.kind).push(d);
     });
@@ -319,7 +359,7 @@ function renderDevice(device) {
                     <div class="dvc-card-title">${escapeHTML(device.display || device.id)}</div>
                     <div class="dvc-card-sub">${escapeHTML(device.id)}${model ? ' · ' + escapeHTML(model) : ''}</div>
                 </div>
-                <span class="dvc-chip">PATH ${escapeHTML(String(device.path || '-').toUpperCase())}</span>
+                <span class="dvc-chip">${escapeHTML(pathLabel(device.path || '-'))}</span>
             </header>
             <div class="dvc-state">
                 <span class="dvc-badge dvc-badge-${tone}">${escapeHTML(stateLabel(device.state))}</span>
@@ -409,17 +449,19 @@ function renderPanels(payload) {
     if (!paths.includes(_path)) _path = paths[0] || null;
     const tabs = paths.map((path) => `
         <button type="button" class="dvc-tab${path === _path ? ' is-active' : ''}" data-dvc-action="path"
-            data-path="${escapeHTML(path)}" aria-pressed="${path === _path ? 'true' : 'false'}">PATH ${escapeHTML(path.toUpperCase())}</button>`).join('');
+            data-path="${escapeHTML(path)}" aria-pressed="${path === _path ? 'true' : 'false'}">${escapeHTML(pathLabel(path))}</button>`).join('');
     const summary = (p.paths || []).find((s) => s.path === _path);
     const groups = groupByKind(p.devices, _path);
-    const sections = KIND_ORDER.map((kind) => {
+    const dPath = isDPath(_path);
+    const sections = (dPath ? D_KIND_ORDER : KIND_ORDER).map((kind) => {
         const list = groups.get(kind);
         const cards = list.length
             ? list.map(renderDevice).join('')
             : '<div class="dvc-empty">None in the plant design.</div>';
+        const title = dPath ? D_KIND_TITLES[kind] : KIND_TITLES[kind];
         return `
             <section class="dvc-section" data-kind="${kind}">
-                <h3>${escapeHTML(KIND_TITLES[kind])} <span class="dvc-count">${list.length}</span></h3>
+                <h3>${escapeHTML(title)} <span class="dvc-count">${list.length}</span></h3>
                 <div class="dvc-grid">${cards}</div>
             </section>`;
     }).join('');
@@ -429,7 +471,7 @@ function renderPanels(payload) {
             Medium-voltage bays move only through a forced procedure; earthing and LOTO need a second person.
             Every action is written to the Forensic Ledger.</div>
         <div class="dvc-tabs" role="group" aria-label="Redundancy path">${tabs}</div>
-        ${renderSummary(summary)}
+        ${dPath ? renderDSummary(p, _path) : renderSummary(summary)}
         ${sections}
         <section class="dvc-section" data-section="log">
             <h3>Control log</h3>
@@ -724,6 +766,8 @@ export const __device_control_test__ = {
     formatMw,
     formatClock,
     groupByKind,
+    pathsOf,
+    renderDSummary,
     eventDetail,
     renderSummary,
     renderDevice,

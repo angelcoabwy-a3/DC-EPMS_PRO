@@ -14,9 +14,62 @@
 import { escapeHTML } from './sanitize.js';
 import { synchroscopeHtml } from './synchroscope.js';
 
+// Lot 12 (ADR-023): Building D nodes of the SLD that open a faceplate.
+// The SLD node id is the device id (mv_rect_d, sscb_d_b, ...); the farm
+// block (gen_farm_d) opens both per-path farms (one block is drawn).
+const _D_NODE = /^(mv_rect_d|sscb_d|bess_d)(_b)?$/;
+const _D_TITLES = {
+    mv_rect_d: 'Rectifier group', sscb_d: 'Bus main SSCB', bess_d: 'BESS', gen_farm_d: 'Generator farms',
+};
+
+/** True when an SLD node id opens a select-before-operate faceplate. */
+export function isFaceplateTarget(id) {
+    const s = String(id || '');
+    return /^(mvtc|genset|ups)_[ab]$/.test(s) || _D_NODE.test(s) || s === 'gen_farm_d';
+}
+
+/** Building D path of a faceplate target ('a' | 'b'), null for others. */
+export function bldgDPath(target) {
+    const m = _D_NODE.exec(String(target || ''));
+    return m ? (m[2] ? 'b' : 'a') : null;
+}
+
+function _title(target) {
+    const s = String(target || '');
+    const m = _D_NODE.exec(s);
+    if (m) return `${_D_TITLES[m[1]]} D-${m[2] ? 'B' : 'A'}`;
+    if (s === 'gen_farm_d') return _D_TITLES.gen_farm_d;
+    const [kind, path] = s.split('_');
+    return `${TITLES[kind] || 'Devices'} ${String(path || '').toUpperCase()}`;
+}
+
+// Bench / training injections offered next to the Building D devices
+// (POST /api/bldg-d/inject, FACILITY_MANAGER, recorded in the ledger).
+const _D_SIMS = {
+    mv_rect_d: (p) => [['utility_loss', 'Simulate utility loss'], ['utility_restore', 'Simulate utility back']]
+        .map(([k, l]) => ({ injection: k, path: p, label: `${l} D-${p.toUpperCase()}` })),
+    sscb_d: (p) => [{ injection: 'bus_fault', path: p, label: `Simulate 800 VDC bus fault D-${p.toUpperCase()}` }],
+    bess_d: () => [{ injection: 'load_step', kw: 12000, delay_s: 10, duration_s: 20,
+                     label: 'Simulate hall load step +12 MW in 10 s (20 s)' }],
+};
+
+function _simsHtml(target) {
+    const m = _D_NODE.exec(String(target || ''));
+    if (!m) return '';
+    const sims = _D_SIMS[m[1]](m[2] ? 'b' : 'a');
+    return '<div class="fp-sims"><span class="fp-sims-label">SIMULATE (bench, ledger)</span>'
+        + sims.map((x) => `<button type="button" class="fp-btn fp-sim" data-fp-inject="${escapeHTML(x.injection)}"`
+            + (x.path ? ` data-fp-path="${escapeHTML(x.path)}"` : '')
+            + (x.kw ? ` data-fp-kw="${escapeHTML(x.kw)}" data-fp-delay="${escapeHTML(x.delay_s)}" data-fp-dur="${escapeHTML(x.duration_s)}"` : '')
+            + `>${escapeHTML(x.label)}</button>`).join('')
+        + '</div>';
+}
+
 /** Devices behind an SLD element: breaker group, node id or path bank. */
 export function devicesFor(target, plant) {
     const devs = (plant && plant.devices) || [];
+    if (_D_NODE.test(String(target || ''))) return devs.filter((d) => d.id === target);
+    if (target === 'gen_farm_d') return devs.filter((d) => d.kind === 'farm');
     const m = /^(mvtc|genset|ups)_([ab])$/.exec(String(target || ''));
     if (!m) return [];
     const [, kind, path] = m;
@@ -28,6 +81,13 @@ export function devicesFor(target, plant) {
 }
 
 const TITLES = { mvtc: 'MV transfer', genset: 'Generator bus', ups: 'UPS bank' };
+const _D_KINDS = new Set(['rectifier', 'sscb', 'bess', 'farm']);
+
+function _readingsHtml(d) {
+    const rows = (d.readings || []).map((r) => `<span class="fp-ind">${escapeHTML(r.label)}: `
+        + `<b>${escapeHTML(Number(r.value).toLocaleString('en-US'))} ${escapeHTML(r.unit || '')}</b></span>`).join('');
+    return rows ? `<div class="fp-inds fp-readings">${rows}</div>` : '';
+}
 
 function _commands(d, pending, nowMs) {
     const p = pending.get(d.id);
@@ -52,7 +112,7 @@ function _commands(d, pending, nowMs) {
 export function faceplateHtml(target, plant, { pending = new Map(), nowMs = Date.now(), message = '' } = {}) {
     const devs = devicesFor(target, plant);
     const [kind, path] = String(target).split('_');
-    const head = `${TITLES[kind] || 'Devices'} ${String(path || '').toUpperCase()}`;
+    const head = _title(target);
     if (!devs.length) {
         return `<div class="fp-head"><span>${escapeHTML(head)}</span>`
             + '<button type="button" class="fp-close" data-fp-close="1" aria-label="Close">×</button></div>'
@@ -67,6 +127,7 @@ export function faceplateHtml(target, plant, { pending = new Map(), nowMs = Date
             + `<span class="fp-auth-tag">${escapeHTML(d.authority || '')}</span></div>`
             + `<div class="fp-status">${escapeHTML(d.status?.text || '')}</div>`
             + (ind ? `<div class="fp-inds">${ind}</div>` : '')
+            + (_D_KINDS.has(d.kind) ? _readingsHtml(d) : '')
             + (d.kind === 'transfer' && d.synchro ? synchroscopeHtml(d.id, d.synchro) : '')
             + (d.kind === 'transfer' && d.cubicles
                 ? `<button type="button" class="fp-btn fp-field" data-fp-field="${escapeHTML(d.path)}">Field view: 13.8 kV switchgear (racking, springs, 86, padlock)</button>` : '')
@@ -82,6 +143,6 @@ export function faceplateHtml(target, plant, { pending = new Map(), nowMs = Date
     return `<div class="fp-head"><span>${escapeHTML(head)} · SELECT then EXECUTE</span>`
         + '<button type="button" class="fp-close" data-fp-close="1" aria-label="Close">×</button></div>'
         + (message ? `<div class="fp-msg">${escapeHTML(message)}</div>` : '')
-        + `<div class="fp-body">${upsField}${rows}</div>`
+        + `<div class="fp-body">${upsField}${rows}${_simsHtml(target)}</div>`
         + '<div class="fp-foot">SIMULATED plant · rules enforced by the server · actions in the Forensic Ledger</div>';
 }

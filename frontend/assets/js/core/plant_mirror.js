@@ -20,8 +20,13 @@
  *       52-U opened by 86T -> mains TRIP like ANSI 27
  * then the pure flow pass of power_grid.js (propagateStatic).
  *
- * What the plant does NOT model is left as the base grid has it:
- * Phase 2 Building D. Pure module: no DOM,
+ *   Lot 12: Building D plant block (building_d) -> util_d* tripped,
+ *       mv_rect_d* input (tripped when no input, prefer the farm when
+ *       transferred), sscb_d* / bess_d* open or tripped, dc_bus_d*
+ *       energised as the plant says (a bus can ride on its BESS),
+ *       gen_farm_d running when either per-path farm is on its bus
+ *       (one farm block is drawn), hall_d dark when the load was lost.
+ * Pure module: no DOM,
  * no fetch, never mutates its inputs, never writes to the plant.
  * ════════════════════════════════════════════════════════════════ */
 
@@ -92,6 +97,8 @@ export function mirrorGrid(baseGrid, plant) {
         }
     }
 
+    _mirrorBuildingD(g, plant.building_d);
+
     const out = propagateStatic(g);
     for (const p of ['a', 'b']) {
         const ups = out['ups_' + p];
@@ -106,6 +113,38 @@ export function mirrorGrid(baseGrid, plant) {
         ups.bypass_blocks = carrying.filter((d) => d.state === 'STATIC_BYPASS').length;
     }
     return out;
+}
+
+const FARM_LIVE = new Set(['RUNNING', 'ON_LOAD']);
+
+function _mirrorBuildingD(g, bd) {
+    if (!bd || !Array.isArray(bd.paths)) return;
+    for (const p of bd.paths) {
+        const s = p.path === 'b' ? '_b' : '';
+        if (g['util_d' + s]) g['util_d' + s].tripped = p.utility_ok === false;
+        const rect = g['mv_rect_d' + s];
+        if (rect) {
+            rect.tripped = !p.input_closed || p.input_live === false;
+            rect.prefer = p.source === 'FARM' ? 'secondary' : 'primary';
+        }
+        const sscb = g['sscb_d' + s];
+        if (sscb) {
+            sscb.tripped = p.sscb !== 'CLOSED';
+            sscb.plant_state = p.sscb;
+        }
+        const bus = g['dc_bus_d' + s];
+        if (bus) bus.plant_energized = !!p.bus_energized;
+        const bess = g['bess_d' + s];
+        if (bess) bess.tripped = p.bess_breaker !== 'CLOSED';
+    }
+    const farm = g.gen_farm_d;
+    if (farm) {
+        const states = bd.paths.map((p) => p.farm);
+        farm.plant_running = states.some((x) => FARM_LIVE.has(x));
+        farm.plant_state = farm.plant_running ? 'running'
+            : (states.includes('CRANKING') ? 'cranking' : (states.includes('COOLDOWN') ? 'cooldown' : 'standby'));
+    }
+    if (g.hall_d) g.hall_d.tripped = !!bd.load_lost;
 }
 
 /** UPS mode caption for the drawing (number of blocks on static bypass), or null to keep the default. */

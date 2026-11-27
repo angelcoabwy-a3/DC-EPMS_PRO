@@ -261,16 +261,22 @@ function _flow(_grid) {
             // Runs when ANY utility it backs is dead (2N: per-rectifier
             // merge decides which group actually takes the farm).
             const utilDown = (t.utils || ['util_d']).some((u) => _grid[u] && !_grid[u].alive);
-            n.running = utilDown;
-            n.alive = utilDown;
-            n.state = utilDown ? 'running' : 'standby';
+            // Lot 12: in LIVE the plant mirror says whether a farm is
+            // actually on its bus (start delay, auto start OFF).
+            const run = typeof n.plant_running === 'boolean' ? n.plant_running : utilDown;
+            n.running = run;
+            n.alive = run;
+            n.state = typeof n.plant_running === 'boolean' ? (n.plant_state || (run ? 'running' : 'standby'))
+                : (run ? 'running' : 'standby');
             n.energized_by = n.alive ? 'genset' : null;
         }
         else if (t.type === 'mvrect') {
             // 2-input AC-side merge (utility primary / farm secondary).
             // Solid-state: no ATS-style transfer gap.
-            const prim = _grid[t.primary];
-            const sec = _grid[t.secondary];
+            let prim = _grid[t.primary];
+            let sec = _grid[t.secondary];
+            // Lot 12: input transferred to the farm (plant mirror).
+            if (n.prefer === 'secondary') [prim, sec] = [sec, prim];
             if (prim.alive) {
                 n.alive = true;
                 n.energized_by = prim.energized_by;
@@ -338,6 +344,13 @@ function _flow(_grid) {
                 n.energized_by = null;
                 n.mode = 'off';
             }
+        }
+        else if (t.type === 'dcbus' && typeof n.plant_energized === 'boolean') {
+            // Lot 12: the plant decides (a bus can ride on its BESS with
+            // the SSCB open, and collapses when its sources cannot carry).
+            const liveSrc = t.sources.find((s) => _grid[s].alive);
+            n.alive = n.plant_energized;
+            n.energized_by = n.alive ? (liveSrc ? _grid[liveSrc].energized_by : 'battery') : null;
         }
         else {
             // Standard node (xfmr, rpp, busway) — passthrough
