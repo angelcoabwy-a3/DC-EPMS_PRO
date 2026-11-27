@@ -272,10 +272,26 @@ LOTS 8-10 (2026-11-27): cbabb2c ADR-021 rev 3 (13.8 kV gen bus split in
   Phase 1 racks 2N, busways 2,500 A, RPP-A1/B1 5,400 kW, RPP-A2/B2
   3,600 kW at the 80 % rule; components 124 / v2 188). pytest 2135 on
   legacy AND v2, vitest 969 / 60 files (Linux).
-NEXT: per-path standby farms in the SLD (still one farm drawn for both
-  paths, farm block still on the power_budget 22 x 3.2 MW sizing, not
-  ADR-021 rev 3), bind Building D SLD numbers to telemetry, operator fps
-  check on the G14, DC-EPMS-068 closing lote, DC-EPMS-057 UPS sizing in
+LOTS 11-13 (2026-11-27, ADR-023): dde01c7 style + mypy fixes on four
+  pre-hook files (alarm_engine, training, device_control, test_training;
+  AST identical except type coercions). 7ae9279 backend/bldg_d.py =
+  simulated Building D plant per path (35 kV utility, per-path farm,
+  rectifier input + 14 modules, bus main SSCB, 800 VDC unipolar bus,
+  BESS); racks share by capability (rectifiers first, BESS covers the
+  rest), farm load acceptance 2 MW/s MODEL, latched hall load loss.
+  DeviceController gets 8 devices (paths da / db) when built with
+  building_d params; POST /api/bldg-d/inject; telemetry simulator
+  set_state_overlay pins Building D channels to the plant; alarms
+  BLDG_D*; DRILL-11 farm auto OFF, DRILL-12 800 VDC bus fault, DRILL-13
+  load step on the farm with BESS open. 2be94f2 frontend: phase2_live.js
+  live SLD numbers, plant mirror drives the Building D DAG, faceplate on
+  rect / SSCB / BESS / farm with bench injections, Power Controls
+  BLDG D-A / D-B tabs, standby farm no longer painted critical.
+  Floors (Linux): pytest 2164 / vitest 986 (61 files). Live: DRILL-12
+  PASS 100 x3, DRILL-13 PASS 100.
+NEXT: per-path farms drawn in the SLD + farm block on ADR-021 rev 3
+  sizing, rectifier sections (2 x 7) in the plant, operator fps check on
+  the G14, DC-EPMS-068 closing lote, DC-EPMS-057 UPS sizing in
   site_model. Meta debrief 404 still to confirm on Render.
 Hackathon (Oct 26 - Nov 4): MOP Verification submitted 2026-11-03;
   that work predates this block and lives in README + git history.

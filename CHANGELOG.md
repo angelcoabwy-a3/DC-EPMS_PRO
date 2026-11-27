@@ -13,6 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Lots 11-13 (2026-11-27): Building D live, operable, drilled (ADR-023)
+
+- `dde01c7` style: ruff format and mypy fixes on four files that predate
+  the pre-commit rule (no behaviour change; the governor route now
+  refuses a missing delta through the existing non-zero check, HTTP 400).
+- `7ae9279` simulated Building D plant (`backend/bldg_d.py`) in Power
+  Controls: rectifier groups, bus main SSCBs, BESS and generator farms
+  per path with authority, select-before-operate and the Forensic
+  Ledger; `POST /api/bldg-d/inject`; telemetry follows the plant
+  (simulator state overlay); `BLDG_D*` alarms; DRILL-11, DRILL-12,
+  DRILL-13.
+- `2be94f2` Power SLD: live Building D numbers, plant-driven drawing in
+  LIVE, faceplates with bench injections, Power Controls BLDG D-A / D-B
+  tabs; standby farm, its bus and step-up no longer painted critical.
+- Model limits (ADR-023): one-second resolution, no DC fault current or
+  SSCB let-through, linear SSCB junction temperature, rectifier group as
+  one block of 14 per path, one farm drawn for two.
+- Floors (Linux, Python 3.13): pytest 2164 passed (3 pre-existing
+  optimizer errors); vitest 986 / 61 files. One run under v2 hit the
+  timing-based `test_anomaly_log_trim_is_constant_time`; it passes alone.
+
 ### Lots 8-10 (2026-11-27)
 
 - **ADR-021 rev 3** (`cbabb2c`): 13.8 kV generator bus split into 2
