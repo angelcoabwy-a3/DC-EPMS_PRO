@@ -115,3 +115,19 @@ New checks D-RECT-MARGIN and D-GEN-MARGIN. All checks PASS.
 Still open: the 13.8 kV generator bus runs at 93 percent of 4,000 A
 (next step would be splitting it into two sections); DC fault level not
 computed; DC-EPMS-076.
+
+## DC-EPMS-076 step 1 (2026-11-26): 2N in the site model and simulator
+
+`config/site_model.yml` gains a path B mirror of the Building D DC side:
+`utility_feed_d_b`, `mv_rectifier_d_b`, `sscb_d_b_01`, `main_bus_dc_d_b`,
+`bess_d_b_01` (113 to 118 components; `site_model_v2.yml` regenerated).
+Each path's rectifier group carries `load_share: 0.5` of the 50 MW
+design point in the simulator (about 25 MW each), the RPPs take a feed
+from both DC buses, and the existing path A nodes were relabelled and
+re-rated to revision 2 (70 MW rectifier group, 90 MVA feed, 15 MWh
+BESS). The 3D hall shows A and B live side by side.
+
+Still aggregated, so still open under DC-EPMS-076: one node per path
+for the 14 rectifiers, the 2 bus sections, the 20 busways and the BESS
+blocks; one standby farm feeding both paths (the design has one farm per
+path); the Power SLD / What-If DAG still draws Building D as one chain.

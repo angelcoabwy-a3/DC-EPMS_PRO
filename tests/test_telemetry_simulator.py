@@ -157,6 +157,28 @@ def test_phase2_vocabulary_fence_in_channel_names(sim):
     assert dc_channels == {"main_bus_dc_d:voltage_v_dc_bus"}
 
 
+def test_phase2_2n_paths_share_the_building_load(sim):
+    """DC-EPMS-076: Building D has a path B mirror of the DC side. Each
+    rectifier group carries half of the 50 MW design point (load_share
+    0.5); together they carry the building. Path B emits its own fenced
+    DC bus metric."""
+    window = sim.get_window(n_samples=40)
+    a = window["mv_rectifier_d:rect_load_mw"].mean()
+    b = window["mv_rectifier_d_b:rect_load_mw"].mean()
+    assert abs(a - 25.0) < 1.5, f"path A off its 2N share: {a:.1f} MW"
+    assert abs(b - 25.0) < 1.5, f"path B off its 2N share: {b:.1f} MW"
+    assert abs((a + b) - 50.0) < 2.0
+    for ch in (
+        "utility_feed_d_b:utility_voltage_kv",
+        "sscb_d_b_01:sscb_junction_T_c",
+        "bess_d_b_01:bess_soc_pct",
+    ):
+        assert ch in window, f"missing path B channel: {ch}"
+    assert {k for k in window if k.startswith("main_bus_dc_d_b:")} == {
+        "main_bus_dc_d_b:voltage_v_dc_bus"
+    }
+
+
 def test_utility_intakes_baseline_from_component_metadata(sim):
     """Phase 1 feeds run 27.5 kV; the Phase 2 intake runs 35 kV —
     one generator, metadata-keyed baselines."""

@@ -136,8 +136,9 @@ def test_graph_has_expected_component_count(graph):
     # 91 original + 7 Path D (Phase 2 SLD) + 12 G1 taxonomy slice
     # (2 system roots + 10 genset/CDU micro-components) + 3 Path D
     # standby generation (50 MW track: gen_farm_d, mv_bus_d,
-    # stepup_xfmr_d) = 113.
-    assert len(components) == 113
+    # stepup_xfmr_d) = 113, + 5 Path D-B 2N mirror (DC-EPMS-076:
+    # utility, rectifier group, SSCB, DC bus, BESS) = 118.
+    assert len(components) == 118
 
 
 def test_graph_has_baseline_knowledge_nodes(graph):

@@ -105,8 +105,8 @@ function _shell(root) {
                 <div><i style="background:#ff4b3e"></i>DLC return</div>
             </div>
             <div class="h3d-note" role="note">DESIGN layout of a simulated facility (ADR-021). Rack internals,
-                tap-off boxes and pipe sizes are schematic. LIVE values come from the simulator, which still models the
-                single-path Building D (DC-EPMS-076); per-rack load is MODEL. Click a rack for its data.</div>
+                tap-off boxes and pipe sizes are schematic. LIVE values come from the simulator, one aggregated node per 2N
+                path (rectifier group, SSCB, DC bus, BESS); per-rack load is MODEL. Click a rack for its data.</div>
         </div>`;
 }
 
@@ -464,13 +464,15 @@ export function livePanelHtml(live, derived) {
     if (!live?.any) {
         return '<div class="h3d-live-h">LIVE (simulator)</div><div class="h3d-live-r">No Building D channels yet.</div>';
     }
+    const ab = (x, y, d, unit) => `A ${_fmt(x, d)} · B ${_fmt(y, d)} ${unit}`;
     const rows = [
-        ['800 VDC bus', `${_fmt(live.busV, 1)} V`, derived?.band || 'unknown'],
-        ['Rectifier load', `${_fmt(live.rectMw, 1)} MW`, ''],
-        ['Rectifier efficiency', `${_fmt((live.rectEff ?? NaN) * 100, 1)} %`, ''],
-        ['SSCB junction', `${_fmt(live.sscbC, 1)} C`, ''],
-        ['BESS SOC', `${_fmt(live.bessSoc, 1)} %`, ''],
-        ['BESS current', `${_fmt(live.bessA, 0)} A`, ''],
+        ['800 VDC bus', ab(live.busV, live.busVB, 1, 'V'), derived?.band || 'unknown'],
+        ['Rectifier load', ab(live.rectMw, live.rectMwB, 1, 'MW'), ''],
+        ['Rectifier efficiency', ab((live.rectEff ?? NaN) * 100, (live.rectEffB ?? NaN) * 100, 1, '%'), ''],
+        ['SSCB junction', ab(live.sscbC, live.sscbCB, 1, 'C'), ''],
+        ['BESS SOC', ab(live.bessSoc, live.bessSocB, 1, '%'), ''],
+        ['BESS current', ab(live.bessA, live.bessAB, 0, 'A'), ''],
+        ['Hall load (A + B)', `${_fmt(derived?.hallMw, 1)} MW`, ''],
         ['Per rack (MODEL)', `${_fmt(derived?.rackKw, 0)} kW · ${_fmt(derived?.rackA, 0)} A`, ''],
     ];
     return '<div class="h3d-live-h">LIVE (simulator)</div>' + rows.map(([k, v, band]) =>

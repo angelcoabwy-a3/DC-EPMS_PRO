@@ -11554,7 +11554,7 @@ table.opt-votes td {
 #view-hall-3d .h3d-btn { font: 11px ui-monospace, monospace; letter-spacing: .04em; color: #dfe4ea; background: #2a3038; border: 1px solid #47505b; border-radius: 3px; padding: 3px 7px; cursor: pointer; min-height: 26px; }
 #view-hall-3d .h3d-btn:hover { border-color: #b04dff; }
 #view-hall-3d .h3d-btn[aria-pressed="false"] { opacity: .55; }
-#view-hall-3d .h3d-live { position: absolute; top: 46px; right: 8px; width: 270px; font-size: 12px; background: rgba(12,14,17,.8); color: #dfe4ea; padding: 6px 9px; border-radius: 4px; }
+#view-hall-3d .h3d-live { position: absolute; top: 46px; right: 8px; width: 320px; font-size: 12px; background: rgba(12,14,17,.8); color: #dfe4ea; padding: 6px 9px; border-radius: 4px; }
 #view-hall-3d .h3d-live-h { font: 11px ui-monospace, monospace; color: #9aa4ae; letter-spacing: .06em; margin-bottom: 3px; }
 #view-hall-3d .h3d-live-r { display: flex; justify-content: space-between; gap: 10px; padding: 1px 0; }
 #view-hall-3d .h3d-live-r span { color: #aab3bd; }
@@ -11562,7 +11562,7 @@ table.opt-votes td {
 #view-hall-3d .h3d-live-r b[data-band="normal"] { color: #3ccf7a; }
 #view-hall-3d .h3d-live-r b[data-band="off-nominal"] { color: #f2c037; }
 #view-hall-3d .h3d-live-r b[data-band="under"], #view-hall-3d .h3d-live-r b[data-band="over"] { color: #ff6b5e; }
-#view-hall-3d .h3d-rack { position: absolute; top: 236px; right: 8px; width: 340px; max-height: calc(100% - 290px); overflow: auto; font-size: 12px; background: rgba(12,14,17,.88); color: #dfe4ea; padding: 8px 10px; border-radius: 4px; border: 1px solid #35e0ff; }
+#view-hall-3d .h3d-rack { position: absolute; top: 262px; right: 8px; width: 340px; max-height: calc(100% - 290px); overflow: auto; font-size: 12px; background: rgba(12,14,17,.88); color: #dfe4ea; padding: 8px 10px; border-radius: 4px; border: 1px solid #35e0ff; }
 #view-hall-3d .h3d-rack-h { display: flex; justify-content: space-between; align-items: center; font: 13px ui-monospace, monospace; color: #35e0ff; margin-bottom: 4px; }
 #view-hall-3d .h3d-rack-note { margin-top: 5px; font-size: 11px; color: #8e98a3; }
 #view-hall-3d .h3d-labels { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }

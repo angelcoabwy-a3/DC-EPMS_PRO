@@ -305,10 +305,13 @@ def _gen_utility_intake(
 
 # ── Phase 2 DESIGN-sim generators (Building D — MVP S2) ─────────────
 def _gen_mv_rectifier(
-    _comp: ComponentInfo, n: int, rng: np.random.Generator
+    comp: ComponentInfo, n: int, rng: np.random.Generator
 ) -> dict[str, np.ndarray]:
+    # 2N (DC-EPMS-076): each path's rectifier group carries `load_share`
+    # of Building D (0.5 in normal operation); absent = whole building.
+    share = float((comp.metadata or {}).get("load_share", 1.0))
     return {
-        "rect_load_mw": _noise(rng, "rect_load_mw", n),
+        "rect_load_mw": _noise(rng, "rect_load_mw", n) * share,
         "rect_efficiency_ratio": _noise(rng, "rect_efficiency_ratio", n),
     }
 

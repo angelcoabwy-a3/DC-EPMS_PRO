@@ -190,9 +190,9 @@ export function labelIsVocabSafe(domain, text) {
 //  Still pure: no three.js, no DOM.
 // ════════════════════════════════════════════════════════════════
 
-/** Simulator channels for Building D ('<asset>:<metric>' keys). The
- *  simulator still models the pre-ADR-021 single-path Building D
- *  (DC-EPMS-076), so these are one bus, one rectifier group. */
+/** Simulator channels for Building D ('<asset>:<metric>' keys), one
+ *  set per 2N path (DC-EPMS-076). Each path is one rectifier group, one
+ *  SSCB, one DC bus and one BESS node aggregating the design model. */
 export const LIVE_KEYS = Object.freeze({
     busV: 'main_bus_dc_d:voltage_v_dc_bus',
     rectMw: 'mv_rectifier_d:rect_load_mw',
@@ -200,6 +200,12 @@ export const LIVE_KEYS = Object.freeze({
     sscbC: 'sscb_d_01:sscb_junction_T_c',
     bessSoc: 'bess_d_01:bess_soc_pct',
     bessA: 'bess_d_01:bess_dc_current_a',
+    busVB: 'main_bus_dc_d_b:voltage_v_dc_bus',
+    rectMwB: 'mv_rectifier_d_b:rect_load_mw',
+    rectEffB: 'mv_rectifier_d_b:rect_efficiency_ratio',
+    sscbCB: 'sscb_d_b_01:sscb_junction_T_c',
+    bessSocB: 'bess_d_b_01:bess_soc_pct',
+    bessAB: 'bess_d_b_01:bess_dc_current_a',
 });
 
 function _emission(channels, key) {
@@ -226,20 +232,29 @@ export function derivedLive(live, design) {
     const nominal = finite(design?.dc?.nominal_v, 800);
     const vmin = finite(design?.dc?.min_continuous_v, 640);
     const vmax = finite(design?.dc?.overvoltage_limit_v, 840);
-    const out = { rackKw: null, rackA: null, band: 'unknown', flowScale: 1 };
-    if (live?.rectMw !== null && live?.rectMw !== undefined && racks > 0) {
-        out.rackKw = (live.rectMw * 1000) / racks;
-        const v = live.busV ?? nominal;
+    const out = { rackKw: null, rackA: null, band: 'unknown', bandA: 'unknown', bandB: 'unknown', flowScale: 1, hallMw: null };
+    // Hall load = both paths' rectifier groups (2N); either may be absent.
+    const parts = [live?.rectMw, live?.rectMwB].filter((v) => v !== null && v !== undefined);
+    if (parts.length && racks > 0) {
+        out.hallMw = parts.reduce((a, b) => a + b, 0);
+        out.rackKw = (out.hallMw * 1000) / racks;
+        const vs = [live.busV, live.busVB].filter((v) => v !== null && v !== undefined);
+        const v = vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : nominal;
         out.rackA = v > 0 ? (out.rackKw * 1000) / v : null;
         const itMw = finite(design?.basis?.it_kw?.value, 0) / 1000;
-        out.flowScale = itMw > 0 ? Math.max(0.1, Math.min(2, live.rectMw / itMw)) : 1;
+        out.flowScale = itMw > 0 ? Math.max(0.1, Math.min(2, out.hallMw / itMw)) : 1;
     }
-    if (live?.busV !== null && live?.busV !== undefined) {
-        if (live.busV >= vmax) out.band = 'over';
-        else if (live.busV < vmin) out.band = 'under';
-        else if (Math.abs(live.busV - nominal) / nominal > 0.02) out.band = 'off-nominal';
-        else out.band = 'normal';
-    }
+    const band = (v) => {
+        if (v === null || v === undefined) return 'unknown';
+        if (v >= vmax) return 'over';
+        if (v < vmin) return 'under';
+        if (Math.abs(v - nominal) / nominal > 0.02) return 'off-nominal';
+        return 'normal';
+    };
+    out.bandA = band(live?.busV);
+    out.bandB = band(live?.busVB);
+    const rank = { unknown: 0, normal: 1, 'off-nominal': 2, under: 3, over: 3 };
+    out.band = rank[out.bandB] > rank[out.bandA] ? out.bandB : out.bandA;
     return out;
 }
 

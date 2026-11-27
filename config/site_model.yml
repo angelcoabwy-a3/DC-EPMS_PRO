@@ -345,6 +345,17 @@ power_chains:
   - {from: main_bus_dc_d, to: rpp_d_01}
   - {from: main_bus_dc_d, to: rpp_d_02}
   - {from: bess_d_01, to: main_bus_dc_d}   # BESS discharges back onto the DC bus
+  #    Path D-B (2N mirror, ADR-021 / DC-EPMS-076): each path carries half
+  #    of Building D in normal operation and all of it with the other out.
+  #    One rectifier-group node per path aggregates the 14 rectifiers of
+  #    the design model; the RPPs take a feed from both DC buses.
+  - {from: utility_feed_d_b, to: mv_rectifier_d_b}
+  - {from: mv_rectifier_d_b, to: sscb_d_b_01}
+  - {from: sscb_d_b_01, to: main_bus_dc_d_b}
+  - {from: main_bus_dc_d_b, to: bess_d_b_01}
+  - {from: main_bus_dc_d_b, to: rpp_d_01}
+  - {from: main_bus_dc_d_b, to: rpp_d_02}
+  - {from: bess_d_b_01, to: main_bus_dc_d_b}
 
   # ── Path D standby generation (50 MW track — genset farm, design)
   #    >50 MW cannot be one prime mover: N+2 farm of 3.2 MW MV units on a
@@ -354,6 +365,7 @@ power_chains:
   - {from: gen_farm_d, to: mv_bus_d}
   - {from: mv_bus_d, to: stepup_xfmr_d}
   - {from: stepup_xfmr_d, to: mv_rectifier_d}   # standby alternate onto the 35 kV AC side
+  - {from: stepup_xfmr_d, to: mv_rectifier_d_b} # same farm onto path D-B (per-path farms: ADR-021)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -536,32 +548,59 @@ components:
 
   # ── Power Path D (Phase 2 / Building D — 800 VDC unipolar TN-S, design Q2 2026)
   utility_feed_d:
-    display: "Utility Feed D (Phase 2 MV intake)"
+    display: "Utility Feed D-A (Phase 2 MV intake, path A)"
     type: utility_intake
     voltage_kv: 35.0
-    rated_capacity_mw: 60.0
+    rated_capacity_mw: 90.0    # ADR-021 rev 2: 89.2 MVA required per path
   mv_rectifier_d:
-    display: "MV Rectifier D (35 kVAC 3-phase -> 800 VDC unipolar)"
+    display: "MV Rectifier group D-A (35 kVAC 3-phase -> 800 VDC unipolar)"
     type: mv_rectifier
     voltage_v_dc: 800
-    rated_kw: 55000
+    rated_kw: 70000            # 14 x 5 MW per path (ADR-021 rev 2)
+    load_share: 0.5            # 2N: half of Building D in normal operation
   sscb_d_01:
     display: "SSCB D-01 (solid-state circuit breaker, 1-100 us clearing)"
     type: sscb
     voltage_v_dc: 800
     clearing_time_us_max: 100
   main_bus_dc_d:
-    display: "DC Main Bus D (800 VDC unipolar TN-S)"
+    display: "DC Main Bus D-A (800 VDC unipolar TN-S, path A)"
     type: dc_bus
     voltage_v_dc: 800
     fault_current_ka: 50.0
     incident_energy_cal: 31.0
     arc_flash_boundary_m: 2.5
   bess_d_01:
-    display: "BESS D-01 (battery energy storage, 2.5 MWh)"
+    display: "BESS D-A (battery energy storage, path A)"
     type: bess
     voltage_v_dc: 800
-    rated_capacity_mwh: 2.5
+    rated_capacity_mwh: 15.0   # ADR-021 rev 2, 10 min per path
+  # ── Path D-B (2N mirror of the DC side, DC-EPMS-076)
+  utility_feed_d_b:
+    display: "Utility Feed D-B (Phase 2 MV intake, path B)"
+    type: utility_intake
+    voltage_kv: 35.0
+    rated_capacity_mw: 90.0
+  mv_rectifier_d_b:
+    display: "MV Rectifier group D-B (35 kVAC 3-phase -> 800 VDC unipolar)"
+    type: mv_rectifier
+    voltage_v_dc: 800
+    rated_kw: 70000
+    load_share: 0.5
+  sscb_d_b_01:
+    display: "SSCB D-B-01 (solid-state circuit breaker, path B)"
+    type: sscb
+    voltage_v_dc: 800
+    clearing_time_us_max: 100
+  main_bus_dc_d_b:
+    display: "DC Main Bus D-B (800 VDC unipolar TN-S, path B)"
+    type: dc_bus
+    voltage_v_dc: 800
+  bess_d_b_01:
+    display: "BESS D-B (battery energy storage, path B)"
+    type: bess
+    voltage_v_dc: 800
+    rated_capacity_mwh: 15.0
   rpp_d_01:
     display: "RPP-D1 (Phase 2 / GB300 NVL144 rows)"
     type: rpp

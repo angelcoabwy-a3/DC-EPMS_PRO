@@ -202,6 +202,21 @@ describe('hall3d lote 3: live, governor, tour, callouts', () => {
         expect(liveFromChannels(undefined).any).toBe(false);
     });
 
+    it('2N: hall load sums both paths, band is the worse of the two buses', () => {
+        const live = liveFromChannels(channels({
+            [LIVE_KEYS.rectMwB]: 1.5, [LIVE_KEYS.busVB]: 770,
+        }));
+        const d = derivedLive(live, design());
+        expect(d.hallMw).toBeCloseTo(3.0);
+        expect(d.rackKw).toBeCloseTo(375);              // 3.0 MW / 8 racks
+        expect(d.bandA).toBe('normal');
+        expect(d.bandB).toBe('off-nominal');
+        expect(d.band).toBe('off-nominal');
+        const html = V.livePanelHtml(live, d);
+        expect(html).toContain('A 799.6 · B 770.0 V');
+        expect(html).toContain('Hall load (A + B)');
+    });
+
     it('derives per-rack MODEL load and the bus band from the design limits', () => {
         const d = derivedLive(liveFromChannels(channels()), design());
         expect(d.rackKw).toBeCloseTo(187.5);               // 1.5 MW / 8 racks
@@ -269,7 +284,7 @@ describe('hall3d lote 3: live, governor, tour, callouts', () => {
         expect(V.livePanelHtml({ any: false }, null)).toContain('No Building D channels yet');
         const live = liveFromChannels(channels({ [LIVE_KEYS.bessA]: -0.2 }));
         const html = V.livePanelHtml(live, derivedLive(live, design()));
-        expect(html).toContain('799.6 V');
+        expect(html).toContain('A 799.6 · B - V');         // path B absent in this fixture
         expect(html).toContain('data-band="normal"');
         expect(html).not.toContain('-0 A');
         expect(html).toContain('LIVE (simulator)');
