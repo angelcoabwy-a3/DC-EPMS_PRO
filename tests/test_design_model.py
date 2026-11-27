@@ -134,3 +134,28 @@ def test_routes():
 
 def test_payload_is_labelled_design():
     assert design_payload()["status"].startswith("DESIGN")
+
+
+def test_frontend_contract():
+    """Fields read by frontend/assets/js/core/hall3d_model.js and
+    views/hall3d.js (3D Hall lote 2). Rename here = break the 3D view."""
+    body = design_payload()
+    assert {"site", "hall", "dc", "basis", "chain", "layout"} <= set(body)
+    assert body["basis"]["it_kw"]["value"] > 0
+    ids = {c["id"] for c in body["chain"]}
+    assert {"row_busways", "rack_feeds", "mv_rectifiers", "cdus"} <= ids
+    cdus = next(c for c in body["chain"] if c["id"] == "cdus")
+    assert cdus["per_row"] >= 1
+    lay = body["layout"]
+    assert set(lay["extent_mm"]) == {"x", "y"}
+    for row in lay["rows"]:
+        assert {"id", "y_mm", "busways"} <= set(row)
+        for b in row["busways"]:
+            assert {"id", "path", "section", "racks", "x_mm", "z_mm"} <= set(b)
+            assert b["path"] in ("a", "b")
+            assert b["id"][-1] in "12"
+    from backend.design_model import get_design
+
+    for r in get_design()["layout"]["racks"]:
+        assert {"id", "row", "position", "x_mm", "y_mm", "w_mm", "d_mm", "h_mm", "feeds"} <= set(r)
+        assert all({"path", "busway"} <= set(f) for f in r["feeds"])

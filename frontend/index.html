@@ -177,6 +177,7 @@
                 <div class="nav-item" data-route="multi-agent"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="users"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>Multi-Agent</div>
                 <div class="nav-item" data-route="rack-heatmap"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="grid"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg></span>Rack Heatmap</div>
                 <div class="nav-item" data-route="mission-control"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="box"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></span>Mission Control <sup class="nav-item-tag">spike</sup></div>
+                <div class="nav-item" data-route="hall-3d"><span class="icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" data-lucide="server"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg></span>3D Hall <sup class="nav-item-tag">design</sup></div>
             </div>
 
             <div class="nav-section" data-demo-chrome="reports">
@@ -1658,6 +1659,10 @@
                  .usda export of the site model; rendered by
                  frontend/assets/js/views/usd_export.js. -->
             <div class="view" id="view-usd-export" hidden></div>
+
+            <!-- 3D Hall track (ADR-021): Building D hall DH1 in WebGL, drawn
+                 from GET /api/design/building-d. frontend/assets/js/views/hall3d.js -->
+            <div class="view" id="view-hall-3d" hidden></div>
 
             <!-- Release R3-A: Power Controls. One panel per UPS,
                  transfer switch and generator (readings + supervised

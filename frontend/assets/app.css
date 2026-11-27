@@ -11532,3 +11532,20 @@ table.opt-votes td {
 .pwr-field[data-size="medium"] .fsg-svg { max-height: none; max-width: none; width: 100%; }
 .pwr-field[data-size="large"] .fsg-svg { max-height: none; max-width: none; width: 135%; }
 .fsg-bar .fsg-size { white-space: nowrap; }
+
+/* ── 3D Hall (ADR-021) ───────────────────────────────────────── */
+#view-hall-3d:not([hidden]) { display: flex; flex-direction: column; height: calc(100dvh - 120px); min-height: 420px; }
+#view-hall-3d .h3d-head { flex: 0 0 auto; }
+#view-hall-3d .h3d-tag { font-size: 11px; padding: 2px 6px; border: 1px solid #b04dff; color: #d9a6ff; border-radius: 4px; vertical-align: middle; }
+#view-hall-3d .h3d-spec { display: flex; flex-wrap: wrap; gap: 6px 14px; font: 12px/1.4 ui-monospace, monospace; color: #c3cad2; margin: 4px 0 8px; }
+#view-hall-3d .h3d-stage { position: relative; flex: 1 1 auto; min-height: 0; border-radius: 6px; overflow: hidden; background: #e9ecef; }
+#view-hall-3d .h3d-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+#view-hall-3d .h3d-hud { position: absolute; top: 8px; right: 8px; font: 12px ui-monospace, monospace; background: rgba(12,14,17,.72); color: #dfe4ea; padding: 3px 8px; border-radius: 4px; }
+#view-hall-3d .h3d-legend { position: absolute; left: 8px; top: 8px; font-size: 12px; background: rgba(12,14,17,.72); color: #dfe4ea; padding: 6px 9px; border-radius: 4px; display: grid; gap: 3px; }
+#view-hall-3d .h3d-legend i { display: inline-block; width: 14px; height: 4px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
+#view-hall-3d .h3d-note { position: absolute; left: 8px; right: 8px; bottom: 8px; font-size: 11px; color: #3c434b; background: rgba(255,255,255,.78); padding: 4px 8px; border-radius: 4px; }
+#view-hall-3d .h3d-error { margin: 10px; padding: 10px; background: #3a1414; color: #ffd6d6; border-radius: 4px; }
+@media (max-width: 900px) {
+  #view-hall-3d:not([hidden]) { height: calc(100dvh - 90px); }
+  #view-hall-3d .h3d-legend { font-size: 11px; }
+}

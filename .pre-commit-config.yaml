@@ -29,6 +29,7 @@ exclude: |
     \.pytest_cache/.*|
     __pycache__/.*|
     frontend/node_modules/.*|
+    frontend/assets/vendor/.*|
     .*\.bak_pre_.*|
     .*\.bak$|
     requirements.*\.txt|

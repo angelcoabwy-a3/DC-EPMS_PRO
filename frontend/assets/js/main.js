@@ -55,6 +55,7 @@ import { initProceduresView } from './views/procedures.js';
 import { initQuantumView } from './views/quantum.js';
 import { initOtSecurityView } from './views/ot_security.js';
 import { initUsdExportView } from './views/usd_export.js';
+import { initHall3dView } from './views/hall3d.js';
 import { initDeviceControlView } from './views/device_control.js';
 import { initMopVerifyView } from './views/mop_verify.js';
 import { initLoginView, showLoginView, hideLoginView } from './views/login.js';
@@ -148,6 +149,7 @@ initOtSecurityView();
 // Release R2-C — USD export of the site model (replaces the
 // Omniverse stub): static, schematic .usda download.
 initUsdExportView();
+initHall3dView();
 // Release R3-A — Power Controls: UPS / transfer / generator panels
 // with readings and supervised switching (simulated devices).
 initDeviceControlView();
