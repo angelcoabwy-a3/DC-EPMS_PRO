@@ -167,8 +167,8 @@ SYNC_MAX_SLIP_HZ = 0.10
 GOVERNOR_MIN_HZ = 59.5
 GOVERNOR_MAX_HZ = 60.5
 GOVERNOR_MAX_STEP_HZ = 0.05
-CLOSED_TRANSITION_OVERLAP_MS = 100   # model: 52-GM opens automatically
-SYNC_CLOSE_TIMEOUT_S = 30.0          # supervised close waits this long
+CLOSED_TRANSITION_OVERLAP_MS = 100  # model: 52-GM opens automatically
+SYNC_CLOSE_TIMEOUT_S = 30.0  # supervised close waits this long
 UPS_FAULT_INVERTER_OVERTEMP = "INVERTER_OVERTEMP"
 UPS_FAULTS = {
     UPS_FAULT_INVERTER_OVERTEMP: "Inverter over-temperature",
@@ -347,7 +347,7 @@ class DeviceController:
     utility_ok: dict[str, bool] = field(default_factory=dict)
     battery_soc: dict[str, float] = field(default_factory=dict)
     load_lost: dict[str, bool] = field(default_factory=dict)
-    faults: dict[str, str] = field(default_factory=dict)        # device_id -> fault
+    faults: dict[str, str] = field(default_factory=dict)  # device_id -> fault
     _batt_at: float | None = None
     # T3 closed-transition training
     closed_transition: bool = False
@@ -412,31 +412,50 @@ class DeviceController:
             ctl.wirings[path] = mw.ControlWiring(path=path)
             upper = path.upper()
             for n in range(1, int(ups["units_per_path"]) + 1):
-                ctl._add(Device(
-                    device_id=f"ups_{path}_{n:02d}", kind=KIND_UPS,
-                    display=f"UPS {upper}{n}", path=path,
-                    vendor=str(ups.get("vendor") or ""), model=str(ups.get("model") or ""),
-                    rated_kw=_num(ups["rated_kw"]),
-                    voltage_v=_num(ups.get("voltage_v")) or 480.0,
-                    state=UPS_DOUBLE_CONVERSION, state_since=now,
-                ))
-            ctl._add(Device(
-                device_id=f"mvtc_{path}", kind=KIND_TRANSFER,
-                display=f"MV transfer controller {upper}", path=path,
-                vendor="", model="", rated_kw=0.0,
-                voltage_v=_num(xfer.get("voltage_v")) or _num(gens.get("voltage_v")) or 13800.0,
-                state=XFER_UTILITY, state_since=now,
-            ))
+                ctl._add(
+                    Device(
+                        device_id=f"ups_{path}_{n:02d}",
+                        kind=KIND_UPS,
+                        display=f"UPS {upper}{n}",
+                        path=path,
+                        vendor=str(ups.get("vendor") or ""),
+                        model=str(ups.get("model") or ""),
+                        rated_kw=_num(ups["rated_kw"]),
+                        voltage_v=_num(ups.get("voltage_v")) or 480.0,
+                        state=UPS_DOUBLE_CONVERSION,
+                        state_since=now,
+                    )
+                )
+            ctl._add(
+                Device(
+                    device_id=f"mvtc_{path}",
+                    kind=KIND_TRANSFER,
+                    display=f"MV transfer controller {upper}",
+                    path=path,
+                    vendor="",
+                    model="",
+                    rated_kw=0.0,
+                    voltage_v=_num(xfer.get("voltage_v")) or _num(gens.get("voltage_v")) or 13800.0,
+                    state=XFER_UTILITY,
+                    state_since=now,
+                )
+            )
             for n in range(1, int(gens["units_per_path"]) + 1):
                 device_id = f"genset_{path}_{n:02d}"
-                ctl._add(Device(
-                    device_id=device_id, kind=KIND_GENERATOR,
-                    display=f"Generator {upper}{n}", path=path,
-                    vendor=str(gens.get("vendor") or ""), model=str(gens.get("model") or ""),
-                    rated_kw=_num(gens["rated_kw"]),
-                    voltage_v=_num(gens.get("voltage_v")) or 13800.0,
-                    state=GEN_STANDBY, state_since=now,
-                ))
+                ctl._add(
+                    Device(
+                        device_id=device_id,
+                        kind=KIND_GENERATOR,
+                        display=f"Generator {upper}{n}",
+                        path=path,
+                        vendor=str(gens.get("vendor") or ""),
+                        model=str(gens.get("model") or ""),
+                        rated_kw=_num(gens["rated_kw"]),
+                        voltage_v=_num(gens.get("voltage_v")) or 13800.0,
+                        state=GEN_STANDBY,
+                        state_since=now,
+                    )
+                )
                 ctl.bays[device_id] = mv.Bay(bay_id=device_id)
                 ctl.gensets[device_id] = gf.GenSet(device_id=device_id, path=path)
         return ctl
@@ -483,7 +502,9 @@ class DeviceController:
             gs = self.gensets.get(dev.device_id)
             if gs is not None and dev.state == GEN_CRANKING and gs.crank_cold is None:
                 gs.crank_cold = gf.cold(gs)
-            ready_s = CRANK_TIME_S + (gf.COLD_START_DELAY_S if gs is not None and gs.crank_cold else 0.0)
+            ready_s = CRANK_TIME_S + (
+                gf.COLD_START_DELAY_S if gs is not None and gs.crank_cold else 0.0
+            )
             if dev.state == GEN_CRANKING and elapsed >= ready_s:
                 if gs is not None:
                     gs.crank_cold = None
@@ -545,8 +566,10 @@ class DeviceController:
         path = xfer.path
         if brk == cub.BREAKER_U:
             if xfer.state == XFER_GENERATORS:
-                return ("Interlock: 52-GM is closed. The A3 design never parallels the mains "
-                        "from the switchgear: open 52-GM first (dead-bus transfer).")
+                return (
+                    "Interlock: 52-GM is closed. The A3 design never parallels the mains "
+                    "from the switchgear: open 52-GM first (dead-bus transfer)."
+                )
             if path in self.xfmrs and xf.u_lock_reason(self.xfmrs[path]):
                 return xf.u_lock_reason(self.xfmrs[path])
             if not self._utility_sensed(path):
@@ -559,20 +582,27 @@ class DeviceController:
         on_bus = sum(d.rated_kw for d in self._gens_on_bus(path))
         demand = self._demand_kw(path)
         if on_bus < demand:
-            return (f"Generator bus has {on_bus / 1000:.1f} MW synchronised, below the "
-                    f"{demand / 1000:.1f} MW the path draws.")
+            return (
+                f"Generator bus has {on_bus / 1000:.1f} MW synchronised, below the "
+                f"{demand / 1000:.1f} MW the path draws."
+            )
         return None
 
     def _cubicle_ctx(self, xfer: Device, brk: str, actor: str = "") -> cub.CubicleContext:
         return cub.CubicleContext(
-            now=self.clock(), local_authority=xfer.authority == AUTH_LOCAL,
+            now=self.clock(),
+            local_authority=xfer.authority == AUTH_LOCAL,
             main_closed=self._main_closed(xfer.path, brk),
-            plant_close_reason=self._plant_close_reason(xfer, brk), actor=actor,
+            plant_close_reason=self._plant_close_reason(xfer, brk),
+            actor=actor,
         )
 
     def cubicles_of(self, xfer: Device) -> list[dict[str, Any]]:
-        return [cub.describe(self.cubicles[(xfer.path, b)], self._cubicle_ctx(xfer, b))
-                for b in cub.BREAKERS if (xfer.path, b) in self.cubicles]
+        return [
+            cub.describe(self.cubicles[(xfer.path, b)], self._cubicle_ctx(xfer, b))
+            for b in cub.BREAKERS
+            if (xfer.path, b) in self.cubicles
+        ]
 
     def field_action(self, device_id: str, breaker: str, action: str, actor: str) -> dict[str, Any]:
         """L1: an operation at the switchgear (racking, springs, local
@@ -584,7 +614,9 @@ class DeviceController:
             self._advance()
             xfer = self._get(device_id)
             if xfer.kind != KIND_TRANSFER:
-                raise DeviceControlError(400, "switchgear actions apply to an MV transfer controller")
+                raise DeviceControlError(
+                    400, "switchgear actions apply to an MV transfer controller"
+                )
             c = self.cubicles.get((xfer.path, breaker))
             if c is None:
                 raise DeviceControlError(404, f"no cubicle {breaker!r} on path {xfer.path.upper()}")
@@ -609,11 +641,21 @@ class DeviceController:
             self._advance()
             after = cub.is_closed(c, self._main_closed(xfer.path, breaker))
             return self._event(
-                "command", xfer, actor, command=f"{action}@{breaker}", field=True,
-                breaker=breaker, action=action, from_state=previous, to_state=xfer.state,
-                racking=c.racking, racking_before=before["racking"],
-                breaker_closed=after, spring_charged=c.spring_charged,
-                lockout_86=c.lockout_86, padlock=c.padlock,
+                "command",
+                xfer,
+                actor,
+                command=f"{action}@{breaker}",
+                field=True,
+                breaker=breaker,
+                action=action,
+                from_state=previous,
+                to_state=xfer.state,
+                racking=c.racking,
+                racking_before=before["racking"],
+                breaker_closed=after,
+                spring_charged=c.spring_charged,
+                lockout_86=c.lockout_86,
+                padlock=c.padlock,
             )
 
     # ── L2: utility transformer (52-T, DETC, keys, thermal) ────────
@@ -629,15 +671,17 @@ class DeviceController:
         return xf.XfmrContext(
             grid_ok=self.utility_ok.get(path, True),
             main_u_closed=self._main_closed(path, cub.BREAKER_U),
-            grid_kv=self.grid_kv.get(path, xf.PRIMARY_KV), actor=actor,
+            grid_kv=self.grid_kv.get(path, xf.PRIMARY_KV),
+            actor=actor,
         )
 
     def _incomer_kv(self, path: str) -> float:
         t = self.xfmrs.get(path)
         if t is None:
             return SECONDARY_KV_DEFAULT if self.utility_ok.get(path, True) else 0.0
-        return xf.secondary_kv(t, self.utility_ok.get(path, True),
-                               self.grid_kv.get(path, xf.PRIMARY_KV))
+        return xf.secondary_kv(
+            t, self.utility_ok.get(path, True), self.grid_kv.get(path, xf.PRIMARY_KV)
+        )
 
     def _bus_kv(self, dev: Device) -> float:
         if dev.state == XFER_UTILITY and dev.path in self.xfmrs:
@@ -657,8 +701,14 @@ class DeviceController:
             if xfer.state == XFER_UTILITY:
                 xfer.state, xfer.state_since = XFER_OPEN, self.clock()
                 self._drop_selections(xfer.device_id)
-                self._event("protection_trip", xfer, "protection", relay=relay,
-                            breaker="52-U", detail=detail)
+                self._event(
+                    "protection_trip",
+                    xfer,
+                    "protection",
+                    relay=relay,
+                    breaker="52-U",
+                    detail=detail,
+                )
 
     def _advance_xfmrs(self, now: float) -> None:
         last = self._xfmr_at
@@ -671,19 +721,32 @@ class DeviceController:
                 if ev["event"] == "xfmr_lockout":
                     t.primary_closed = False
                     if xfer is not None:
-                        self._event("protection_trip", xfer, "protection", relay="86T",
-                                    breaker="52-T", detail=ev["cause"])
+                        self._event(
+                            "protection_trip",
+                            xfer,
+                            "protection",
+                            relay="86T",
+                            breaker="52-T",
+                            detail=ev["cause"],
+                        )
                     self._trip_incomer(path, "86T", ev["cause"])
                 elif xfer is not None:
-                    self._event(ev["event"], xfer, "protection",
-                                **{k: v for k, v in ev.items() if k != "event"})
+                    self._event(
+                        ev["event"],
+                        xfer,
+                        "protection",
+                        **{k: v for k, v in ev.items() if k != "event"},
+                    )
 
     def _xfmr_indications(self, path: str) -> list[dict[str, str]]:
         t = self.xfmrs.get(path)
         if t is None:
             return []
         return [
-            {"label": "52-T transformer primary", "value": mv.CLOSED if t.primary_closed else mv.OPEN},
+            {
+                "label": "52-T transformer primary",
+                "value": mv.CLOSED if t.primary_closed else mv.OPEN,
+            },
             {"label": "86T transformer lockout", "value": "TRIPPED" if t.lockout_86t else "NORMAL"},
             {"label": "DETC position", "value": f"{t.tap} ({xf.TAPS[t.tap]:+.1f} %)"},
             {"label": "Key K1", "value": t.k1},
@@ -699,7 +762,9 @@ class DeviceController:
             self._advance()
             xfer = self._get(device_id)
             if xfer.kind != KIND_TRANSFER:
-                raise DeviceControlError(400, "transformer actions apply to an MV transfer controller")
+                raise DeviceControlError(
+                    400, "transformer actions apply to an MV transfer controller"
+                )
             t = self.xfmrs.get(xfer.path)
             if t is None:
                 raise DeviceControlError(404, f"no transformer on path {xfer.path.upper()}")
@@ -713,21 +778,44 @@ class DeviceController:
             was_live = xf.energized(t, ctx.grid_ok)
             effect = xf.apply(t, action, ctx)
             event = self._event(
-                "command", xfer, actor, command=f"{action}@XFMR", field=True,
-                equipment="xfmr", action=action, tap_from=tap_from, tap=t.tap,
-                key_k1=t.k1, key_k2=t.k2, primary_closed=t.primary_closed,
-                detc_locked=t.detc_unlocked_by is None, detc_unlocked_by=t.detc_unlocked_by,
-                energized_before=was_live, energized=xf.energized(t, ctx.grid_ok),
+                "command",
+                xfer,
+                actor,
+                command=f"{action}@XFMR",
+                field=True,
+                equipment="xfmr",
+                action=action,
+                tap_from=tap_from,
+                tap=t.tap,
+                key_k1=t.k1,
+                key_k2=t.k2,
+                primary_closed=t.primary_closed,
+                detc_locked=t.detc_unlocked_by is None,
+                detc_unlocked_by=t.detc_unlocked_by,
+                energized_before=was_live,
+                energized=xf.energized(t, ctx.grid_ok),
                 outcome=effect or "ok",
             )
             if action == xf.DETC_SPARE_KEY:
-                self._event("interlock_defeated", xfer, actor, equipment="xfmr",
-                            detail="DETC handle unlocked with a spare key: the K1 / K2 chain is bypassed")
+                self._event(
+                    "interlock_defeated",
+                    xfer,
+                    actor,
+                    equipment="xfmr",
+                    detail="DETC handle unlocked with a spare key: the K1 / K2 chain is bypassed",
+                )
             if effect == "internal_fault":
-                self._event("xfmr_internal_fault", xfer, "protection", relay="63+87T",
-                            detail=t.trip_cause)
-                self._event("protection_trip", xfer, "protection", relay="86T",
-                            breaker="52-T", detail=t.trip_cause)
+                self._event(
+                    "xfmr_internal_fault", xfer, "protection", relay="63+87T", detail=t.trip_cause
+                )
+                self._event(
+                    "protection_trip",
+                    xfer,
+                    "protection",
+                    relay="86T",
+                    breaker="52-T",
+                    detail=t.trip_cause,
+                )
                 self._trip_incomer(xfer.path, "86T", t.trip_cause or "86T")
             elif effect == "primary_open":
                 self._trip_incomer(xfer.path, "27", "52-T opened: transformer de-energized")
@@ -764,8 +852,10 @@ class DeviceController:
 
     def _gen_ctx(self, dev: Device, actor: str = "") -> gf.GenContext:
         return gf.GenContext(
-            running=self._gen_running(dev), stopped=dev.state == GEN_STANDBY,
-            bulk_l=self.bulk_l.get(dev.path, 0.0), actor=actor,
+            running=self._gen_running(dev),
+            stopped=dev.state == GEN_STANDBY,
+            bulk_l=self.bulk_l.get(dev.path, 0.0),
+            actor=actor,
         )
 
     def _gen_readings(self, dev: Device) -> list[dict[str, Any]]:
@@ -799,8 +889,9 @@ class DeviceController:
             mv.apply(bay, mv.OP_OPEN_CB, self.clock())
         dev.state, dev.state_since = GEN_STANDBY, self.clock()
         self._drop_selections(dev.device_id)
-        self._event("protection_trip", dev, "protection", relay="SHUTDOWN",
-                    breaker="52-G", detail=cause)
+        self._event(
+            "protection_trip", dev, "protection", relay="SHUTDOWN", breaker="52-G", detail=cause
+        )
         if cascade:
             self._check_gen_overload(dev.path)
 
@@ -811,8 +902,10 @@ class DeviceController:
         cap = sum(d.rated_kw for d in on_bus)
         demand = self._demand_kw(path)
         if on_bus and cap < demand:
-            cause = (f"OVERLOAD: {cap / 1000:.2f} MW left on the bus for {demand / 1000:.2f} MW "
-                     "(model: no load shedding, the remaining sets trip)")
+            cause = (
+                f"OVERLOAD: {cap / 1000:.2f} MW left on the bus for {demand / 1000:.2f} MW "
+                "(model: no load shedding, the remaining sets trip)"
+            )
             for d in on_bus:
                 gs = self.gensets.get(d.device_id)
                 if gs is not None:
@@ -859,11 +952,20 @@ class DeviceController:
             effect = gf.apply(gs, action, ctx)
             now = self.clock()
             event = self._event(
-                "command", dev, actor, command=f"{action}@{dev.device_id.upper()}", field=True,
-                equipment="gen", action=action, from_state=previous,
-                ecs_mode=gs.ecs_mode, estop=gs.estop, heater_on=gs.heater_on,
+                "command",
+                dev,
+                actor,
+                command=f"{action}@{dev.device_id.upper()}",
+                field=True,
+                equipment="gen",
+                action=action,
+                from_state=previous,
+                ecs_mode=gs.ecs_mode,
+                estop=gs.estop,
+                heater_on=gs.heater_on,
                 day_tank_pct=round(gs.level_pct, 1),
-                pumps={"P-1": gs.p1.mode, "P-2": gs.p2.mode}, filter=gs.filter_sel,
+                pumps={"P-1": gs.p1.mode, "P-2": gs.p2.mode},
+                filter=gs.filter_sel,
             )
             if effect == "start" and dev.state in (GEN_STANDBY, GEN_COOLDOWN):
                 dev.state, dev.state_since = GEN_CRANKING, now
@@ -881,8 +983,9 @@ class DeviceController:
             event["to_state"] = dev.state
             return event
 
-    def inject_gen_condition(self, device_id: str, condition: str, actor: str,
-                             **params: Any) -> dict[str, Any]:
+    def inject_gen_condition(
+        self, device_id: str, condition: str, actor: str, **params: Any
+    ) -> dict[str, Any]:
         """Training conditions on a generator set (simulation only)."""
         with self._lock:
             self._advance()
@@ -908,18 +1011,27 @@ class DeviceController:
                 side = str(params.get("side", "A")).upper()
                 gs.water[side] = max(0.0, min(100.0, _num(params.get("pct", 60.0))))
             elif condition == "day_tank_level":
-                gs.day_l = gf.DAY_TANK_L * max(0.0, min(100.0, _num(params.get("pct", 50.0)))) / 100.0
+                gs.day_l = (
+                    gf.DAY_TANK_L * max(0.0, min(100.0, _num(params.get("pct", 50.0)))) / 100.0
+                )
             elif condition == "heater_off":
                 gs.heater_on = False
                 if "coolant_c" in params:
                     gs.coolant_c = _num(params["coolant_c"])
             elif condition == "bulk_level":
-                self.bulk_l[dev.path] = gf.BULK_TANK_L * max(0.0, min(100.0, _num(params.get("pct", 50.0)))) / 100.0
+                self.bulk_l[dev.path] = (
+                    gf.BULK_TANK_L * max(0.0, min(100.0, _num(params.get("pct", 50.0)))) / 100.0
+                )
             else:
                 raise DeviceControlError(400, f"unknown generator condition {condition!r}")
             gf.refresh(gs)
-            return self._event("gen_condition", dev, actor, condition=condition,
-                               **{k: v for k, v in params.items() if isinstance(v, int | float | str)})
+            return self._event(
+                "gen_condition",
+                dev,
+                actor,
+                condition=condition,
+                **{k: v for k, v in params.items() if isinstance(v, int | float | str)},
+            )
 
     # ── L4: UPS bank system breakers and maintenance bypass ────────
     def _ups_mode(self, path: str) -> str:
@@ -933,9 +1045,12 @@ class DeviceController:
         return ub.MIXED
 
     def _ups_ctx(self, path: str, actor: str = "") -> ub.UpsContext:
-        return ub.UpsContext(mode=self._ups_mode(path), bus_live=self._bus_energized(path),
-                             blocks_faulted=sum(1 for d in self._of(KIND_UPS, path)
-                                                if d.device_id in self.faults), actor=actor)
+        return ub.UpsContext(
+            mode=self._ups_mode(path),
+            bus_live=self._bus_energized(path),
+            blocks_faulted=sum(1 for d in self._of(KIND_UPS, path) if d.device_id in self.faults),
+            actor=actor,
+        )
 
     def ups_action(self, path: str, action: str, actor: str) -> dict[str, Any]:
         """L4: an operation on the UPS bank of ``path`` (system display,
@@ -980,12 +1095,19 @@ class DeviceController:
                         d.state, d.state_since = UPS_STATIC_BYPASS, now
                 sys_.parked.clear()
             event = {
-                "ts": round(self.wall_clock(), 3), "event": "command",
-                "device_id": f"ups_system_{path}", "actor": actor,
-                "command": f"{action}@UPS_{path.upper()}", "field": True, "equipment": "ups",
-                "action": action, "path": path, "mode_before": mode_before,
+                "ts": round(self.wall_clock(), 3),
+                "event": "command",
+                "device_id": f"ups_system_{path}",
+                "actor": actor,
+                "command": f"{action}@UPS_{path.upper()}",
+                "field": True,
+                "equipment": "ups",
+                "action": action,
+                "path": path,
+                "mode_before": mode_before,
                 "breakers": {b: getattr(sys_, b.lower()) for b in ub.BREAKERS},
-                "skru_keys": sys_.skru_keys, "qf1_padlock": sys_.qf1_padlock,
+                "skru_keys": sys_.skru_keys,
+                "qf1_padlock": sys_.qf1_padlock,
             }
             self._events.append(event)
             self._advance()
@@ -996,11 +1118,16 @@ class DeviceController:
     def ups_refusal(self, path: str, actor: str, detail: str, action: str) -> None:
         with self._lock:
             p = str(path or "").lower()
-            self._events.append({
-                "ts": round(self.wall_clock(), 3), "event": "refused",
-                "device_id": f"ups_system_{p}", "actor": actor, "detail": detail,
-                "command": f"{str(action or '').upper()}@UPS_{p.upper()}",
-            })
+            self._events.append(
+                {
+                    "ts": round(self.wall_clock(), 3),
+                    "event": "refused",
+                    "device_id": f"ups_system_{p}",
+                    "actor": actor,
+                    "detail": detail,
+                    "command": f"{str(action or '').upper()}@UPS_{p.upper()}",
+                }
+            )
 
     def inject_qf1_shunt_trip(self, path: str, actor: str) -> dict[str, Any]:
         """Training: QF1 opened by its shunt-trip coil (EPO / battery
@@ -1030,13 +1157,18 @@ class DeviceController:
         state = xfer.state if xfer is not None else XFER_UTILITY
         cu = self.cubicles.get((path, cub.BREAKER_U))
         cg = self.cubicles.get((path, cub.BREAKER_GM))
-        running = any(d.state in (GEN_CRANKING, GEN_RUNNING, GEN_ON_LOAD)
-                      for d in self._of(KIND_GENERATOR, path))
+        running = any(
+            d.state in (GEN_CRANKING, GEN_RUNNING, GEN_ON_LOAD)
+            for d in self._of(KIND_GENERATOR, path)
+        )
         return mw.WiringContext(
-            utility_pu=(self._incomer_kv(path) / SECONDARY_KV_DEFAULT) if self._incomer_live(path) else 0.0,
+            utility_pu=(self._incomer_kv(path) / SECONDARY_KV_DEFAULT)
+            if self._incomer_live(path)
+            else 0.0,
             genbus_live=bool(self._gens_on_bus(path)),
             start_contact=state != XFER_UTILITY or running,
-            u_closed=state == XFER_UTILITY, gm_closed=state == XFER_GENERATORS,
+            u_closed=state == XFER_UTILITY,
+            gm_closed=state == XFER_GENERATORS,
             u_close_ok=cu is None or (not cu.lockout_86 and cu.racking != cub.DISCONNECTED),
             gm_close_ok=cg is None or (not cg.lockout_86 and cg.racking != cub.DISCONNECTED),
             actor=actor,
@@ -1047,11 +1179,22 @@ class DeviceController:
         element picks up and trips 52-U, as on a real undervoltage."""
         for xfer in self._of_kind(KIND_TRANSFER):
             path = xfer.path
-            if xfer.state == XFER_UTILITY and self._incomer_live(path) and not self._utility_sensed(path):
+            if (
+                xfer.state == XFER_UTILITY
+                and self._incomer_live(path)
+                and not self._utility_sensed(path)
+            ):
                 xfer.state, xfer.state_since = XFER_OPEN, self.clock()
                 self._drop_selections(xfer.device_id)
-                self._event("protection_trip", xfer, "protection", relay="27", breaker="52-U",
-                            detail="incomer undervoltage", cause="loss_of_potential")
+                self._event(
+                    "protection_trip",
+                    xfer,
+                    "protection",
+                    relay="27",
+                    breaker="52-U",
+                    detail="incomer undervoltage",
+                    cause="loss_of_potential",
+                )
 
     def wiring_action(self, device_id: str, action: str, actor: str) -> dict[str, Any]:
         """L5: an operation in the MV control compartment of a transfer
@@ -1072,9 +1215,13 @@ class DeviceController:
             event = {
                 "ts": round(self.wall_clock(), 3),
                 "event": "inspection" if mw.is_inspection(action) else "command",
-                "device_id": device_id, "actor": actor,
-                "command": f"{action}@{device_id.upper()}", "field": True, "equipment": "wiring",
-                "action": action, "path": dev.path,
+                "device_id": device_id,
+                "actor": actor,
+                "command": f"{action}@{device_id.upper()}",
+                "field": True,
+                "equipment": "wiring",
+                "action": action,
+                "path": dev.path,
                 **({"reading": reading} if reading else {}),
             }
             self._events.append(event)
@@ -1128,10 +1275,16 @@ class DeviceController:
                 continue
             did = str(e.get("device_id", ""))
             if e.get("event") == "dfr_record" or not (
-                    did.endswith(f"_{path}") or f"_{path}_" in did or e.get("path") == path):
+                did.endswith(f"_{path}") or f"_{path}_" in did or e.get("path") == path
+            ):
                 continue
-            out.append(str(e.get("command") or (e.get("relay") and f"{e['event']} {e['relay']}")
-                           or e.get("event")))
+            out.append(
+                str(
+                    e.get("command")
+                    or (e.get("relay") and f"{e['event']} {e['relay']}")
+                    or e.get("event")
+                )
+            )
         packed: list[list[Any]] = []
         for item in out:
             if packed and packed[-1][0] == item:
@@ -1141,21 +1294,39 @@ class DeviceController:
         # the first events after the last record are the cause
         return [f"{x} x{n}" if n > 1 else x for x, n in packed][:6]
 
-    def _dfr_store(self, path: str, trigger: str, pre: dict[str, Any], post: dict[str, Any],
-                   trans: dict[str, osc.Transition], cause: list[str]) -> osc.Record:
+    def _dfr_store(
+        self,
+        path: str,
+        trigger: str,
+        pre: dict[str, Any],
+        post: dict[str, Any],
+        trans: dict[str, osc.Transition],
+        cause: list[str],
+    ) -> osc.Record:
         self._dfr_seq += 1
         rec = osc.Record(
-            record_id=f"DFR-{path.upper()}-{self._dfr_seq:04d}", path=path, ts=self.wall_clock(),
-            trigger=trigger, cause=cause,
+            record_id=f"DFR-{path.upper()}-{self._dfr_seq:04d}",
+            path=path,
+            ts=self.wall_clock(),
+            trigger=trigger,
+            cause=cause,
             pre=osc.point_states(pre["source"] != "NONE", pre["hz"], pre["load"]),
             post=osc.point_states(post["source"] != "NONE", post["hz"], post["load"]),
             transitions=trans,
         )
         osc.synthesize(rec)
         self._dfr_records.append(rec)
-        self._events.append({"ts": round(rec.ts, 3), "event": "dfr_record", "device_id": f"path_{path}",
-                             "actor": "recorder", "record_id": rec.record_id, "trigger": trigger,
-                             "detail": rec.summary["LD"]["class"]})
+        self._events.append(
+            {
+                "ts": round(rec.ts, 3),
+                "event": "dfr_record",
+                "device_id": f"path_{path}",
+                "actor": "recorder",
+                "record_id": rec.record_id,
+                "trigger": trigger,
+                "detail": rec.summary["LD"]["class"],
+            }
+        )
         return rec
 
     def _advance_dfr(self) -> None:
@@ -1169,20 +1340,28 @@ class DeviceController:
             closed = any("CLOSED_TRANSITION" in c for c in cause)
             angle = self.sync_angle.get(path, 0.0) if closed else 0.0
             trans = osc.transitions(before, now_state, closed_transition=closed, phase_deg=angle)
-            trigger = (f"MV {before['source']} -> {now_state['source']}" if before["source"] != now_state["source"]
-                       else f"LOAD {before['load']} -> {now_state['load']}")
+            trigger = (
+                f"MV {before['source']} -> {now_state['source']}"
+                if before["source"] != now_state["source"]
+                else f"LOAD {before['load']} -> {now_state['load']}"
+            )
             self._dfr_store(path, trigger, before, now_state, trans, cause)
             self._dfr_mark = self.wall_clock()
 
     def dfr_records(self, path: str | None = None) -> list[dict[str, Any]]:
         with self._lock:
             self._advance()
-            return [osc.describe(r) for r in reversed(self._dfr_records)
-                    if path is None or r.path == path]
+            return [
+                osc.describe(r)
+                for r in reversed(self._dfr_records)
+                if path is None or r.path == path
+            ]
 
     def dfr_record(self, record_id: str) -> osc.Record:
         with self._lock:
-            rec = next((r for r in self._dfr_records if r.record_id == record_id), None)
+            rec: osc.Record | None = next(
+                (r for r in self._dfr_records if r.record_id == record_id), None
+            )
             if rec is None:
                 raise DeviceControlError(404, f"unknown record {record_id!r}")
             return rec
@@ -1197,7 +1376,9 @@ class DeviceController:
             rec = self._dfr_store(path, "manual", st, st, {}, [f"manual trigger by {actor}"])
             return osc.describe(rec)
 
-    def inject_utility_sag(self, path: str, depth_pu: float, cycles: float, actor: str) -> dict[str, Any]:
+    def inject_utility_sag(
+        self, path: str, depth_pu: float, cycles: float, actor: str
+    ) -> dict[str, Any]:
         """Training: a utility voltage sag seen on the MV bus. It does not
         trip 52-U (model: shorter than the 27 time delay). The critical
         load sees it only if it is not on the inverter."""
@@ -1215,19 +1396,29 @@ class DeviceController:
             sag = osc.Transition("sag", seconds=cyc / UTILITY_HZ, depth=depth)
             follows = st["load"] in (osc.LOAD_BYPASS, osc.LOAD_MAINT)
             self._plant_event("utility_sag", path, actor, depth_pu=depth, cycles=cyc)
-            rec = self._dfr_store(path, f"MV sag {depth:.2f} pu {cyc:g} cycles", st, st,
-                                  {"MV": sag, "LD": sag if follows else osc.Transition()},
-                                  [f"utility sag injected by {actor}"])
+            rec = self._dfr_store(
+                path,
+                f"MV sag {depth:.2f} pu {cyc:g} cycles",
+                st,
+                st,
+                {"MV": sag, "LD": sag if follows else osc.Transition()},
+                [f"utility sag injected by {actor}"],
+            )
             return osc.describe(rec)
 
     # ── L5: battery room (strings, jars, analyzer, H2 exhaust) ─────
     def _room_ctx(self, path: str, actor: str = "") -> br.BatteryContext:
         sys_ = self.ups_systems.get(path)
         qf1 = sys_ is None or sys_.qf1
-        charging = qf1 and self._bus_energized(path) and (sys_ is None or sys_.q1) \
+        charging = (
+            qf1
+            and self._bus_energized(path)
+            and (sys_ is None or sys_.q1)
             and not self.load_lost.get(path, False)
-        return br.BatteryContext(qf1=qf1, charging=charging,
-                                 discharging=self._on_battery(path), actor=actor)
+        )
+        return br.BatteryContext(
+            qf1=qf1, charging=charging, discharging=self._on_battery(path), actor=actor
+        )
 
     def _advance_battery_rooms(self, now: float) -> None:
         last = self._room_at
@@ -1236,9 +1427,17 @@ class DeviceController:
         for path, room in self.battery_rooms.items():
             for ev in br.tick(room, dt, self._room_ctx(path)):
                 kind = ev.pop("event")
-                self._events.append({"ts": round(self.wall_clock(), 3), "event": kind,
-                                     "device_id": f"battery_room_{path}", "actor": "protection",
-                                     "equipment": "battery", "path": path, **ev})
+                self._events.append(
+                    {
+                        "ts": round(self.wall_clock(), 3),
+                        "event": kind,
+                        "device_id": f"battery_room_{path}",
+                        "actor": "protection",
+                        "equipment": "battery",
+                        "path": path,
+                        **ev,
+                    }
+                )
 
     def battery_action(self, path: str, action: str, actor: str) -> dict[str, Any]:
         """L5: an operation in the battery room of ``path``. Inspections
@@ -1261,9 +1460,13 @@ class DeviceController:
             event = {
                 "ts": round(self.wall_clock(), 3),
                 "event": "inspection" if br.is_inspection(action) else "command",
-                "device_id": f"battery_room_{path}", "actor": actor,
-                "command": f"{action}@BATT_{path.upper()}", "field": True, "equipment": "battery",
-                "action": action, "path": path,
+                "device_id": f"battery_room_{path}",
+                "actor": actor,
+                "command": f"{action}@BATT_{path.upper()}",
+                "field": True,
+                "equipment": "battery",
+                "action": action,
+                "path": path,
                 **({"reading": reading} if reading else {}),
             }
             self._events.append(event)
@@ -1275,14 +1478,20 @@ class DeviceController:
     def battery_refusal(self, path: str, actor: str, detail: str, action: str) -> None:
         with self._lock:
             p = str(path or "").lower()
-            self._events.append({
-                "ts": round(self.wall_clock(), 3), "event": "refused",
-                "device_id": f"battery_room_{p}", "actor": actor, "detail": detail,
-                "command": f"{str(action or '').upper()}@BATT_{p.upper()}",
-            })
+            self._events.append(
+                {
+                    "ts": round(self.wall_clock(), 3),
+                    "event": "refused",
+                    "device_id": f"battery_room_{p}",
+                    "actor": actor,
+                    "detail": detail,
+                    "command": f"{str(action or '').upper()}@BATT_{p.upper()}",
+                }
+            )
 
-    def inject_battery_condition(self, path: str, condition: str, actor: str,
-                                 **params: Any) -> dict[str, Any]:
+    def inject_battery_condition(
+        self, path: str, condition: str, actor: str, **params: Any
+    ) -> dict[str, Any]:
         """Training: hot_jar (string, jar, temp_c, r_mohm, v), fan_fail
         (fan), h2 (ppm)."""
         with self._lock:
@@ -1291,7 +1500,10 @@ class DeviceController:
             if room is None:
                 raise DeviceControlError(404, f"unknown path {path!r}")
             if condition == "hot_jar":
-                d = {**br.DEFAULT_DEFECT, **{k: v for k, v in params.items() if k in br.DEFAULT_DEFECT}}
+                d = {
+                    **br.DEFAULT_DEFECT,
+                    **{k: v for k, v in params.items() if k in br.DEFAULT_DEFECT},
+                }
                 s, j = int(d["string"]), int(d["jar"])
                 if not (1 <= s <= br.STRINGS and 1 <= j <= br.JARS):
                     raise DeviceControlError(400, "string 1..4 and jar 1..40")
@@ -1305,15 +1517,23 @@ class DeviceController:
                 room.h2_ppm = max(0.0, _num(params.get("ppm", br.H2_ALARM_PPM)))
             else:
                 raise DeviceControlError(400, f"unknown battery room condition {condition!r}")
-            return self._plant_event("battery_condition", path, actor, condition=condition,
-                                     **{k: v for k, v in params.items() if isinstance(v, int | float | str)})
+            return self._plant_event(
+                "battery_condition",
+                path,
+                actor,
+                condition=condition,
+                **{k: v for k, v in params.items() if isinstance(v, int | float | str)},
+            )
 
     # ── T3: generator bus vs utility (synchroscope model) ──────────
     def _islanded(self, path: str) -> bool:
         """Generator bus carrying the path with utility voltage present
         on the open incomer: the two sides can drift in phase."""
-        return self._path_on_generators(path) and self._incomer_live(path) \
+        return (
+            self._path_on_generators(path)
+            and self._incomer_live(path)
             and bool(self._gens_on_bus(path))
+        )
 
     def _advance_sync(self, now: float) -> None:
         last = self._sync_at
@@ -1324,7 +1544,9 @@ class DeviceController:
             pending = self._sync_close.get(path)
             if not self._islanded(path):
                 if pending:
-                    self._cancel_sync_close(path, "generator bus no longer islanded with utility present")
+                    self._cancel_sync_close(
+                        path, "generator bus no longer islanded with utility present"
+                    )
                 continue
             slip = self.gen_hz.get(path, UTILITY_HZ) - UTILITY_HZ
             a0 = self.sync_angle.get(path, 0.0)
@@ -1341,9 +1563,13 @@ class DeviceController:
                     self._sync_close_now(path, t0 + tau, a0 + 360.0 * slip * tau, slip, now)
                     continue
                 if now >= pending["deadline"]:
-                    self._cancel_sync_close(path, (
-                        f"no synchronism within {SYNC_CLOSE_TIMEOUT_S:.0f} s "
-                        f"(slip {slip:+.3f} Hz, max ±{SYNC_MAX_SLIP_HZ:.2f} Hz)"))
+                    self._cancel_sync_close(
+                        path,
+                        (
+                            f"no synchronism within {SYNC_CLOSE_TIMEOUT_S:.0f} s "
+                            f"(slip {slip:+.3f} Hz, max ±{SYNC_MAX_SLIP_HZ:.2f} Hz)"
+                        ),
+                    )
             if dt:
                 angle = a0 + 360.0 * slip * dt
                 self.sync_angle[path] = (angle + 180.0) % 360.0 - 180.0
@@ -1357,9 +1583,16 @@ class DeviceController:
         self.gen_hz[path], self.sync_angle[path] = UTILITY_HZ, 0.0
         angle = (angle + 180.0) % 360.0 - 180.0
         event = self._event(
-            "command", dev, pending["actor"], command="CLOSED_TRANSITION_RETRANSFER",
-            from_state=previous, to_state=dev.state, closed_transition=True,
-            supervised=True, angle_deg=round(angle, 1), slip_hz=round(slip, 3),
+            "command",
+            dev,
+            pending["actor"],
+            command="CLOSED_TRANSITION_RETRANSFER",
+            from_state=previous,
+            to_state=dev.state,
+            closed_transition=True,
+            supervised=True,
+            angle_deg=round(angle, 1),
+            slip_hz=round(slip, 3),
             overlap_ms=CLOSED_TRANSITION_OVERLAP_MS,
         )
         # Stamp the event at the computed close instant, not the poll.
@@ -1368,8 +1601,12 @@ class DeviceController:
     def _cancel_sync_close(self, path: str, reason: str) -> None:
         pending = self._sync_close.pop(path, None)
         if pending:
-            self._event("sync_close_cancelled", self.devices[pending["device_id"]],
-                        pending["actor"], detail=reason)
+            self._event(
+                "sync_close_cancelled",
+                self.devices[pending["device_id"]],
+                pending["actor"],
+                detail=reason,
+            )
 
     def cancel_sync_close(self, device_id: str, actor: str) -> dict[str, Any]:
         with self._lock:
@@ -1392,16 +1629,21 @@ class DeviceController:
         eta = window_entry_s(angle, slip) if live else None
         return {
             "close_armed": bool(pending),
-            "close_remaining_s": (round(max(0.0, pending["deadline"] - self.clock()), 1)
-                                  if pending else None),
+            "close_remaining_s": (
+                round(max(0.0, pending["deadline"] - self.clock()), 1) if pending else None
+            ),
             "window_eta_s": round(eta, 1) if eta is not None else None,
             "enabled": self.closed_transition,
             "live": live,
-            "gen_hz": round(gen_hz, 3), "utility_hz": UTILITY_HZ,
-            "slip_hz": round(slip, 3), "angle_deg": round(angle, 1),
-            "max_angle_deg": SYNC_MAX_ANGLE_DEG, "max_slip_hz": SYNC_MAX_SLIP_HZ,
+            "gen_hz": round(gen_hz, 3),
+            "utility_hz": UTILITY_HZ,
+            "slip_hz": round(slip, 3),
+            "angle_deg": round(angle, 1),
+            "max_angle_deg": SYNC_MAX_ANGLE_DEG,
+            "max_slip_hz": SYNC_MAX_SLIP_HZ,
             "permissive": bool(live and ok_angle and ok_slip),
-            "governor_min_hz": GOVERNOR_MIN_HZ, "governor_max_hz": GOVERNOR_MAX_HZ,
+            "governor_min_hz": GOVERNOR_MIN_HZ,
+            "governor_max_hz": GOVERNOR_MAX_HZ,
             "governor_max_step_hz": GOVERNOR_MAX_STEP_HZ,
             "note": "Training sync-check values, not a relay setting file.",
         }
@@ -1410,8 +1652,13 @@ class DeviceController:
         with self._lock:
             self._advance()
             self.closed_transition = bool(enabled)
-            event = {"ts": round(self.wall_clock(), 3), "event": "closed_transition_mode",
-                     "device_id": "plant", "actor": actor, "enabled": self.closed_transition}
+            event = {
+                "ts": round(self.wall_clock(), 3),
+                "event": "closed_transition_mode",
+                "device_id": "plant",
+                "actor": actor,
+                "enabled": self.closed_transition,
+            }
             self._events.append(event)
             return event
 
@@ -1423,8 +1670,13 @@ class DeviceController:
                 raise DeviceControlError(404, f"unknown path {path!r}")
             self.gen_hz[path] = min(GOVERNOR_MAX_HZ, max(GOVERNOR_MIN_HZ, float(gen_hz)))
             self.sync_angle[path] = (float(angle_deg) + 180.0) % 360.0 - 180.0
-            return self._plant_event("sync_preset", path, actor,
-                                     gen_hz=self.gen_hz[path], angle_deg=self.sync_angle[path])
+            return self._plant_event(
+                "sync_preset",
+                path,
+                actor,
+                gen_hz=self.gen_hz[path],
+                angle_deg=self.sync_angle[path],
+            )
 
     def adjust_governor(self, device_id: str, delta_hz: float, actor: str) -> dict[str, Any]:
         """Governor raise / lower from the synchronising panel. A direct
@@ -1434,20 +1686,26 @@ class DeviceController:
             self._advance()
             dev = self._get(device_id)
             if dev.kind != KIND_TRANSFER:
-                raise DeviceControlError(400, "the governor is adjusted from the MV transfer controller")
+                raise DeviceControlError(
+                    400, "the governor is adjusted from the MV transfer controller"
+                )
             reason = self.authority_reason(dev)
             if reason:
                 raise DeviceControlError(409, reason)
             if not self.closed_transition:
                 raise DeviceControlError(409, "closed-transition training mode is off")
             if not self._islanded(dev.path):
-                raise DeviceControlError(409, "generator bus is not carrying the path with utility present")
+                raise DeviceControlError(
+                    409, "generator bus is not carrying the path with utility present"
+                )
             try:
                 delta = float(delta_hz)
             except (TypeError, ValueError):
                 raise DeviceControlError(400, "delta_hz must be a number") from None
             if not math.isfinite(delta) or abs(delta) > GOVERNOR_MAX_STEP_HZ or delta == 0:
-                raise DeviceControlError(400, f"delta_hz must be non-zero and within ±{GOVERNOR_MAX_STEP_HZ} Hz")
+                raise DeviceControlError(
+                    400, f"delta_hz must be non-zero and within ±{GOVERNOR_MAX_STEP_HZ} Hz"
+                )
             path = dev.path
             before = self.gen_hz.get(path, UTILITY_HZ)
             self.gen_hz[path] = round(min(GOVERNOR_MAX_HZ, max(GOVERNOR_MIN_HZ, before + delta)), 3)
@@ -1491,8 +1749,13 @@ class DeviceController:
                 xfer.state, xfer.state_since = XFER_UTILITY, now
                 self._closed_main(path, cub.BREAKER_U)
                 self._auto_blocked.pop(path, None)
-                self._event("auto_transfer", xfer, "controller", to_state=XFER_UTILITY,
-                            detail="utility voltage restored: 52-U reclosed")
+                self._event(
+                    "auto_transfer",
+                    xfer,
+                    "controller",
+                    to_state=XFER_UTILITY,
+                    detail="utility voltage restored: 52-U reclosed",
+                )
                 continue
             for gen in self._start_candidates(path, auto_only=True):
                 gen.state, gen.state_since = GEN_CRANKING, now
@@ -1500,16 +1763,23 @@ class DeviceController:
             on_bus = sum(d.rated_kw for d in self._gens_on_bus(path))
             if on_bus > 0 and on_bus >= self._demand_kw(path):
                 why = self._cubicle_reason(path, cub.BREAKER_GM) or (
-                    None if self._genbus_sensed(path) else
-                    "generator bus voltage not sensed by the controller (PT secondary)")
+                    None
+                    if self._genbus_sensed(path)
+                    else "generator bus voltage not sensed by the controller (PT secondary)"
+                )
                 if why:
                     self._auto_block(xfer, why)
                     continue
                 xfer.state, xfer.state_since = XFER_GENERATORS, now
                 self._closed_main(path, cub.BREAKER_GM)
                 self._auto_blocked.pop(path, None)
-                self._event("auto_transfer", xfer, "controller", to_state=XFER_GENERATORS,
-                            detail="generator bus ready: 52-GM closed")
+                self._event(
+                    "auto_transfer",
+                    xfer,
+                    "controller",
+                    to_state=XFER_GENERATORS,
+                    detail="generator bus ready: 52-GM closed",
+                )
 
     def _auto_block(self, xfer: Device, why: str) -> None:
         """Log once per reason: the automatic transfer is held by the
@@ -1552,12 +1822,12 @@ class DeviceController:
     def _battery_energy_kwh(self, path: str) -> float:
         sys_ = self.ups_systems.get(path)
         if sys_ is not None and not sys_.qf1:
-            return 0.0          # L4: battery breaker QF1 open
+            return 0.0  # L4: battery breaker QF1 open
         room = self.battery_rooms.get(path)
         frac = br.strings_online(room) / br.STRINGS if room is not None else 1.0
         runtime_min = _num(self.design["ups"].get("runtime_full_load_min"))
         rated = sum(d.rated_kw for d in self._of(KIND_UPS, path) if d.state in _UPS_PROTECTING)
-        return rated * runtime_min / 60.0 * frac   # L5: strings off line carry nothing
+        return rated * runtime_min / 60.0 * frac  # L5: strings off line carry nothing
 
     def _battery_runtime_min(self, path: str) -> float:
         """Minutes left on battery at the present IT load (model)."""
@@ -1574,17 +1844,25 @@ class DeviceController:
         bus = self._bus_energized(path)
         sys_ = self.ups_systems.get(path)
         if sys_ is not None and sys_.q3:
-            return ("fed", "maintenance bypass") if bus else ("lost", "on maintenance bypass with the source dead")
+            return (
+                ("fed", "maintenance bypass")
+                if bus
+                else ("lost", "on maintenance bypass with the source dead")
+            )
         carrying = self._ups_carrying(path)
         if sys_ is not None and not sys_.q4:
             return ("lost", "UPS output isolated (MIB open) with the maintenance bypass open")
         if not carrying:
-            return ("fed", "source") if bus and sys_ is None else ("lost", "no UPS block carrying the load")
+            return (
+                ("fed", "source")
+                if bus and sys_ is None
+                else ("lost", "no UPS block carrying the load")
+            )
         on_bypass = [d for d in carrying if d.state not in _UPS_PROTECTING]
         bypass_ok = bus and (sys_ is None or sys_.q2)
         rect_ok = bus and (sys_ is None or sys_.q1)
         if on_bypass and not bypass_ok:
-            why = ("MV bus dead" if not bus else "static-bypass input Q2 open")
+            why = "MV bus dead" if not bus else "static-bypass input Q2 open"
             return ("lost", f"{len(on_bypass)} block(s) on static bypass with the {why}")
         if len(on_bypass) < len(carrying) and not rect_ok:
             if self._battery_energy_kwh(path) <= 0:
@@ -1629,8 +1907,11 @@ class DeviceController:
 
     def _plant_event(self, kind: str, path: str, actor: str, **extra: Any) -> dict[str, Any]:
         event = {
-            "ts": round(self.wall_clock(), 3), "event": kind,
-            "device_id": f"path_{path}", "actor": actor, **extra,
+            "ts": round(self.wall_clock(), 3),
+            "event": kind,
+            "device_id": f"path_{path}",
+            "actor": actor,
+            **extra,
         }
         self._events.append(event)
         return event
@@ -1651,8 +1932,14 @@ class DeviceController:
                 if xfer.state == XFER_UTILITY:
                     xfer.state, xfer.state_since = XFER_OPEN, self.clock()
                     self._drop_selections(xfer.device_id)
-                    self._event("protection_trip", xfer, "protection", relay="27",
-                                breaker="52-U", detail="incomer undervoltage")
+                    self._event(
+                        "protection_trip",
+                        xfer,
+                        "protection",
+                        relay="27",
+                        breaker="52-U",
+                        detail="incomer undervoltage",
+                    )
             self._advance()
             return event
 
@@ -1685,12 +1972,31 @@ class DeviceController:
         """Back to the design's normal lineup (training reset)."""
         with self._lock:
             fresh = DeviceController.from_design(
-                self.design, clock=self.clock, wall_clock=self.wall_clock,
+                self.design,
+                clock=self.clock,
+                wall_clock=self.wall_clock,
             )
-            for name in ("devices", "bays", "procedures", "path_share", "utility_ok",
-                         "battery_soc", "load_lost", "faults", "closed_transition",
-                         "gen_hz", "sync_angle", "cubicles", "xfmrs", "grid_kv",
-                         "gensets", "bulk_l", "ups_systems", "battery_rooms", "wirings"):
+            for name in (
+                "devices",
+                "bays",
+                "procedures",
+                "path_share",
+                "utility_ok",
+                "battery_soc",
+                "load_lost",
+                "faults",
+                "closed_transition",
+                "gen_hz",
+                "sync_angle",
+                "cubicles",
+                "xfmrs",
+                "grid_kv",
+                "gensets",
+                "bulk_l",
+                "ups_systems",
+                "battery_rooms",
+                "wirings",
+            ):
                 setattr(self, name, getattr(fresh, name))
             self._xfmr_at = None
             self._gen_at = None
@@ -1703,8 +2009,10 @@ class DeviceController:
             self._sync_close.clear()
             self._auto_blocked.clear()
             event = {
-                "ts": round(self.wall_clock(), 3), "event": "plant_reset",
-                "device_id": "plant", "actor": actor,
+                "ts": round(self.wall_clock(), 3),
+                "event": "plant_reset",
+                "device_id": "plant",
+                "actor": actor,
             }
             self._events.append(event)
             return event
@@ -1718,7 +2026,8 @@ class DeviceController:
 
     def _gens_on_bus(self, path: str) -> list[Device]:
         return [
-            d for d in self._of(KIND_GENERATOR, path)
+            d
+            for d in self._of(KIND_GENERATOR, path)
             if d.state in (GEN_RUNNING, GEN_ON_LOAD) and self.bays[d.device_id].cb == mv.CLOSED
         ]
 
@@ -1742,7 +2051,7 @@ class DeviceController:
     def _ups_carrying(self, path: str) -> list[Device]:
         sys_ = self.ups_systems.get(path)
         if sys_ is not None and not sys_.q4:
-            return []           # L4: MIB open, the UPS output is isolated from the load
+            return []  # L4: MIB open, the UPS output is isolated from the load
         return [d for d in self._of(KIND_UPS, path) if d.state in _UPS_CARRYING]
 
     def _ups_block_load_kw(self, path: str) -> float:
@@ -1773,18 +2082,29 @@ class DeviceController:
         floor = self._generation_floor_kw(path)
         return {
             "path": path,
-            "source": (XFER_GENERATORS if self._path_on_generators(path) else
-                       XFER_UTILITY if self._bus_energized(path) else "NONE"),
+            "source": (
+                XFER_GENERATORS
+                if self._path_on_generators(path)
+                else XFER_UTILITY
+                if self._bus_energized(path)
+                else "NONE"
+            ),
             "utility_ok": self.utility_ok.get(path, True),
             "incomer_live": self._incomer_live(path),
             "utility_sensed": self._utility_sensed(path),
             "dfr": self._dfr_state(path),
             "on_battery": self._on_battery(path),
             "load_feed": self._load_feed(path)[1],
-            **({"ups_system": ub.describe(self.ups_systems[path], self._ups_ctx(path))}
-               if path in self.ups_systems else {}),
-            **({"battery_room": br.describe(self.battery_rooms[path], self._room_ctx(path))}
-               if path in self.battery_rooms else {}),
+            **(
+                {"ups_system": ub.describe(self.ups_systems[path], self._ups_ctx(path))}
+                if path in self.ups_systems
+                else {}
+            ),
+            **(
+                {"battery_room": br.describe(self.battery_rooms[path], self._room_ctx(path))}
+                if path in self.battery_rooms
+                else {}
+            ),
             **self._bulk_summary(path),
             "bus_energized": self._bus_energized(path),
             "load_lost": self.load_lost.get(path, False),
@@ -1798,9 +2118,8 @@ class DeviceController:
             "ups_n_ok": ups_cap >= self._it_design_kw,
             "ups_n_plus_1_ok": ups_cap - ups_unit >= self._it_design_kw,
             "ups_losses_kw": round(self._ups_losses_kw(path)),
-            "ups_protected": bool(self._ups_carrying(path)) and all(
-                d.state in _UPS_PROTECTING for d in self._ups_carrying(path)
-            ),
+            "ups_protected": bool(self._ups_carrying(path))
+            and all(d.state in _UPS_PROTECTING for d in self._ups_carrying(path)),
             "demand_kw": round(self._demand_kw(path)),
             "design_demand_kw": round(design_demand),
             "gen_available": len(self._gens_available(path)),
@@ -1824,7 +2143,10 @@ class DeviceController:
             if fault and command in ("ENTER_DYNAMIC_ONLINE", "RETURN_TO_DOUBLE_CONVERSION"):
                 return f"{UPS_FAULTS[fault]} active: the inverter cannot carry the load."
             sys_ = self.ups_systems.get(dev.path)
-            if sys_ is not None and command in ("ENTER_DYNAMIC_ONLINE", "RETURN_TO_DOUBLE_CONVERSION"):
+            if sys_ is not None and command in (
+                "ENTER_DYNAMIC_ONLINE",
+                "RETURN_TO_DOUBLE_CONVERSION",
+            ):
                 if sys_.q3:
                     return "Maintenance bypass (MBB) closed: the inverter must not parallel it."
                 if sys_.skru_keys == 0:
@@ -1834,7 +2156,11 @@ class DeviceController:
             if sys_ is not None and command == "TRANSFER_TO_BYPASS" and not sys_.q2:
                 return "Static-bypass input Q2 is open: no bypass source."
             if command == "ENTER_DYNAMIC_ONLINE":
-                return None if dev.state == UPS_DOUBLE_CONVERSION else "Block is not in double conversion."
+                return (
+                    None
+                    if dev.state == UPS_DOUBLE_CONVERSION
+                    else "Block is not in double conversion."
+                )
             if command == "RETURN_TO_DOUBLE_CONVERSION":
                 if dev.state in (UPS_DYNAMIC_ONLINE, UPS_STATIC_BYPASS):
                     return None
@@ -1844,9 +2170,7 @@ class DeviceController:
             if command == "ISOLATE":
                 if dev.state != UPS_STATIC_BYPASS:
                     return "Transfer the block to static bypass first."
-                remaining = sum(
-                    d.rated_kw for d in self._ups_carrying(dev.path) if d is not dev
-                )
+                remaining = sum(d.rated_kw for d in self._ups_carrying(dev.path) if d is not dev)
                 if remaining < self._it_design_kw:
                     return (
                         f"Remaining blocks would carry {remaining / 1000:.1f} MW, below the "
@@ -1862,8 +2186,10 @@ class DeviceController:
                 return None
             if command == "CLOSED_TRANSITION_RETRANSFER":
                 if not self.closed_transition:
-                    return ("Closed transition is a training mode and is off: the A3 design "
-                            "retransfers in open transition.")
+                    return (
+                        "Closed transition is a training mode and is off: the A3 design "
+                        "retransfers in open transition."
+                    )
                 if dev.state != XFER_GENERATORS:
                     return "Path is not on generators."
                 if not self._utility_sensed(dev.path):
@@ -1919,9 +2245,7 @@ class DeviceController:
                 if dev.state not in (GEN_RUNNING, GEN_ON_LOAD):
                     return "Engine is not running."
                 if dev.state == GEN_ON_LOAD:
-                    remaining = sum(
-                        d.rated_kw for d in self._gens_on_bus(dev.path) if d is not dev
-                    )
+                    remaining = sum(d.rated_kw for d in self._gens_on_bus(dev.path) if d is not dev)
                     demand = self._demand_kw(dev.path)
                     if remaining < demand:
                         return (
@@ -1974,9 +2298,18 @@ class DeviceController:
                 _r("Path demand", demand if live else 0.0, "kW", 0),
                 _r("Bus current", amps, "A", 0),
                 _r("Bus voltage", self._bus_kv(dev) if live else 0.0, "kV", 2),
-                _r("Bus frequency",
-                   (self.gen_hz.get(dev.path, NOMINAL_HZ) if self._path_on_generators(dev.path)
-                    else NOMINAL_HZ) if live else 0.0, "Hz", 2),
+                _r(
+                    "Bus frequency",
+                    (
+                        self.gen_hz.get(dev.path, NOMINAL_HZ)
+                        if self._path_on_generators(dev.path)
+                        else NOMINAL_HZ
+                    )
+                    if live
+                    else 0.0,
+                    "Hz",
+                    2,
+                ),
                 _r("Utility incomer voltage", self._incomer_kv(dev.path), "kV", 2),
                 _r("Generators synchronised", len(self._gens_on_bus(dev.path)), "sets", 0),
                 _r("Generation on bus", on_bus, "kW", 0),
@@ -1998,8 +2331,9 @@ class DeviceController:
         ]
 
     @staticmethod
-    def _gen_readings_base(rpm: float, volts: float, hz: float, kw: float, batt: float,
-                           dev: Device) -> list[dict[str, Any]]:
+    def _gen_readings_base(
+        rpm: float, volts: float, hz: float, kw: float, batt: float, dev: Device
+    ) -> list[dict[str, Any]]:
         return [
             _r("Engine speed", rpm, "rpm", 0),
             _r("Output voltage", volts / 1000, "kV", 1),
@@ -2011,17 +2345,28 @@ class DeviceController:
 
     def _indications(self, dev: Device) -> list[dict[str, str]]:
         if dev.kind == KIND_TRANSFER:
-            return [
-                {"label": "52-U utility incomer",
-                 "value": mv.CLOSED if dev.state == XFER_UTILITY else mv.OPEN},
-                {"label": "52-GM generator main",
-                 "value": mv.CLOSED if dev.state == XFER_GENERATORS else mv.OPEN},
-                {"label": "ANSI 27 incomer undervoltage",
-                 "value": "NORMAL" if self._utility_sensed(dev.path) else "PICKED UP"},
-            ] + self._xfmr_indications(dev.path) + [
-                {"label": f"{b} cubicle", "value": _cubicle_text(self.cubicles[(dev.path, b)])}
-                for b in cub.BREAKERS if (dev.path, b) in self.cubicles
-            ]
+            return (
+                [
+                    {
+                        "label": "52-U utility incomer",
+                        "value": mv.CLOSED if dev.state == XFER_UTILITY else mv.OPEN,
+                    },
+                    {
+                        "label": "52-GM generator main",
+                        "value": mv.CLOSED if dev.state == XFER_GENERATORS else mv.OPEN,
+                    },
+                    {
+                        "label": "ANSI 27 incomer undervoltage",
+                        "value": "NORMAL" if self._utility_sensed(dev.path) else "PICKED UP",
+                    },
+                ]
+                + self._xfmr_indications(dev.path)
+                + [
+                    {"label": f"{b} cubicle", "value": _cubicle_text(self.cubicles[(dev.path, b)])}
+                    for b in cub.BREAKERS
+                    if (dev.path, b) in self.cubicles
+                ]
+            )
         if dev.kind == KIND_GENERATOR:
             return self.bays[dev.device_id].indications()
         return []
@@ -2050,7 +2395,10 @@ class DeviceController:
             if dev.state == XFER_OPEN:
                 t = self.xfmrs.get(dev.path)
                 if t is not None and t.lockout_86t:
-                    return {"tone": "crit", "text": "52-U tripped by 86T (transformer): MV bus dead"}
+                    return {
+                        "tone": "crit",
+                        "text": "52-U tripped by 86T (transformer): MV bus dead",
+                    }
                 if not self._utility_sensed(dev.path):
                     return {"tone": "crit", "text": "52-U tripped (ANSI 27): MV bus dead"}
                 return {"tone": "crit", "text": "Both mains open: MV bus dead"}
@@ -2083,14 +2431,24 @@ class DeviceController:
             # Authority first: it is the one thing the operator can
             # change from here, and it applies to every command.
             reason = auth_reason or self.blocked_reason(dev, name)
-            commands.append({
-                "command": name, "label": label, "description": description,
-                "permitted": reason is None, "blocked_reason": reason,
-            })
+            commands.append(
+                {
+                    "command": name,
+                    "label": label,
+                    "description": description,
+                    "permitted": reason is None,
+                    "blocked_reason": reason,
+                }
+            )
         snap: dict[str, Any] = {
-            "id": dev.device_id, "kind": dev.kind, "display": dev.display,
-            "path": dev.path, "vendor": dev.vendor, "model": dev.model,
-            "rated_kw": dev.rated_kw, "authority": dev.authority,
+            "id": dev.device_id,
+            "kind": dev.kind,
+            "display": dev.display,
+            "path": dev.path,
+            "vendor": dev.vendor,
+            "model": dev.model,
+            "rated_kw": dev.rated_kw,
+            "authority": dev.authority,
             "state": dev.state,
             "state_age_s": round(max(0.0, self.clock() - dev.state_since), 1),
             "status": self._status(dev),
@@ -2120,10 +2478,14 @@ class DeviceController:
         goals = []
         for goal in mv.GOALS:
             reason = self.authority_reason(dev) or self._goal_reason(dev, goal)
-            goals.append({
-                "goal": goal, "label": mv.GOAL_LABELS[goal],
-                "permitted": reason is None, "blocked_reason": reason,
-            })
+            goals.append(
+                {
+                    "goal": goal,
+                    "label": mv.GOAL_LABELS[goal],
+                    "permitted": reason is None,
+                    "blocked_reason": reason,
+                }
+            )
         return {
             "procedure": proc.describe(self.clock()) if proc else None,
             "goals": [] if proc else goals,
@@ -2161,8 +2523,11 @@ class DeviceController:
 
     def _event(self, kind: str, dev: Device, actor: str, **extra: Any) -> dict[str, Any]:
         event = {
-            "ts": round(self.wall_clock(), 3), "event": kind,
-            "device_id": dev.device_id, "actor": actor, **extra,
+            "ts": round(self.wall_clock(), 3),
+            "event": kind,
+            "device_id": dev.device_id,
+            "actor": actor,
+            **extra,
         }
         self._events.append(event)
         return event
@@ -2187,7 +2552,12 @@ class DeviceController:
             # this API is a bench simulation and is recorded as such.
             source = "bench_simulation" if AUTH_LOCAL in (previous, mode) else "remote"
             return self._event(
-                "authority", dev, actor, previous=previous, authority=mode, source=source,
+                "authority",
+                dev,
+                actor,
+                previous=previous,
+                authority=mode,
+                source=source,
             )
 
     def _drop_selections(self, device_id: str) -> None:
@@ -2210,14 +2580,21 @@ class DeviceController:
             self._drop_selections(device_id)
             token = secrets.token_urlsafe(24)
             self._selections[token] = _Selection(
-                token=token, device_id=device_id, command=command, actor=actor,
+                token=token,
+                device_id=device_id,
+                command=command,
+                actor=actor,
                 expires_at=self.clock() + SELECT_TTL_S,
             )
             label, description = COMMANDS[dev.kind][command]
             return {
-                "select_token": token, "expires_in_s": SELECT_TTL_S,
-                "device_id": device_id, "command": command, "label": label,
-                "description": description, "from_state": dev.state,
+                "select_token": token,
+                "expires_in_s": SELECT_TTL_S,
+                "device_id": device_id,
+                "command": command,
+                "label": label,
+                "description": description,
+                "from_state": dev.state,
             }
 
     def peek_command(self, token: str) -> str | None:
@@ -2247,8 +2624,13 @@ class DeviceController:
                     gen.state, gen.state_since = GEN_CRANKING, self.clock()
                 self._advance()
                 return self._event(
-                    "command", dev, actor, command=sel.command, from_state=previous,
-                    to_state=dev.state, started=[g.device_id for g in started],
+                    "command",
+                    dev,
+                    actor,
+                    command=sel.command,
+                    from_state=previous,
+                    to_state=dev.state,
+                    started=[g.device_id for g in started],
                 )
             if sel.command == "CLOSED_TRANSITION_RETRANSFER":
                 sync = self.synchro(dev.path)
@@ -2257,13 +2639,20 @@ class DeviceController:
                     # synchronism instead of being refused (as a real
                     # 25-supervised close does); timeout cancels it.
                     self._sync_close[dev.path] = {
-                        "device_id": dev.device_id, "actor": actor,
+                        "device_id": dev.device_id,
+                        "actor": actor,
                         "deadline": self.clock() + SYNC_CLOSE_TIMEOUT_S,
                     }
                     return self._event(
-                        "command", dev, actor, command=sel.command, from_state=previous,
-                        to_state=dev.state, sync_close_armed=True,
-                        timeout_s=SYNC_CLOSE_TIMEOUT_S, angle_deg=sync["angle_deg"],
+                        "command",
+                        dev,
+                        actor,
+                        command=sel.command,
+                        from_state=previous,
+                        to_state=dev.state,
+                        sync_close_armed=True,
+                        timeout_s=SYNC_CLOSE_TIMEOUT_S,
+                        angle_deg=sync["angle_deg"],
                         slip_hz=sync["slip_hz"],
                     )
                 dev.state, dev.state_since = XFER_UTILITY, self.clock()
@@ -2271,9 +2660,16 @@ class DeviceController:
                 self.gen_hz[dev.path], self.sync_angle[dev.path] = UTILITY_HZ, 0.0
                 self._advance()
                 return self._event(
-                    "command", dev, actor, command=sel.command, from_state=previous,
-                    to_state=dev.state, closed_transition=True, angle_deg=sync["angle_deg"],
-                    slip_hz=sync["slip_hz"], overlap_ms=CLOSED_TRANSITION_OVERLAP_MS,
+                    "command",
+                    dev,
+                    actor,
+                    command=sel.command,
+                    from_state=previous,
+                    to_state=dev.state,
+                    closed_transition=True,
+                    angle_deg=sync["angle_deg"],
+                    slip_hz=sync["slip_hz"],
+                    overlap_ms=CLOSED_TRANSITION_OVERLAP_MS,
                 )
             if sel.command == "STOP_GENERATORS":
                 stopped = self._running_sets(dev.path)
@@ -2282,8 +2678,13 @@ class DeviceController:
                     gen.state, gen.state_since = GEN_COOLDOWN, self.clock()
                 self._advance()
                 return self._event(
-                    "command", dev, actor, command=sel.command, from_state=previous,
-                    to_state=dev.state, stopped=[g.device_id for g in stopped],
+                    "command",
+                    dev,
+                    actor,
+                    command=sel.command,
+                    from_state=previous,
+                    to_state=dev.state,
+                    stopped=[g.device_id for g in stopped],
                 )
             dev.state = _NEXT_STATE[sel.command]
             dev.state_since = self.clock()
@@ -2298,8 +2699,12 @@ class DeviceController:
                 mv.apply(self.bays[device_id], mv.OP_OPEN_CB, self.clock())
             self._advance()
             return self._event(
-                "command", dev, actor, command=sel.command,
-                from_state=previous, to_state=dev.state,
+                "command",
+                dev,
+                actor,
+                command=sel.command,
+                from_state=previous,
+                to_state=dev.state,
             )
 
     def refusal_event(self, device_id: str, actor: str, detail: str, **extra: Any) -> None:
@@ -2317,9 +2722,7 @@ class DeviceController:
 
     def _bay_context(self, dev: Device) -> mv.BayContext:
         stopped = dev.state == GEN_STANDBY
-        remaining = sum(
-            d.rated_kw for d in self._gens_available(dev.path) if d is not dev
-        )
+        remaining = sum(d.rated_kw for d in self._gens_available(dev.path) if d is not dev)
         return mv.BayContext(
             now=self.clock(),
             engine_stopped=stopped,
@@ -2338,9 +2741,7 @@ class DeviceController:
             if dev.state != GEN_STANDBY:
                 return "Stop the generator first: the engine must be in standby."
             if not self._bay_context(dev).path_keeps_capacity:
-                remaining = sum(
-                    d.rated_kw for d in self._gens_available(dev.path) if d is not dev
-                )
+                remaining = sum(d.rated_kw for d in self._gens_available(dev.path) if d is not dev)
                 return (
                     f"With this bay out the path keeps {remaining / 1000:.2f} MW of generation, "
                     f"below its {self._generation_floor_kw(dev.path) / 1000:.2f} MW total load "
@@ -2366,8 +2767,9 @@ class DeviceController:
                 self._event("bay_blocked", dev, actor, operation=operation, detail=reason)
                 raise DeviceControlError(409, reason)
             mv.apply(bay, operation, self.clock())
-            return self._event("bay_step", dev, actor, operation=operation,
-                               label=mv.OP_LABELS[operation])
+            return self._event(
+                "bay_step", dev, actor, operation=operation, label=mv.OP_LABELS[operation]
+            )
 
     def start_procedure(self, bay_id: str, goal: str, actor: str) -> dict[str, Any]:
         goal = str(goal or "").upper()
@@ -2379,18 +2781,22 @@ class DeviceController:
             if goal not in mv.GOALS:
                 raise DeviceControlError(400, f"goal must be one of {list(mv.GOALS)}")
             if self._bay_procedure(bay_id) is not None:
-                raise DeviceControlError(409, "a switching procedure is already in progress on this bay")
+                raise DeviceControlError(
+                    409, "a switching procedure is already in progress on this bay"
+                )
             reason = self.authority_reason(dev) or self._goal_reason(dev, goal)
             if reason:
                 raise DeviceControlError(409, reason)
             proc = mv.Procedure(
-                procedure_id=secrets.token_hex(6), bay_id=bay_id, goal=goal,
-                operator=actor, started_at=self.clock(),
+                procedure_id=secrets.token_hex(6),
+                bay_id=bay_id,
+                goal=goal,
+                operator=actor,
+                started_at=self.clock(),
                 steps=mv.plan(goal, self.bays[bay_id]),
             )
             self.procedures[proc.procedure_id] = proc
-            self._event("procedure_started", dev, actor, goal=goal,
-                        procedure_id=proc.procedure_id)
+            self._event("procedure_started", dev, actor, goal=goal, procedure_id=proc.procedure_id)
             return proc.describe(self.clock())
 
     def _procedure(self, procedure_id: str) -> mv.Procedure:
@@ -2411,11 +2817,17 @@ class DeviceController:
                 raise DeviceControlError(409, "this step does not need a second person")
             if witness == proc.operator:
                 raise DeviceControlError(
-                    403, "two-person rule: the witness must be a different person from the operator",
+                    403,
+                    "two-person rule: the witness must be a different person from the operator",
                 )
             proc.witnesses[index] = (witness, self.clock())
-            self._event("procedure_witness", self._get(proc.bay_id), witness,
-                        procedure_id=proc.procedure_id, step=index + 1)
+            self._event(
+                "procedure_witness",
+                self._get(proc.bay_id),
+                witness,
+                procedure_id=proc.procedure_id,
+                step=index + 1,
+            )
             return proc.describe(self.clock())
 
     def execute_step(self, procedure_id: str, step: int, actor: str) -> dict[str, Any]:
@@ -2428,29 +2840,47 @@ class DeviceController:
 
             def refuse(status: int, detail: str) -> None:
                 proc.blocked_attempts += 1
-                self._event("procedure_blocked", dev, actor, procedure_id=proc.procedure_id,
-                            step=index + 1, operation=operation, detail=detail)
+                self._event(
+                    "procedure_blocked",
+                    dev,
+                    actor,
+                    procedure_id=proc.procedure_id,
+                    step=index + 1,
+                    operation=operation,
+                    detail=detail,
+                )
                 raise DeviceControlError(status, detail)
 
             if actor != proc.operator:
                 refuse(403, "this procedure belongs to another operator")
             if int(step) != index + 1:
-                refuse(409, f"sequence deviation: step {index + 1} "
-                            f"({mv.OP_LABELS[operation]}) is the only step permitted now")
+                refuse(
+                    409,
+                    f"sequence deviation: step {index + 1} "
+                    f"({mv.OP_LABELS[operation]}) is the only step permitted now",
+                )
             reason = self.authority_reason(dev)
             if reason:
                 refuse(409, reason)
             if two_person and not proc.witness_ok(index, self.clock()):
-                refuse(409, "two-person rule: a second person must approve this step first "
-                            f"(approval valid for {mv.WITNESS_VALID_S:.0f} s)")
+                refuse(
+                    409,
+                    "two-person rule: a second person must approve this step first "
+                    f"(approval valid for {mv.WITNESS_VALID_S:.0f} s)",
+                )
             reason = mv.interlock(self.bays[proc.bay_id], operation, self._bay_context(dev))
             if reason:
                 refuse(409, reason)
             mv.apply(self.bays[proc.bay_id], operation, self.clock())
             proc.next_index += 1
             self._event(
-                "procedure_step", dev, actor, procedure_id=proc.procedure_id,
-                step=index + 1, operation=operation, label=mv.OP_LABELS[operation],
+                "procedure_step",
+                dev,
+                actor,
+                procedure_id=proc.procedure_id,
+                step=index + 1,
+                operation=operation,
+                label=mv.OP_LABELS[operation],
                 witness=proc.witnesses.get(index, (None, 0.0))[0],
                 complete=proc.complete,
             )
@@ -2464,8 +2894,13 @@ class DeviceController:
             dev = self._get(proc.bay_id)
             described = proc.describe(self.clock())
             del self.procedures[proc.procedure_id]
-            self._event("procedure_aborted", dev, actor, procedure_id=proc.procedure_id,
-                        at_step=proc.next_index + 1)
+            self._event(
+                "procedure_aborted",
+                dev,
+                actor,
+                procedure_id=proc.procedure_id,
+                at_step=proc.next_index + 1,
+            )
             return described
 
     # ── Simulation injection (scenario sandbox only) ────────────────
@@ -2481,8 +2916,9 @@ class DeviceController:
 
 
 # ── Pure helpers ────────────────────────────────────────────────────
-def window_entry_s(angle_deg: float, slip_hz: float,
-                   window_deg: float = SYNC_MAX_ANGLE_DEG) -> float | None:
+def window_entry_s(
+    angle_deg: float, slip_hz: float, window_deg: float = SYNC_MAX_ANGLE_DEG
+) -> float | None:
     """Seconds until the phase angle is inside +/-window (0 if already
     inside), the needle turning at 360 x slip deg/s. None if it never
     gets there (no slip and outside the window)."""
@@ -2543,7 +2979,8 @@ def authorise(request: Request, body: dict[str, Any], *, minimum: str = "FACILIT
             raise HTTPException(401, f"invalid token: {exc}") from exc
         if not role_at_least(claims.role, Role[minimum]):
             raise HTTPException(
-                403, f"this action requires {minimum}; role {claims.role.value} is insufficient.",
+                403,
+                f"this action requires {minimum}; role {claims.role.value} is insufficient.",
             )
         return claims.username
     if gate_enabled():
@@ -2552,12 +2989,15 @@ def authorise(request: Request, body: dict[str, Any], *, minimum: str = "FACILIT
 
     if role_rank(body.get("actor_role")) < 6:
         raise HTTPException(
-            403, f"this action requires SME_L6; actor_role={body.get('actor_role')!r} is insufficient.",
+            403,
+            f"this action requires SME_L6; actor_role={body.get('actor_role')!r} is insufficient.",
         )
     return str(body.get("user") or "dashboard-operator")
 
 
-async def _ledger_append(app: FastAPI, actor: str, action: str, payload: dict[str, Any]) -> str | None:
+async def _ledger_append(
+    app: FastAPI, actor: str, action: str, payload: dict[str, Any]
+) -> str | None:
     ledger = getattr(app.state, "forensic_ledger", None)
     if ledger is None:
         return None
@@ -2594,38 +3034,47 @@ def register_device_control_routes(
 
     @app.post("/api/devices/{device_id}/authority")
     async def set_device_authority(
-        device_id: str, request: Request, payload: dict = Body(...),
+        device_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """Change the control authority (AUTO / REMOTE / LOCAL)."""
         actor = authorise(request, payload)
         ctl = _controller()
         try:
-            event = ctl.set_authority(device_id, payload.get("authority"), actor)
+            event = ctl.set_authority(device_id, str(payload.get("authority") or ""), actor)
         except DeviceControlError as exc:
             raise _fail(exc) from exc
         entry_id = await _ledger_append(
-            request.app, actor, ACTION_DEVICE_AUTHORITY,
+            request.app,
+            actor,
+            ACTION_DEVICE_AUTHORITY,
             {k: event[k] for k in ("device_id", "previous", "authority", "source")},
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 
     @app.post("/api/devices/{device_id}/select")
     async def select_device_command(
-        device_id: str, request: Request, payload: dict = Body(...),
+        device_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """Step 1 of select-before-operate. Changes nothing."""
         actor = authorise(request, payload)
         ctl = _controller()
         try:
-            return ctl.select(device_id, payload.get("command"), actor)
+            return ctl.select(device_id, str(payload.get("command") or ""), actor)
         except DeviceControlError as exc:
-            ctl.refusal_event(device_id, actor, exc.detail,
-                              command=str(payload.get("command") or ""))
+            ctl.refusal_event(
+                device_id, actor, exc.detail, command=str(payload.get("command") or "")
+            )
             raise _fail(exc) from exc
 
     @app.post("/api/devices/{device_id}/operate")
     async def operate_device_command(
-        device_id: str, request: Request, payload: dict = Body(...),
+        device_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """Step 2 of select-before-operate. Ledger pre-entry before,
         result entry after."""
@@ -2633,7 +3082,9 @@ def register_device_control_routes(
         ctl = _controller()
         token = str(payload.get("select_token") or "")
         requested_id = await _ledger_append(
-            request.app, actor, ACTION_DEVICE_COMMAND_REQUESTED,
+            request.app,
+            actor,
+            ACTION_DEVICE_COMMAND_REQUESTED,
             {"device_id": device_id, "command": ctl.peek_command(token)},
         )
         try:
@@ -2641,22 +3092,37 @@ def register_device_control_routes(
         except DeviceControlError as exc:
             ctl.refusal_event(device_id, actor, exc.detail)
             await _ledger_append(
-                request.app, actor, ACTION_DEVICE_COMMAND_RESULT,
-                {"device_id": device_id, "success": False, "detail": exc.detail,
-                 "requested_entry_id": requested_id},
+                request.app,
+                actor,
+                ACTION_DEVICE_COMMAND_RESULT,
+                {
+                    "device_id": device_id,
+                    "success": False,
+                    "detail": exc.detail,
+                    "requested_entry_id": requested_id,
+                },
             )
             raise _fail(exc) from exc
         result_id = await _ledger_append(
-            request.app, actor, ACTION_DEVICE_COMMAND_RESULT,
-            {"device_id": device_id, "success": True, "command": event["command"],
-             "from_state": event["from_state"], "to_state": event["to_state"],
-             "requested_entry_id": requested_id},
+            request.app,
+            actor,
+            ACTION_DEVICE_COMMAND_RESULT,
+            {
+                "device_id": device_id,
+                "success": True,
+                "command": event["command"],
+                "from_state": event["from_state"],
+                "to_state": event["to_state"],
+                "requested_entry_id": requested_id,
+            },
         )
         return {"success": True, "event": event, "ledger_entry_id": result_id}
 
     @app.post("/api/devices/{device_id}/governor")
     async def adjust_governor(
-        device_id: str, request: Request, payload: dict = Body(...),
+        device_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """T3: governor raise / lower (closed-transition training mode).
         Direct control, recorded in the plant event log (not the
@@ -2664,14 +3130,20 @@ def register_device_control_routes(
         actor = authorise(request, payload)
         ctl = _controller()
         try:
-            event = ctl.adjust_governor(device_id, payload.get("delta_hz"), actor)
+            event = ctl.adjust_governor(device_id, _num(payload.get("delta_hz")), actor)
         except DeviceControlError as exc:
             raise _fail(exc) from exc
-        return {"success": True, "event": event, "synchro": ctl.synchro(ctl.devices[device_id].path)}
+        return {
+            "success": True,
+            "event": event,
+            "synchro": ctl.synchro(ctl.devices[device_id].path),
+        }
 
     @app.post("/api/devices/{device_id}/sync-cancel")
     async def cancel_sync_close(
-        device_id: str, request: Request, payload: dict = Body(default={}),
+        device_id: str,
+        request: Request,
+        payload: dict = Body(default={}),
     ) -> dict[str, Any]:
         """T3: cancel an armed sync-check supervised close."""
         actor = authorise(request, payload or {})
@@ -2684,7 +3156,9 @@ def register_device_control_routes(
 
     @app.post("/api/devices/{device_id}/field")
     async def switchgear_field_action(
-        device_id: str, request: Request, payload: dict = Body(...),
+        device_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """L1: an operation at the 13.8 kV switchgear of a path
         (racking, closing spring, local push buttons, 86 lockout,
@@ -2697,20 +3171,36 @@ def register_device_control_routes(
         try:
             event = ctl.field_action(device_id, breaker, action, actor)
         except DeviceControlError as exc:
-            ctl.refusal_event(device_id, actor, exc.detail,
-                              command=f"{action.upper()}@{breaker.upper()}")
+            ctl.refusal_event(
+                device_id, actor, exc.detail, command=f"{action.upper()}@{breaker.upper()}"
+            )
             raise _fail(exc) from exc
         entry_id = await _ledger_append(
-            request.app, actor, ACTION_MV_FIELD,
-            {k: event.get(k) for k in ("device_id", "breaker", "action", "racking",
-                                        "breaker_closed", "lockout_86", "padlock",
-                                        "from_state", "to_state")},
+            request.app,
+            actor,
+            ACTION_MV_FIELD,
+            {
+                k: event.get(k)
+                for k in (
+                    "device_id",
+                    "breaker",
+                    "action",
+                    "racking",
+                    "breaker_closed",
+                    "lockout_86",
+                    "padlock",
+                    "from_state",
+                    "to_state",
+                )
+            },
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 
     @app.post("/api/devices/{device_id}/wiring")
     async def control_wiring_action(
-        device_id: str, request: Request, payload: dict = Body(...),
+        device_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """L5: an operation in the MV control compartment (PT fuse
         holders F-1A / F-1B, multimeter on TB-1)."""
@@ -2720,18 +3210,34 @@ def register_device_control_routes(
         try:
             event = ctl.wiring_action(device_id, action, actor)
         except DeviceControlError as exc:
-            ctl.refusal_event(device_id, actor, exc.detail, command=f"{action.upper()}@{device_id.upper()}")
+            ctl.refusal_event(
+                device_id, actor, exc.detail, command=f"{action.upper()}@{device_id.upper()}"
+            )
             raise _fail(exc) from exc
         entry_id = await _ledger_append(
-            request.app, actor, ACTION_WIRING_FIELD,
-            {k: event.get(k) for k in ("device_id", "event", "action", "path", "reading",
-                                        "transfer_state", "utility_sensed")},
+            request.app,
+            actor,
+            ACTION_WIRING_FIELD,
+            {
+                k: event.get(k)
+                for k in (
+                    "device_id",
+                    "event",
+                    "action",
+                    "path",
+                    "reading",
+                    "transfer_state",
+                    "utility_sensed",
+                )
+            },
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 
     @app.post("/api/devices/{device_id}/xfmr")
     async def transformer_field_action(
-        device_id: str, request: Request, payload: dict = Body(...),
+        device_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """L2: an operation at the utility transformer of a path (52-T,
         Kirk keys, DETC handle, relay targets, fan selector)."""
@@ -2744,16 +3250,33 @@ def register_device_control_routes(
             ctl.refusal_event(device_id, actor, exc.detail, command=f"{action.upper()}@XFMR")
             raise _fail(exc) from exc
         entry_id = await _ledger_append(
-            request.app, actor, ACTION_XFMR_FIELD,
-            {k: event.get(k) for k in ("device_id", "action", "tap_from", "tap", "key_k1",
-                                        "key_k2", "primary_closed", "detc_unlocked_by",
-                                        "energized_before", "energized", "outcome")},
+            request.app,
+            actor,
+            ACTION_XFMR_FIELD,
+            {
+                k: event.get(k)
+                for k in (
+                    "device_id",
+                    "action",
+                    "tap_from",
+                    "tap",
+                    "key_k1",
+                    "key_k2",
+                    "primary_closed",
+                    "detc_unlocked_by",
+                    "energized_before",
+                    "energized",
+                    "outcome",
+                )
+            },
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 
     @app.post("/api/devices/{device_id}/fuel")
     async def generator_field_action(
-        device_id: str, request: Request, payload: dict = Body(...),
+        device_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """L3: an operation at a generator set (engine control panel,
         e-stop, jacket heater, day-tank pumps, fuel filter, basin)."""
@@ -2763,19 +3286,37 @@ def register_device_control_routes(
         try:
             event = ctl.gen_action(device_id, action, actor)
         except DeviceControlError as exc:
-            ctl.refusal_event(device_id, actor, exc.detail,
-                              command=f"{action.upper()}@{device_id.upper()}")
+            ctl.refusal_event(
+                device_id, actor, exc.detail, command=f"{action.upper()}@{device_id.upper()}"
+            )
             raise _fail(exc) from exc
         entry_id = await _ledger_append(
-            request.app, actor, ACTION_GEN_FIELD,
-            {k: event.get(k) for k in ("device_id", "action", "from_state", "to_state", "ecs_mode",
-                                        "estop", "heater_on", "day_tank_pct", "pumps", "filter")},
+            request.app,
+            actor,
+            ACTION_GEN_FIELD,
+            {
+                k: event.get(k)
+                for k in (
+                    "device_id",
+                    "action",
+                    "from_state",
+                    "to_state",
+                    "ecs_mode",
+                    "estop",
+                    "heater_on",
+                    "day_tank_pct",
+                    "pumps",
+                    "filter",
+                )
+            },
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 
     @app.post("/api/ups-systems/{path}/action")
     async def ups_system_action(
-        path: str, request: Request, payload: dict = Body(...),
+        path: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """L4: an operation on the UPS bank of a path (system display,
         Q1 / Q2 / Q3 / Q4 / QF1, SKRU, Kirk locks, padlock)."""
@@ -2788,9 +3329,23 @@ def register_device_control_routes(
             ctl.ups_refusal(path, actor, exc.detail, action)
             raise _fail(exc) from exc
         entry_id = await _ledger_append(
-            request.app, actor, ACTION_UPS_FIELD,
-            {k: event.get(k) for k in ("device_id", "action", "path", "mode_before", "mode",
-                                        "breakers", "skru_keys", "qf1_padlock", "load_feed")},
+            request.app,
+            actor,
+            ACTION_UPS_FIELD,
+            {
+                k: event.get(k)
+                for k in (
+                    "device_id",
+                    "action",
+                    "path",
+                    "mode_before",
+                    "mode",
+                    "breakers",
+                    "skru_keys",
+                    "qf1_padlock",
+                    "load_feed",
+                )
+            },
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 
@@ -2798,8 +3353,10 @@ def register_device_control_routes(
     async def list_dfr_records(path: str | None = None) -> dict[str, Any]:
         """L6: disturbance records (newest first), without samples."""
         ctl = _controller()
-        return {"records": ctl.dfr_records(path.lower() if path else None),
-                "notice": "synthesised from plant state changes; model transition times"}
+        return {
+            "records": ctl.dfr_records(path.lower() if path else None),
+            "notice": "synthesised from plant state changes; model transition times",
+        }
 
     @app.get("/api/oscillography/records/{record_id}")
     async def get_dfr_record(record_id: str) -> dict[str, Any]:
@@ -2824,34 +3381,53 @@ def register_device_control_routes(
         )
 
     @app.post("/api/oscillography/{path}/trigger")
-    async def dfr_manual_trigger(path: str, request: Request, payload: dict = Body(default={})) -> dict[str, Any]:
+    async def dfr_manual_trigger(
+        path: str, request: Request, payload: dict = Body(default={})
+    ) -> dict[str, Any]:
         actor = authorise(request, payload)
         try:
             rec = _controller().dfr_trigger(path.lower(), actor)
         except DeviceControlError as exc:
             raise _fail(exc) from exc
-        entry_id = await _ledger_append(request.app, actor, ACTION_DFR,
-                                        {"path": path, "action": "MANUAL_TRIGGER", "record_id": rec["id"]})
+        entry_id = await _ledger_append(
+            request.app,
+            actor,
+            ACTION_DFR,
+            {"path": path, "action": "MANUAL_TRIGGER", "record_id": rec["id"]},
+        )
         return {"success": True, "record": rec, "ledger_entry_id": entry_id}
 
     @app.post("/api/oscillography/{path}/sag")
-    async def dfr_utility_sag(path: str, request: Request, payload: dict = Body(...)) -> dict[str, Any]:
+    async def dfr_utility_sag(
+        path: str, request: Request, payload: dict = Body(...)
+    ) -> dict[str, Any]:
         """L6 training injection (simulation only): a utility sag on the
         MV bus of a path, recorded by the disturbance recorder."""
         actor = authorise(request, payload)
         try:
-            rec = _controller().inject_utility_sag(path.lower(), payload.get("depth_pu", 0.6),
-                                                   payload.get("cycles", 6), actor)
+            rec = _controller().inject_utility_sag(
+                path.lower(), payload.get("depth_pu", 0.6), payload.get("cycles", 6), actor
+            )
         except DeviceControlError as exc:
             raise _fail(exc) from exc
-        entry_id = await _ledger_append(request.app, actor, ACTION_DFR,
-                                        {"path": path, "action": "UTILITY_SAG", "record_id": rec["id"],
-                                         "summary": rec["summary"]})
+        entry_id = await _ledger_append(
+            request.app,
+            actor,
+            ACTION_DFR,
+            {
+                "path": path,
+                "action": "UTILITY_SAG",
+                "record_id": rec["id"],
+                "summary": rec["summary"],
+            },
+        )
         return {"success": True, "record": rec, "ledger_entry_id": entry_id}
 
     @app.post("/api/battery-rooms/{path}/action")
     async def battery_room_action(
-        path: str, request: Request, payload: dict = Body(...),
+        path: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """L5: an operation in the battery room of a path (infrared scan,
         analyzer reading, string disconnects, padlocks, mid-string links,
@@ -2865,35 +3441,57 @@ def register_device_control_routes(
             ctl.battery_refusal(path, actor, exc.detail, action)
             raise _fail(exc) from exc
         entry_id = await _ledger_append(
-            request.app, actor, ACTION_BATT_FIELD,
-            {k: event.get(k) for k in ("device_id", "event", "action", "path", "reading",
-                                        "strings_online", "load_feed")},
+            request.app,
+            actor,
+            ACTION_BATT_FIELD,
+            {
+                k: event.get(k)
+                for k in (
+                    "device_id",
+                    "event",
+                    "action",
+                    "path",
+                    "reading",
+                    "strings_online",
+                    "load_feed",
+                )
+            },
         )
         return {"success": True, "event": event, "ledger_entry_id": entry_id}
 
     # ── MV switching procedures ─────────────────────────────────────
     @app.post("/api/mv/bays/{bay_id}/procedure")
     async def start_mv_procedure(
-        bay_id: str, request: Request, payload: dict = Body(...),
+        bay_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """Start a forced switching procedure on a generator bay."""
         actor = authorise(request, payload)
         ctl = _controller()
         try:
-            proc = ctl.start_procedure(bay_id, payload.get("goal"), actor)
+            proc = ctl.start_procedure(bay_id, str(payload.get("goal") or ""), actor)
         except DeviceControlError as exc:
             ctl.refusal_event(bay_id, actor, exc.detail, command=str(payload.get("goal") or ""))
             raise _fail(exc) from exc
         entry_id = await _ledger_append(
-            request.app, actor, ACTION_MV_PROCEDURE,
-            {"bay_id": bay_id, "goal": proc["goal"], "procedure_id": proc["procedure_id"],
-             "event": "started"},
+            request.app,
+            actor,
+            ACTION_MV_PROCEDURE,
+            {
+                "bay_id": bay_id,
+                "goal": proc["goal"],
+                "procedure_id": proc["procedure_id"],
+                "event": "started",
+            },
         )
         return {"success": True, "procedure": proc, "ledger_entry_id": entry_id}
 
     @app.post("/api/mv/procedures/{procedure_id}/witness")
     async def witness_mv_step(
-        procedure_id: str, request: Request, payload: dict = Body(...),
+        procedure_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """Second-person approval of the next step. The witness
         authenticates as THEMSELVES (own token, or own credentials
@@ -2913,14 +3511,18 @@ def register_device_control_routes(
         except DeviceControlError as exc:
             raise _fail(exc) from exc
         entry_id = await _ledger_append(
-            request.app, witness, ACTION_MV_WITNESS,
+            request.app,
+            witness,
+            ACTION_MV_WITNESS,
             {"procedure_id": procedure_id, "bay_id": proc["bay_id"], "step": step},
         )
         return {"success": True, "procedure": proc, "ledger_entry_id": entry_id}
 
     @app.post("/api/mv/procedures/{procedure_id}/step")
     async def execute_mv_step(
-        procedure_id: str, request: Request, payload: dict = Body(...),
+        procedure_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """Execute the next step. Any other step is a sequence
         deviation: blocked and recorded."""
@@ -2931,23 +3533,39 @@ def register_device_control_routes(
             proc = ctl.execute_step(procedure_id, step, actor)
         except DeviceControlError as exc:
             await _ledger_append(
-                request.app, actor, ACTION_MV_STEP,
-                {"procedure_id": procedure_id, "step": step, "success": False,
-                 "detail": exc.detail},
+                request.app,
+                actor,
+                ACTION_MV_STEP,
+                {
+                    "procedure_id": procedure_id,
+                    "step": step,
+                    "success": False,
+                    "detail": exc.detail,
+                },
             )
             raise _fail(exc) from exc
         done = proc["steps"][step - 1]
         entry_id = await _ledger_append(
-            request.app, actor, ACTION_MV_STEP,
-            {"procedure_id": procedure_id, "bay_id": proc["bay_id"], "step": step,
-             "operation": done["operation"], "witness": done["witness"],
-             "success": True, "complete": proc["complete"]},
+            request.app,
+            actor,
+            ACTION_MV_STEP,
+            {
+                "procedure_id": procedure_id,
+                "bay_id": proc["bay_id"],
+                "step": step,
+                "operation": done["operation"],
+                "witness": done["witness"],
+                "success": True,
+                "complete": proc["complete"],
+            },
         )
         return {"success": True, "procedure": proc, "ledger_entry_id": entry_id}
 
     @app.post("/api/mv/procedures/{procedure_id}/abort")
     async def abort_mv_procedure(
-        procedure_id: str, request: Request, payload: dict = Body(...),
+        procedure_id: str,
+        request: Request,
+        payload: dict = Body(...),
     ) -> dict[str, Any]:
         """Stop a procedure. Positions are not rolled back."""
         actor = authorise(request, payload)
@@ -2957,9 +3575,15 @@ def register_device_control_routes(
         except DeviceControlError as exc:
             raise _fail(exc) from exc
         entry_id = await _ledger_append(
-            request.app, actor, ACTION_MV_PROCEDURE,
-            {"bay_id": proc["bay_id"], "goal": proc["goal"],
-             "procedure_id": procedure_id, "event": "aborted"},
+            request.app,
+            actor,
+            ACTION_MV_PROCEDURE,
+            {
+                "bay_id": proc["bay_id"],
+                "goal": proc["goal"],
+                "procedure_id": procedure_id,
+                "event": "aborted",
+            },
         )
         return {"success": True, "procedure": proc, "ledger_entry_id": entry_id}
 
@@ -2981,7 +3605,8 @@ def _witness_from_credentials(request: Request, body: dict[str, Any]) -> str:
         raise HTTPException(401, "witness credentials rejected") from exc
     if not role_at_least(Role(str(granted["role"])), Role.SAFETY_OFFICER):
         raise HTTPException(
-            403, f"a witness needs SAFETY_OFFICER; role {granted['role']} is insufficient.",
+            403,
+            f"a witness needs SAFETY_OFFICER; role {granted['role']} is insufficient.",
         )
     return str(granted["username"])
 

@@ -65,14 +65,32 @@ def steps_done(view):
 class TestLibrary:
     def test_three_valid_drills(self):
         drills = tr.load_drills(DRILLS)
-        assert sorted(drills) == ["DRILL-01", "DRILL-02", "DRILL-03", "DRILL-04", "DRILL-05", "DRILL-06", "DRILL-07",
-                                 "DRILL-08", "DRILL-09", "DRILL-10"]
+        assert sorted(drills) == [
+            "DRILL-01",
+            "DRILL-02",
+            "DRILL-03",
+            "DRILL-04",
+            "DRILL-05",
+            "DRILL-06",
+            "DRILL-07",
+            "DRILL-08",
+            "DRILL-09",
+            "DRILL-10",
+        ]
 
     def test_validator_rejects_unknown_check(self):
         with pytest.raises(ValueError, match="unknown check"):
-            tr.validate_drill({"id": "X", "title": "t", "summary": "s", "path": "a",
-                               "target_s": 1, "time_limit_s": 1,
-                               "steps": [{"id": "A", "text": "t", "check": {"type": "magic"}}]})
+            tr.validate_drill(
+                {
+                    "id": "X",
+                    "title": "t",
+                    "summary": "s",
+                    "path": "a",
+                    "target_s": 1,
+                    "time_limit_s": 1,
+                    "steps": [{"id": "A", "text": "t", "check": {"type": "magic"}}],
+                }
+            )
 
 
 class TestDrill01Blackout:
@@ -179,10 +197,17 @@ class TestDrill03UpsFault:
 
 
 class TestWindowEntry:
-    @pytest.mark.parametrize(("angle", "slip", "eta"), [
-        (5, 0.1, 0.0), (-150, 0.02, 140 / 7.2), (150, 0.25, 200 / 90),
-        (150, -0.25, 140 / 90), (-30, -0.05, 320 / 18), (90, 0.0, None),
-    ])
+    @pytest.mark.parametrize(
+        ("angle", "slip", "eta"),
+        [
+            (5, 0.1, 0.0),
+            (-150, 0.02, 140 / 7.2),
+            (150, 0.25, 200 / 90),
+            (150, -0.25, 140 / 90),
+            (-30, -0.05, 320 / 18),
+            (90, 0.0, None),
+        ],
+    )
     def test_eta(self, angle, slip, eta):
         got = dc.window_entry_s(angle, slip)
         if eta is None:
@@ -204,8 +229,15 @@ class TestReportSource:
 
 class TestRubric:
     def test_score_floor_zero(self):
-        s = tr.Session(drill={"target_s": 10}, operator="x", started_ms=0, events_mark=0,
-                       outcome="PASS", ended_ms=10_000_000, violations=[{}] * 3)
+        s = tr.Session(
+            drill={"target_s": 10},
+            operator="x",
+            started_ms=0,
+            events_mark=0,
+            outcome="PASS",
+            ended_ms=10_000_000,
+            violations=[{}] * 3,
+        )
         assert tr.score(s) == 0
 
     def test_rubric_declares_it_is_ours(self):
@@ -272,7 +304,10 @@ class TestRoutes:
         c, *_ = client
         c.post("/api/training/start", json={"drill_id": "DRILL-01"}, headers=bearer("manager"))
         assert c.post("/api/training/reset", headers=bearer("manager")).status_code == 409
-        assert c.post("/api/training/abort", headers=bearer("manager")).json()["session"]["outcome"] == "ABORTED"
+        assert (
+            c.post("/api/training/abort", headers=bearer("manager")).json()["session"]["outcome"]
+            == "ABORTED"
+        )
 
 
 class TestDrill04ClosedTransition:
@@ -284,9 +319,14 @@ class TestDrill04ClosedTransition:
         ctl, engine, mgr = world
         mgr.start("DRILL-04", "trainee", ctl, engine)
         sync = ctl.snapshot("mvtc_a")["synchro"]
-        assert (sync["enabled"], sync["live"], sync["slip_hz"], sync["angle_deg"]) == (True, True, 0.25, 150.0)
+        assert (sync["enabled"], sync["live"], sync["slip_hz"], sync["angle_deg"]) == (
+            True,
+            True,
+            0.25,
+            150.0,
+        )
         engine.ack_all("trainee")
-        self._gov(ctl, -0.05, 4)                     # 60.25 -> 60.05 Hz
+        self._gov(ctl, -0.05, 4)  # 60.25 -> 60.05 Hz
         view = mgr.evaluate(ctl, engine)
         assert [s["id"] for s in view["session"]["steps"] if s["done"]] == ["ACK", "TRIM"]
         # 0.05 Hz slip = 18 deg/s: wait until the needle reaches the window
@@ -304,7 +344,7 @@ class TestDrill04ClosedTransition:
     def test_out_of_phase_execute_arms_and_closes_at_window_entry(self, world, clock):
         ctl, engine, mgr = world
         mgr.start("DRILL-04", "trainee", ctl, engine)
-        self._gov(ctl, -0.05, 4)                     # 60.05 Hz: 18 deg/s
+        self._gov(ctl, -0.05, 4)  # 60.05 Hz: 18 deg/s
         a0 = ctl.synchro("a")["angle_deg"]
         eta = dc.window_entry_s(a0, 0.05)
         out = run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")
@@ -312,7 +352,7 @@ class TestDrill04ClosedTransition:
         assert ctl.snapshot("mvtc_a")["synchro"]["close_armed"] is True
         clock.tick(eta - 0.5)
         assert ctl.snapshot("mvtc_a")["state"] == dc.XFER_GENERATORS
-        clock.tick(0.9)                              # crosses the window edge
+        clock.tick(0.9)  # crosses the window edge
         assert ctl.snapshot("mvtc_a")["state"] == dc.XFER_UTILITY
         close = [e for e in ctl._events if e.get("closed_transition")][-1]
         assert close["supervised"] is True
@@ -324,7 +364,7 @@ class TestDrill04ClosedTransition:
     def test_slip_too_high_waits_then_times_out(self, world, clock):
         ctl, engine, mgr = world
         mgr.start("DRILL-04", "trainee", ctl, engine)
-        run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")    # 0.25 Hz slip
+        run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")  # 0.25 Hz slip
         clock.tick(dc.SYNC_CLOSE_TIMEOUT_S + 1)
         snap = ctl.snapshot("mvtc_a")
         assert snap["state"] == dc.XFER_GENERATORS
@@ -374,8 +414,11 @@ class TestClosedTransitionOffByDefault:
     def test_command_refused_outside_training(self, world):
         ctl, _, _ = world
         ctl.set_authority("mvtc_a", dc.AUTH_REMOTE, "op")
-        cmd = next(c for c in ctl.snapshot("mvtc_a")["commands"]
-                   if c["command"] == "CLOSED_TRANSITION_RETRANSFER")
+        cmd = next(
+            c
+            for c in ctl.snapshot("mvtc_a")["commands"]
+            if c["command"] == "CLOSED_TRANSITION_RETRANSFER"
+        )
         assert cmd["permitted"] is False
         assert "open transition" in cmd["blocked_reason"]
         assert ctl.snapshot("mvtc_a")["synchro"]["enabled"] is False
@@ -409,11 +452,17 @@ class TestClosedTransitionOffByDefault:
         dc.register_device_control_routes(app, lambda: ctl)
         mgr.start("DRILL-04", "manager", ctl, engine)
         with TestClient(app) as c:
-            assert c.post("/api/devices/mvtc_a/governor", json={"delta_hz": -0.05}).status_code == 403
-            r = c.post("/api/devices/mvtc_a/governor", json={"delta_hz": -0.05}, headers=bearer("manager"))
+            assert (
+                c.post("/api/devices/mvtc_a/governor", json={"delta_hz": -0.05}).status_code == 403
+            )
+            r = c.post(
+                "/api/devices/mvtc_a/governor", json={"delta_hz": -0.05}, headers=bearer("manager")
+            )
             assert r.status_code == 200
             assert r.json()["synchro"]["gen_hz"] == 60.2
-            r = c.post("/api/devices/mvtc_a/governor", json={"delta_hz": 1}, headers=bearer("manager"))
+            r = c.post(
+                "/api/devices/mvtc_a/governor", json={"delta_hz": 1}, headers=bearer("manager")
+            )
             assert r.status_code == 400
 
 
@@ -422,9 +471,11 @@ class TestRubricV2:
     def _close_in_window(self, ctl, clock, mgr, engine):
         while ctl.synchro("a")["slip_hz"] > 0.06:
             ctl.adjust_governor("mvtc_a", -0.05, "trainee")
-        mgr.evaluate(ctl, engine)                                # the UI poll sees TRIM
-        run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")       # arms
-        clock.tick(dc.window_entry_s(ctl.synchro("a")["angle_deg"], ctl.synchro("a")["slip_hz"]) + 0.2)
+        mgr.evaluate(ctl, engine)  # the UI poll sees TRIM
+        run(ctl, "mvtc_a", "CLOSED_TRANSITION_RETRANSFER")  # arms
+        clock.tick(
+            dc.window_entry_s(ctl.synchro("a")["angle_deg"], ctl.synchro("a")["slip_hz"]) + 0.2
+        )
         assert ctl.snapshot("mvtc_a")["state"] == dc.XFER_UTILITY
 
     def test_every_drill_declares_its_procedure(self):
@@ -493,12 +544,23 @@ class TestRubricV2:
         assert tr.unplanned_switching({}, events) == []
 
     def test_drill_validation_rejects_bad_procedure_and_holds(self):
-        base = {"id": "X", "title": "t", "summary": "s", "path": "a", "target_s": 1, "time_limit_s": 2,
-                "steps": [{"id": "A", "text": "a", "check": {"type": "event_seen"}}]}
+        base = {
+            "id": "X",
+            "title": "t",
+            "summary": "s",
+            "path": "a",
+            "target_s": 1,
+            "time_limit_s": 2,
+            "steps": [{"id": "A", "text": "a", "check": {"type": "event_seen"}}],
+        }
         with pytest.raises(ValueError, match="procedure_commands"):
             tr.validate_drill({**base, "procedure_commands": []})
-        bad = {**base, "steps": [{"id": "A", "text": "a", "check": {"type": "event_seen"},
-                                  "holds": {"type": "nope"}}]}
+        bad = {
+            **base,
+            "steps": [
+                {"id": "A", "text": "a", "check": {"type": "event_seen"}, "holds": {"type": "nope"}}
+            ],
+        }
         with pytest.raises(ValueError, match="holds"):
             tr.validate_drill(bad)
 
@@ -518,9 +580,9 @@ class TestDrill05RackOut:
         mgr.evaluate(ctl, engine)
         self.fa(ctl, "52-GM", "PADLOCK")
         mgr.evaluate(ctl, engine)
-        self.fa(ctl, "52-GM", "LOCAL_CLOSE")                # mechanical, no control power
+        self.fa(ctl, "52-GM", "LOCAL_CLOSE")  # mechanical, no control power
         self.fa(ctl, "52-GM", "LOCAL_OPEN")
-        clock.tick(30)                                      # the motor cannot recharge
+        clock.tick(30)  # the motor cannot recharge
         view = mgr.evaluate(ctl, engine)
         s = view["session"]
         assert (s["outcome"], s["violations"]) == ("PASS", 0)
@@ -553,7 +615,9 @@ class TestDrill05RackOut:
         h = bearer("manager")
         c.post("/api/training/start", json={"drill_id": "DRILL-05"}, headers=h)
         c.post("/api/devices/mvtc_a/authority", json={"authority": "LOCAL"}, headers=h)
-        r = c.post("/api/devices/mvtc_a/field", json={"breaker": "52-U", "action": "RACK_OUT"}, headers=h)
+        r = c.post(
+            "/api/devices/mvtc_a/field", json={"breaker": "52-U", "action": "RACK_OUT"}, headers=h
+        )
         assert r.status_code == 409
         view = c.get("/api/training/session").json()
         assert view["session"]["violations"] == 1

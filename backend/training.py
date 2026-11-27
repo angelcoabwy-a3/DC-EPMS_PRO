@@ -38,12 +38,12 @@ from typing import Any
 
 from backend.alarm_engine import ACKED, NORM, AlarmEngine, conditions_from_plant, iso_ms
 
-RUBRIC = {
+RUBRIC: dict[str, Any] = {
     "name": "DC-EPMS training rubric v2",
     "not_an_industry_standard": True,
     "fail": "critical load lost or time limit exceeded -> 0",
     "violation": "refused or blocked command, or a switching command outside "
-                 "the drill procedure (unplanned switching)",
+    "the drill procedure (unplanned switching)",
     "violation_penalty": 10,
     "late_penalty_per_10_s": 1,
 }
@@ -52,16 +52,40 @@ SYSTEM_ACTORS = frozenset({"training", "controller", "protection", "auto", "plan
 VIOLATION_EVENTS = ("refused", "procedure_blocked", "bay_blocked")
 
 CHECK_TYPES = (
-    "alarms_acked", "gens_started_cover_demand", "gens_on_bus_cover_demand",
-    "transfer_state", "device_state", "no_sets_running",
-    "sync_slip_within", "event_seen", "cubicle", "device_authority", "xfmr", "gen_fuel", "ups_system",
-    "battery_room", "wiring", "all",
+    "alarms_acked",
+    "gens_started_cover_demand",
+    "gens_on_bus_cover_demand",
+    "transfer_state",
+    "device_state",
+    "no_sets_running",
+    "sync_slip_within",
+    "event_seen",
+    "cubicle",
+    "device_authority",
+    "xfmr",
+    "gen_fuel",
+    "ups_system",
+    "battery_room",
+    "wiring",
+    "all",
 )
 FAIL_TYPES = ("load_lost", "command_used", "xfmr_internal_fault", "gen_shutdown", "battery_runaway")
-INJECT_TYPES = ("utility_loss", "utility_restore", "preset_on_generators", "ups_fault",
-                "closed_transition_mode", "synchro", "xfmr_spare_key", "utility_voltage",
-                "gen_condition", "qf1_shunt_trip", "ups_mode", "battery_condition",
-                "wiring_fault", "utility_sag")
+INJECT_TYPES = (
+    "utility_loss",
+    "utility_restore",
+    "preset_on_generators",
+    "ups_fault",
+    "closed_transition_mode",
+    "synchro",
+    "xfmr_spare_key",
+    "utility_voltage",
+    "gen_condition",
+    "qf1_shunt_trip",
+    "ups_mode",
+    "battery_condition",
+    "wiring_fault",
+    "utility_sag",
+)
 
 
 class TrainingError(Exception):
@@ -89,8 +113,9 @@ def validate_drill(d: dict[str, Any]) -> dict[str, Any]:
         if "holds" in step and (step.get("holds") or {}).get("type") not in CHECK_TYPES:
             problems.append(f"step {step.get('id')}: unknown holds condition")
     pc = d.get("procedure_commands")
-    if pc is not None and (not isinstance(pc, list) or not pc
-                           or not all(isinstance(c, str) and c for c in pc)):
+    if pc is not None and (
+        not isinstance(pc, list) or not pc or not all(isinstance(c, str) and c for c in pc)
+    ):
         problems.append("procedure_commands must be a non-empty list of command names")
     for f in d.get("fail") or []:
         if f.get("type") not in FAIL_TYPES:
@@ -113,8 +138,12 @@ def load_drills(directory: Path) -> dict[str, dict[str, Any]]:
 
 def drill_summary(d: dict[str, Any]) -> dict[str, Any]:
     return {
-        "id": d["id"], "version": d.get("version", 1), "title": d["title"],
-        "summary": d["summary"], "path": d["path"], "target_s": d["target_s"],
+        "id": d["id"],
+        "version": d.get("version", 1),
+        "title": d["title"],
+        "summary": d["summary"],
+        "path": d["path"],
+        "target_s": d["target_s"],
         "time_limit_s": d["time_limit_s"],
         "references": list(d.get("references") or []),
         "steps": [{"id": s["id"], "text": s["text"]} for s in d["steps"]],
@@ -122,11 +151,11 @@ def drill_summary(d: dict[str, Any]) -> dict[str, Any]:
 
 
 # ── Conditions on the plant snapshot ────────────────────────────────
-def _path(plant: dict[str, Any], path: str) -> dict[str, Any]:
+def _path(plant: dict[str, Any], path: str | None) -> dict[str, Any]:
     return next((p for p in plant.get("paths", []) if p.get("path") == path), {})
 
 
-def _devices(plant: dict[str, Any], kind: str, path: str) -> list[dict[str, Any]]:
+def _devices(plant: dict[str, Any], kind: str, path: str | None) -> list[dict[str, Any]]:
     return [d for d in plant.get("devices", []) if d.get("kind") == kind and d.get("path") == path]
 
 
@@ -163,18 +192,24 @@ def _match(v: Any, cond: dict[str, Any]) -> bool:
         except (TypeError, ValueError):
             return False
         return float(cond.get("min", float("-inf"))) <= x <= float(cond.get("max", float("inf")))
-    wanted = cond.get("values") if "values" in cond else [cond.get("value")]
+    wanted = list(cond.get("values") or []) if "values" in cond else [cond.get("value")]
     return v in wanted
 
 
-def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
-          events: list[dict[str, Any]] | None = None) -> bool:
+def check(
+    cond: dict[str, Any],
+    plant: dict[str, Any],
+    engine: AlarmEngine,
+    events: list[dict[str, Any]] | None = None,
+) -> bool:
     kind = cond.get("type")
     path = cond.get("path")
     if kind == "sync_slip_within":
         xfer = next(iter(_devices(plant, "transfer", path)), {})
         sync = xfer.get("synchro") or {}
-        return bool(sync.get("live")) and abs(float(sync.get("slip_hz", 99))) <= float(cond.get("max_hz", 0.1))
+        return bool(sync.get("live")) and abs(float(sync.get("slip_hz", 99))) <= float(
+            cond.get("max_hz", 0.1)
+        )
     if kind == "event_seen":
         # e.g. {"event": "command", "field": "closed_transition", "value": true}
         for e in events or []:
@@ -192,12 +227,14 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
     if kind == "cubicle":
         # L1: {"path", "breaker", "field", "value"} or "values": [...]
         xfer = next(iter(_devices(plant, "transfer", path)), {})
-        c = next((x for x in xfer.get("cubicles") or [] if x.get("breaker") == cond.get("breaker")), None)
+        c = next(
+            (x for x in xfer.get("cubicles") or [] if x.get("breaker") == cond.get("breaker")), None
+        )
         if c is None:
             return False
         if cond.get("truthy"):
             return bool(c.get(cond.get("field")))
-        wanted = cond.get("values") if "values" in cond else [cond.get("value")]
+        wanted = list(cond.get("values") or []) if "values" in cond else [cond.get("value")]
         return c.get(cond.get("field")) in wanted
     if kind == "xfmr":
         # L2: {"path", "field", "value"} / "values" / "truthy" / "min" + "max"
@@ -213,12 +250,16 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
                 x = float(v)
             except (TypeError, ValueError):
                 return False
-            return float(cond.get("min", float("-inf"))) <= x <= float(cond.get("max", float("inf")))
-        wanted = cond.get("values") if "values" in cond else [cond.get("value")]
+            return (
+                float(cond.get("min", float("-inf"))) <= x <= float(cond.get("max", float("inf")))
+            )
+        wanted = list(cond.get("values") or []) if "values" in cond else [cond.get("value")]
         return v in wanted
     if kind == "gen_fuel":
         # L3: {"device", "field": "pumps.0.mode"} + value / values / truthy / min / max
-        dev = next((d for d in plant.get("devices", []) if d.get("id") == cond.get("device")), {})
+        dev: dict[str, Any] = next(
+            (d for d in plant.get("devices", []) if d.get("id") == cond.get("device")), {}
+        )
         return _match(_dig(dev.get("fuel"), cond.get("field")), cond)
     if kind == "ups_system":
         # L4: {"path", "field": "breakers.Q3"} + value / values / truthy / min / max
@@ -233,8 +274,10 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
     if kind == "all":
         return all(check(sub, plant, engine, events) for sub in cond.get("of") or [{}])
     if kind == "device_authority":
-        return any(d.get("id") == cond.get("device") and d.get("authority") == cond.get("authority")
-                   for d in plant.get("devices", []))
+        return any(
+            d.get("id") == cond.get("device") and d.get("authority") == cond.get("authority")
+            for d in plant.get("devices", [])
+        )
     if kind == "alarms_acked":
         prefix = str(cond.get("prefix", ""))
         mine = [a for a in engine.alarms.values() if a.alarm_id.startswith(prefix)]
@@ -246,8 +289,11 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
         demand = float(_path(plant, path).get("demand_kw") or 0.0)
         gens = _devices(plant, "generator", path)
         if kind == "gens_started_cover_demand":
-            kw = sum(g.get("rated_kw", 0) for g in gens if g.get("state") != "STANDBY"
-                     and g.get("state") != "COOLDOWN")
+            kw = sum(
+                g.get("rated_kw", 0)
+                for g in gens
+                if g.get("state") != "STANDBY" and g.get("state") != "COOLDOWN"
+            )
         else:
             kw = float(_path(plant, path).get("gen_on_bus_kw") or 0.0)
         return demand > 0 and kw >= demand
@@ -257,16 +303,21 @@ def check(cond: dict[str, Any], plant: dict[str, Any], engine: AlarmEngine,
         # "states" lists every state that proves the step was done (a
         # later state counts: the trainee may act between two polls).
         wanted = cond.get("states") or [cond.get("state")]
-        return any(d.get("id") == cond.get("device") and d.get("state") in wanted
-                   for d in plant.get("devices", []))
+        return any(
+            d.get("id") == cond.get("device") and d.get("state") in wanted
+            for d in plant.get("devices", [])
+        )
     if kind == "no_sets_running":
-        return not any(g.get("state") in ("RUNNING", "ON_LOAD", "CRANKING")
-                       for g in _devices(plant, "generator", path))
+        return not any(
+            g.get("state") in ("RUNNING", "ON_LOAD", "CRANKING")
+            for g in _devices(plant, "generator", path)
+        )
     return False
 
 
-def unplanned_switching(drill: dict[str, Any],
-                        events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def unplanned_switching(
+    drill: dict[str, Any], events: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """Commands executed by a person that the drill procedure does not
     call for. A drill without "procedure_commands" checks nothing."""
     allowed = drill.get("procedure_commands")
@@ -275,32 +326,44 @@ def unplanned_switching(drill: dict[str, Any],
     return [
         {**e, "violation": "unplanned_switching"}
         for e in events
-        if e.get("event") == "command" and e.get("actor") not in SYSTEM_ACTORS
+        if e.get("event") == "command"
+        and e.get("actor") not in SYSTEM_ACTORS
         and e.get("command") not in allowed
     ]
 
 
-def failed(conds: list[dict[str, Any]], plant: dict[str, Any],
-           events: list[dict[str, Any]] | None = None) -> str | None:
+def failed(
+    conds: list[dict[str, Any]], plant: dict[str, Any], events: list[dict[str, Any]] | None = None
+) -> str | None:
     for cond in conds:
         if cond.get("type") == "load_lost" and _path(plant, cond.get("path")).get("load_lost"):
             return f"critical load lost on path {str(cond.get('path')).upper()}"
         if cond.get("type") == "xfmr_internal_fault":
             for e in events or []:
-                if e.get("event") == "xfmr_internal_fault" \
-                        and e.get("device_id") == f"mvtc_{cond.get('path')}":
+                if (
+                    e.get("event") == "xfmr_internal_fault"
+                    and e.get("device_id") == f"mvtc_{cond.get('path')}"
+                ):
                     return cond.get("reason") or (
                         f"internal fault in XFMR {str(cond.get('path')).upper()}: "
-                        "DETC moved with the transformer energized")
+                        "DETC moved with the transformer energized"
+                    )
         if cond.get("type") == "gen_shutdown":
             for e in events or []:
-                if e.get("event") == "protection_trip" and e.get("relay") == "SHUTDOWN" \
-                        and e.get("device_id") == cond.get("device"):
-                    return cond.get("reason") or f"{cond.get('device')} shut down: {e.get('detail')}"
+                if (
+                    e.get("event") == "protection_trip"
+                    and e.get("relay") == "SHUTDOWN"
+                    and e.get("device_id") == cond.get("device")
+                ):
+                    return (
+                        cond.get("reason") or f"{cond.get('device')} shut down: {e.get('detail')}"
+                    )
         if cond.get("type") == "battery_runaway":
             for e in events or []:
-                if e.get("event") == "thermal_runaway" \
-                        and e.get("device_id") == f"battery_room_{cond.get('path')}":
+                if (
+                    e.get("event") == "thermal_runaway"
+                    and e.get("device_id") == f"battery_room_{cond.get('path')}"
+                ):
                     return cond.get("reason") or f"thermal runaway: jar {e.get('jar')} vented"
         if cond.get("type") == "command_used":
             for e in events or []:
@@ -317,7 +380,7 @@ class Session:
     started_ms: int
     events_mark: float
     done: list[dict[str, Any]] = field(default_factory=list)
-    outcome: str | None = None          # PASS | FAIL | ABORTED
+    outcome: str | None = None  # PASS | FAIL | ABORTED
     reason: str | None = None
     ended_ms: int | None = None
     violations: list[dict[str, Any]] = field(default_factory=list)
@@ -334,8 +397,7 @@ class Session:
 class TrainingManager:
     """Single drill at a time over one DeviceController + AlarmEngine."""
 
-    def __init__(self, drills: dict[str, dict[str, Any]],
-                 clock: Callable[[], float] = time.time):
+    def __init__(self, drills: dict[str, dict[str, Any]], clock: Callable[[], float] = time.time):
         self.drills = drills
         self.clock = clock
         self.session: Session | None = None
@@ -351,7 +413,9 @@ class TrainingManager:
             raise TrainingError(404, f"unknown drill {drill_id!r}")
         with self._lock:
             if self.session is not None and self.session.active:
-                raise TrainingError(409, f"drill {self.session.drill['id']} is running: abort it first")
+                raise TrainingError(
+                    409, f"drill {self.session.drill['id']} is running: abort it first"
+                )
             ctl.reset(operator)
             engine.reset()
             setup = drill.get("setup") or {}
@@ -383,18 +447,26 @@ class TrainingManager:
                 elif kind == "ups_mode":
                     ctl.ups_action(inj["path"], inj["action"], "training")
                 elif kind == "utility_sag":
-                    ctl.inject_utility_sag(inj["path"], inj.get("depth_pu", 0.6), inj.get("cycles", 6),
-                                           "training")
+                    ctl.inject_utility_sag(
+                        inj["path"], inj.get("depth_pu", 0.6), inj.get("cycles", 6), "training"
+                    )
                 elif kind == "wiring_fault":
                     ctl.inject_wiring_fault(inj["path"], inj["fuse"], "training")
                 elif kind == "battery_condition":
-                    params = {k: v for k, v in inj.items() if k not in ("type", "path", "condition")}
-                    ctl.inject_battery_condition(inj["path"], inj["condition"], "training", **params)
+                    params = {
+                        k: v for k, v in inj.items() if k not in ("type", "path", "condition")
+                    }
+                    ctl.inject_battery_condition(
+                        inj["path"], inj["condition"], "training", **params
+                    )
                 elif kind == "gen_condition":
-                    params = {k: v for k, v in inj.items() if k not in ("type", "device", "condition")}
+                    params = {
+                        k: v for k, v in inj.items() if k not in ("type", "device", "condition")
+                    }
                     ctl.inject_gen_condition(inj["device"], inj["condition"], "training", **params)
-            self.session = Session(drill=drill, operator=operator,
-                                   started_ms=self._now_ms(), events_mark=mark)
+            self.session = Session(
+                drill=drill, operator=operator, started_ms=self._now_ms(), events_mark=mark
+            )
             self.last_report = None
         return self.evaluate(ctl, engine)
 
@@ -418,14 +490,19 @@ class TrainingManager:
                 if "holds" in step:
                     s.holding[step["id"]] = check(step["holds"], plant, engine, events)
             # v2: a done step whose "holds" condition stops being true.
-            for step in steps[:len(s.done)]:
+            for step in steps[: len(s.done)]:
                 if "holds" not in step:
                     continue
                 ok = check(step["holds"], plant, engine, events)
                 was = s.holding.get(step["id"], ok)
                 if was != ok:
-                    s.reverts.append({"step": step["id"], "event": "restored" if ok else "reverted",
-                                      "t_ms": now - s.started_ms})
+                    s.reverts.append(
+                        {
+                            "step": step["id"],
+                            "event": "restored" if ok else "reverted",
+                            "t_ms": now - s.started_ms,
+                        }
+                    )
                 s.holding[step["id"]] = ok
             s.violations = [
                 e for e in events if e.get("event") in VIOLATION_EVENTS
@@ -465,21 +542,31 @@ class TrainingManager:
         steps = []
         for i, step in enumerate(s.drill["steps"]):
             done = s.done[i] if i < len(s.done) else None
-            steps.append({
-                "id": step["id"], "text": step["text"],
-                "done": done is not None, "t_ms": done["t_ms"] if done else None,
-                "current": done is None and i == len(s.done) and s.active,
-                "reverted": done is not None and s.holding.get(step["id"]) is False,
-            })
+            steps.append(
+                {
+                    "id": step["id"],
+                    "text": step["text"],
+                    "done": done is not None,
+                    "t_ms": done["t_ms"] if done else None,
+                    "current": done is None and i == len(s.done) and s.active,
+                    "reverted": done is not None and s.holding.get(step["id"]) is False,
+                }
+            )
         return {
             "active": s.active,
             "session": {
-                "drill": drill_summary(s.drill), "operator": s.operator,
-                "started": iso_ms(s.started_ms), "started_ms": s.started_ms,
-                "ended": iso_ms(now_ms), "outcome": s.outcome, "reason": s.reason,
-                "score": s.score, "violations": len(s.violations),
-                "unplanned_switching": sum(1 for v in s.violations
-                                           if v.get("violation") == "unplanned_switching"),
+                "drill": drill_summary(s.drill),
+                "operator": s.operator,
+                "started": iso_ms(s.started_ms),
+                "started_ms": s.started_ms,
+                "ended": iso_ms(now_ms),
+                "outcome": s.outcome,
+                "reason": s.reason,
+                "score": s.score,
+                "violations": len(s.violations),
+                "unplanned_switching": sum(
+                    1 for v in s.violations if v.get("violation") == "unplanned_switching"
+                ),
                 "steps": steps,
                 "ledger_entry_id": s.ledger_entry_id,
             },
@@ -500,28 +587,45 @@ class TrainingManager:
             soe.append({"source": "alarm", **j})
         for d in s.done:
             ms = s.started_ms + d["t_ms"]
-            soe.append({"ts": iso_ms(ms), "ts_ms": ms, "source": "training",
-                        "event": "step_done", "step": d["id"]})
+            soe.append(
+                {
+                    "ts": iso_ms(ms),
+                    "ts_ms": ms,
+                    "source": "training",
+                    "event": "step_done",
+                    "step": d["id"],
+                }
+            )
         for r in s.reverts:
             ms = s.started_ms + r["t_ms"]
-            soe.append({"ts": iso_ms(ms), "ts_ms": ms, "source": "training",
-                        "event": f"step_{r['event']}", "step": r["step"]})
+            soe.append(
+                {
+                    "ts": iso_ms(ms),
+                    "ts_ms": ms,
+                    "source": "training",
+                    "event": f"step_{r['event']}",
+                    "step": r["step"],
+                }
+            )
         soe.sort(key=lambda r: r.get("ts_ms", 0))
         return {
             "report": "DC-EPMS operator training report",
             "simulated": True,
             "drill": drill_summary(s.drill),
             "operator": s.operator,
-            "started": iso_ms(s.started_ms), "ended": iso_ms(s.ended_ms),
+            "started": iso_ms(s.started_ms),
+            "ended": iso_ms(s.ended_ms),
             "duration_ms": (s.ended_ms or s.started_ms) - s.started_ms,
-            "outcome": s.outcome, "reason": s.reason, "score": s.score,
+            "outcome": s.outcome,
+            "reason": s.reason,
+            "score": s.score,
             "rubric": RUBRIC,
             "steps": [dict(d) for d in s.done],
             "violations": [dict(v) for v in s.violations],
             "step_reverts": [dict(r) for r in s.reverts],
             "soe": soe,
             "time_note": "Server observation times (ms resolution); steps are "
-                         "stamped when the UI poll evaluated them.",
+            "stamped when the UI poll evaluated them.",
         }
 
 
@@ -530,6 +634,9 @@ def score(s: Session) -> int:
         return 0
     elapsed_s = ((s.ended_ms or s.started_ms) - s.started_ms) / 1000.0
     late = max(0.0, elapsed_s - float(s.drill["target_s"]))
-    points = 100 - RUBRIC["violation_penalty"] * len(s.violations) \
+    points = (
+        100
+        - RUBRIC["violation_penalty"] * len(s.violations)
         - RUBRIC["late_penalty_per_10_s"] * math.ceil(late / 10.0)
+    )
     return max(0, int(points))
