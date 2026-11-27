@@ -71,7 +71,7 @@ class TestLoading:
         m = sm.get_site_model(PROJECT_ROOT)
         assert m.variant == "legacy"
         assert m.yaml_path.name == "site_model.yml"
-        assert len(m.list_components()) == 118
+        assert len(m.list_components()) == 124
         assert m.get_component("ups_a")  # retired id still present on legacy
 
     def test_v2_loads_closed_design(self, monkeypatch):
@@ -80,7 +80,7 @@ class TestLoading:
         assert m.variant == "v2"
         assert m.yaml_path.name == "site_model_v2.yml"
         ids = {c.canonical_id for c in m.list_components()}
-        assert len(ids) == 182
+        assert len(ids) == 188
         for retired in ("ups_a", "ats_a", "xfmr_a", "switchgear_a"):
             assert retired not in ids
         assert {"ups_a_01", "ups_b_08", "genset_a_09", "mvtc_a", "mvtc_b"} <= ids
@@ -133,7 +133,7 @@ class TestModelRoute:
         body = self._client().get("/api/site/model").json()
         assert body["variant"] == "legacy"
         assert body["file"] == "config/site_model.yml"
-        assert body["components"] == 118
+        assert body["components"] == 124
         assert "ups_a" in body["retired_ids_present"]
         assert body["migration_complete"] is False
 
@@ -142,7 +142,7 @@ class TestModelRoute:
         body = self._client().get("/api/site/model").json()
         assert body["variant"] == "v2"
         assert body["file"] == "config/site_model_v2.yml"
-        assert body["components"] == 182
+        assert body["components"] == 188
         assert body["retired_ids_present"] == []
         assert body["verified_against_power_plant"] is True
 

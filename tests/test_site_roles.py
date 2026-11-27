@@ -109,10 +109,9 @@ def test_every_fed_phase1_rack_has_two_feeds(model):
     racks = [c.canonical_id for c in model.list_components() if c.type == "it_rack"]
     phase1 = [r for r in racks if not r.startswith("rack_d")]
     fed = [r for r in phase1 if model._power_upstream.get(r)]
-    # DC-EPMS-072 (open): only 10 of the 50 modelled Phase 1 racks carry
-    # a power chain, on both variants. Fence the number so a change in
-    # either direction is noticed.
-    assert (len(phase1), len(fed)) == (50, 10)
+    # DC-EPMS-072 RESOLVED: all 50 modelled Phase 1 racks carry a 2N
+    # power chain, on both variants.
+    assert (len(phase1), len(fed)) == (50, 50)
     for rack in fed:
         chain = model.power_chain_for(rack)
         groups = [f["group"] for f in chain["feeds"]]

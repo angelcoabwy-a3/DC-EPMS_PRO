@@ -206,7 +206,7 @@ class TestSiteRoutes:
         assert r.status_code == 200
         data = r.json()
         assert len(data["racks_losing_all_redundancy"]) == 0
-        assert len(data["racks_affected"]) == 10
+        assert len(data["racks_affected"]) == 30  # DC-EPMS-072: RPP-A1 feeds rows A-01..A-03
 
     def test_loto_impact_for_unknown_returns_safe_empty(self, client):
         # Tolerant behavior: returns empty rather than 404
@@ -327,7 +327,7 @@ class TestAgentSiteTool:
         )
         assert r["success"] is True
         s = r["summary"]
-        assert s["total_racks_affected"] == 10
+        assert s["total_racks_affected"] == 30  # DC-EPMS-072: rows A-01..A-03
         assert s["racks_at_outage_risk"] == 0
         assert s["is_safe_loto"] is True
 

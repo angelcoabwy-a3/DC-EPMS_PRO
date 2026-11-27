@@ -141,7 +141,7 @@ class TestStageStructure:
         cubes = [m.group(2) for m in _PRIM_DEF.finditer(usda) if m.group(1) == "Cube"]
         expected = sorted(prim_name(c.canonical_id) for c in model.list_components())
         assert sorted(cubes) == expected
-        assert len(cubes) == len(set(cubes)) == 118
+        assert len(cubes) == len(set(cubes)) == 124
 
     def test_metadata_is_carried_as_typed_attributes(self, usda):
         assert "custom int a3semi:meta:rated_kw = 2500" in usda
@@ -175,11 +175,11 @@ class TestStageStructure:
 class TestSummary:
     def test_counts_match_the_model(self, model):
         s = stage_summary(model)
-        assert s["component_count"] == 118
+        assert s["component_count"] == 124
         assert s["filename"] == "a3-alpha-toronto.usda"
         assert s["layout"] == "schematic"
         assert s["notice"] == SCHEMATIC_NOTICE
-        assert sum(s["components_by_type"].values()) == 118
+        assert sum(s["components_by_type"].values()) == 124
         assert s["components_by_type"]["it_rack"] == 50
         assert s["power_edge_count"] > 0
         assert s["cooling_edge_count"] > 0
@@ -270,7 +270,7 @@ class TestWithUsdRuntime:
         assert UsdGeom.GetStageMetersPerUnit(stage) == 1.0
 
         cubes = [p for p in stage.Traverse() if p.GetTypeName() == "Cube"]
-        assert len(cubes) == 118
+        assert len(cubes) == 124
         edges = 0
         for prim in cubes:
             for rel in prim.GetRelationships():
@@ -322,7 +322,7 @@ class TestRoutes:
 
     def test_summary(self, client):
         body = client.get("/api/site/usd/summary").json()
-        assert body["component_count"] == 118
+        assert body["component_count"] == 124
         assert body["notice"] == SCHEMATIC_NOTICE
 
     def test_read_only(self, client):

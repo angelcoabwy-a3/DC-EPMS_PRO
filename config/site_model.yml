@@ -62,8 +62,10 @@ buildings:
         components:
           - busway_a_01
           - busway_a_02
+          - busway_a_03
           - busway_b_01
           - busway_b_02
+          - busway_b_03
         rows:
           - id: row-a-01
             display: "Row A-01"
@@ -143,14 +145,13 @@ buildings:
         area_m2: 2400
         design_load_kw: 8400
         ashrae_class: A2
-        # ───────────────────────────────────────────────────────────────
-        # SCOPE NOTE (S1a): Data Hall B is a hierarchical stub for now.
-        # Rack containment is defined (so locate(rack_b_*) works), but
-        # power_chain edges for DH-B racks are deferred to S1b alongside
-        # the frontend tree explorer. The 2N + LOTO impact analysis logic
-        # is fully validated against DH-A; DH-B will be a structural
-        # mirror once busway nomenclature is finalized.
-        # ───────────────────────────────────────────────────────────────
+        # DC-EPMS-072: DH-B racks now carry 2N power chains (busway
+        # nomenclature finalised: busway_<path>_04 / _05 = rows B-01 / B-02).
+        components:
+          - busway_a_04
+          - busway_a_05
+          - busway_b_04
+          - busway_b_05
         rows:
           - id: row-b-01
             display: "Row B-01"
@@ -288,7 +289,10 @@ power_chains:
   - {from: ups_a, to: rpp_a_01}
   - {from: ups_a, to: rpp_a_02}
   - {from: rpp_a_01, to: busway_a_01}
-  - {from: rpp_a_02, to: busway_a_02}
+  - {from: rpp_a_01, to: busway_a_02}
+  - {from: rpp_a_01, to: busway_a_03}
+  - {from: rpp_a_02, to: busway_a_04}
+  - {from: rpp_a_02, to: busway_a_05}
   - {from: busway_a_01, to: rack_a_01_01}
   - {from: busway_a_01, to: rack_a_01_02}
   - {from: busway_a_01, to: rack_a_01_03}
@@ -299,6 +303,46 @@ power_chains:
   - {from: busway_a_01, to: rack_a_01_08}
   - {from: busway_a_01, to: rack_a_01_09}
   - {from: busway_a_01, to: rack_a_01_10}
+  - {from: busway_a_02, to: rack_a_02_01}
+  - {from: busway_a_02, to: rack_a_02_02}
+  - {from: busway_a_02, to: rack_a_02_03}
+  - {from: busway_a_02, to: rack_a_02_04}
+  - {from: busway_a_02, to: rack_a_02_05}
+  - {from: busway_a_02, to: rack_a_02_06}
+  - {from: busway_a_02, to: rack_a_02_07}
+  - {from: busway_a_02, to: rack_a_02_08}
+  - {from: busway_a_02, to: rack_a_02_09}
+  - {from: busway_a_02, to: rack_a_02_10}
+  - {from: busway_a_03, to: rack_a_03_01}
+  - {from: busway_a_03, to: rack_a_03_02}
+  - {from: busway_a_03, to: rack_a_03_03}
+  - {from: busway_a_03, to: rack_a_03_04}
+  - {from: busway_a_03, to: rack_a_03_05}
+  - {from: busway_a_03, to: rack_a_03_06}
+  - {from: busway_a_03, to: rack_a_03_07}
+  - {from: busway_a_03, to: rack_a_03_08}
+  - {from: busway_a_03, to: rack_a_03_09}
+  - {from: busway_a_03, to: rack_a_03_10}
+  - {from: busway_a_04, to: rack_b_01_01}
+  - {from: busway_a_04, to: rack_b_01_02}
+  - {from: busway_a_04, to: rack_b_01_03}
+  - {from: busway_a_04, to: rack_b_01_04}
+  - {from: busway_a_04, to: rack_b_01_05}
+  - {from: busway_a_04, to: rack_b_01_06}
+  - {from: busway_a_04, to: rack_b_01_07}
+  - {from: busway_a_04, to: rack_b_01_08}
+  - {from: busway_a_04, to: rack_b_01_09}
+  - {from: busway_a_04, to: rack_b_01_10}
+  - {from: busway_a_05, to: rack_b_02_01}
+  - {from: busway_a_05, to: rack_b_02_02}
+  - {from: busway_a_05, to: rack_b_02_03}
+  - {from: busway_a_05, to: rack_b_02_04}
+  - {from: busway_a_05, to: rack_b_02_05}
+  - {from: busway_a_05, to: rack_b_02_06}
+  - {from: busway_a_05, to: rack_b_02_07}
+  - {from: busway_a_05, to: rack_b_02_08}
+  - {from: busway_a_05, to: rack_b_02_09}
+  - {from: busway_a_05, to: rack_b_02_10}
 
   # ── Path B mirror: each rack ALSO receives a feed from Path B
   - {from: utility_feed_b, to: ats_b}
@@ -310,11 +354,14 @@ power_chains:
   - {from: ups_b, to: rpp_b_01}
   - {from: ups_b, to: rpp_b_02}
   - {from: rpp_b_01, to: busway_b_01}
-  - {from: rpp_b_02, to: busway_b_02}
+  - {from: rpp_b_01, to: busway_b_02}
+  - {from: rpp_b_01, to: busway_b_03}
+  - {from: rpp_b_02, to: busway_b_04}
+  - {from: rpp_b_02, to: busway_b_05}
 
-  # The CRITICAL 2N feature: same rack_a_01_01 receives from BOTH
-  # busway_a_01 (Path A) AND busway_b_01 (Path B). If A is opened
-  # for LOTO, the rack stays up on Path B with zero IT outage.
+  # The CRITICAL 2N feature: every rack receives from BOTH its path A
+  # busway AND its path B busway. If A is opened for LOTO, the rack
+  # stays up on Path B with zero IT outage. (DC-EPMS-072: all 50 racks.)
   - {from: busway_b_01, to: rack_a_01_01}
   - {from: busway_b_01, to: rack_a_01_02}
   - {from: busway_b_01, to: rack_a_01_03}
@@ -325,6 +372,46 @@ power_chains:
   - {from: busway_b_01, to: rack_a_01_08}
   - {from: busway_b_01, to: rack_a_01_09}
   - {from: busway_b_01, to: rack_a_01_10}
+  - {from: busway_b_02, to: rack_a_02_01}
+  - {from: busway_b_02, to: rack_a_02_02}
+  - {from: busway_b_02, to: rack_a_02_03}
+  - {from: busway_b_02, to: rack_a_02_04}
+  - {from: busway_b_02, to: rack_a_02_05}
+  - {from: busway_b_02, to: rack_a_02_06}
+  - {from: busway_b_02, to: rack_a_02_07}
+  - {from: busway_b_02, to: rack_a_02_08}
+  - {from: busway_b_02, to: rack_a_02_09}
+  - {from: busway_b_02, to: rack_a_02_10}
+  - {from: busway_b_03, to: rack_a_03_01}
+  - {from: busway_b_03, to: rack_a_03_02}
+  - {from: busway_b_03, to: rack_a_03_03}
+  - {from: busway_b_03, to: rack_a_03_04}
+  - {from: busway_b_03, to: rack_a_03_05}
+  - {from: busway_b_03, to: rack_a_03_06}
+  - {from: busway_b_03, to: rack_a_03_07}
+  - {from: busway_b_03, to: rack_a_03_08}
+  - {from: busway_b_03, to: rack_a_03_09}
+  - {from: busway_b_03, to: rack_a_03_10}
+  - {from: busway_b_04, to: rack_b_01_01}
+  - {from: busway_b_04, to: rack_b_01_02}
+  - {from: busway_b_04, to: rack_b_01_03}
+  - {from: busway_b_04, to: rack_b_01_04}
+  - {from: busway_b_04, to: rack_b_01_05}
+  - {from: busway_b_04, to: rack_b_01_06}
+  - {from: busway_b_04, to: rack_b_01_07}
+  - {from: busway_b_04, to: rack_b_01_08}
+  - {from: busway_b_04, to: rack_b_01_09}
+  - {from: busway_b_04, to: rack_b_01_10}
+  - {from: busway_b_05, to: rack_b_02_01}
+  - {from: busway_b_05, to: rack_b_02_02}
+  - {from: busway_b_05, to: rack_b_02_03}
+  - {from: busway_b_05, to: rack_b_02_04}
+  - {from: busway_b_05, to: rack_b_02_05}
+  - {from: busway_b_05, to: rack_b_02_06}
+  - {from: busway_b_05, to: rack_b_02_07}
+  - {from: busway_b_05, to: rack_b_02_08}
+  - {from: busway_b_05, to: rack_b_02_09}
+  - {from: busway_b_05, to: rack_b_02_10}
 
   # ── Fuel chain (separate but supports power continuity)
   - {from: fuel_tank_a, to: genset_a_01}
@@ -511,26 +598,51 @@ components:
     rated_kw: 2500
     runtime_full_load_min: 7
 
+  # DC-EPMS-072: one overhead busway per row per path (5 rows, 2N), so
+  # all 50 Phase 1 racks carry a power chain. Ratings sized so each path
+  # carries the FULL row load at 80 % continuous (2N): row = 10 x 142 kW
+  # = 1,420 kW -> 1,798 A at 480 V, pf 0.95 (model assumption) -> 2,248 A
+  # required -> 2,500 A busway. RPP-A1 = 3 rows (4,260 kW / 0.8 = 5,325
+  # kW -> 5,400 kW), RPP-A2 = 2 rows (2,840 / 0.8 = 3,550 -> 3,600 kW).
+  # Fenced in tests/test_site_power_chain.py.
   rpp_a_01:
-    display: "RPP-A1 (feeds rows A-01, A-02, A-03)"
+    display: "RPP-A1 (path A, Building A rows A-01, A-02, A-03)"
     type: rpp
-    rated_kw: 1200
+    rated_kw: 5400
 
   rpp_a_02:
-    display: "RPP-A2 (feeds rows A-04, A-05, A-06)"
+    display: "RPP-A2 (path A, Building B rows B-01, B-02)"
     type: rpp
-    rated_kw: 1200
+    rated_kw: 3600
 
   busway_a_01:
-    display: "Busway A-01 (overhead, Row A-01)"
+    display: "Busway A-01 (overhead, path A, Row A-01)"
     type: busway
-    rated_amps: 1600
+    rated_amps: 2500
     voltage_v: 480
 
   busway_a_02:
-    display: "Busway A-02 (overhead, Row A-02)"
+    display: "Busway A-02 (overhead, path A, Row A-02)"
     type: busway
-    rated_amps: 1600
+    rated_amps: 2500
+    voltage_v: 480
+
+  busway_a_03:
+    display: "Busway A-03 (overhead, path A, Row A-03)"
+    type: busway
+    rated_amps: 2500
+    voltage_v: 480
+
+  busway_a_04:
+    display: "Busway A-04 (overhead, path A, Row B-01)"
+    type: busway
+    rated_amps: 2500
+    voltage_v: 480
+
+  busway_a_05:
+    display: "Busway A-05 (overhead, path A, Row B-02)"
+    type: busway
+    rated_amps: 2500
     voltage_v: 480
 
   # ── Power Path B (mirror)
@@ -541,10 +653,13 @@ components:
   xfmr_b: {display: "Transformer B", type: transformer, rated_kva: 30000}
   switchgear_b: {display: "Switchgear B", type: switchgear, voltage_v: 480, rated_amps: 4000}
   ups_b: {display: "UPS B", type: ups, rated_kw: 2500, runtime_full_load_min: 7}
-  rpp_b_01: {display: "RPP-B1", type: rpp, rated_kw: 1200}
-  rpp_b_02: {display: "RPP-B2", type: rpp, rated_kw: 1200}
-  busway_b_01: {display: "Busway B-01", type: busway, rated_amps: 1600, voltage_v: 480}
-  busway_b_02: {display: "Busway B-02", type: busway, rated_amps: 1600, voltage_v: 480}
+  rpp_b_01: {display: "RPP-B1 (path B, Building A rows A-01, A-02, A-03)", type: rpp, rated_kw: 5400}
+  rpp_b_02: {display: "RPP-B2 (path B, Building B rows B-01, B-02)", type: rpp, rated_kw: 3600}
+  busway_b_01: {display: "Busway B-01 (overhead, path B, Row A-01)", type: busway, rated_amps: 2500, voltage_v: 480}
+  busway_b_02: {display: "Busway B-02 (overhead, path B, Row A-02)", type: busway, rated_amps: 2500, voltage_v: 480}
+  busway_b_03: {display: "Busway B-03 (overhead, path B, Row A-03)", type: busway, rated_amps: 2500, voltage_v: 480}
+  busway_b_04: {display: "Busway B-04 (overhead, path B, Row B-01)", type: busway, rated_amps: 2500, voltage_v: 480}
+  busway_b_05: {display: "Busway B-05 (overhead, path B, Row B-02)", type: busway, rated_amps: 2500, voltage_v: 480}
 
   # ── Power Path D (Phase 2 / Building D — 800 VDC unipolar TN-S, design Q2 2026)
   utility_feed_d:

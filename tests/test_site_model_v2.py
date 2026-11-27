@@ -173,7 +173,7 @@ class TestLoadsInSiteModel:
 
     def test_loto_on_one_ups_block_keeps_every_rack(self, site):
         impact = site.loto_impact("ups_a_01")
-        assert len(impact["racks_affected"]) == 10
+        assert len(impact["racks_affected"]) == 50  # DC-EPMS-072: every Phase 1 rack
         assert impact["racks_losing_all_redundancy"] == []
 
     def test_loto_on_a_whole_transfer_controller_keeps_path_b(self, site):
